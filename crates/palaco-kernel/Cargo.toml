@@ -1,0 +1,12 @@
+[package]
+name = "palaco-kernel"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "PALACO Kernel: Compile-time guaranteed invariants and core types"
+
+[dependencies]
+
+[dev-dependencies]

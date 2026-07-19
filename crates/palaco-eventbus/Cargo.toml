@@ -1,0 +1,13 @@
+[package]
+name = "palaco-eventbus"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "PALACO Event Bus: Deterministic event dispatch system"
+
+[dependencies]
+palaco-kernel = { path = "../palaco-kernel" }
+
+[dev-dependencies]

@@ -1,0 +1,14 @@
+[package]
+name = "palaco-knowledge"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "PALACO Knowledge: Metadata, domain models, and semantic information"
+
+[dependencies]
+palaco-kernel = { path = "../palaco-kernel" }
+palaco-eventbus = { path = "../palaco-eventbus" }
+
+[dev-dependencies]

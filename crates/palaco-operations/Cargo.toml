@@ -1,0 +1,14 @@
+[package]
+name = "palaco-operations"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "PALACO Operations: Observability, monitoring, and operational concerns"
+
+[dependencies]
+palaco-kernel = { path = "../palaco-kernel" }
+palaco-eventbus = { path = "../palaco-eventbus" }
+
+[dev-dependencies]
