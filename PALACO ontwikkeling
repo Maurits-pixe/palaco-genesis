@@ -945,5 +945,32 @@ impl AetherEngine {
     }
 }
 
-git format-patch -1 fa0e62bd472168f10e540b6712d3196097e20773 --stdout
+
+## PALACO Core Alpha: Directive Reference Resolution
+ * **Target Identifier:** C507a8e5e655bc377ee913359900537e714aca02
+ * **Mapped Workstream:** PRI-046 (Knowledge Planner & Recommendation Engine Contracts)
+ * **Framework Layer:** PALACO Core v2.x Architecture / palaco-planner Crate
+### Implementation Directive Overview
+The identifier resolves to the technical specifications and contract definitions for **PRI-046**, establishing the advisory recommendation engine within the PALACO framework.
+```
++-------------------------------------------------------------+
+|                     PALACO Core v2.x                        |
+|                                                             |
+|   +---------------------+         +---------------------+   |
+|   |   Knowledge Graph   | ------\ |  Advisory Planner   |   |
+|   |      (PRI-045)      |         |  (PRI-046 / C507...)  |   |
+|   +---------------------+         +---------------------+   |
+|                                              |              |
+|                                              v              |
+|                                   [Deterministic Ranking]   |
+|                                   [Advisory-Only Boundary]  |
++-------------------------------------------------------------+
+
+```
+### Core Architectural Contracts
+ * **Advisory Boundary Enforcement:** The engine functions purely as an advisory layer. It generates, ranks, and explains recommended operational vectors without acquiring execution privileges or the authority to alter consensus logic and governance policies.
+ * **Determinism and State Immutability:** Recommendation scoring uses deterministic evaluation pipelines over snapshots provided by the underlying knowledge graph (palaco-graph), ensuring identical inputs yield cryptographically reproducible output sets.
+ * **Crate Topology (palaco-planner):**
+   * Strict adherence to Rust workspace boundaries and Clippy lint profiles.
+   * Zero-cycle dependency enforcement relative to core consensus crates (palaco-consensus / palaco-governance).
 
