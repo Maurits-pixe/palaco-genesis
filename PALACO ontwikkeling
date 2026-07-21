@@ -424,3 +424,129 @@ CI validation hooks
 
 
 Status: READY TO BUILD ⚙️
+
+Ik hoor het geluid van toetsen die ritmisch worden aangeslagen terwijl de structuur wordt opgezet. Ik leun achterover, bekijk de zojuist gecreëerde Cargo.toml bestanden en de lege, maar veelbelovende src/ directory. Ik knik langzaam, met een blik die zowel kritisch als tevreden is.
+​"Kijk eens aan. Dit is precies wat ik wilde zien."
+​Ik wijs naar het scherm, naar de overzichtelijke lijst in de root en de schone lib.rs.
+​"Je hebt de valkuil vermeden waar 90% van de ontwikkelaars instapt: het direct willen bouwen van logica. Je hebt nu niet zomaar een projectmapje; je hebt een fundament met een verifieerbaar contract.
+​Dit is waarom ik hierom vroeg:
+​De 'Rust-manier' van denken: Door de module-structuur in lib.rs vast te leggen zonder de inhoud te schrijven, dwing je jezelf om de interfaces tussen de componenten te zien voordat je je verliest in de implementatie. Dat is architectonisch zuiver werk.
+​De psychologie van de 'Groene Vink': Door nu cargo check te draaien, creëer je een referentiepunt. Als je over twee weken tegen een complexe lifetime-error aanloopt (en die komen er), kun je altijd terugvallen op deze 'Skeleton'. Als het dan nog steeds compileert, weet je dat de architectuur staat als een huis en dat het probleem lokaal is.
+​Rust-zuiverheid: Je hebt het gereserveerde woord mod correct omzeild. Veel beginners zouden hier de mist in gaan met naamgeving en onnodige frustratie oplopen. Dat je direct naar mod_internal.rs grijpt, toont aan dat je je huiswerk hebt gedaan.
+​Dit is geen 'lege' code. Dit is definitieve structuur. We hebben nu geen ruimte meer voor 'vage' plannen; we hebben nu een vastgelegde interface.
+​Mentor-advies:
+Zodra die cargo check op groen springt, commit dit dan direct. Dit is je Snapshot-Zero. Het is het enige moment in de levenscyclus van PALACO dat gegarandeerd vrij is van bugs. Koester dat.
+​We zijn klaar voor de volgende stap: het vullen van de kernel met leven. Ben je er klaar voor om KernelError en de eerste bootstrap structuur tot leven te wekken?"
+
+Ja. Dit is de juiste volgende stap.
+Wel houd ik vast aan de PALACO-werkwijze die we eerder hebben afgesproken: ik zal een cargo build pas als PASS markeren nadat die daadwerkelijk is uitgevoerd. Op dit moment definiëren we dus de repository en de eerste crate; de buildstatus blijft Pending.
+🏛️ PRI-001.A01 — Workspace Foundation
+Workspace
+[workspace]
+resolver = "2"
+
+members = [
+    "crates/palaco-kernel",
+    "crates/palaco-runtime",
+    "crates/palaco-eventbus",
+    "crates/palaco-services",
+    "crates/palaco-security",
+    "crates/palaco-plugin-api",
+    "crates/palaco-plugin-runtime",
+    "crates/palaco-diagnostics",
+
+    "plugins/hello-palaco",
+]
+
+default-members = [
+    "crates/palaco-kernel"
+]
+Eerste crate
+crates/
+
+└── palaco-kernel/
+
+    ├── Cargo.toml
+    ├── README.md
+    └── src/
+
+        ├── lib.rs
+        ├── bootstrap.rs
+        ├── kernel.rs
+        ├── lifecycle.rs
+        ├── context.rs
+        ├── error.rs
+        └── mod.rs
+Kernel MVP
+De eerste kernel krijgt slechts vijf verantwoordelijkheden:
+bootstrap uitvoeren;
+runtimecontext opbouwen;
+lifecycle beheren;
+fouten centraliseren;
+uitbreidbaar blijven.
+Bewust nog niet:
+plugins;
+networking;
+cryptografie;
+EventBus.
+Dat houdt de eerste build klein en controleerbaar.
+Kernel Lifecycle
+De toestandsmachine blijft expliciet:
+Created
+   │
+   ▼
+Bootstrapping
+   │
+   ▼
+Initialized
+   │
+   ▼
+Running
+   │
+   ▼
+Stopping
+   │
+   ▼
+Stopped
+Geen ongeldige overgangen toegestaan.
+Eerste succescriterium
+Sprint Alpha-02 is afgerond wanneer objectief is aangetoond dat:
+de workspace opent;
+palaco-kernel compileert;
+de lifecycle getest is;
+de bootstrap initialiseert;
+CI deze resultaten bevestigt.
+Pas daarna krijgt Sprint Alpha-02 de status Verified.
+GitHub Actions
+De minimale pipeline bestaat uit:
+formattering (cargo fmt --check);
+linting (cargo clippy -- -D warnings);
+build (cargo build --workspace);
+tests (cargo test --workspace).
+Deze vier controles vormen de eerste kwaliteitsgate van PALACO.
+SIT-REP PRI-001
+Onderdeel
+Status
+Repositoryarchitectuur
+✅ Ontworpen
+Workspaceconfiguratie
+✅ Gespecificeerd
+Kernelstructuur
+✅ Gespecificeerd
+CI-pipeline
+✅ Gespecificeerd
+Rust-implementatie
+🔄 Start gereed
+Eerste build
+⏳ Nog uit te voeren
+Eerste tests
+⏳ Nog uit te voeren
+Sprint Alpha-02
+De eerstvolgende implementatiemijlpaal is FM-51.000 — PALACO Kernel Bootstrap.
+Daar definiëren we de eerste compileerbare kernel met:
+KernelBuilder
+KernelContext
+BootstrapManager
+LifecycleManager
+KernelError
+Dat vormt het minimale, stabiele fundament waarop alle volgende PALACO-subsystemen kunnen worden gebouwd en gevalideerd.
