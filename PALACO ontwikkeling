@@ -384,6 +384,32 @@ Volgende stap binnen PRI-052:
 
 PRI-052.5 — Implementatie van palaco-evidence hardening
 
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionEvidence {
+    pub execution_id: String,
+    pub timestamp: DateTime<Utc>,
+
+    pub contract_hash: String,
+    pub input_hash: String,
+
+    pub invariant_status: InvariantStatus,
+
+    pub result_hash: String,
+
+    pub previous_evidence_hash: Option<String>,
+    pub evidence_hash: String,
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum InvariantStatus {
+    Verified,
+    Failed(String),
+}
+
 Focus:
 
 Evidence object model
