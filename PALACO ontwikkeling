@@ -179,3 +179,17 @@ Evidence Generation
 Audit Log
    │
 Result
+
+docs/
+ └── PIS-013_EXECUTION_ASSURANCE_PIPELINE.md
+
+validation/
+ ├── PRI-052_HARDENING_REPORT.md
+ ├── INVARIANT_REGISTRY.yaml
+ └── EVIDENCE_SCHEMA.yaml
+
+crates/
+ └── palaco-evidence/
+      ├── evidence.rs
+      ├── invariant.rs
+      └── audit.rs
