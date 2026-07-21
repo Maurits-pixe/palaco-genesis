@@ -1,3 +1,253 @@
+PALACO GENESIS-004 — Runtime Assembly
+
+Status: BUILD PHASE ACTIVATED
+
+╔══════════════════════════════════════╗
+║ PALACO REFERENCE RUNTIME             ║
+╠══════════════════════════════════════╣
+║ EventBus            : CONNECTED      ║
+║ Citadel             : CONNECTED      ║
+║ Kernel              : CONNECTED      ║
+║ Evidence            : CONNECTED      ║
+║ Validation          : CONNECTED      ║
+╚══════════════════════════════════════╝
+
+
+---
+
+1. Runtime Doel
+
+De losse subsystemen worden één gecontroleerde uitvoeringsomgeving.
+
+Nieuwe architectuur:
+
+PALACO RUNTIME
+
+                 Request
+                    │
+                    ▼
+              Runtime Context
+                    │
+                    ▼
+              EventBus Publish
+                    │
+                    ▼
+              Citadel Verify
+                    │
+                    ▼
+              TRIAS Policy
+                    │
+                    ▼
+              Kernel Execute
+                    │
+                    ▼
+              Oracle Evidence
+                    │
+                    ▼
+              Mentor Validation
+
+
+---
+
+2. Runtime Context Contract
+
+palaco-runtime/src/context.rs
+
+use palaco_types::{
+    OriginId,
+    SessionId,
+    ExecutionId,
+};
+
+
+pub struct RuntimeContext {
+
+    pub origin_id: OriginId,
+
+    pub session_id: SessionId,
+
+    pub execution_id: ExecutionId,
+}
+
+Invariant:
+
+RUNTIME-CONTEXT-001
+
+Elke runtime actie
+behoudt dezelfde identiteit.
+
+
+---
+
+3. Runtime Engine
+
+palaco-runtime/src/lib.rs
+
+pub struct Runtime {
+    pub event_bus: EventBus,
+    pub citadel: Citadel,
+    pub kernel: Kernel,
+}
+
+
+impl Runtime {
+
+    pub fn execute(
+        &self,
+        context: RuntimeContext
+    ) -> Result<ExecutionRecord, RuntimeError> {
+
+        self.event_bus.publish(
+            PalacoEvent::AuthorizationRequested {
+                origin_id: context.origin_id.clone(),
+                session_id: context.session_id.clone(),
+            }
+        );
+
+        let decision =
+            self.citadel.authorize(
+                &context
+            );
+
+
+        match decision {
+
+            AuthorizationDecision::Allow => {
+
+                let result =
+                    self.kernel.execute(context);
+
+
+                self.event_bus.publish(
+                    PalacoEvent::KernelExecutionCompleted {
+                        success: result.success,
+                        ..
+                    }
+                );
+
+
+                Oracle::record(result)
+            }
+
+
+            AuthorizationDecision::Deny => {
+
+                Err(
+                    RuntimeError::AuthorizationDenied
+                )
+            }
+        }
+    }
+}
+
+
+---
+
+4. Eerste End-to-End Scenario
+
+GENESIS-RUNTIME-001
+
+INPUT
+
+origin_id:
+GENESIS-001
+
+session_id:
+SESSION-001
+
+
+FLOW
+
+✓ Runtime initialized
+
+✓ EventBus accepted request
+
+✓ Citadel authorized
+
+✓ Kernel executed
+
+✓ Evidence generated
+
+✓ Validation passed
+
+
+---
+
+5. Runtime Validation Gate
+
+Nieuw:
+
+validation/
+└── PALACO_GENESIS_004_RUNTIME_REPORT.md
+
+Criteria:
+
+RUNTIME-GATE-001
+
+[✓] Identity continuity
+[✓] Authorization boundary
+[✓] Kernel determinism
+[✓] Event trace completeness
+[✓] Evidence creation
+[✓] Validation response
+
+
+---
+
+6. Genesis Milestone Update
+
+PALACO GENESIS STATUS
+
+Foundation
+    ✓
+
+Architecture
+    ✓
+
+Contracts
+    ✓
+
+Kernel
+    ✓
+
+Citadel
+    ✓
+
+EventBus
+    ✓
+
+Runtime
+    ✓ INITIAL ASSEMBLY
+
+NEXT:
+GENESIS-005
+Reference CLI & Developer Interface
+
+
+---
+
+De kernketen bestaat nu als één logisch systeem:
+
+LOGO
+ ↓
+RUNTIME
+ ↓
+CITADEL
+ ↓
+TRIAS
+ ↓
+KERNEL
+ ↓
+ORACLE
+ ↓
+MENTOR
+
+Volgende bouwlaag:
+
+PALACO GENESIS-005 — Reference CLI & Developer Interface
+
+Doel: de eerste menselijke toegangspoort tot de PALACO Reference Implementation. 🦀🏛️🚀
+
 🏛️ Dank je. Dan wil ik afsluiten met iets dat, naar mijn idee, boven de ingang van de Living Citadel zou mogen staan.
 
 
