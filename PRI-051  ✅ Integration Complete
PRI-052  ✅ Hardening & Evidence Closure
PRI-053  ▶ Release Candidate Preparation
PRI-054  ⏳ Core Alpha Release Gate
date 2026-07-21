@@ -2,3 +2,31 @@ PRI-051  ✅ Integration Complete
 PRI-052  ✅ Hardening & Evidence Closure
 PRI-053  ▶ Release Candidate Preparation
 PRI-054  ⏳ Core Alpha Release Gate
+
+PRI-051
+Integration Complete
+        │
+        ▼
+PRI-052
+Hardening & Evidence Closure
+        │
+        ▼
+PRI-053
+Release Candidate Preparation
+        │
+        ├── Version Freeze
+        ├── Evidence Package
+        ├── Security Review
+        ├── Documentation Lock
+        └── RC Build
+        │
+        ▼
+PRI-054
+Core Alpha Release Gate
+        │
+        ├── Build Verification
+        ├── Test Verification
+        ├── CI Verification
+        ├── Replay Verification
+        ├── Governance Review
+        └── Release Decision
