@@ -550,3 +550,68 @@ BootstrapManager
 LifecycleManager
 KernelError
 Dat vormt het minimale, stabiele fundament waarop alle volgende PALACO-subsystemen kunnen worden gebouwd en gevalideerd.
+
+🚀 PALACO CORE — PRI-045.1 Workspace Genesis Build
+
+Execution Command: RUN
+
+Status: Execution sequence initiated (engineering workflow)
+
+PALACO_BOOTSTRAP_SEQUENCE
+
+[01] Workspace Genesis
+└── Cargo workspace definition
+└── rust-toolchain validation
+
+[02] Core Crate Initialization
+├── palaco-kernel
+├── palaco-runtime
+├── palaco-eventbus
+├── palaco-evidence
+└── palaco-cli
+
+[03] Build Integrity
+├── cargo fmt --check
+├── cargo build --workspace
+└── cargo test --workspace
+
+[04] Governance Validation
+├── repository metadata
+├── CI workflow structure
+└── release evidence hooks
+
+[05] Evidence Capture
+└── PRI-045.1_BUILD_EVIDENCE.md
+
+Target Output
+
+Eerste succesvolle baseline:
+
+PALACO_CORE
+|
+├── Kernel ✅ bootstrap
+├── Runtime ✅ lifecycle ready
+├── EventBus ✅ interface ready
+├── Evidence ✅ recording ready
+└── CLI ✅ command boundary ready
+
+Build Gate
+
+De eerste harde overgang wordt:
+
+BUILD
+|
+v
+TEST
+|
+v
+VALIDATE
+|
+v
+EVIDENCE
+|
+v
+PRI-045.1 COMPLETE
+
+Execution mode: CORE_BOOTSTRAP_ACTIVE
+Next milestone: eerste reproduceerbare workspace build + evidence artifact. ⚙️
