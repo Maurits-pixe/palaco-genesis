@@ -34,3 +34,41 @@ jobs:
 
       - name: Run Tests
         run: cargo test --workspace --all-features
+[workspace]
+members = [
+    "crates/palaco-types",
+    "crates/palaco-errors",
+    "crates/palaco-kernel",
+    "crates/palaco-eventbus",
+    "crates/palaco-runtime",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["PALACO Core Team"]
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+# Externe dependencies worden hier gecentraliseerd beheerd voor alle crates
+tokio = { version = "1.38", features = ["full"] }
+thiserror = "2.0"
+tracing = "0.1"
+
+# Interne workspace crates
+palaco-types = { path = "crates/palaco-types" }
+palaco-errors = { path = "crates/palaco-errors" }
+palaco-kernel = { path = "crates/palaco-kernel" }
+palaco-eventbus = { path = "crates/palaco-eventbus" }
+palaco-runtime = { path = "crates/palaco-runtime" }
+
+[workspace.lints.rust]
+unsafe_code = "forbidden"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
