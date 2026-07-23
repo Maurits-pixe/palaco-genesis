@@ -1052,3 +1052,78 @@ Hier is de visualisatie van hoe het portaal op een scherm wordt weergegeven. De 
 +-----------------------------------------------------------------------+
 
 git show main:"PALACO ontwikkeling"
+
+RUNTIME-CONTEXT-001
+
+same execution identity
+=
+same audit lineage
+
+pub struct RuntimeContext {
+
+    pub origin_id: OriginId,
+    pub session_id: SessionId,
+    pub execution_id: ExecutionId,
+
+    pub parent_execution_id: Option<ExecutionId>,
+    pub trace_id: String,
+
+}
+
+docs/
+└── PIS-013_EXECUTION_ASSURANCE_PIPELINE.md
+
+pub struct ExecutionEvidence {
+
+    pub execution_id: String,
+
+    pub timestamp: DateTime<Utc>,
+
+    pub contract_hash: String,
+
+    pub input_hash: String,
+
+    pub invariant_status: InvariantStatus,
+
+    pub result_hash: String,
+
+    pub previous_evidence_hash: Option<String>,
+
+    pub evidence_hash: String,
+}
+
+PRI-052.5 Evidence Hardening
+
+crates/
+ └── palaco-evidence
+      ├── src/
+      │    ├── lib.rs
+      │    ├── evidence.rs
+      │    ├── invariant.rs
+      │    └── audit.rs
+
+validation/
+ ├── PRI-052_EVIDENCE_REPORT.md
+ ├── INVARIANT_REGISTRY.yaml
+ └── EVIDENCE_SCHEMA.yaml
+
+docs/
+ └── PIS-013_EXECUTION_ASSURANCE_PIPELINE.md
+
+Request
+  ↓
+Validate
+  ↓
+Authorize
+  ↓
+Execute
+  ↓
+Verify
+  ↓
+Generate Evidence
+  ↓
+Audit
+  ↓
+Replay
+  ↓
+Release Evidence
