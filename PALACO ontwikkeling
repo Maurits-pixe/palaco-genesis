@@ -1506,3 +1506,76 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
+
+Dit sluit goed aan op een productiegerichte afrondingsfase. Ik zou nog een paar accenten toevoegen om de stap naar v1.0.0 zo objectief en reproduceerbaar mogelijk te maken.
+
+Beoordeling
+
+Sterke punten
+
+✅ Heldere focus op stabilisatie in plaats van uitbreiding.
+
+✅ Hardening-pipeline met formattering, linting, tests en documentatie.
+
+✅ Evidence-first releaseproces.
+
+✅ Duidelijke governance rond API-stabiliteit.
+
+
+Aanbevolen aanvullingen
+
+1. Reproduceerbare builds
+
+Leg expliciet vast dat iedere release reproduceerbaar is.
+
+cargo build --workspace --locked --release
+cargo test --workspace --locked
+
+Hiermee voorkom je dat onverwachte dependency-updates een release beïnvloeden.
+
+2. Benchmark-gate
+
+Voeg een prestatiepoort toe voordat een release wordt goedgekeurd.
+
+PERF-001  Geen regressie > 5%
+PERF-002  Geheugengebruik binnen baseline
+PERF-003  Opstarttijd binnen vastgestelde grens
+
+3. Coverage-gate
+
+Maak de testdekking meetbaar.
+
+COV-001 ≥95% core
+COV-002 100% publieke API
+COV-003 Alle regressietests groen
+
+4. Release-manifest
+
+Laat iedere release automatisch een manifest produceren, bijvoorbeeld:
+
+release/
+ ├── RELEASE_MANIFEST.md
+ ├── CHANGELOG.md
+ ├── SHA256SUMS
+ ├── evidence.json
+ ├── build-info.json
+ └── SBOM.spdx
+
+Een Software Bill of Materials (SBOM) maakt afhankelijkheden inzichtelijk en helpt bij beveiligings- en compliancecontroles.
+
+5. Definitieve v1.0.0 Release Gate
+
+RG-001 Workspace builds clean
+RG-002 Zero Clippy warnings
+RG-003 All tests pass
+RG-004 Documentation complete
+RG-005 API frozen
+RG-006 Evidence package generated
+RG-007 Checksums verified
+RG-008 Security audit clean
+RG-009 Dependency policy satisfied
+RG-010 Performance baseline accepted
+
+Strategische conclusie
+
+De huidige richting is sterk omdat zij de nadruk legt op consolidatie. Voor een systeem als PALACO is een kleine, stabiele en goed geteste kern doorgaans waardevoller dan snelle uitbreiding. Zodra deze release-gates aantoonbaar zijn gehaald met echte build-, test- en auditresultaten, is er een solide basis om een v1.0.0 Production Ready-release te onderbouwen. Op dat moment is de stap van Release Candidate naar een officiële productieversie gebaseerd op verifieerbaar bewijs in plaats van alleen een mijlpaalbenaming.
