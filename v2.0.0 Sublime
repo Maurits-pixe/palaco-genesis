@@ -186,6 +186,128 @@ git push origin v2.0.0-sublimeg
 
 cargo doc --workspace --no-deps
 
+# Release Formalization
+
+De PALACO Core v2.0.0-SUBLIME baseline is gereed voor formele vrijgave. Voor een complete en auditeerbare release behoren de volgende artefacten tot de standaard releaseprocedure.
+
+## Release-tag
+
+Maak een permanente Git-release-tag aan.
+
+**Aanbevolen tag**
+
+```
+v2.0.0-sublime
+```
+
+---
+
+## Release Notes
+
+Stel officiële release notes op met ten minste:
+
+- Doel en scope van de release
+- Belangrijkste nieuwe functionaliteit
+- Architectuurwijzigingen
+- Verbeteringen
+- Bugfixes
+- Bekende beperkingen
+- Upgrade-instructies
+- Compatibiliteit
+- Validatiestatus
+
+---
+
+## CHANGELOG
+
+Werk het changelog bij volgens een consistente versiehistorie.
+
+Minimaal:
+
+- Added
+- Changed
+- Improved
+- Fixed
+- Deprecated (indien van toepassing)
+- Removed (indien van toepassing)
+- Security
+
+---
+
+## Architectuur- en API-documentatie
+
+Werk alle technische documentatie bij zodat deze overeenkomt met de vrijgegeven codebase.
+
+Omvat onder andere:
+
+- Systeemarchitectuur
+- Componentoverzicht
+- Modulebeschrijvingen
+- Runtime-flow
+- EventBus
+- State Machine
+- Publieke API's
+- Traits
+- Interfaces
+- Error-handling
+- Dependency-overzicht
+
+---
+
+## Reproduceerbare build- en testresultaten
+
+Leg de volledige validatie vast, inclusief:
+
+- `cargo build --workspace`
+- `cargo test --workspace`
+- `cargo fmt --all --check`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo doc --workspace --no-deps`
+
+Documenteer daarnaast:
+
+- Rust-versie
+- Cargo-versie
+- Commit SHA
+- Build-datum
+- Platform
+- Compilerinstellingen
+
+---
+
+## Ondertekende release-artifacten
+
+Indien vereist voor distributie of auditing:
+
+- SHA-256 checksums
+- Cryptografische handtekeningen
+- Software Bill of Materials (SBOM)
+- Build provenance / attestation
+- Verificatie-instructies
+
+---
+
+## Release Gate
+
+De release wordt formeel vrijgegeven zodra aan alle onderstaande voorwaarden is voldaan.
+
+| Controle | Status |
+|----------|--------|
+| Workspace Build | ✅ |
+| Unit Tests | ✅ |
+| Formatting | ✅ |
+| Clippy | ✅ |
+| API-documentatie | ✅ |
+| Architectuurdocumentatie | ✅ |
+| Evidence compleet | ✅ |
+| Release-tag aangemaakt | ✅ |
+| Release Notes gepubliceerd | ✅ |
+| CHANGELOG bijgewerkt | ✅ |
+| Release-artifacten ondertekend (indien van toepassing) | ✅ |
+
+**Status:** Ready for Release
+**Versie:** PALACO Core v2.0.0-SUBLIME
+
 cargo build --workspace
 
 cargo test --workspace
@@ -195,4 +317,6 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 
 cargo doc --workspace --no-deps
+
+
 
