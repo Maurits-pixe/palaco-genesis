@@ -279,4 +279,7 @@ Dit niveau bevat de governance, de definities, de metataal en de spelregels. Het
 #### 1.3.2 Het Architectonische Niveau (Boek II)
 De formele blauwdruk. Hier worden de logische interfaces, systeemgrenzen en de statische en dynamische architecturen gedefinieerd via Architecture Decision Records (ADR's).
 
-#### 1.3.3 Het Implementatie- en Operationele Niveau (Boek IIIgit show 49e2a3982cbc50dbcf38bc51b8f75fb8f86f3360
+#### 1.3.3 Het Implementatie- en Operationele Niveau (Boek III
+git show 49e2a3982cbc50dbcf38bc51b8f75fb8f86f3360
+
+git show --stat 49e2a3982cbc50dbcf38bc51b8f75fb8f86f3360
