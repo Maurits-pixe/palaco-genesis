@@ -120,3 +120,79 @@ De release wordt formeel vrijgegeven zodra aan alle onderstaande voorwaarden is 
 
 **Status:** Ready for Release
 **Versie:** PALACO Core v2.0.0-SUBLIME
+
+PALACO/
+├── CHANGELOG.md
+├── RELEASE_NOTES_v2.0.0-SUBLIME.md
+├── LICENSE
+├── README.md
+├── SECURITY.md
+├── CONTRIBUTING.md
+├── docs/
+│   ├── architecture/
+│   │   ├── ARCHITECTURE.md
+│   │   ├── COMPONENTS.md
+│   │   ├── EVENTBUS.md
+│   │   ├── GOVERNANCE.md
+│   │   └── API_REFERENCE.md
+│   ├── validation/
+│   │   ├── BUILD_REPORT.md
+│   │   ├── TEST_REPORT.md
+│   │   ├── CLIPPY_REPORT.md
+│   │   ├── FORMAT_REPORT.md
+│   │   └── TRACEABILITY.md
+│   └── evidence/
+│       ├── EVIDENCE_INDEX.md
+│       ├── HASHES.sha256
+│       └── SIGNATURES/
+├── artifacts/
+│   ├── palaco-core-v2.0.0.tar.gz
+│   ├── checksums.txt
+│   └── provenance.json
+└── .github/
+    └── workflows/
+        ├── ci.yml
+        ├── release.yml
+        └── attest.yml
+
+v2.0.0-sublime
+
+git tag -a v2.0.0-sublime -m "PALACO Core v2.0.0 Sublime Edition"
+git push origin v2.0.0-sublimeg
+
+## v2.0.0-SUBLIME
+
+### Added
+- Core Kernel
+- Runtime
+- EventBus
+- Governance Layer
+- Oracle
+- Mentor
+- TRIAS
+- Validation Framework
+
+### Improved
+- Type Safety
+- Error Handling
+- Module Isolation
+
+### Security
+- Immutable Audit Trail
+- Governance Validation
+
+### Fixed
+- Integration consistency
+
+cargo doc --workspace --no-deps
+
+cargo build --workspace
+
+cargo test --workspace
+
+cargo fmt --all --check
+
+cargo clippy --workspace --all-targets -- -D warnings
+
+cargo doc --workspace --no-deps
+
