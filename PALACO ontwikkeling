@@ -3227,3 +3227,150 @@ Validated Integration
 Canonical Registry
 
 CMA-007 kan hiermee als gesloten canonieke baseline worden behandeld.
+
+```rust
+// ============================================================================
+// PALACO Core Alpha — Crate Manifest: crates/palaco-runtime/Cargo.toml
+// Runtime Crate Definition
+// ============================================================================
+
+[package]
+name = "palaco-runtime"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "PALACO Core Alpha — Citadel Runtime & Release Seal"
+
+[dependencies]
+palaco-citadel = { workspace = true }
+
+```
+```rust
+// ============================================================================
+// PALACO Core Alpha — Workspace Library Root: crates/palaco-runtime/src/lib.rs
+// Runtime Initialization & Constitutional Bootstrapper
+// ============================================================================
+
+use palaco_citadel::{
+    CitadelEngine,
+    Command,
+    AuthorityToken,
+    EvidenceBundle,
+    ExecutionRequest,
+    ExecutionReceipt,
+    GovernancePolicy,
+    ExecutionError,
+};
+
+pub struct PalacoRuntime {
+    engine: CitadelEngine,
+}
+
+impl PalacoRuntime {
+    pub fn new() -> Self {
+        Self {
+            engine: CitadelEngine::new(),
+        }
+    }
+
+    pub fn boot(&self) -> Result<(), ExecutionError> {
+        if !GovernancePolicy::verify_invariants() {
+            return Err(ExecutionError::RuntimeBypassAttempted);
+        }
+        Ok(())
+    }
+
+    pub fn dispatch(
+        &self,
+        payload: String,
+        target: String,
+        token_id: String,
+        issuer: String,
+        signature: String,
+        evidence_id: String,
+        hash: String,
+        timestamp: u64,
+    ) -> Result<ExecutionReceipt, ExecutionError> {
+        let request = ExecutionRequest {
+            command: Command {
+                payload,
+                target_subsystem: target,
+            },
+            authority: AuthorityToken {
+                token_id,
+                issuer,
+                signature,
+            },
+            evidence: EvidenceBundle {
+                evidence_id,
+                hash,
+                timestamp,
+            },
+        };
+
+        self.engine.process_execution(request)
+    }
+}
+
+impl Default for PalacoRuntime {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+```
+```rust
+// ============================================================================
+// PALACO Core Alpha — Binary Entrypoint: crates/palaco-runtime/src/main.rs
+// Citadel Execution & Release Manifest Sealing
+// ============================================================================
+
+use palaco_runtime::PalacoRuntime;
+
+fn main() {
+    println!("==============================================================");
+    println!("PALACO Core Alpha — Citadel Runtime Bootstrapping Initiated");
+    println!("==============================================================");
+
+    let runtime = PalacoRuntime::new();
+
+    match runtime.boot() {
+        Ok(()) => println!("[INFO] Constitutional governance invariants verified successfully."),
+        Err(e) => {
+            eprintln!("[CRITICAL] Runtime boot failed: {}", e);
+            std::process::exit(1);
+        }
+    }
+
+    let dispatch_result = runtime.dispatch(
+        "SEAL_RELEASE_MANIFEST".to_string(),
+        "palaco-runtime".to_string(),
+        "auth-trias-genesis-01".to_string(),
+        "TRIAS-Governance-Core".to_string(),
+        "sig_constitutional_verified_2026".to_string(),
+        "ev-oracle-genesis-01".to_string(),
+        "da39a3ee5e6b4b0d3255bfef95601890afd80709".to_string(),
+        1753363200,
+    );
+
+    match dispatch_result {
+        Ok(receipt) => {
+            println!("[SUCCESS] Execution Receipt Sealed:");
+            println!("  -> Execution ID : {}", receipt.execution_id);
+            println!("  -> Authority ID : {}", receipt.authority_id);
+            println!("  -> Evidence Hash: {}", receipt.evidence_hash);
+            println!("  -> Timestamp    : {}", receipt.timestamp);
+            println!("  -> Outcome      : {:?}", receipt.result);
+            println!("==============================================================");
+            println!("PALACO Core Alpha — Workspace Sealed & Operational.");
+            println!("==============================================================");
+        }
+        Err(e) => {
+            eprintln!("[ERROR] Dispatch rejected by zero-trust boundary: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+```
