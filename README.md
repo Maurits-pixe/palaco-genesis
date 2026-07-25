@@ -285,3 +285,142 @@ De formele blauwdruk. Hier worden de logische interfaces, systeemgrenzen en de s
 git show 49e2a3982cbc50dbcf38bc51b8f75fb8f86f3360
 
 git show --stat 49e2a3982cbc50dbcf38bc51b8f75fb8f86f3360
+
+```rust
+// ============================================================================
+// PALACO CORE CANONICAL — CRATE MANIFEST: crates/palaco-trias/Cargo.toml
+// ============================================================================
+
+[package]
+name = "palaco-trias"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "PALACO Core — Constitutional governance, policy evaluation, and authority engine."
+lints.workspace = true
+
+[dependencies]
+palaco-types = { workspace = true }
+palaco-oracle = { workspace = true }
+
+```
+
+```rust
+// ============================================================================
+// PALACO CORE CANONICAL — LIBRARY ROOT: crates/palaco-trias/src/lib.rs
+// ============================================================================
+
+//! # Palaco TRIAS
+//!
+//! Constitutional Governance Layer.
+//!
+//! Responsibilities:
+//! - policy evaluation
+//! - authority decisions
+//! - authorization token creation
+//!
+//! TRIAS never executes commands.
+//! TRIAS never analyzes telemetry.
+
+#![forbid(unsafe_code)]
+#![warn(missing_docs)]
+
+pub mod authority;
+pub mod decision;
+pub mod policy;
+
+pub use authority::AuthorityToken;
+pub use decision::GovernanceDecision;
+pub use policy::PolicyEngine;
+
+```
+
+```rust
+// ============================================================================
+// PALACO CORE CANONICAL — MODULE: crates/palaco-trias/src/authority.rs
+// ============================================================================
+
+use palaco_types::prelude::*;
+
+/// Immutable authorization artifact.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthorityToken {
+    pub authority_id: AuthorityId,
+    pub evidence_id: EvidenceId,
+    pub issuer: InstitutionalId,
+    pub signature: String,
+}
+
+impl AuthorityToken {
+    /// Create a new immutable authorization token.
+    pub fn new(
+        authority_id: AuthorityId,
+        evidence_id: EvidenceId,
+        issuer: impl Into<String>,
+        signature: impl Into<String>,
+    ) -> Self {
+        Self {
+            authority_id,
+            evidence_id,
+            issuer: InstitutionalId::new(issuer),
+            signature: signature.into(),
+        }
+    }
+}
+
+```
+
+```rust
+// ============================================================================
+// PALACO CORE CANONICAL — MODULE: crates/palaco-trias/src/decision.rs
+// ============================================================================
+
+/// Constitutional decision outcome from policy evaluation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GovernanceDecision {
+    /// Policy conditions met; execution authorized.
+    Approved,
+    /// Policy conditions violated; execution blocked.
+    Rejected,
+    /// Human or secondary oversight required before authorization.
+    RequiresReview,
+}
+
+```
+
+```rust
+// ============================================================================
+// PALACO CORE CANONICAL — MODULE: crates/palaco-trias/src/policy.rs
+// ============================================================================
+
+use palaco_oracle::OracleReport;
+use palaco_types::prelude::*;
+use crate::{AuthorityToken, GovernanceDecision};
+
+/// Constitutional policy engine.
+pub struct PolicyEngine;
+
+impl PolicyEngine {
+    /// Evaluate an Oracle report against institutional governance policy (WS-002 / WS-003).
+    pub fn evaluate(
+        authority_id: AuthorityId,
+        evidence_id: EvidenceId,
+        report: &OracleReport,
+    ) -> (GovernanceDecision, Option<AuthorityToken>) {
+        if report.confidence < 0.95 {
+            return (GovernanceDecision::Rejected, None);
+        }
+
+        let token = AuthorityToken::new(
+            authority_id,
+            evidence_id,
+            "TRIAS-Governance-Core",
+            format!("sig_trias_verified_{}", report.evidence_hash.value()),
+        );
+
+        (GovernanceDecision::Approved, Some(token))
+    }
+}
+
+```
