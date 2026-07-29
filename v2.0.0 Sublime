@@ -4752,3 +4752,187 @@ De volgende logische stap is om ieder blok uit Niveau 2 uit te werken tot een vo
 PASS+
 
 Deze top-down decompositie maakt het mogelijk om voor elke laag afzonderlijke validatie- en acceptatiecriteria te definiëren en later een volledige traceerbaarheid van PCS-009 → PAS-014 → PIS-026 → Rust-implementatie → tests → release te behouden. Daarmee ontstaat een solide basis voor de verdere uitwerking van PALACO.
+
+crates/palaco-foundation/
+
+src/
+
+├── lib.rs
+
+├── identity/
+│   ├── mod.rs
+│   ├── node.rs
+│   ├── event.rs
+│   ├── request.rs
+│   ├── policy.rs
+│   └── capability.rs
+
+├── types/
+│   ├── mod.rs
+│   ├── hash.rs
+│   ├── timestamp.rs
+│   ├── version.rs
+│   └── payload.rs
+
+├── traits/
+│   ├── mod.rs
+│   ├── identifiable.rs
+│   ├── validatable.rs
+│   ├── immutable.rs
+│   └── evidence.rs
+
+├── evidence/
+│   ├── mod.rs
+│   └── record.rs
+
+├── validation/
+│   ├── mod.rs
+│   └── invariant.rs
+
+├── errors/
+│   ├── mod.rs
+│   └── foundation.rs
+
+└── prelude.rs
+
+use uuid::Uuid;
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash
+)]
+pub struct NodeId(
+    pub Uuid
+);
+
+impl NodeId {
+
+    pub fn new() -> Self {
+
+        Self(
+            Uuid::new_v4()
+        )
+    }
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash
+)]
+pub struct EventId(
+    pub Uuid
+);
+
+use sha2::{
+    Digest,
+    Sha256
+};
+
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq
+)]
+pub struct Hash256(
+    [u8;32]
+);
+
+
+impl Hash256 {
+
+    pub fn digest(
+        data:&[u8]
+    )->Self {
+
+        let mut hasher =
+            Sha256::new();
+
+        hasher.update(data);
+
+        let result =
+            hasher.finalize();
+
+        let mut bytes =
+            [0u8;32];
+
+        bytes.copy_from_slice(
+            &result
+        );
+
+        Self(bytes)
+    }
+}
+
+pub struct Timestamp {
+
+    value: i64,
+}
+
+pub struct Version {
+
+    pub major:u32,
+
+    pub minor:u32,
+
+    pub patch:u32,
+}
+
+pub trait Identifiable {
+
+    type Id;
+
+    fn id(
+        &self
+    )->Self::Id;
+}
+
+pub trait Validatable {
+
+    fn validate(
+        &self
+    )
+    -> Result<(), ValidationError>;
+}
+
+pub trait Immutable {}
+
+pub trait EvidenceProducer {
+
+    fn evidence(
+        &self
+    )
+    -> Evidence;
+}
+
+pub struct Evidence {
+
+    pub id: EvidenceId,
+
+    pub source: NodeId,
+
+    pub timestamp: Timestamp,
+
+    pub digest: Hash256,
+
+    pub version: Version,
+}
+
+pub enum InvariantViolation {
+
+    EmptyIdentifier,
+
+    InvalidHash,
+
+    InvalidVersion,
+
+    StateViolation,
+}
