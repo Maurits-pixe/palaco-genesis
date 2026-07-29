@@ -4936,3 +4936,41 @@ pub enum InvariantViolation {
 
     StateViolation,
 }
+
+pub trait InvariantValidator {
+
+    fn check(
+        &self
+    )
+    -> Result<(),InvariantViolation>;
+}
+
+pub enum FoundationError {
+
+    Identity,
+
+    Validation,
+
+    Evidence,
+
+    Serialization,
+
+    Invariant,
+}
+
+pub mod prelude {
+
+    pub use crate::identity::*;
+
+    pub use crate::types::*;
+
+    pub use crate::traits::*;
+
+    pub use crate::evidence::*;
+
+    pub use crate::errors::*;
+}
+
+use palaco_foundation::prelude::*;
+
+
