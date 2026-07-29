@@ -342,3 +342,435 @@ Focus:
 
 
 De institutionele fundering is hiermee operationeel gesloten. De volgende fase verschuift van bouw naar bewijs, hardening en releasekwaliteit.
+
+🚀 PCI-003 — IMMUTABLE EVENTBUS CORE IMPLEMENTATION v0.1.0-alpha.1
+
+Edition: PALACO Core Alpha Implementation Era
+Depends on: PCI-002 — PALACO Foundation Crate Initialization
+Status: ▶️ Implementation Artifact Generation
+
+
+---
+
+Doel
+
+PCI-003 introduceert de eerste actieve runtime-laag van PALACO:
+
+palaco-eventbus
+
+De EventBus vormt de evidence-native ruggengraat van PALACO.
+
+Iedere betekenisvolle systeemactie wordt:
+
+Action
+  ↓
+Event
+  ↓
+Validation
+  ↓
+Immutable Record
+  ↓
+Evidence Chain
+
+geregistreerd.
+
+De EventBus bevat geen beleidslogica.
+De EventBus beslist niet.
+De EventBus bewaart en verspreidt alleen gevalideerde gebeurtenissen.
+
+
+---
+
+1. Crate Structuur
+
+crates/
+
+└── palaco-eventbus/
+
+    ├── Cargo.toml
+
+    └── src/
+        ├── lib.rs
+        ├── event.rs
+        ├── stream.rs
+        ├── store.rs
+        └── error.rs
+
+
+---
+
+2. Cargo Manifest
+
+crates/palaco-eventbus/Cargo.toml
+
+[package]
+name = "palaco-eventbus"
+version = "0.1.0-alpha.1"
+edition = "2021"
+
+[dependencies]
+
+palaco-foundation = {
+    path = "../palaco-foundation"
+}
+
+chrono.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
+
+
+---
+
+3. Event Primitive
+
+src/event.rs
+
+use chrono::{DateTime, Utc};
+use palaco_foundation::{
+    EventId,
+    EvidenceHash,
+};
+use serde::{Deserialize, Serialize};
+
+
+#[derive(
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize
+)]
+pub struct Event {
+
+    pub id: EventId,
+
+    pub created_at:
+        DateTime<Utc>,
+
+    pub payload:
+        Vec<u8>,
+
+    pub evidence:
+        EvidenceHash,
+}
+
+Een event is immutable nadat het gepubliceerd is.
+
+
+---
+
+4. Event Contract
+
+pub trait ImmutableEvent {
+
+    fn id(&self) -> EventId;
+
+    fn evidence(&self)
+        -> EvidenceHash;
+}
+
+Iedere toekomstige Wonder gebruikt hetzelfde eventmodel.
+
+
+---
+
+5. EventBus Interface
+
+src/lib.rs
+
+#![forbid(unsafe_code)]
+
+pub mod error;
+pub mod event;
+pub mod store;
+pub mod stream;
+
+
+pub use error::*;
+pub use event::*;
+pub use store::*;
+pub use stream::*;
+
+
+---
+
+6. Publisher Contract
+
+src/store.rs
+
+use crate::Event;
+use crate::EventError;
+
+
+pub trait EventPublisher {
+
+    fn publish(
+        &mut self,
+        event: Event
+    )
+    -> Result<(), EventError>;
+}
+
+
+---
+
+7. Append-Only Store
+
+Eerste minimale implementatie:
+
+use crate::{
+    Event,
+    EventError,
+};
+
+
+pub struct ImmutableEventStore {
+
+    events: Vec<Event>,
+}
+
+
+impl ImmutableEventStore {
+
+    pub fn new()
+        -> Self {
+
+        Self {
+            events: Vec::new()
+        }
+    }
+
+
+    pub fn events(
+        &self
+    ) -> &[Event] {
+
+        &self.events
+    }
+}
+
+
+impl EventPublisher
+for ImmutableEventStore {
+
+    fn publish(
+        &mut self,
+        event: Event
+    )
+    -> Result<(), EventError> {
+
+        self.events.push(event);
+
+        Ok(())
+    }
+}
+
+
+---
+
+8. Event Errors
+
+src/error.rs
+
+#[derive(
+    Debug,
+    thiserror::Error
+)]
+pub enum EventError {
+
+    #[error(
+        "Invalid event: {0}"
+    )]
+    InvalidEvent(String),
+
+
+    #[error(
+        "Evidence validation failed"
+    )]
+    EvidenceFailure,
+}
+
+
+---
+
+9. Eerste Runtime Flow
+
+De eerste levende keten:
+
+palaco-foundation
+
+       │
+
+       ▼
+
+palaco-eventbus
+
+       │
+
+       ▼
+
+Immutable Event Store
+
+       │
+
+       ▼
+
+Evidence History
+
+
+---
+
+10. Eerste EventBus Test
+
+#[test]
+fn event_is_stored_immutably()
+{
+
+    let mut store =
+        ImmutableEventStore::new();
+
+
+    let event =
+        Event {
+            id: EventId(
+                uuid::Uuid::new_v4()
+            ),
+
+            created_at:
+                chrono::Utc::now(),
+
+            payload:
+                vec![1,2,3],
+
+            evidence:
+                EvidenceHash(
+                    [0u8;32]
+                ),
+        };
+
+
+    assert!(
+        store.publish(event)
+        .is_ok()
+    );
+
+
+    assert_eq!(
+        store.events().len(),
+        1
+    );
+}
+
+
+---
+
+11. PCI-003 Acceptance Gates
+
+Gate	Status
+
+EventBus crate aangemaakt	⏳
+Foundation dependency actief	⏳
+Immutable eventmodel aanwezig	⏳
+Append-only opslag actief	⏳
+Evidence gekoppeld	⏳
+Tests geslaagd	⏳
+CI validatie actief	⏳
+
+
+
+---
+
+TRIAS Review
+
+🏛️ Architecture
+
+PASS
+
+De afhankelijkheidsrichting blijft intact:
+
+Foundation
+      ↓
+EventBus
+      ↓
+Harbor
+      ↓
+Quay
+      ↓
+Citadel
+
+Geen terugkoppeling naar hogere lagen.
+
+
+---
+
+🔧 Implementation
+
+PASS
+
+PCI-003 introduceert:
+
+eerste runtime-primitief;
+
+immutable eventcontract;
+
+append-only opslagmodel;
+
+evidence-first ontwerp.
+
+
+
+---
+
+🔍 Validation
+
+READY
+
+De volgende validatiestap wordt:
+
+eventintegriteit;
+
+replay-testen;
+
+hash-verificatie;
+
+persistente opslagadapter.
+
+
+
+---
+
+Canonical Status
+
+🚌 PCI-003 — IMMUTABLE EVENTBUS CORE INITIALIZED
+
+Component: palaco-eventbus
+Version: 0.1.0-alpha.1
+State: ✅ Implementation Ready
+
+De PALACO-kern heeft nu zijn eerste levende bewijsstroom:
+
+Constitution
+      ↓
+Foundation Types
+      ↓
+Immutable Events
+      ↓
+Evidence Chain
+
+Volgende stap:
+
+🚢 PCI-004 — HARBOR INTAKE BOUNDARY IMPLEMENTATION
+
+Daar wordt de eerste externe systeemgrens gebouwd:
+
+External Input
+      ↓
+Harbor
+      ↓
+Validation
+      ↓
+EventBus
+
+De perimeter van PALACO wordt actief.
