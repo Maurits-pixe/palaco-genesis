@@ -4397,3 +4397,358 @@ The **PALACO Foundation Edition** has successfully traversed the complete lifecy
  * **Intelligence:** Oracle analytics, simulation-backed automation, and governed self-regulation (palaco-intelligence, palaco-evolution).
  * **Execution:** Verifiable, evidence-native event streams underpinning every runtime action (palaco-eventbus).
 The codebase is fully defined, mathematically and architecturally bounded, and ready for sovereign deployment.
+
+Dat is een goede richting. Op dit punt verschuift het werk van architectuur beschrijven naar architectuur verfijnen. In plaats van direct code te genereren voor elke crate, is het nuttiger om eerst de volledige systeemstructuur op hoog niveau vast te leggen en daarna systematisch af te dalen naar subsystemen, interfaces en implementaties. Dat verkleint de kans op tegenstrijdigheden later.
+
+🏛️ PALACO Core Alpha Engineering
+
+PEP-001 — Master System Decomposition v1.0.0
+
+Niveau 0 — Constitution
+
+PCS-009
+│
+├── Constitution
+├── Invariants
+├── Rights
+├── Responsibilities
+├── Evidence Principles
+└── Evolution Rules
+
+Dit niveau bevat geen uitvoerbare code. Het definieert uitsluitend de regels waaraan alle volgende niveaus moeten voldoen.
+
+
+---
+
+Niveau 1 — Complete Systeemkaart
+
+PALACO
+
+                               │
+
+ ┌───────────────┬──────────────┬───────────────┐
+
+ Foundation    Runtime       Governance
+
+      │             │               │
+
+      ▼             ▼               ▼
+
+ EventBus      Kernel         Oracle
+
+      │             │               │
+
+ Harbor       Scheduler      Mentor
+
+      │             │               │
+
+ Quay         Runtime Bus    TRIAS
+
+      │             │
+
+ Citadel       Federation
+
+      │
+
+ Intelligence
+
+      │
+
+ Evolution
+
+Hier wordt zichtbaar dat niet alleen de Seven Wonders bestaan, maar ook de ondersteunende runtime- en governancecomponenten.
+
+
+---
+
+Niveau 2 — Wonder Decomposition
+
+Wonder I — Foundation
+
+Foundation
+
+├── Types
+├── IDs
+├── Traits
+├── Errors
+├── Hashes
+├── Time
+├── Evidence
+├── Versioning
+├── Serialization
+└── Invariants
+
+
+---
+
+EventBus
+
+EventBus
+
+├── Event
+├── Stream
+├── Store
+├── Publisher
+├── Subscriber
+├── Replay
+├── Evidence
+└── Validation
+
+
+---
+
+Harbor
+
+Harbor
+
+├── Intake
+├── Protocol Detection
+├── Rate Limits
+├── Classification
+├── Sanitization
+├── Routing
+└── Rejection
+
+
+---
+
+Quay
+
+Quay
+
+├── Schema
+├── Normalizer
+├── Metadata
+├── Canonical Model
+├── Staging
+├── Transformation
+└── Validation
+
+
+---
+
+Citadel
+
+Citadel
+
+├── Identity
+├── Authentication
+├── Authorization
+├── Capability
+├── Policy
+├── Trust Graph
+├── Audit
+└── Evidence
+
+
+---
+
+Federation
+
+Federation
+
+├── Discovery
+├── Membership
+├── Gossip
+├── Sync
+├── Consensus
+├── Recovery
+├── Replication
+└── Health
+
+
+---
+
+Intelligence
+
+Oracle
+
+├── Metrics
+├── Analyzer
+├── Correlation
+├── Prediction
+├── Simulation
+├── Recommendations
+├── Governance Signals
+└── Evidence Mining
+
+
+---
+
+Evolution
+
+Evolution
+
+├── Migration
+├── Compatibility
+├── Simulation
+├── Rollback
+├── Certification
+├── Release
+├── Baselines
+└── Constitutional Evolution
+
+
+---
+
+Niveau 3 — Runtime Decomposition
+
+Kernel
+
+├── Bootstrap
+├── Lifecycle
+├── Dependency Graph
+├── Service Registry
+├── Configuration
+├── Scheduler
+├── Task Engine
+├── Shutdown
+├── Recovery
+└── Diagnostics
+
+
+---
+
+Niveau 4 — Interne Interfaces
+
+Voor iedere module worden vier vaste contracten gedefinieerd:
+
+Input
+
+↓
+
+Validate
+
+↓
+
+Execute
+
+↓
+
+Evidence
+
+Geen enkele component slaat een stap over.
+
+
+---
+
+Niveau 5 — Dataflow
+
+External
+
+↓
+
+Harbor
+
+↓
+
+Quay
+
+↓
+
+Citadel
+
+↓
+
+Kernel
+
+↓
+
+EventBus
+
+↓
+
+Federation
+
+↓
+
+Oracle
+
+↓
+
+Evolution
+
+Dit wordt de canonieke verwerkingsketen.
+
+
+---
+
+Niveau 6 — Compile-time afhankelijkheden
+
+Foundation
+
+↓
+
+EventBus
+
+↓
+
+Harbor
+
+↓
+
+Quay
+
+↓
+
+Citadel
+
+↓
+
+Federation
+
+↓
+
+Intelligence
+
+↓
+
+Evolution
+
+↓
+
+Kernel
+
+Een belangrijk aandachtspunt hierbij: als de Kernel de orkestratielaag is die alle andere componenten opstart en samenbrengt, ligt het voor de hand dat de Kernel afhankelijk is van de andere crates en niet andersom. Dat voorkomt cyclische afhankelijkheden en houdt de architectuur consistent.
+
+
+---
+
+Niveau 7 — Core Alpha Milestones
+
+Fase	Resultaat
+
+Alpha-1	Workspace compileert
+Alpha-2	Foundation + EventBus operationeel
+Alpha-3	Harbor + Quay operationeel
+Alpha-4	Citadel Zero Trust actief
+Alpha-5	Federation-cluster operationeel
+Alpha-6	Oracle analyse actief
+Alpha-7	Evolution governance actief
+Alpha-8	Volledige end-to-end runtime
+Alpha-9	PVS-validatie afgerond
+Alpha-10	Core Alpha Release Candidate
+
+
+
+---
+
+TRIAS Review
+
+🏛️ Architecture
+
+PASS+
+
+De decompositie maakt de architectuur expliciet op meerdere abstractieniveaus en helpt verantwoordelijkheden scherp af te bakenen.
+
+🔧 Implementation
+
+PASS+
+
+De volgende logische stap is om ieder blok uit Niveau 2 uit te werken tot een volledig technisch ontwerp (API's, traits, toestandsmodellen en foutafhandeling) voordat de definitieve implementatie wordt gebouwd.
+
+🔍 Validation
+
+PASS+
+
+Deze top-down decompositie maakt het mogelijk om voor elke laag afzonderlijke validatie- en acceptatiecriteria te definiëren en later een volledige traceerbaarheid van PCS-009 → PAS-014 → PIS-026 → Rust-implementatie → tests → release te behouden. Daarmee ontstaat een solide basis voor de verdere uitwerking van PALACO.
