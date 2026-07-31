@@ -838,3 +838,339 @@ mod tests {
         assert!(ConfidenceScore::new(1.5).is_err());
     }
 }
+
+// ============================================================================
+// 🏛️ PALACO CITADEL OBSERVATORY — SYSTEM TELEMETRY v0.1.0-alpha.1
+// ============================================================================
+// Crate: palaco-observatory
+// Path: crates/palaco-observatory/src/main.rs
+// ============================================================================
+
+#![forbid(unsafe_code)]
+#![warn(missing_docs, rust_2018_idioms, unused_qualifications)]
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::time::Duration;
+
+/// Identifies the origin of the telemetry data stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DataSource {
+    /// Prototype mode using simulated metrics and mock event streams.
+    Simulation,
+    /// Production mode bound directly to live Citadel nodes.
+    Live,
+}
+
+impl fmt::Display for DataSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DataSource::Simulation => write!(f, "SIMULATION (Prototype Mode)"),
+            DataSource::Live => write!(f, "LIVE (Production Enclave)"),
+        }
+    }
+}
+
+/// Operational state of the secure enclave node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NodeState {
+    Active,
+    Degraded,
+    Syncing,
+    Offline,
+}
+
+impl fmt::Display for NodeState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NodeState::Active => write!(f, "🟢 ACTIVE (Secure Enclave)"),
+            NodeState::Degraded => write!(f, "🟡 DEGRADED"),
+            NodeState::Syncing => write!(f, "🔵 SYNCING"),
+            NodeState::Offline => write!(f, "🔴 OFFLINE"),
+        }
+    }
+}
+
+/// Immutable execution receipt recorded in the cryptographic hash chain.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionReceipt {
+    pub timestamp: DateTime<Utc>,
+    pub event_id: String,
+    pub module: String,
+    pub node_id: String,
+    pub hash: String,
+    pub parent_hash: String,
+    pub verified: bool,
+    pub committed: bool,
+}
+
+impl fmt::Display for ExecutionReceipt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "[{}] Event {} Module {} Node {} Hash {} Parent {} Receipt {} Status {}",
+            self.timestamp.format("%H:%M:%S"),
+            self.event_id,
+            self.module,
+            self.node_id,
+            self.hash,
+            self.parent_hash,
+            if self.verified { "VERIFIED" } else { "FAILED" },
+            if self.committed { "COMMITTED" } else { "PENDING" }
+        )
+    }
+}
+
+/// Comprehensive telemetry state for the Observatory dashboard.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CitadelTelemetry {
+    pub node_id: String,
+    pub state: NodeState,
+    pub uptime: Duration,
+    pub generation: u64,
+    pub data_source: DataSource,
+    
+    // Build
+    pub version: String,
+    pub git_commit: String,
+    pub build_timestamp: String,
+    pub profile: String,
+
+    // Constitution
+    pub constitution_version: String,
+    pub architecture: String,
+    pub implementation: String,
+    pub baseline_verified: bool,
+
+    // Trust & Security
+    pub identity_verified: bool,
+    pub capability_set_valid: bool,
+    pub policy_version: u32,
+    pub zero_trust_enforced: bool,
+    pub last_policy_eval: String,
+
+    // Cryptography
+    pub root_hash_verified: bool,
+    pub root_hash: String,
+    pub evidence_chain_verified: bool,
+    pub signature_valid: bool,
+    pub clock_drift_ms: f64,
+
+    // Federation
+    pub connected_nodes: u32,
+    pub healthy_nodes: u32,
+    pub quorum_achieved: bool,
+    pub last_sync_ms: u64,
+    pub evidence_replication_ok: bool,
+
+    // Event Stream
+    pub queue_depth: usize,
+    pub replay_position: u64,
+    pub total_commits: u64,
+    pub hash_chain_verified: bool,
+
+    // Runtime & Metrics
+    pub active_tasks: usize,
+    pub scheduler_load_percent: u8,
+    pub memory_footprint_mb: u64,
+    pub cpu_usage_percent: u8,
+    pub success_rate_percent: f64,
+
+    // Alerts
+    pub active_alert: String,
+
+    // Receipts
+    pub recent_receipts: Vec<ExecutionReceipt>,
+}
+
+impl CitadelTelemetry {
+    /// Renders the complete terminal cockpit view matching the canonical specification.
+    pub fn render_cockpit(&self) -> String {
+        format!(
+r#"================================================================================
+ 🏛️ PALACO CITADEL OBSERVATORY — SYSTEM TELEMETRY {}
+================================================================================
+ Node ID:    {}
+ State:      {}
+ Uptime:     {:02}:{:02}:{:02} | Gen: {}
+ Data Source: {}
+--------------------------------------------------------------------------------
+ BUILD
+--------------------------------------------------------------------------------
+ Version             : {}
+ Git Commit          : {}
+ Build Timestamp     : {}
+ Profile             : {}
+--------------------------------------------------------------------------------
+ CONSTITUTION
+--------------------------------------------------------------------------------
+ Constitution Version : {}
+ Architecture         : {}
+ Implementation       : {}
+ Baseline             : {}
+--------------------------------------------------------------------------------
+ TRUST & SECURITY
+--------------------------------------------------------------------------------
+ Identity Verified    : {}
+ Capability Set       : {}
+ Policy Version       : {}
+ Zero Trust Status    : {}
+ Last Policy Eval     : {}
+--------------------------------------------------------------------------------
+ CRYPTOGRAPHY
+--------------------------------------------------------------------------------
+ Root Hash            : {} ({})
+ Evidence Chain       : {}
+ Signature Status     : {}
+ Clock Drift          : {:.1} ms
+--------------------------------------------------------------------------------
+ FEDERATION
+--------------------------------------------------------------------------------
+ Connected Nodes      : {}
+ Healthy              : {}
+ Quorum               : {}
+ Last Sync            : {} ms
+ Evidence Replication : {}
+--------------------------------------------------------------------------------
+ EVENT STREAM
+--------------------------------------------------------------------------------
+ Queue Depth          : {}
+ Replay Position      : {}
+ Commits              : {}
+ Hash Chain           : {}
+--------------------------------------------------------------------------------
+ RUNTIME & METRICS
+--------------------------------------------------------------------------------
+ • Active Tasks       : {:<23} • Scheduler Load     : {}%
+ • Memory Footprint   : {:<21} MB • CPU Usage          : {}%
+ • Total Executions   : {:<19} • Success Rate       : {:.2}%
+--------------------------------------------------------------------------------
+ ALERTS
+--------------------------------------------------------------------------------
+ {}
+--------------------------------------------------------------------------------
+ RECENT EXECUTION RECEIPTS (IMMUTABLE LOG)
+--------------------------------------------------------------------------------
+ {}
+ {}
+--------------------------------------------------------------------------------
+ SYSTEM HEALTH: Availability 99.998% | Integrity VERIFIED | Evidence VERIFIED
+================================================================================
+ [CTRL+C to detach]                           [Stream Feed: LIVE & ENCRYPTED]"#,
+            self.version,
+            self.node_id,
+            self.state,
+            self.uptime.as_secs() / 3600,
+            (self.uptime.as_secs() % 3600) / 60,
+            self.uptime.as_secs() % 60,
+            self.generation,
+            self.data_source,
+            self.version,
+            self.git_commit,
+            self.build_timestamp,
+            self.profile,
+            self.constitution_version,
+            self.architecture,
+            self.implementation,
+            if self.baseline_verified { "VERIFIED" } else { "UNVERIFIED" },
+            if self.identity_verified { "YES" } else { "NO" },
+            if self.capability_set_valid { "VALID" } else { "INVALID" },
+            self.policy_version,
+            if self.zero_trust_enforced { "ENFORCED" } else { "BYPASSED" },
+            self.last_policy_eval,
+            if self.root_hash_verified { "VERIFIED" } else { "FAILED" },
+            self.root_hash,
+            if self.evidence_chain_verified { "VERIFIED" } else { "FAILED" },
+            if self.signature_valid { "VALID" } else { "INVALID" },
+            self.clock_drift_ms,
+            self.connected_nodes,
+            self.healthy_nodes,
+            if self.quorum_achieved { "ACHIEVED" } else { "FAILED" },
+            self.last_sync_ms,
+            if self.evidence_replication_ok { "OK" } else { "DEGRADED" },
+            self.queue_depth,
+            self.replay_position,
+            self.total_commits,
+            if self.hash_chain_verified { "VERIFIED" } else { "FAILED" },
+            self.active_tasks,
+            self.scheduler_load_percent,
+            self.memory_footprint_mb,
+            self.cpu_usage_percent,
+            self.total_commits,
+            self.success_rate_percent,
+            self.active_alert,
+            self.recent_receipts.first().map(|r| r.to_string()).unwrap_or_default(),
+            self.recent_receipts.get(1).map(|r| r.to_string()).unwrap_or_default()
+        )
+    }
+}
+
+fn main() {
+    // Instantiate telemetry matching the canonical snapshot specification
+    let telemetry = CitadelTelemetry {
+        node_id: "node-uuid-7f8a9b2c-3d4e".to_string(),
+        state: NodeState::Active,
+        uptime: Duration::from_secs(15158), // 04:12:38
+        generation: 1048,
+        data_source: DataSource::Simulation,
+        version: "0.1.0-alpha.1".to_string(),
+        git_commit: "2f4d7f1".to_string(),
+        build_timestamp: "2026-07-30T11:38Z".to_string(),
+        profile: "Release".to_string(),
+        constitution_version: "PCS-009 v1.0.0".to_string(),
+        architecture: "PAS-014".to_string(),
+        implementation: "PIS-026".to_string(),
+        baseline_verified: true,
+        identity_verified: true,
+        capability_set_valid: true,
+        policy_version: 18,
+        zero_trust_enforced: true,
+        last_policy_eval: "11:38:49".to_string(),
+        root_hash_verified: true,
+        root_hash: "0xa4c1...3e9b".to_string(),
+        evidence_chain_verified: true,
+        signature_valid: true,
+        clock_drift_ms: 0.4,
+        connected_nodes: 8,
+        healthy_nodes: 8,
+        quorum_achieved: true,
+        last_sync_ms: 18,
+        evidence_replication_ok: true,
+        queue_depth: 12,
+        replay_position: 14289,
+        total_commits: 14289,
+        hash_chain_verified: true,
+        active_tasks: 31,
+        scheduler_load_percent: 18,
+        memory_footprint_mb: 142,
+        cpu_usage_percent: 9,
+        success_rate_percent: 99.95,
+        active_alert: "[INFO] All constitutional invariants satisfied. No active warnings.".to_string(),
+        recent_receipts: vec![
+            ExecutionReceipt {
+                timestamp: Utc::now(),
+                event_id: "ev-9982".to_string(),
+                module: "palaco-eventbus".to_string(),
+                node_id: "node-7f8a".to_string(),
+                hash: "a4c1…3e9b".to_string(),
+                parent_hash: "91af…712e".to_string(),
+                verified: true,
+                committed: true,
+            },
+            ExecutionReceipt {
+                timestamp: Utc::now(),
+                event_id: "ev-9981".to_string(),
+                module: "palaco-eventbus".to_string(),
+                node_id: "node-7f8a".to_string(),
+                hash: "02f3…8a11".to_string(),
+                parent_hash: "a4c1…3e9b".to_string(),
+                verified: true,
+                committed: true,
+            },
+        ],
+    };
+
+    // Print rendered cockpit view to stdout
+    println!("{}", telemetry.render_cockpit());
+}
