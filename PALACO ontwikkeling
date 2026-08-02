@@ -1,3 +1,289 @@
+Hieronder staat een concrete implementatie van de belangrijkste verbeteringen. Deze wijzigingen blijven compatibel met de bestaande architectuur en bereiden palaco-observatory voor op Foundation v1.0.
+1. Uitgebreide TelemetryError
+use std::time::Duration;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TelemetryError {
+    RuntimeUnavailable(String),
+    InvalidSnapshot(String),
+    Timeout(Duration),
+    FederationUnavailable(String),
+    Serialization(String),
+}
+
+impl std::fmt::Display for TelemetryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::RuntimeUnavailable(msg) =>
+                write!(f, "Runtime unavailable: {}", msg),
+
+            Self::InvalidSnapshot(msg) =>
+                write!(f, "Invalid snapshot: {}", msg),
+
+            Self::Timeout(d) =>
+                write!(f, "Telemetry timeout after {:?}", d),
+
+            Self::FederationUnavailable(msg) =>
+                write!(f, "Federation unavailable: {}", msg),
+
+            Self::Serialization(msg) =>
+                write!(f, "Serialization error: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for TelemetryError {}
+2. Snapshot-validatie
+impl RawTelemetrySnapshot {
+
+    pub fn validate(&self) -> Result<(), TelemetryError> {
+
+        if self.version.trim().is_empty() {
+            return Err(TelemetryError::InvalidSnapshot(
+                "version missing".into(),
+            ));
+        }
+
+        if self.git_commit.trim().is_empty() {
+            return Err(TelemetryError::InvalidSnapshot(
+                "git commit missing".into(),
+            ));
+        }
+
+        if self.snapshot_timestamp < self.build_timestamp {
+            return Err(TelemetryError::InvalidSnapshot(
+                "snapshot older than build".into(),
+            ));
+        }
+
+        Ok(())
+    }
+}
+3. CachedSnapshot
+use chrono::{DateTime, Utc};
+
+pub struct CachedSnapshot {
+
+    pub snapshot: RawTelemetrySnapshot,
+
+    pub received_at: DateTime<Utc>,
+}
+Service gebruikt voortaan:
+cache: Arc<RwLock<Option<CachedSnapshot>>>,
+4. Polling zonder drift
+let mut ticker = tokio::time::interval(self.poll_interval);
+
+loop {
+
+    ticker.tick().await;
+
+    match provider.fetch_snapshot().await {
+
+        Ok(snapshot) => {
+
+            snapshot.validate()?;
+
+            let mut cache = cache.write().await;
+
+            *cache = Some(CachedSnapshot {
+
+                snapshot,
+
+                received_at: Utc::now(),
+
+            });
+
+        }
+
+        Err(e) => {
+
+            tracing::warn!("Telemetry polling failed: {}", e);
+
+        }
+
+    }
+
+}
+5. Graceful shutdown
+use tokio_util::sync::CancellationToken;
+
+pub struct TelemetryService {
+
+    provider: Arc<dyn TelemetryProvider>,
+
+    cache: Arc<RwLock<Option<CachedSnapshot>>>,
+
+    cancel: CancellationToken,
+
+    poll_interval: Duration,
+}
+Tijdens polling:
+tokio::select! {
+
+    _ = cancel.cancelled() => {
+
+        break;
+
+    }
+
+    _ = ticker.tick() => {
+
+        ...
+
+    }
+
+}
+Stoppen:
+pub fn shutdown(&self) {
+
+    self.cancel.cancel();
+
+}
+6. Identity behouden
+pub struct ObservatoryModel {
+
+    pub snapshot_id: SnapshotId,
+
+    pub node_id: NodeId,
+
+    pub snapshot_timestamp: DateTime<Utc>,
+
+    pub build: BuildInfo,
+
+    pub crypto: CryptoStatus,
+
+    pub alerts: Vec<AlertEntry>,
+
+    pub data_source: DataSource,
+}
+Conversie:
+snapshot_id: raw.snapshot_id,
+
+node_id: raw.node_id,
+7. Alert-conversie
+impl From<RawAlert> for AlertEntry {
+
+    fn from(alert: RawAlert) -> Self {
+
+        Self {
+
+            level: match alert.level {
+
+                RawAlertLevel::Info => AlertLevel::Info,
+
+                RawAlertLevel::Warning => AlertLevel::Warning,
+
+                RawAlertLevel::Error => AlertLevel::Error,
+
+            },
+
+            message: alert.message,
+
+            timestamp: alert.timestamp,
+
+        }
+
+    }
+
+}
+Daarna:
+let alerts = raw
+    .active_alerts
+    .into_iter()
+    .map(AlertEntry::from)
+    .collect();
+8. Uitgebreidere status
+pub enum StatusFlag {
+
+    Unknown,
+
+    Pending,
+
+    Verified,
+
+    Valid,
+
+    Warning,
+
+    Expired,
+
+    Offline,
+
+    Error,
+}
+9. Health Score
+pub struct HealthScore {
+
+    pub score: u8,
+}
+
+impl HealthScore {
+
+    pub fn calculate(model: &ObservatoryModel) -> Self {
+
+        let mut score = 100;
+
+        if model.crypto.root_hash == StatusFlag::Error {
+            score -= 40;
+        }
+
+        if model.crypto.evidence_chain == StatusFlag::Error {
+            score -= 40;
+        }
+
+        if model.crypto.signature_status == StatusFlag::Error {
+            score -= 20;
+        }
+
+        Self { score }
+    }
+}
+10. Telemetry Metrics
+pub struct RuntimeMetrics {
+
+    pub active_alerts: usize,
+
+    pub clock_drift_ms: u128,
+
+    pub snapshot_age_ms: u128,
+}
+11. Conversie uitbreiden
+ObservatoryModel krijgt extra velden:
+pub health: HealthScore,
+
+pub runtime: RuntimeMetrics,
+waardoor de UI geen eigen berekeningen meer hoeft uit te voeren.
+12. Aanvullende tests
+Voeg minimaal de volgende testgevallen toe:
+✅ validate_success
+✅ validate_missing_version
+✅ validate_missing_commit
+✅ unknown_status_conversion
+✅ prototype_conversion
+✅ simulation_conversion
+✅ live_conversion
+✅ empty_alert_list
+✅ multiple_alerts
+✅ health_score_100
+✅ health_score_60
+✅ health_score_20
+✅ cache_updates_after_poll
+✅ shutdown_stops_polling
+✅ provider_timeout
+✅ provider_error
+✅ concurrent_readers
+✅ snapshot_age_calculation
+Resultaat
+Met deze aanvullingen beschikt palaco-observatory over een productiegerichte basis met:
+robuuste validatie van snapshots;
+contextuele foutafhandeling;
+driftvrije polling;
+gecontroleerde achtergrondtaken;
+behoud van node- en snapshotidentiteit;
+rijkere status- en health-informatie;
+runtime-metrics voor dashboards;
+een aanzienlijk uitgebreidere testdekking.
+Deze set vormt een passend fundament voor de volgende implementatiefase binnen de PALACO Foundation Edition v1.0.
 
 🏛️ **TRIAS Review Accepted — Architecture: PASS++ / Engineering: PASS++**
 De aanvullingen wat betreft **Build-identiteit**, **Cryptografische status** (inclusief clock drift en root hash), **Alerts** en de expliciete data-bron aanduiding (Data Source: SIMULATION vs LIVE) perfectioneren de operationele cockpit. Hiermee is de specificatie van palaco-observatory volledig waterdicht en klaar voor implementatie in de Rust-workspace.
