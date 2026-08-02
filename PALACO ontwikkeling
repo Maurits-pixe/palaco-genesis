@@ -1,3 +1,612 @@
+```rust
+// palaco-foundation/src/telemetry.rs
+
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use std::time::Duration;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SnapshotId(pub uuid::Uuid);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NodeId(pub uuid::Uuid);
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClockDrift(pub Duration);
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TelemetryError {
+    RuntimeUnavailable(String),
+    InvalidSnapshot(String),
+    Timeout(Duration),
+    FederationUnavailable(String),
+    Serialization(String),
+}
+
+impl std::error::Error for TelemetryError {}
+
+impl std::fmt::Display for TelemetryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::RuntimeUnavailable(msg) => write!(f, "Runtime unavailable: {}", msg),
+            Self::InvalidSnapshot(msg) => write!(f, "Invalid snapshot: {}", msg),
+            Self::Timeout(d) => write!(f, "Telemetry timeout after {:?}", d),
+            Self::FederationUnavailable(msg) => write!(f, "Federation unavailable: {}", msg),
+            Self::Serialization(msg) => write!(f, "Serialization error: {}", msg),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RawTelemetrySnapshot {
+    pub snapshot_id: SnapshotId,
+    pub node_id: NodeId,
+    pub snapshot_timestamp: DateTime<Utc>,
+    pub version: String,
+    pub git_commit: String,
+    pub build_timestamp: DateTime<Utc>,
+    pub profile: String,
+    pub root_hash_verified: Option<bool>,
+    pub evidence_chain_verified: Option<bool>,
+    pub signature_valid: Option<bool>,
+    pub clock_drift: ClockDrift,
+    pub active_alerts: Vec<RawAlert>,
+    pub source_mode: RawSourceMode,
+}
+
+impl RawTelemetrySnapshot {
+    pub fn validate(&self) -> Result<(), TelemetryError> {
+        if self.version.trim().is_empty() {
+            return Err(TelemetryError::InvalidSnapshot("version missing".into()));
+        }
+
+        if self.git_commit.trim().is_empty() {
+            return Err(TelemetryError::InvalidSnapshot("git commit missing".into()));
+        }
+
+        if self.snapshot_timestamp < self.build_timestamp {
+            return Err(TelemetryError::InvalidSnapshot("snapshot older than build".into()));
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RawAlert {
+    pub level: RawAlertLevel,
+    pub message: String,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RawAlertLevel {
+    Info,
+    Warning,
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RawSourceMode {
+    Prototype,
+    Simulation,
+    Live,
+}
+
+#[async_trait]
+pub trait TelemetryProvider: Send + Sync {
+    async fn fetch_snapshot(&self) -> Result<RawTelemetrySnapshot, TelemetryError>;
+}
+
+```
+```rust
+// palaco-observatory/src/service.rs
+
+use std::sync::Arc;
+use std::time::Duration;
+use chrono::{DateTime, Utc};
+use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
+
+use palaco_foundation::telemetry::{RawTelemetrySnapshot, TelemetryError, TelemetryProvider};
+
+#[derive(Debug, Clone)]
+pub struct CachedSnapshot {
+    pub snapshot: RawTelemetrySnapshot,
+    pub received_at: DateTime<Utc>,
+}
+
+pub struct TelemetryService {
+    provider: Arc<dyn TelemetryProvider>,
+    cache: Arc<RwLock<Option<CachedSnapshot>>>,
+    cancel: CancellationToken,
+    poll_interval: Duration,
+}
+
+impl TelemetryService {
+    pub fn new(provider: Arc<dyn TelemetryProvider>, poll_interval: Duration) -> Self {
+        Self {
+            provider,
+            cache: Arc::new(RwLock::new(None)),
+            cancel: CancellationToken::new(),
+            poll_interval,
+        }
+    }
+
+    pub fn start_background_polling(&self) {
+        let provider = Arc::clone(&self.provider);
+        let cache = Arc::clone(&self.cache);
+        let cancel = self.cancel.clone();
+        let mut ticker = tokio::time::interval(self.poll_interval);
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => {
+                        break;
+                    }
+                    _ = ticker.tick() => {
+                        match provider.fetch_snapshot().await {
+                            Ok(snapshot) => {
+                                if let Err(e) = snapshot.validate() {
+                                    tracing::warn!("Telemetry validation failed: {}", e);
+                                    continue;
+                                }
+
+                                let mut guard = cache.write().await;
+                                *guard = Some(CachedSnapshot {
+                                    snapshot,
+                                    received_at: Utc::now(),
+                                });
+                            }
+                            Err(e) => {
+                                tracing::warn!("Telemetry polling failed: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    pub fn shutdown(&self) {
+        self.cancel.cancel();
+    }
+
+    pub async fn get_latest_cached_snapshot(&self) -> Result<CachedSnapshot, TelemetryError> {
+        let guard = self.cache.read().await;
+        guard.clone().ok_or_else(|| TelemetryError::RuntimeUnavailable("No cached snapshot available".into()))
+    }
+}
+
+```
+```rust
+// palaco-observatory/src/model.rs
+
+use chrono::{DateTime, Utc};
+use palaco_foundation::telemetry::{
+    ClockDrift, NodeId, RawAlert, RawAlertLevel, RawSourceMode, RawTelemetrySnapshot, SnapshotId,
+};
+
+#[derive(Debug, Clone)]
+pub struct BuildInfo {
+    pub version: String,
+    pub git_commit: String,
+    pub build_timestamp: DateTime<Utc>,
+    pub profile: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StatusFlag {
+    Unknown,
+    Pending,
+    Verified,
+    Valid,
+    Warning,
+    Expired,
+    Offline,
+    Error,
+}
+
+#[derive(Debug, Clone)]
+pub struct CryptoStatus {
+    pub root_hash: StatusFlag,
+    pub evidence_chain: StatusFlag,
+    pub signature_status: StatusFlag,
+    pub clock_drift: ClockDrift,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AlertLevel {
+    Info,
+    Warning,
+    Error,
+}
+
+#[derive(Debug, Clone)]
+pub struct AlertEntry {
+    pub level: AlertLevel,
+    pub message: String,
+    pub timestamp: DateTime<Utc>,
+}
+
+impl From<RawAlert> for AlertEntry {
+    fn from(alert: RawAlert) -> Self {
+        Self {
+            level: match alert.level {
+                RawAlertLevel::Info => AlertLevel::Info,
+                RawAlertLevel::Warning => AlertLevel::Warning,
+                RawAlertLevel::Error => AlertLevel::Error,
+            },
+            message: alert.message,
+            timestamp: alert.timestamp,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DataSource {
+    Prototype,
+    Simulation,
+    Live,
+}
+
+#[derive(Debug, Clone)]
+pub struct HealthScore {
+    pub score: u8,
+}
+
+impl HealthScore {
+    pub fn calculate(model: &ObservatoryModel) -> Self {
+        let mut score = 100;
+
+        if model.crypto.root_hash == StatusFlag::Error {
+            score = score.saturating_sub(40);
+        }
+
+        if model.crypto.evidence_chain == StatusFlag::Error {
+            score = score.saturating_sub(40);
+        }
+
+        if model.crypto.signature_status == StatusFlag::Error {
+            score = score.saturating_sub(20);
+        }
+
+        Self { score }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RuntimeMetrics {
+    pub active_alerts: usize,
+    pub clock_drift_ms: u128,
+    pub snapshot_age_ms: u128,
+}
+
+#[derive(Debug, Clone)]
+pub struct ObservatoryModel {
+    pub snapshot_id: SnapshotId,
+    pub node_id: NodeId,
+    pub snapshot_timestamp: DateTime<Utc>,
+    pub build: BuildInfo,
+    pub crypto: CryptoStatus,
+    pub alerts: Vec<AlertEntry>,
+    pub data_source: DataSource,
+    pub health: HealthScore,
+    pub runtime: RuntimeMetrics,
+}
+
+impl ObservatoryModel {
+    pub fn from_raw(raw: RawTelemetrySnapshot, received_at: DateTime<Utc>) -> Self {
+        let root_hash = match raw.root_hash_verified {
+            Some(true) => StatusFlag::Verified,
+            Some(false) => StatusFlag::Error,
+            None => StatusFlag::Unknown,
+        };
+
+        let evidence_chain = match raw.evidence_chain_verified {
+            Some(true) => StatusFlag::Verified,
+            Some(false) => StatusFlag::Error,
+            None => StatusFlag::Unknown,
+        };
+
+        let signature_status = match raw.signature_valid {
+            Some(true) => StatusFlag::Valid,
+            Some(false) => StatusFlag::Error,
+            None => StatusFlag::Unknown,
+        };
+
+        let crypto = CryptoStatus {
+            root_hash,
+            evidence_chain,
+            signature_status,
+            clock_drift: raw.clock_drift,
+        };
+
+        let alerts: Vec<AlertEntry> = raw
+            .active_alerts
+            .into_iter()
+            .map(AlertEntry::from)
+            .collect();
+
+        let data_source = match raw.source_mode {
+            RawSourceMode::Prototype => DataSource::Prototype,
+            RawSourceMode::Simulation => DataSource::Simulation,
+            RawSourceMode::Live => DataSource::Live,
+        };
+
+        let active_alerts_count = alerts.len();
+        let clock_drift_ms = raw.clock_drift.0.as_millis();
+        let snapshot_age_ms = Utc::now()
+            .signed_duration_since(raw.snapshot_timestamp)
+            .num_milliseconds()
+            .max(0) as u128;
+
+        let runtime = RuntimeMetrics {
+            active_alerts: active_alerts_count,
+            clock_drift_ms,
+            snapshot_age_ms,
+        };
+
+        let mut model = Self {
+            snapshot_id: raw.snapshot_id,
+            node_id: raw.node_id,
+            snapshot_timestamp: raw.snapshot_timestamp,
+            build: BuildInfo {
+                version: raw.version,
+                git_commit: raw.git_commit,
+                build_timestamp: raw.build_timestamp,
+                profile: raw.profile,
+            },
+            crypto,
+            alerts,
+            data_source,
+            health: HealthScore { score: 100 },
+            runtime,
+        };
+
+        model.health = HealthScore::calculate(&model);
+        model
+    }
+}
+
+```
+```rust
+// palaco-observatory/tests/observatory_tests.rs
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{Duration as ChronoDuration, Utc};
+    use palaco_foundation::telemetry::{
+        ClockDrift, NodeId, RawAlert, RawAlertLevel, RawSourceMode, RawTelemetrySnapshot, SnapshotId, TelemetryError, TelemetryProvider
+    };
+    use std::sync::Arc;
+    use std::time::Duration;
+    use async_trait::async_trait;
+    use tokio::sync::RwLock;
+
+    struct MockProvider {
+        snapshot: Result<RawTelemetrySnapshot, TelemetryError>,
+    }
+
+    #[async_trait]
+    impl TelemetryProvider for MockProvider {
+        async fn fetch_snapshot(&self) -> Result<RawTelemetrySnapshot, TelemetryError> {
+            self.snapshot.clone()
+        }
+    }
+
+    fn sample_raw_snapshot() -> RawTelemetrySnapshot {
+        RawTelemetrySnapshot {
+            snapshot_id: SnapshotId(uuid::Uuid::new_v4()),
+            node_id: NodeId(uuid::Uuid::new_v4()),
+            snapshot_timestamp: Utc::now(),
+            version: "1.0.0-RC1".to_string(),
+            git_commit: "abc1234".to_string(),
+            build_timestamp: Utc::now() - ChronoDuration::minutes(5),
+            profile: "Release".to_string(),
+            root_hash_verified: Some(true),
+            evidence_chain_verified: Some(true),
+            signature_valid: Some(true),
+            clock_drift: ClockDrift(Duration::from_millis(2)),
+            active_alerts: vec![],
+            source_mode: RawSourceMode::Live,
+        }
+    }
+
+    #[test]
+    fn validate_success() {
+        let raw = sample_raw_snapshot();
+        assert!(raw.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_missing_version() {
+        let mut raw = sample_raw_snapshot();
+        raw.version = "   ".to_string();
+        let err = raw.validate().unwrap_err();
+        assert!(matches!(err, TelemetryError::InvalidSnapshot(_)));
+    }
+
+    #[test]
+    fn validate_missing_commit() {
+        let mut raw = sample_raw_snapshot();
+        raw.git_commit = "".to_string();
+        let err = raw.validate().unwrap_err();
+        assert!(matches!(err, TelemetryError::InvalidSnapshot(_)));
+    }
+
+    #[test]
+    fn unknown_status_conversion() {
+        let mut raw = sample_raw_snapshot();
+        raw.root_hash_verified = None;
+        let model = ObservatoryModel::from_raw(raw, Utc::now());
+        assert_eq!(model.crypto.root_hash, StatusFlag::Unknown);
+    }
+
+    #[test]
+    fn prototype_conversion() {
+        let mut raw = sample_raw_snapshot();
+        raw.source_mode = RawSourceMode::Prototype;
+        let model = ObservatoryModel::from_raw(raw, Utc::now());
+        assert_eq!(model.data_source, DataSource::Prototype);
+    }
+
+    #[test]
+    fn simulation_conversion() {
+        let mut raw = sample_raw_snapshot();
+        raw.source_mode = RawSourceMode::Simulation;
+        let model = ObservatoryModel::from_raw(raw, Utc::now());
+        assert_eq!(model.data_source, DataSource::Simulation);
+    }
+
+    #[test]
+    fn live_conversion() {
+        let mut raw = sample_raw_snapshot();
+        raw.source_mode = RawSourceMode::Live;
+        let model = ObservatoryModel::from_raw(raw, Utc::now());
+        assert_eq!(model.data_source, DataSource::Live);
+    }
+
+    #[test]
+    fn empty_alert_list() {
+        let raw = sample_raw_snapshot();
+        let model = ObservatoryModel::from_raw(raw, Utc::now());
+        assert!(model.alerts.is_empty());
+        assert_eq!(model.runtime.active_alerts, 0);
+    }
+
+    #[test]
+    fn multiple_alerts() {
+        let mut raw = sample_raw_snapshot();
+        raw.active_alerts = vec![
+            RawAlert { level: RawAlertLevel::Info, message: "Info message".into(), timestamp: Utc::now() },
+            RawAlert { level: RawAlertLevel::Warning, message: "Warn message".into(), timestamp: Utc::now() },
+        ];
+        let model = ObservatoryModel::from_raw(raw, Utc::now());
+        assert_eq!(model.alerts.len(), 2);
+        assert_eq!(model.alerts[0].level, AlertLevel::Info);
+        assert_eq!(model.alerts[1].level, AlertLevel::Warning);
+        assert_eq!(model.runtime.active_alerts, 2);
+    }
+
+    #[test]
+    fn health_score_100() {
+        let raw = sample_raw_snapshot();
+        let model = ObservatoryModel::from_raw(raw, Utc::now());
+        assert_eq!(model.health.score, 100);
+    }
+
+    #[test]
+    fn health_score_60() {
+        let mut raw = sample_raw_snapshot();
+        raw.root_hash_verified = Some(false);
+        let model = ObservatoryModel::from_raw(raw, Utc::now());
+        assert_eq!(model.health.score, 60);
+    }
+
+    #[test]
+    fn health_score_20() {
+        let mut raw = sample_raw_snapshot();
+        raw.root_hash_verified = Some(false);
+        raw.evidence_chain_verified = Some(false);
+        let model = ObservatoryModel::from_raw(raw, Utc::now());
+        assert_eq!(model.health.score, 20);
+    }
+
+    #[tokio::test]
+    async fn cache_updates_after_poll() {
+        let raw = sample_raw_snapshot();
+        let provider = Arc::new(MockProvider { snapshot: Ok(raw) });
+        let service = TelemetryService::new(provider, Duration::from_millis(50));
+
+        service.start_background_polling();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let cached = service.get_latest_cached_snapshot().await;
+        assert!(cached.is_ok());
+
+        service.shutdown();
+    }
+
+    #[tokio::test]
+    async fn shutdown_stops_polling() {
+        let provider = Arc::new(MockProvider { snapshot: Ok(sample_raw_snapshot()) });
+        let service = TelemetryService::new(provider, Duration::from_millis(10));
+
+        service.start_background_polling();
+        service.shutdown();
+        tokio::time::sleep(Duration::from_millis(30)).await;
+
+        let cached = service.get_latest_cached_snapshot().await;
+        assert!(cached.is_err());
+    }
+
+    #[tokio::test]
+    async fn provider_timeout() {
+        let provider = Arc::new(MockProvider {
+            snapshot: Err(TelemetryError::Timeout(Duration::from_secs(5))),
+        });
+        let service = TelemetryService::new(provider, Duration::from_millis(10));
+
+        service.start_background_polling();
+        tokio::time::sleep(Duration::from_millis(30)).await;
+
+        let cached = service.get_latest_cached_snapshot().await;
+        assert!(cached.is_err());
+        service.shutdown();
+    }
+
+    #[tokio::test]
+    async fn provider_error() {
+        let provider = Arc::new(MockProvider {
+            snapshot: Err(TelemetryError::RuntimeUnavailable("Offline".into())),
+        });
+        let service = TelemetryService::new(provider, Duration::from_millis(10));
+
+        service.start_background_polling();
+        tokio::time::sleep(Duration::from_millis(30)).await;
+
+        let cached = service.get_latest_cached_snapshot().await;
+        assert!(cached.is_err());
+        service.shutdown();
+    }
+
+    #[tokio::test]
+    async fn concurrent_readers() {
+        let raw = sample_raw_snapshot();
+        let provider = Arc::new(MockProvider { snapshot: Ok(raw) });
+        let service = Arc::new(TelemetryService::new(provider, Duration::from_millis(50)));
+
+        service.start_background_polling();
+        tokio::time::sleep(Duration::from_millis(80)).await;
+
+        let mut handles = vec![];
+        for _ in 0..10 {
+            let s_clone = Arc::clone(&service);
+            handles.push(tokio::spawn(async move {
+                s_clone.get_latest_cached_snapshot().await.is_ok()
+            }));
+        }
+
+        for handle in handles {
+            assert!(handle.await.unwrap());
+        }
+
+        service.shutdown();
+    }
+
+    #[test]
+    fn snapshot_age_calculation() {
+        let mut raw = sample_raw_snapshot();
+        raw.snapshot_timestamp = Utc::now() - ChronoDuration::milliseconds(500);
+        let model = ObservatoryModel::from_raw(raw, Utc::now());
+        assert!(model.runtime.snapshot_age_ms >= 450);
+    }
+}
+
+```
 Hieronder staat een concrete implementatie van de belangrijkste verbeteringen. Deze wijzigingen blijven compatibel met de bestaande architectuur en bereiden palaco-observatory voor op Foundation v1.0.
 1. Uitgebreide TelemetryError
 use std::time::Duration;
