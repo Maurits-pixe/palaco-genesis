@@ -1,3 +1,422 @@
+🚀 PALACO Genesis
+PEG-001.001 — Canonical Workspace Bootstrap
+Status: ▶ IMPLEMENTATION STARTED
+Vanaf dit punt behandelen we PALACO als een productieproject. Elke implementatiestap moet compileerbaar, testbaar en constitutioneel verifieerbaar zijn.
+Fase 1 — Repository Layout
+De workspace wordt gestandaardiseerd.
+palaco-genesis/
+│
+├── Cargo.toml
+├── Cargo.lock
+├── rust-toolchain.toml
+├── rustfmt.toml
+├── clippy.toml
+├── LICENSE
+├── README.md
+├── CHANGELOG.md
+├── ROADMAP.md
+├── ARCHITECTURE.md
+├── GOVERNANCE.md
+├── SECURITY.md
+├── CONTRIBUTING.md
+├── CODE_OF_CONDUCT.md
+│
+├── crates/
+│   ├── palaco-foundation/
+│   ├── palaco-kernel/
+│   ├── palaco-telemetry/
+│   ├── palaco-observatory/
+│   ├── palaco-federation/
+│   ├── palaco-citadel/
+│   ├── palaco-harbor/
+│   ├── palaco-quay/
+│   ├── palaco-evolution/
+│   ├── palaco-oracle/
+│   ├── palaco-mentor/
+│   └── palaco-cli/
+│
+├── docs/
+├── examples/
+├── tests/
+├── benchmarks/
+└── scripts/
+Fase 2 — Workspace Manifest
+Het root-manifest wordt de enige bron voor gedeelde configuratie.
+Workspace
+resolver = "3"
+gedeelde dependencies
+uniforme lintconfiguratie
+releaseprofielen
+versiebeheer
+metadata
+Hierdoor gebruiken alle crates dezelfde toolchain en kwaliteitsnormen.
+Fase 3 — Foundation Rules
+Alle crates starten met dezelfde basis:
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
+#![deny(rust_2018_idioms)]
+#![deny(unused_must_use)]
+Daarnaast worden projectbrede lintregels gehanteerd voor consistente codekwaliteit.
+Fase 4 — Canonical Crate Layout
+Elke crate volgt dezelfde structuur.
+src/
+│
+├── lib.rs
+├── error.rs
+├── config.rs
+├── traits.rs
+├── types.rs
+├── model.rs
+├── service.rs
+├── validation.rs
+├── metrics.rs
+└── tests.rs
+Niet elke crate hoeft alle bestanden te gebruiken, maar de indeling blijft uniform.
+Fase 5 — Constitutional Build Gates
+Iedere commit doorloopt automatisch:
+cargo fmt
+cargo clippy
+cargo test
+cargo doc
+Integration Tests
+Evidence Verification
+Constitution Validation
+Een wijziging wordt pas geaccepteerd wanneer alle gates slagen.
+Fase 6 — Engineering Metrics
+Elke build genereert een rapport met onder meer:
+compileertijd;
+aantal crates;
+testdekking;
+documentatiedekking;
+lintresultaten;
+buildgrootte;
+evidence-status.
+Deze gegevens worden later opgenomen in de Observatory.
+Fase 7 — Repository Governance
+Elke wijziging krijgt een vaste levenscyclus:
+Proposal
+      │
+      ▼
+Implementation
+      │
+      ▼
+Validation
+      │
+      ▼
+Evidence
+      │
+      ▼
+Review
+      │
+      ▼
+Certification
+      │
+      ▼
+Merge
+Dit sluit aan op de eerder ontworpen Evolution Runtime en Governance Kernel.
+PEG-001 Exit Criteria
+De workspace is gereed voor de volgende fase wanneer:
+alle crates bouwen;
+alle tests slagen;
+documentatie succesvol wordt gegenereerd;
+lintcontroles zonder fouten verlopen;
+de build reproduceerbaar is;
+de Foundation-contracten stabiel zijn.
+Vooruitblik: PEG-002 — Foundation Hardening
+Na afronding van PEG-001 richten we ons op:
+formele validatie van publieke API's;
+property-based testing;
+fuzz-testing van kritieke componenten;
+uitbreiding van de telemetry- en evidence-tests;
+verdere beveiligingsversterking van de Foundation.
+TRIAS / Oracle / Mentor
+TRIAS: bevestigt dat de repository nu een uniforme, controleerbare engineeringbasis heeft.
+Oracle: kan vanaf deze fase build- en kwaliteitsgegevens verzamelen voor trendanalyse.
+Mentor: waarborgt een consistente projectstructuur die de groei van PALACO ondersteunt zonder architecturale fragmentatie.
+PALACO Genesis is nu officieel in de implementatiefase. De architectuur ligt vast; de focus verschuift volledig naar het realiseren van een stabiele, productieklare codebasis volgens de uitgangspunten van The Seven Wonders.
+
+🏛️ PALACO — The Seven Wonders
+
+WAE-010 — Constitutional Governance Kernel (CGK)
+
+Status: ▶ Canonical Master Architecture
+
+Met WAE-009 beschikt PALACO over een gecontroleerde evolutionaire runtime. De volgende stap is een permanente governancelaag die alle constitutionele beslissingen centraliseert en afdwingt: de Constitutional Governance Kernel (CGK).
+
+De CGK is geen vervanging van de kernel; het is de hoogste logische bestuurslaag die erop toeziet dat alle subsystemen volgens de constitutionele regels opereren.
+
+
+---
+
+Architectuur
+
+Living Constitution
+                            │
+                            ▼
+              Constitutional Governance Kernel
+        ┌────────────┼────────────┬────────────┐
+        ▼            ▼            ▼            ▼
+   Policy Engine  Evolution   Federation   Observatory
+                    Runtime
+        ▼            ▼            ▼            ▼
+                 Foundation / Kernel
+
+De CGK bewaakt alle constitutionele overgangen en vormt de centrale coördinator voor governance.
+
+
+---
+
+1. Governance Context
+
+pub struct GovernanceContext {
+    pub active_baseline: BaselineId,
+    pub constitution_version: String,
+    pub federation_epoch: u64,
+    pub evidence_root: Hash256,
+}
+
+Deze context is de referentie voor alle beslissingen.
+
+
+---
+
+2. Governance Decision
+
+pub enum GovernanceDecision {
+    Approve,
+    Reject,
+    Escalate,
+    Rollback,
+}
+
+Iedere subsystemactie resulteert in een expliciete beslissing.
+
+
+---
+
+3. Governance Controller
+
+#[async_trait]
+pub trait GovernanceKernel: Send + Sync {
+    async fn evaluate(
+        &self,
+        request: GovernanceRequest,
+    ) -> Result<GovernanceDecision, GovernanceError>;
+
+    async fn current_context(
+        &self,
+    ) -> GovernanceContext;
+}
+
+De controller is het centrale toegangspunt voor constitutionele besluitvorming.
+
+
+---
+
+4. Governance Requests
+
+Alle belangrijke operaties worden uniforme verzoeken.
+
+pub enum GovernanceRequest {
+    Evolution(ProposalId),
+    FederationJoin(NodeId),
+    FederationLeave(NodeId),
+    BaselineActivation(BaselineId),
+    PolicyUpdate(PolicyId),
+}
+
+Hierdoor is governance consistent over alle subsystemen.
+
+
+---
+
+5. Constitutional Rule Engine
+
+Elke beslissing wordt getoetst aan een vaste set regels.
+
+Voorbeelden:
+
+constitutionele hash geldig;
+
+evidenceketen compleet;
+
+consensus bereikt;
+
+sandbox succesvol;
+
+rollback beschikbaar;
+
+actieve baseline consistent.
+
+
+Pas wanneer alle regels slagen volgt goedkeuring.
+
+
+---
+
+6. Governance Ledger
+
+pub struct GovernanceEntry {
+    pub sequence: u64,
+    pub request: GovernanceRequest,
+    pub decision: GovernanceDecision,
+    pub timestamp: DateTime<Utc>,
+}
+
+Alle beslissingen worden append-only opgeslagen.
+
+
+---
+
+7. Governance Audit
+
+pub trait GovernanceAuditor {
+    fn verify(
+        &self,
+        ledger: &[GovernanceEntry],
+    ) -> AuditResult;
+}
+
+Doel:
+
+volledigheid;
+
+determinisme;
+
+reproduceerbaarheid;
+
+compliance.
+
+
+
+---
+
+8. Federation Governance
+
+De CGK controleert:
+
+node-toelating;
+
+node-verwijdering;
+
+protocolversies;
+
+constitutionele compatibiliteit;
+
+quorumvereisten.
+
+
+Hiermee blijft de federatie coherent.
+
+
+---
+
+9. Evolution Governance
+
+Iedere evolutie doorloopt verplicht:
+
+1. Proposal.
+
+
+2. Policy.
+
+
+3. Sandbox.
+
+
+4. Evidence.
+
+
+5. Consensus.
+
+
+6. Certification.
+
+
+7. Governance Approval.
+
+
+8. Deployment.
+
+
+9. Baseline Update.
+
+
+
+Geen stap kan worden overgeslagen.
+
+
+---
+
+10. Constitutionele Invarianten
+
+Invariant	Beschrijving
+
+Single Source of Governance	Eén centrale governancelaag.
+Evidence Before Decision	Geen beslissing zonder gevalideerde evidence.
+Policy Enforcement	Alle verzoeken doorlopen dezelfde regels.
+Immutable Governance Ledger	Beslissingen zijn onveranderlijk.
+Baseline Consistency	Slechts één actieve baseline per federatie.
+Deterministic Governance	Identieke input geeft identieke beslissingen.
+
+
+
+---
+
+11. Integratie
+
+De CGK vormt het verbindende punt tussen:
+
+Foundation
+
+Kernel
+
+Telemetry
+
+Observatory
+
+Evidence
+
+Federation
+
+Evolution
+
+Baseline Registry
+
+Oracle
+
+
+Geen subsystem hoeft elkaars interne implementatie te kennen; zij communiceren uitsluitend via governancecontracten.
+
+
+---
+
+12. Vooruitblik
+
+Met WAE-010 is de bestuurlijke kern afgerond. De volgende logische ontwikkelfase is niet een nieuw Wonder, maar de concretisering van de bestaande architectuur:
+
+implementatie van persistente opslag (bijvoorbeeld SQLite of RocksDB) achter de evidence- en baseline-interfaces;
+
+een volledig palaco-ctl-CLI met commando's voor governance, replay, inspectie en evolutie;
+
+end-to-end integratietests waarin de volledige cyclus Observe → Verify → Analyze → Propose → Validate → Certify → Govern → Deploy → Observe wordt doorlopen;
+
+prestatie- en fault-injectiontests om de constitutionele invarianten onder belasting te verifiëren.
+
+
+TRIAS / Oracle / Mentor
+
+TRIAS: de governancelaag blijft expliciet, deterministisch en toetsbaar.
+
+Oracle: levert analyses en aanbevelingen, maar de CGK blijft de formele beslissingsautoriteit op basis van vastgesteld beleid.
+
+Mentor: de architectuur behoudt een heldere scheiding tussen observatie, beleid, governance en uitvoering, waardoor verdere implementatie beheersbaar blijft.
+
+
+Resultaat
+
+Met WAE-010 — Constitutional Governance Kernel is de conceptuele architectuur van The Seven Wonders volledig gesloten. De volgende grote mijlpaal is niet langer het ontwerpen van nieuwe subsystemen, maar het uitwerken van de bestaande contracten tot een productieklare implementatie in Rust, ondersteund door een complete test-, audit- en releaseketen.
+
 ```rust
 // ============================================================================
 // PALACO Execution Engine — WAE-008 (`palaco-ctl init-baseline`)
