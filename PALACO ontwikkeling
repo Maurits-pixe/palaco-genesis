@@ -1,3 +1,841 @@
+🏛️ PIS-030 — Constitutional Operations Dashboard
+
+Status: ▶ Canonical Foundation Implementation
+Wonder VI — The Intelligence Layer
+
+Met PIS-029 beschikt PALACO over een constitutionele federatie. PIS-030 introduceert de operationele laag: een dashboard dat niet alleen visualiseert, maar ook de constitutionele toestand van het gehele systeem continu beoordeelt.
+
+
+---
+
+Architectuur
+
+Federation Observatory
+                           │
+                           ▼
+              Constitutional Event Pipeline
+                           │
+                           ▼
+               Evidence & History Engine
+                           │
+                           ▼
+                 Oracle Intelligence Layer
+                           │
+                           ▼
+          Constitutional Operations Dashboard
+
+Het dashboard is een read-only observatielaag. Het mag geen constitutionele toestand wijzigen; alle informatie is afgeleid uit gevalideerde telemetry en evidence.
+
+
+---
+
+1. Dashboard State
+
+#[derive(Debug, Clone)]
+pub struct DashboardState {
+    pub generated_at: DateTime<Utc>,
+    pub federation: FederationDashboard,
+    pub runtime: RuntimeStatistics,
+    pub evidence: EvidenceMetrics,
+    pub health: ConstitutionalHealth,
+    pub active_alerts: Vec<FederationAlert>,
+}
+
+Dit vormt de complete toestand van het dashboard.
+
+
+---
+
+2. Dashboard Service
+
+#[async_trait]
+pub trait DashboardService: Send + Sync {
+    async fn current_state(
+        &self,
+    ) -> Result<DashboardState, TelemetryError>;
+
+    async fn subscribe(
+        &self,
+    ) -> Result<
+        tokio::sync::broadcast::Receiver<DashboardState>,
+        TelemetryError,
+    >;
+}
+
+Hiermee ontvangen dashboards realtime updates.
+
+
+---
+
+3. Trend Analysis
+
+pub struct TrendReport {
+    pub observation_window: Duration,
+    pub average_health_score: f32,
+    pub alerts_per_hour: f32,
+    pub average_clock_drift_ms: u128,
+}
+
+Oracle kan hiermee trends signaleren in plaats van alleen actuele waarden.
+
+
+---
+
+4. Evidence Status
+
+pub enum EvidenceStatus {
+    Verified,
+    Verifying,
+    Warning,
+    Invalid,
+}
+
+Iedere node krijgt een expliciete bewijsstatus.
+
+
+---
+
+5. Constitutional Indicators
+
+pub struct ConstitutionalIndicators {
+    pub evidence_integrity: bool,
+    pub federation_consensus: bool,
+    pub synchronization_ok: bool,
+    pub runtime_available: bool,
+}
+
+Deze indicatoren geven in één oogopslag de kerngezondheid van het systeem weer.
+
+
+---
+
+6. Operations Timeline
+
+pub struct TimelineEvent {
+    pub timestamp: DateTime<Utc>,
+    pub node: NodeId,
+    pub description: String,
+}
+
+De tijdlijn ondersteunt:
+
+alerts;
+
+evidence-updates;
+
+node-registraties;
+
+replay;
+
+audits.
+
+
+
+---
+
+7. Dashboard Snapshot
+
+pub struct DashboardSnapshot {
+    pub sequence: u64,
+    pub state: DashboardState,
+}
+
+Hiermee kan de dashboardtoestand zelf worden opgeslagen en gereproduceerd.
+
+
+---
+
+8. Oracle Recommendation Engine
+
+pub enum RecommendationSeverity {
+    Info,
+    Warning,
+    Critical,
+}
+
+pub struct Recommendation {
+    pub severity: RecommendationSeverity,
+    pub message: String,
+}
+
+Voorbeelden:
+
+node loopt achter qua versie;
+
+klokdrift overschrijdt de norm;
+
+evidenceketen verdient herverificatie;
+
+federatieconsensus is afgenomen.
+
+
+De engine adviseert; hij voert geen acties uit.
+
+
+---
+
+9. Dashboard Export
+
+#[async_trait]
+pub trait DashboardExport {
+    async fn export_json(
+        &self,
+    ) -> Result<Vec<u8>, TelemetryError>;
+
+    async fn export_markdown(
+        &self,
+    ) -> Result<Vec<u8>, TelemetryError>;
+}
+
+Dit ondersteunt operationele rapportages en auditdocumentatie.
+
+
+---
+
+10. Constitutionele Invarianten
+
+Het dashboard moet altijd voldoen aan:
+
+Invariant	Beschrijving
+
+Read-only	Wijzigt nooit systeemtoestand.
+Evidence-driven	Alle gegevens zijn afgeleid van gevalideerde evidence.
+Deterministic	Dezelfde input levert dezelfde dashboardtoestand op.
+Replayable	Elke dashboardweergave is reproduceerbaar.
+Traceable	Elke indicator is herleidbaar naar onderliggende evidence.
+
+
+
+---
+
+11. Integratietests
+
+Voeg tests toe voor:
+
+dashboardopbouw uit meerdere nodes;
+
+realtime updates via subscriptions;
+
+trendberekening;
+
+recommendation engine;
+
+export naar JSON en Markdown;
+
+replay van dashboard snapshots;
+
+verwerking van gelijktijdige alerts;
+
+consistente weergave tijdens federatie-uitval.
+
+
+
+---
+
+PALACO Foundation v1.0 Resultaat
+
+Met PIS-026 t/m PIS-030 beschikt PALACO nu over een samenhangende observability-stack:
+
+PIS-026: Foundation Telemetry Model
+
+PIS-027: Constitutional Telemetry Pipeline
+
+PIS-028: Evidence & History Engine
+
+PIS-029: Federation Observatory
+
+PIS-030: Constitutional Operations Dashboard
+
+
+Samen vormen deze een architectuur waarin telemetry, validatie, evidence, federatie en operationele observatie duidelijk gescheiden zijn, maar via expliciete contracten samenwerken.
+
+TRIAS / Oracle / Mentor
+
+TRIAS: de lagen zijn helder afgebakend, met kleine, uitbreidbare interfaces en een goede scheiding van verantwoordelijkheden.
+
+Oracle: beschikt over de benodigde gegevens om integriteit, trends en aanbevelingen te genereren op basis van gevalideerde evidence.
+
+Mentor: de observability-stack is voorbereid op verdere uitbreiding, zoals voorspellende analyses, geavanceerde replay en geautomatiseerde compliance-controles, zonder de Foundation-contracten te doorbreken.
+
+
+Dit rondt de constitutionele observability-basis voor de PALACO Foundation Edition af en vormt een solide uitgangspunt voor de volgende ontwikkelfase binnen The Seven Wonders.
+
+🏛️ PIS-029 — Federation Observatory
+
+Status: ▶ Canonical Foundation Implementation
+
+Met PIS-028 beschikt iedere PALACO-node over een constitutionele telemetry- en evidenceketen. PIS-029 voegt daar een federatielaag aan toe, zodat meerdere nodes als één coherent observatiedomein kunnen worden beheerd, gevalideerd en geanalyseerd.
+
+
+---
+
+Architectuuroverzicht
+
+PALACO Federation
+
+     Node A ─────┐
+                 │
+     Node B ─────┤
+                 │
+     Node C ─────┼──── Federation Observatory
+                 │
+     Node D ─────┤
+                 │
+     Node E ─────┘
+
+          ↓
+
+ Constitutional Aggregation Engine
+
+          ↓
+
+ Federation Evidence Graph
+
+          ↓
+
+ Oracle Intelligence Layer
+
+
+---
+
+1. Federation Snapshot
+
+#[derive(Debug, Clone)]
+pub struct FederationSnapshot {
+    pub federation_sequence: u64,
+    pub collected_at: DateTime<Utc>,
+    pub nodes: Vec<ObservatoryModel>,
+}
+
+Hiermee wordt een consistente momentopname van de volledige federatie vastgelegd.
+
+
+---
+
+2. Federation Membership
+
+#[derive(Debug, Clone)]
+pub struct FederationMember {
+    pub node_id: NodeId,
+    pub display_name: String,
+    pub version: String,
+    pub online: bool,
+    pub last_seen: DateTime<Utc>,
+}
+
+Dit vormt de constitutionele ledenadministratie van de federatie.
+
+
+---
+
+3. Federation Registry
+
+#[async_trait]
+pub trait FederationRegistry: Send + Sync {
+
+    async fn register(
+        &self,
+        member: FederationMember,
+    ) -> Result<(), TelemetryError>;
+
+    async fn unregister(
+        &self,
+        node: NodeId,
+    ) -> Result<(), TelemetryError>;
+
+    async fn members(
+        &self,
+    ) -> Result<Vec<FederationMember>, TelemetryError>;
+}
+
+
+---
+
+4. Aggregation Engine
+
+#[async_trait]
+pub trait FederationAggregator {
+
+    async fn aggregate(
+        &self,
+    ) -> Result<FederationSnapshot, TelemetryError>;
+}
+
+Verantwoordelijkheden:
+
+snapshots verzamelen;
+
+validatie uitvoeren;
+
+tijd synchroniseren;
+
+duplicaten verwijderen;
+
+één federatief beeld opbouwen.
+
+
+
+---
+
+5. Federation Health
+
+pub enum FederationHealth {
+
+    Healthy,
+
+    Degraded,
+
+    Partitioned,
+
+    Critical,
+
+}
+
+Classificatie:
+
+Healthy → alle nodes operationeel.
+
+Degraded → beperkte fouten.
+
+Partitioned → netwerksegmentatie.
+
+Critical → constitutionele integriteit in gevaar.
+
+
+
+---
+
+6. Consensus Report
+
+pub struct ConsensusReport {
+
+    pub participating_nodes: usize,
+
+    pub agreeing_nodes: usize,
+
+    pub disagreeing_nodes: usize,
+
+    pub consensus_ratio: f32,
+
+}
+
+Geeft inzicht in de mate van overeenstemming binnen de federatie.
+
+
+---
+
+7. Federation Evidence Graph
+
+pub struct FederationEvidence {
+
+    pub node: NodeId,
+
+    pub latest_evidence: uuid::Uuid,
+
+    pub chain_length: u64,
+
+}
+
+Hiermee bewaakt Oracle de integriteit van alle evidenceketens.
+
+
+---
+
+8. Clock Synchronization Report
+
+pub struct ClockSynchronization {
+
+    pub maximum_drift: Duration,
+
+    pub average_drift: Duration,
+
+    pub synchronized: bool,
+
+}
+
+Essentieel voor correcte volgordebepaling van gebeurtenissen.
+
+
+---
+
+9. Federation Alerts
+
+pub enum FederationAlert {
+
+    NodeOffline(NodeId),
+
+    EvidenceMismatch(NodeId),
+
+    VersionMismatch(NodeId),
+
+    ClockDriftExceeded(NodeId),
+
+}
+
+Deze meldingen kunnen centraal worden verwerkt en gevisualiseerd.
+
+
+---
+
+10. Federation Dashboard Model
+
+pub struct FederationDashboard {
+
+    pub federation: FederationSnapshot,
+
+    pub health: FederationHealth,
+
+    pub consensus: ConsensusReport,
+
+    pub synchronization: ClockSynchronization,
+
+    pub alerts: Vec<FederationAlert>,
+}
+
+Dit model kan rechtstreeks door een Operations Dashboard worden gebruikt.
+
+
+---
+
+11. Constitutionele Invarianten
+
+Elke federatie-implementatie moet waarborgen dat:
+
+Invariant	Beschrijving
+
+Node Identity	Iedere node heeft een unieke NodeId.
+Evidence Integrity	Evidenceketens blijven per node valide.
+Snapshot Ordering	Volgorde blijft deterministisch.
+Time Consistency	Klokafwijkingen blijven binnen de toegestane grenzen.
+Consensus Visibility	Afwijkingen worden expliciet gerapporteerd.
+Federation Isolation	Een fout in één node corrumpeert andere nodes niet.
+
+
+
+---
+
+12. Integratietests
+
+Voeg tests toe voor:
+
+registratie en uitschrijving van nodes;
+
+aggregatie van meerdere snapshots;
+
+detectie van offline nodes;
+
+version mismatch;
+
+evidence mismatch;
+
+consensusberekening;
+
+klokdriftanalyse;
+
+netwerkpartitionering;
+
+gelijktijdige updates van meerdere nodes;
+
+herstel na tijdelijke uitval.
+
+
+
+---
+
+TRIAS / Oracle / Mentor
+
+TRIAS: duidelijke contracten voor registratie, aggregatie en federatieve gezondheid.
+
+Oracle: de combinatie van evidencegrafen, consensusrapporten en kloksynchronisatie maakt geavanceerde integriteitsanalyse mogelijk.
+
+Mentor: de architectuur is voorbereid op een groeiende federatie zonder de kerninterfaces te wijzigen. Nieuwe consensus- of synchronisatiestrategieën kunnen als afzonderlijke implementaties worden toegevoegd.
+
+Resultaat
+
+Met PIS-029 evolueert PALACO van een verzameling individuele nodes naar een constitutioneel beheerde federatie. Iedere node behoudt zijn eigen identiteit en evidenceketen, terwijl Oracle een consistent, verifieerbaar totaalbeeld van de federatie kan opbouwen.
+
+De volgende stap is PIS-030 — Constitutional Operations Dashboard, waarin deze informatie wordt samengebracht in een operationeel dashboard met realtime observatie, trends, evidence-status en federatieve gezondheidsrapportages.
+
+🏛️ PIS-028 — Constitutional Evidence & History Engine
+
+Status: ▶ Canonical Foundation Implementation
+
+Met PIS-027 is een constitutionele telemetry-pipeline beschikbaar. PIS-028 voegt een onveranderlijke evidence- en historie-laag toe, zodat elke snapshot duurzaam, verifieerbaar en reproduceerbaar wordt opgeslagen.
+
+
+---
+
+1. Constitutional Evidence Record
+
+use chrono::{DateTime, Utc};
+
+#[derive(Debug, Clone)]
+pub struct EvidenceRecord {
+    pub evidence_id: uuid::Uuid,
+    pub snapshot_id: SnapshotId,
+    pub node_id: NodeId,
+    pub sequence: u64,
+    pub recorded_at: DateTime<Utc>,
+    pub previous_evidence: Option<uuid::Uuid>,
+    pub snapshot_hash: String,
+    pub signature: String,
+}
+
+Invarianten:
+
+evidence_id is uniek.
+
+sequence is strikt oplopend.
+
+previous_evidence vormt een aaneengesloten keten.
+
+snapshot_hash is onveranderlijk.
+
+
+
+---
+
+2. Immutable Evidence Store
+
+#[async_trait]
+pub trait EvidenceStore: Send + Sync {
+    async fn append(
+        &self,
+        record: EvidenceRecord,
+    ) -> Result<(), TelemetryError>;
+
+    async fn latest(
+        &self,
+    ) -> Result<Option<EvidenceRecord>, TelemetryError>;
+
+    async fn by_snapshot(
+        &self,
+        id: SnapshotId,
+    ) -> Result<Option<EvidenceRecord>, TelemetryError>;
+}
+
+Een implementatie mag records toevoegen, maar nooit wijzigen of verwijderen.
+
+
+---
+
+3. Snapshot Archive
+
+pub struct ArchivedSnapshot {
+    pub snapshot: RawTelemetrySnapshot,
+    pub evidence: EvidenceRecord,
+}
+
+Hiermee blijven snapshot en bewijs altijd gekoppeld.
+
+
+---
+
+4. History Repository
+
+#[async_trait]
+pub trait HistoryRepository: Send + Sync {
+    async fn append(
+        &self,
+        snapshot: ArchivedSnapshot,
+    ) -> Result<(), TelemetryError>;
+
+    async fn latest(
+        &self,
+    ) -> Result<Option<ArchivedSnapshot>, TelemetryError>;
+
+    async fn range(
+        &self,
+        start: u64,
+        end: u64,
+    ) -> Result<Vec<ArchivedSnapshot>, TelemetryError>;
+}
+
+
+---
+
+5. Replay Engine
+
+pub struct ReplayCursor {
+    pub position: u64,
+}
+
+#[async_trait]
+pub trait ReplayEngine {
+    async fn replay(
+        &self,
+        cursor: ReplayCursor,
+    ) -> Result<Vec<ArchivedSnapshot>, TelemetryError>;
+}
+
+Gebruik voor:
+
+regressietests;
+
+incidentanalyse;
+
+governance-audits;
+
+simulaties.
+
+
+
+---
+
+6. Integrity Verification
+
+pub trait EvidenceVerifier {
+    fn verify_chain(
+        &self,
+        chain: &[EvidenceRecord],
+    ) -> Result<(), TelemetryError>;
+}
+
+Controleert onder meer:
+
+opeenvolgende keten;
+
+ontbrekende records;
+
+dubbele records;
+
+hash-integriteit;
+
+handtekening.
+
+
+
+---
+
+7. Snapshot Index
+
+pub struct SnapshotIndex {
+    by_snapshot: HashMap<SnapshotId, u64>,
+    by_node: HashMap<NodeId, Vec<u64>>,
+}
+
+Hiermee kunnen snapshots efficiënt worden opgezocht.
+
+
+---
+
+8. Evidence Metrics
+
+pub struct EvidenceMetrics {
+    pub stored_snapshots: u64,
+    pub verified_chain_length: u64,
+    pub replay_operations: u64,
+    pub integrity_failures: u64,
+}
+
+Deze statistieken worden automatisch bijgewerkt.
+
+
+---
+
+9. Constitutional Retention Policy
+
+pub enum RetentionPolicy {
+    Permanent,
+    TimeBased(Duration),
+    Capacity(usize),
+}
+
+Voor evidence geldt standaard:
+
+Permanent
+
+Replay-cache en tijdelijke buffers kunnen een andere retentie hanteren zonder de evidence-keten aan te tasten.
+
+
+---
+
+10. Export Framework
+
+#[async_trait]
+pub trait EvidenceExport {
+    async fn export_json(&self) -> Result<Vec<u8>, TelemetryError>;
+
+    async fn export_cbor(&self) -> Result<Vec<u8>, TelemetryError>;
+
+    async fn export_protobuf(&self) -> Result<Vec<u8>, TelemetryError>;
+}
+
+Dit maakt interoperabiliteit mogelijk zonder de interne opslagstructuur te wijzigen.
+
+
+---
+
+11. Constitutional Invariants
+
+Elke implementatie moet de volgende eigenschappen waarborgen:
+
+Invariant	Beschrijving
+
+Immutability	Evidence wordt nooit gewijzigd.
+Traceability	Elke snapshot verwijst naar één evidence-record.
+Chain Integrity	Geen onderbrekingen of vertakkingen.
+Replay Determinism	Replay levert altijd dezelfde volgorde.
+Node Isolation	Evidence van nodes blijft logisch gescheiden.
+Auditability	Volledige reconstructie blijft mogelijk.
+
+
+
+---
+
+12. Integratietests
+
+Voeg onder meer de volgende tests toe:
+
+append van meerdere evidence-records;
+
+verificatie van een complete keten;
+
+detectie van een ontbrekend record;
+
+detectie van een ongeldige hash;
+
+replay over een volledig bereik;
+
+export naar JSON, CBOR en Protocol Buffers;
+
+parallelle append-operaties;
+
+indexering op SnapshotId en NodeId;
+
+langdurige opslag met grote aantallen snapshots.
+
+
+
+---
+
+TRIAS / Oracle / Mentor
+
+TRIAS: duidelijke scheiding tussen telemetry, opslag en verificatie, met expliciete interfaces.
+
+Oracle: een cryptografisch gekoppelde evidence-keten ondersteunt reproduceerbare audits en historische analyse.
+
+Mentor: de architectuur blijft uitbreidbaar. Een latere implementatie kan bijvoorbeeld een SQLite-, RocksDB- of object-store-backend toevoegen zonder de publieke contracten te wijzigen.
+
+Resultaat
+
+Met PIS-028 beschikt PALACO over een constitutionele evidence- en historielaag die:
+
+onveranderlijke opslag ondersteunt;
+
+volledige replay mogelijk maakt;
+
+cryptografische integriteit bewaakt;
+
+efficiënte indexering biedt;
+
+export en audits faciliteert;
+
+voorbereid is op federatieve uitbreiding.
+
+
+Dit vormt de directe basis voor PIS-029 — Federation Observatory, waarin meerdere PALACO-nodes als één constitutioneel observatiedomein worden samengebracht.
+
 Go.
 
 Hieronder staat de volgende canonieke implementatiefase.
