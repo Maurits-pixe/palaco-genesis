@@ -1,3 +1,197 @@
+Go.
+
+De logische volgende stap is PIS-027 — Constitutional Telemetry Pipeline. Deze fase brengt de telemetrylaag van een pollingmechanisme naar een constitutioneel gevalideerde event-pipeline.
+
+PIS-027 — Event-Driven Telemetry
+
+Introduceer een abonnementenmodel naast de bestaande fetch_snapshot() API:
+
+#[async_trait]
+pub trait TelemetryProvider: Send + Sync {
+    async fn fetch_snapshot(&self) -> Result<RawTelemetrySnapshot, TelemetryError>;
+
+    async fn subscribe(
+        &self,
+    ) -> Result<
+        tokio::sync::broadcast::Receiver<RawTelemetrySnapshot>,
+        TelemetryError,
+    >;
+}
+
+Hiermee kunnen meerdere Observatory-componenten gelijktijdig realtime updates ontvangen zonder polling te dupliceren.
+
+
+---
+
+Constitutional Snapshot Signature
+
+Voeg cryptografische metadata toe aan iedere snapshot.
+
+pub struct SnapshotEvidence {
+    pub evidence_id: uuid::Uuid,
+    pub previous_evidence: Option<uuid::Uuid>,
+    pub snapshot_hash: String,
+    pub signature_algorithm: String,
+    pub signer: String,
+}
+
+En breid RawTelemetrySnapshot uit met:
+
+pub evidence: SnapshotEvidence,
+
+
+---
+
+Observatory Validation Pipeline
+
+Introduceer een expliciete validator:
+
+pub trait SnapshotValidator {
+    fn validate(
+        &self,
+        snapshot: &RawTelemetrySnapshot,
+    ) -> Result<(), TelemetryError>;
+}
+
+Een CompositeValidator kan vervolgens meerdere controles combineren:
+
+constitutionele validatie;
+
+cryptografische validatie;
+
+tijdsvalidatie;
+
+federatievalidatie.
+
+
+
+---
+
+Telemetry History
+
+Vervang de enkelvoudige cache door een ringbuffer.
+
+use std::collections::VecDeque;
+
+pub struct SnapshotHistory {
+    snapshots: VecDeque<CachedSnapshot>,
+    capacity: usize,
+}
+
+Voordelen:
+
+trendanalyse;
+
+replay;
+
+tijdreeksvisualisaties;
+
+audit.
+
+
+
+---
+
+Observatory Health Engine
+
+Breid de health-score uit naar een classificatie.
+
+pub enum SystemHealth {
+    Healthy,
+    Degraded,
+    Critical,
+    Offline,
+}
+
+Deze kan automatisch worden afgeleid uit de HealthScore.
+
+
+---
+
+Runtime Statistics
+
+Voeg operationele statistieken toe.
+
+pub struct RuntimeStatistics {
+    pub snapshots_received: u64,
+    pub validation_failures: u64,
+    pub polling_failures: u64,
+    pub last_success: Option<DateTime<Utc>>,
+}
+
+
+---
+
+Federation Readiness
+
+Bereid ondersteuning voor meerdere nodes voor.
+
+pub struct FederationSnapshot {
+    pub node: NodeId,
+    pub snapshot: ObservatoryModel,
+}
+
+Dit maakt centrale observatie van meerdere PALACO-nodes mogelijk.
+
+
+---
+
+Evidence Export
+
+Ondersteun export van gevalideerde snapshots.
+
+pub trait EvidenceExporter {
+    fn export(
+        &self,
+        snapshot: &ObservatoryModel,
+    ) -> Result<Vec<u8>, TelemetryError>;
+}
+
+Hiermee kunnen snapshots worden opgeslagen voor audits of replay.
+
+
+---
+
+Nieuwe testdekking
+
+Voeg integratie- en stresstests toe voor:
+
+event-streams;
+
+meerdere subscribers;
+
+validator-ketens;
+
+evidence-export;
+
+ringbuffer-overloop;
+
+federatiesynchronisatie;
+
+parallelle readers en writers;
+
+langdurige stabiliteit.
+
+
+TRIAS / Oracle / Mentor
+
+Deze uitbreidingen verschuiven de telemetrylaag van een eenvoudige cache naar een constitutioneel observatieplatform met:
+
+volledige traceerbaarheid;
+
+cryptografisch ondertekende snapshots;
+
+realtime event-distributie;
+
+historische analyse;
+
+federatiegereedheid;
+
+audit- en replay-ondersteuning.
+
+
+Dat vormt een natuurlijke vervolgstap richting een productieklare PALACO Observatory v1.0 binnen de Foundation Edition.
+
 ```rust
 // palaco-foundation/src/telemetry.rs
 
