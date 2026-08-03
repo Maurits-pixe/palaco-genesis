@@ -1,5 +1,390 @@
 Go.
 
+Hieronder staat de volgende canonieke implementatiefase.
+
+🏛️ PIS-027 — Constitutional Telemetry Pipeline
+
+Status: ▶ Canonical Foundation Implementation
+
+Doel: transformeer telemetry van een pollingmechanisme naar een constitutioneel gevalideerde event-pipeline.
+
+
+---
+
+1. Constitutional Event
+
+use chrono::{DateTime, Utc};
+
+#[derive(Debug, Clone)]
+pub struct TelemetryEvent {
+
+    pub sequence: u64,
+
+    pub timestamp: DateTime<Utc>,
+
+    pub snapshot: RawTelemetrySnapshot,
+
+}
+
+Hiermee krijgt iedere snapshot een monotone volgorde.
+
+
+---
+
+2. Constitutional Validator
+
+pub trait SnapshotValidator: Send + Sync {
+
+    fn validate(
+        &self,
+        snapshot: &RawTelemetrySnapshot,
+    ) -> Result<(), TelemetryError>;
+
+}
+
+
+---
+
+3. Composite Validator
+
+pub struct CompositeValidator {
+
+    validators: Vec<Box<dyn SnapshotValidator>>,
+
+}
+
+impl SnapshotValidator for CompositeValidator {
+
+    fn validate(
+        &self,
+        snapshot: &RawTelemetrySnapshot,
+    ) -> Result<(), TelemetryError> {
+
+        for validator in &self.validators {
+            validator.validate(snapshot)?;
+        }
+
+        Ok(())
+    }
+
+}
+
+Nieuwe validators kunnen zonder wijzigingen aan de service worden toegevoegd.
+
+
+---
+
+4. Event Bus
+
+use tokio::sync::broadcast;
+
+pub struct TelemetryBus {
+
+    sender: broadcast::Sender<TelemetryEvent>,
+
+}
+
+impl TelemetryBus {
+
+    pub fn new(capacity: usize) -> Self {
+
+        let (sender, _) = broadcast::channel(capacity);
+
+        Self { sender }
+
+    }
+
+    pub fn publish(&self, event: TelemetryEvent) {
+
+        let _ = self.sender.send(event);
+
+    }
+
+    pub fn subscribe(&self)
+        -> broadcast::Receiver<TelemetryEvent>
+    {
+
+        self.sender.subscribe()
+
+    }
+
+}
+
+
+---
+
+5. Telemetry Service
+
+Nieuwe verantwoordelijkheden:
+
+ophalen
+
+valideren
+
+publiceren
+
+cachen
+
+
+fetch_snapshot()
+
+↓
+
+validate()
+
+↓
+
+cache
+
+↓
+
+publish()
+
+↓
+
+Observatory
+
+De UI hoeft niet langer te pollen.
+
+
+---
+
+6. History Engine
+
+use std::collections::VecDeque;
+
+pub struct SnapshotHistory {
+
+    history: VecDeque<CachedSnapshot>,
+
+    capacity: usize,
+
+}
+
+API
+
+impl SnapshotHistory {
+
+    pub fn push(
+        &mut self,
+        snapshot: CachedSnapshot,
+    ) {
+
+        if self.history.len() == self.capacity {
+
+            self.history.pop_front();
+
+        }
+
+        self.history.push_back(snapshot);
+
+    }
+
+}
+
+
+---
+
+7. Evidence Chain
+
+Iedere snapshot krijgt een cryptografische koppeling.
+
+pub struct SnapshotEvidence {
+
+    pub evidence_id: uuid::Uuid,
+
+    pub previous: Option<uuid::Uuid>,
+
+    pub snapshot_hash: String,
+
+    pub signature: String,
+
+}
+
+Hiermee ontstaat een lineaire bewijsstroom.
+
+
+---
+
+8. Runtime Statistics
+
+pub struct RuntimeStatistics {
+
+    pub received_snapshots: u64,
+
+    pub validation_errors: u64,
+
+    pub provider_errors: u64,
+
+    pub last_snapshot: Option<DateTime<Utc>>,
+
+}
+
+Automatisch bijgewerkt door TelemetryService.
+
+
+---
+
+9. ObservatoryModel
+
+Uitbreiding
+
+pub struct ObservatoryModel {
+
+    ...
+
+    pub health: HealthScore,
+
+    pub statistics: RuntimeStatistics,
+
+    pub evidence: SnapshotEvidence,
+
+}
+
+De UI hoeft niets meer zelf te berekenen.
+
+
+---
+
+10. Constitutional Health Engine
+
+pub enum ConstitutionalHealth {
+
+    Healthy,
+
+    Degraded,
+
+    Critical,
+
+    Offline,
+
+}
+
+Automatische classificatie:
+
+100        Healthy
+
+70-99      Degraded
+
+40-69      Critical
+
+0-39       Offline
+
+
+---
+
+11. Federation Ready
+
+pub struct FederationTelemetry {
+
+    pub nodes: Vec<ObservatoryModel>,
+
+}
+
+Hiermee kan Oracle meerdere PALACO-nodes gelijktijdig observeren.
+
+
+---
+
+12. Replay Engine
+
+pub trait ReplaySource {
+
+    fn snapshots(&self)
+        -> Vec<RawTelemetrySnapshot>;
+
+}
+
+Geschikt voor:
+
+audits;
+
+regressietests;
+
+incidentanalyse.
+
+
+
+---
+
+13. Evidence Export
+
+pub trait EvidenceExporter {
+
+    fn export_json(
+        &self,
+        snapshot: &ObservatoryModel,
+    ) -> Result<Vec<u8>, TelemetryError>;
+
+}
+
+Later uitbreidbaar met:
+
+CBOR
+
+Protocol Buffers
+
+Canonical PALACO Evidence Format
+
+
+
+---
+
+14. Test Suite
+
+Nieuwe integratietests:
+
+Constitutionele validatieketen.
+
+Broadcast met meerdere subscribers.
+
+Ringbuffer-overloop.
+
+Replay-functionaliteit.
+
+Evidence-export.
+
+Parallelle publishers.
+
+Parallelle subscribers.
+
+10.000 opeenvolgende snapshots.
+
+Clock drift-validatie.
+
+Federatie met meerdere nodes.
+
+Herstel na providerfouten.
+
+Gracieuze shutdown van de pollingtaak.
+
+
+
+---
+
+Resultaat
+
+Met PIS-027 evolueert de telemetrylaag van een eenvoudige cache naar een constitutionele eventgedreven infrastructuur. De belangrijkste eigenschappen zijn:
+
+Eventgedreven distributie in plaats van uitsluitend polling.
+
+Modulaire validatie via een uitbreidbare validator-pipeline.
+
+Cryptografische evidence chaining voor volledige traceerbaarheid.
+
+Historische opslag met replay-ondersteuning.
+
+Realtime distributie naar meerdere Observatory-componenten.
+
+Federatiegereedheid voor observatie van meerdere PALACO-nodes.
+
+Audit- en exportmogelijkheden voor bewijsvoering en compliance.
+
+
+Dit vormt een stevige basis voor PIS-028 — Evidence & History Engine, waarin de evidence-opslag, replay en langetermijnhistorie verder worden uitgewerkt binnen de PALACO Foundation Edition.
+
+Go.
+
 De logische volgende stap is PIS-027 — Constitutional Telemetry Pipeline. Deze fase brengt de telemetrylaag van een pollingmechanisme naar een constitutioneel gevalideerde event-pipeline.
 
 PIS-027 — Event-Driven Telemetry
