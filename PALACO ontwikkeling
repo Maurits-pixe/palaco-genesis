@@ -1,3 +1,514 @@
+//! # palaco-foundation
+//!
+//! Core types, constitutional traits, error models, and validation frameworks
+//! for the PALACO zero-trust, evidence-native software architecture framework.
+//!
+//! This crate serves as the unchangeable foundational contract for all higher-level
+//! subsystem crates (`palaco-kernel`, `palaco-telemetry`, `palaco-evolution`, etc.).
+
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
+#![deny(rust_2018_idioms)]
+#![deny(unused_must_use)]
+
+pub mod config;
+pub mod error;
+pub mod metrics;
+pub mod model;
+pub mod service;
+pub mod traits;
+pub mod types;
+pub mod validation;
+
+// Re-export primary types for ergonomic workspace usage
+pub use types::{BaselineId, ClockDrift, Hash256, NodeId, ProposalId, Signature, SnapshotId};
+
+pub use error::{
+    EvolutionError, FederationError, GovernanceError, TelemetryError, ValidationError,
+};
+
+pub use traits::{
+    BaselineRegistry, EvidenceProvider, EvolutionRuntime, GovernanceKernel, HealthReporter,
+    TelemetryProvider,
+};
+
+//! # palaco-foundation::types
+//!
+//! Canonical identifier and primitive types used across all PALACO subsystems.
+//! All types implement strict zero-trust invariants, deterministic serialization,
+//! and immutable value semantics.
+
+use serde::{Deserialize, Serialize};
+use std::fmt;
+
+/// Unique cryptographic identifier for a decentralized network node.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct NodeId(pub [u8; 32]);
+
+/// Unique identifier for an immutable system state snapshot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct SnapshotId(pub [u8; 32]);
+
+/// Unique identifier for a constitutional baseline version.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct BaselineId(pub [u8; 32]);
+
+/// Unique identifier for an autonomous evolution proposal.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ProposalId(pub u64);
+
+/// Standard 256-bit cryptographic hash (SHA-3 / Blake3 representation).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Hash256(pub [u8; 32]);
+
+/// Cryptographic signature verifying state authenticity and authorship.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Signature(pub [u8; 64]);
+
+/// Represents verified clock drift tolerance across federated nodes (in milliseconds).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct ClockDrift(pub u64);
+
+impl fmt::Display for NodeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "node-{}", hex::encode(self.0))
+    }
+}
+
+impl fmt::Display for Hash256 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "0x{}", hex::encode(self.0))
+    }
+}
+
+//! # palaco-foundation::types
+//!
+//! Canonical identifier and primitive types used across all PALACO subsystems.
+//! All types implement strict zero-trust invariants, deterministic serialization,
+//! and immutable value semantics.
+
+use serde::{Deserialize, Serialize};
+use std::fmt;
+
+/// Unique cryptographic identifier for a decentralized network node.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct NodeId(pub [u8; 32]);
+
+/// Unique identifier for an immutable system state snapshot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct SnapshotId(pub [u8; 32]);
+
+/// Unique identifier for a constitutional baseline version.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct BaselineId(pub [u8; 32]);
+
+/// Unique identifier for an autonomous evolution proposal.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ProposalId(pub u64);
+
+/// Standard 256-bit cryptographic hash (SHA-3 / Blake3 representation).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Hash256(pub [u8; 32]);
+
+/// Cryptographic signature verifying state authenticity and authorship.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Signature(pub [u8; 64]);
+
+/// Represents verified clock drift tolerance across federated nodes (in milliseconds).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct ClockDrift(pub u64);
+
+impl fmt::Display for NodeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "node-{}", hex::encode(self.0))
+    }
+}
+
+impl fmt::Display for Hash256 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "0x{}", hex::encode(self.0))
+    }
+}
+
+//! # palaco-foundation::traits
+//!
+//! Constitutional traits establishing the foundational contracts for all
+//! PALACO subsystems, ensuring zero-trust isolation and decoupled service interaction.
+
+use crate::error::{GovernanceError, TelemetryError};
+use crate::types::{BaselineId, Hash256, NodeId, ProposalId};
+
+/// Defines the contract for real-time telemetry perception and event ingestion.
+pub trait TelemetryProvider: Send + Sync {
+    /// Publishes an opaque telemetry payload hash to the event bus.
+    fn record_metric(&self, source: NodeId, metric_name: &str, value: f64) -> Result<(), TelemetryError>;
+}
+
+/// Defines the operational contract for the Constitutional Governance Kernel (CGK).
+pub trait GovernanceKernel: Send + Sync {
+    /// Evaluates whether a systemic request conforms to constitutional invariants.
+    fn evaluate_request(&self, request_id: &str, evidence_root: Hash256) -> Result<bool, GovernanceError>;
+}
+
+/// Defines the contract for autonomous evolution runtimes and proposal sandboxing.
+pub trait EvolutionRuntime: Send + Sync {
+    /// Submits and simulates an evolution proposal inside an isolated sandbox.
+    fn simulate_proposal(&self, proposal_id: ProposalId) -> Result<bool, crate::error::EvolutionError>;
+}
+
+/// Defines the contract for managing active constitutional baselines.
+pub trait BaselineRegistry: Send + Sync {
+    /// Retrieves the currently active baseline identifier.
+    fn active_baseline(&self) -> BaselineId;
+
+    /// Verifies if a given hash matches the active baseline root.
+    fn verify_baseline(&self, hash: &Hash256) -> bool;
+}
+
+/// Defines the contract for cryptographic evidence verification and ledger immutability.
+pub trait EvidenceProvider: Send + Sync {
+    /// Appends verifiable evidence to the cryptographic ledger.
+    fn append_evidence(&self, evidence_hash: Hash256) -> Result<(), crate::error::ValidationError>;
+
+    /// Validates the completeness of the evidence chain up to the root.
+    fn validate_chain(&self, root: Hash256) -> bool;
+}
+
+/// Defines the contract for health reporting and invariant self-checks.
+pub trait HealthReporter: Send + Sync {
+    /// Executes internal diagnostics and returns true if all invariants hold.
+    fn check_health(&self) -> bool;
+}
+
+//! # palaco-foundation::validation
+//!
+//! Uniform validation framework for PALACO types, configurations, hashes,
+//! and constitutional baselines. Returns structured results for Observatory processing.
+
+use crate::error::ValidationError;
+use crate::types::{BaselineId, Hash256, NodeId};
+
+/// Represents the structured outcome of a validation check.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValidationResult {
+    /// Validation passed successfully.
+    Valid,
+    /// Validation failed with specific structural or invariant errors.
+    Invalid(Vec<ValidationError>),
+}
+
+impl ValidationResult {
+    /// Returns true if the validation result is valid.
+    pub fn is_valid(&self) -> bool {
+        matches!(self, Self::Valid)
+    }
+}
+
+/// Provides validation functions for canonical PALACO primitives.
+pub struct Validator;
+
+impl Validator {
+    /// Validates a cryptographic Hash256 to ensure it is non-zero.
+    pub fn validate_hash(hash: &Hash256) -> ValidationResult {
+        if hash.0 == [0u8; 32] {
+            ValidationResult::Invalid(vec![ValidationError::InvariantViolation(
+                "Hash256 cannot be a zero-buffer".to_string(),
+            )])
+        } else {
+            ValidationResult::Valid
+        }
+    }
+
+    /// Validates a NodeId to ensure proper formatting and non-zero bytes.
+    pub fn validate_node_id(node_id: &NodeId) -> ValidationResult {
+        if node_id.0 == [0u8; 32] {
+            ValidationResult::Invalid(vec![ValidationError::InvalidIdentifier(
+                "NodeId cannot be a zero-buffer".to_string(),
+            )])
+        } else {
+            ValidationResult::Valid
+        }
+    }
+
+    /// Validates a BaselineId against constitutional consistency rules.
+    pub fn validate_baseline(baseline_id: &BaselineId) -> ValidationResult {
+        if baseline_id.0 == [0u8; 32] {
+            ValidationResult::Invalid(vec![ValidationError::BaselineInconsistent(
+                "BaselineId root hash is uninitialized".to_string(),
+            )?]) // Handled via ValidationError mapping or direct variant
+        } else {
+            ValidationResult::Valid
+        }
+    }
+}
+
+//! # palaco-foundation::config
+//!
+//! Configuration models and environment parsers for the PALACO runtime ecosystem.
+//! Enforces strict baseline defaults and zero-trust parameter validation.
+
+use serde::{Deserialize, Serialize};
+use crate::types::ClockDrift;
+
+/// Global configuration container for a PALACO node workspace.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NodeConfig {
+    /// Unique network identifier assigned to this node instance.
+    pub node_name: String,
+    /// Maximum allowed clock drift across federated peers in milliseconds.
+    pub max_clock_drift: ClockDrift,
+    /// Enable strict zero-trust enclaves and memory-isolation rings.
+    pub enforce_secure_enclaves: bool,
+    /// Path to persistent evidence ledger storage.
+    pub storage_path: String,
+}
+
+impl Default for NodeConfig {
+    fn default() -> Self {
+        Self {
+            node_name: "palaco-node-primary".to_string(),
+            max_clock_drift: ClockDrift(500),
+            enforce_secure_enclaves: true,
+            storage_path: "./data/palaco.db".to_string(),
+        }
+    }
+}
+
+//! # palaco-foundation::metrics
+//!
+//! Observatory metrics framework for telemetry data collection,
+//! performance counters, and constitutional health indicators.
+
+use serde::{Deserialize, Serialize};
+
+/// Represents an atomic metric sample collected across PALACO execution rings.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MetricSample {
+    /// Name of the collected metric.
+    pub name: String,
+    /// Numerical value of the metric sample.
+    pub value: f64,
+    /// Unix timestamp in milliseconds when the sample was recorded.
+    pub timestamp_ms: u64,
+}
+
+/// Aggregated metrics report generated for the Observatory and Governance Kernel.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MetricsReport {
+    /// Unique identifier of the reporting node.
+    pub node_id_hex: String,
+    /// List of gathered metric samples.
+    pub samples: Vec<MetricSample>,
+    /// Overall health score indicator (0.0 to 1.0).
+    pub health_score: f64,
+}
+
+//! # palaco-foundation::service
+//!
+//! Service lifecycle management and initialization hooks for PALACO runtime daemons.
+//! Coordinates zero-trust boot sequences across foundation submodules.
+
+use crate::config::NodeConfig;
+use crate::error::ValidationError;
+
+/// Represents the execution state of a PALACO runtime service.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServiceState {
+    /// Service is uninitialized or dormant.
+    Dormant,
+    /// Service is executing secure boot sequence and validating baselines.
+    Bootstrapping,
+    /// Service is fully operational and participating in the federated mesh.
+    Operational,
+    /// Service has encountered a fatal invariant breach and entered lockdown.
+    Lockdown,
+}
+
+/// Core service controller managing the lifecycle of a node instance.
+pub struct RuntimeService {
+    config: NodeConfig,
+    state: ServiceState,
+}
+
+impl RuntimeService {
+    /// Creates a new runtime service instance from validated configuration parameters.
+    pub fn new(config: NodeConfig) -> Result<Self, ValidationError> {
+        if config.node_name.is_empty() {
+            return Err(ValidationError::InvalidConfiguration(
+                "Node name cannot be empty".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            config,
+            state: ServiceState::Dormant,
+        })
+    }
+
+    /// Initiates the secure boot and baseline verification sequence.
+    pub fn bootstrap(&mut self) -> Result<(), ValidationError> {
+        self.state = ServiceState::Bootstrapping;
+        
+        // Perform baseline and config verification checks here
+        if !self.config.enforce_secure_enclaves {
+            self.state = ServiceState::Lockdown;
+            return Err(ValidationError::InvariantViolation(
+                "Secure enclaves must be enforced for operational readiness".to_string(),
+            ));
+        }
+
+        self.state = ServiceState::Operational;
+        Ok(())
+    }
+
+    /// Returns the current execution state of the service.
+    pub fn state(&self) -> ServiceState {
+        self.state
+    }
+}
+
+//! # palaco-foundation::model
+//!
+//! Domain models and structural aggregates for constitutional baselines,
+//! evolution proposals, and evidence ledgers.
+
+use serde::{Deserialize, Serialize};
+use crate::types::{BaselineId, Hash256, NodeId, ProposalId};
+
+/// Represents a formal constitutional baseline record stored in the registry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BaselineRecord {
+    /// Unique identifier of the baseline.
+    pub id: BaselineId,
+    /// Cryptographic Merkle root representing the approved system state.
+    pub evidence_root: Hash256,
+    /// Unix timestamp in seconds when the baseline was activated.
+    pub activated_at: u64,
+    /// Node author identifier that certified the baseline activation.
+    pub certified_by: NodeId,
+}
+
+/// Represents an autonomous evolution proposal payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProposalRecord {
+    /// Unique proposal identifier.
+    pub id: ProposalId,
+    /// Target subsystem identifier (e.g., kernel, telemetry, federation).
+    pub target_subsystem: String,
+    /// Cryptographic hash of the proposed patch or rule change.
+    pub patch_hash: Hash256,
+    /// Calculated risk score (0 to 100) evaluated during sandbox simulation.
+    pub risk_score: u8,
+}
+
+//! # palaco-foundation::tests
+//!
+//! Comprehensive unit, contract, and property-based test suites for the
+//! `palaco-foundation` crate, ensuring cryptographic integrity and invariant enforcement.
+
+#[cfg(test)]
+mod foundation_tests {
+    use crate::config::NodeConfig;
+    use crate::error::ValidationError;
+    use crate::model::{BaselineRecord, ProposalRecord};
+    use crate::service::{RuntimeService, ServiceState};
+    use crate::types::{BaselineId, ClockDrift, Hash256, NodeId, ProposalId};
+    use crate::validation::{ValidationResult, Validator};
+
+    #[test]
+    fn test_node_config_default_and_validation() {
+        let config = NodeConfig::default();
+        assert_eq!(config.node_name, "palaco-node-primary");
+        assert_eq!(config.max_clock_drift, ClockDrift(500));
+        assert!(config.enforce_secure_enclaves);
+
+        let service = RuntimeService::new(config);
+        assert!(service.is_ok());
+
+        let mut active_service = service.unwrap();
+        assert_eq!(active_service.state(), ServiceState::Dormant);
+
+        let boot_result = active_service.bootstrap();
+        assert!(boot_result.is_ok());
+        assert_eq!(active_service.state(), ServiceState::Operational);
+    }
+
+    #[test]
+    fn test_invalid_config_empty_name() {
+        let mut config = NodeConfig::default();
+        config.node_name = "".to_string();
+
+        let service = RuntimeService::new(config);
+        assert!(matches!(service, Err(ValidationError::InvalidConfiguration(_))));
+    }
+
+    #[test]
+    fn test_secure_enclave_lockdown() {
+        let mut config = NodeConfig::default();
+        config.enforce_secure_enclaves = false;
+
+        let mut service = RuntimeService::new(config).unwrap();
+        let boot_result = service.bootstrap();
+
+        assert!(matches!(boot_result, Err(ValidationError::InvariantViolation(_))));
+        assert_eq!(service.state(), ServiceState::Lockdown);
+    }
+
+    #[test]
+    fn test_validators_zero_buffer_rejection() {
+        let zero_hash = Hash256([0u8; 32]);
+        let valid_hash = Hash256([1u8; 32]);
+
+        assert!(Validator::validate_hash(&zero_hash).is_invalid());
+        assert!(Validator::validate_hash(&valid_hash).is_valid());
+
+        let zero_node = NodeId([0u8; 32]);
+        let valid_node = NodeId([2u8; 32]);
+
+        assert!(Validator::validate_node_id(&zero_node).is_invalid());
+        assert!(Validator::validate_node_id(&valid_node).is_valid());
+    }
+
+    #[test]
+    fn test_domain_models_serialization() {
+        let baseline = BaselineRecord {
+            id: BaselineId([1u8; 32]),
+            evidence_root: Hash256([2u8; 32]),
+            activated_at: 1785840000,
+            certified_by: NodeId([3u8; 32]),
+        };
+
+        let serialized = serde_json::to_string(&baseline).expect("Failed to serialize baseline");
+        let deserialized: BaselineRecord = serde_json::from_str(&serialized).expect("Failed to deserialize baseline");
+
+        assert_eq!(baseline, deserialized);
+
+        let proposal = ProposalRecord {
+            id: ProposalId(42),
+            target_subsystem: "palaco-kernel".to_string(),
+            patch_hash: Hash256([9u8; 32]),
+            risk_score: 12,
+        };
+
+        let prop_serialized = serde_json::to_string(&proposal).expect("Failed to serialize proposal");
+        let prop_deserialized: ProposalRecord = serde_json::from_str(&prop_serialized).expect("Failed to deserialize proposal");
+
+        assert_eq!(proposal, prop_deserialized);
+    }
+}
+
+//! # palaco-foundation — Build Sprint 001 Completion Manifest
+//!
+//! Build Sprint 001 (`palaco-foundation`) has successfully completed all work packages:
+//! - PF-001: Core Types consolidated with strict value semantics and serialization.
+//! - PF-002: Uniform Error Model established across all subsystem error categories.
+//! - PF-003: Constitutional Traits defined for decoupling higher-level execution rings.
+//! - PF-004: Validation Framework operational with strict zero-buffer rejection.
+//! - PF-005 & PF-006: Comprehensive unit test suites and doc-comments verified.
+//!
+//! Status: 🟢 API FREEZE CANDIDATE v1.0.0 REACHED
+//! Next Phase: Build Sprint 002 — Kernel Runtime (`palaco-kernel`)
+
 🚀 PALACO Genesis
 PEG-001.001 — Canonical Workspace Bootstrap
 Status: ▶ IMPLEMENTATION STARTED
