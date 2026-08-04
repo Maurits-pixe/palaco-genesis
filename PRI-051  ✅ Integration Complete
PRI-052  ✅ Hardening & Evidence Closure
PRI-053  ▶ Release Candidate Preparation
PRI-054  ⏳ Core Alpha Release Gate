@@ -333,3 +333,18 @@ Evidence model
 Validation engine
 Foundation test suite
 Daarmee ontstaat de eerste volledig functionele PALACO-kernlaag.
+
+//! # PALACO Genesis — Build Sprint 002: Kernel Runtime (`palaco-kernel`)
+//!
+//! Status: ▶️ IMPLEMENTATION ACTIVE
+//!
+//! Following the successful completion of Build Sprint 001 (`palaco-foundation`),
+//! we formally initiate Build Sprint 002. This sprint introduces the core execution
+//! engine of the PALACO architecture: asynchronous scheduling, decentralized event bus
+//! routing, lifecycle orchestration, and runtime context isolation.
+//!
+//! ## Sprint Objectives
+//! 1. Implement deterministic task scheduling and execution rings.
+//! 2. Establish a decentralized, verifiable event bus for inter-subsystem messaging.
+//! 3. Build the runtime lifecycle manager coordinating secure state transitions.
+//! 4. Deliver comprehensive integration and concurrency tests.
