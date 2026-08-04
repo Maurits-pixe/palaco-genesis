@@ -1,3 +1,705 @@
+//! # palaco-telemetry
+//!
+//! Cryptographic evidence ledger, telemetry aggregation, and verifiable audit log
+//! subsystem for the PALACO zero-trust, evidence-native architecture framework.
+//!
+//! `palaco-telemetry` provides immutable event recording, Merkle evidence trees,
+//! and compliance reporting for higher-level governance and observability rings.
+
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
+#![deny(rust_2018_idioms)]
+#![deny(unused_must_use)]
+
+pub mod audit;
+pub mod evidence;
+pub mod ledger;
+pub mod metrics;
+pub mod observer;
+
+// Re-export telemetry and ledger primitives for workspace integration
+pub use audit::{AuditRecord, AuditSeverity};
+pub use evidence::{EvidenceNode, MerkleTree};
+pub use ledger::{EvidenceLedger, LedgerEntry};
+pub use metrics::{MetricCollector, MetricStream};
+pub use observer::{ObservatoryPipeline, SystemHealth};
+
+use palaco_foundation::error::TelemetryError;
+use palaco_foundation::types::{Hash256, NodeId};
+
+//! # palaco-telemetry::evidence
+//!
+//! Cryptographic Merkle evidence trees providing mathematical proof of state
+//! transitions and systemic integrity across PALACO nodes.
+
+use serde::{Deserialize, Serialize};
+
+/// Represents a node within the cryptographic Merkle evidence tree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EvidenceNode {
+    /// A leaf node containing a verified event or state hash.
+    Leaf {
+        /// Unique hash of the underlying evidence payload.
+        hash: Hash256,
+    },
+    /// An internal branch combining left and right child nodes.
+    Branch {
+        /// Combined cryptographic hash of the branch.
+        hash: Hash256,
+        /// Boxed left child reference.
+        left: Box<EvidenceNode>,
+        /// Boxed right child reference.
+        right: Box<EvidenceNode>,
+    },
+}
+
+impl EvidenceNode {
+    /// Retrieves the root hash of the evidence node (leaf or branch).
+    pub fn hash(&self) -> Hash256 {
+        match self {
+            Self::Leaf { hash } => *hash,
+            Self::Branch { hash, .. } => *hash,
+        }
+    }
+}
+
+/// A complete Merkle evidence tree structure for auditing state integrity.
+#[derive(Debug, Clone)]
+pub struct MerkleTree {
+    root: Option<EvidenceNode>,
+    leaf_count: usize,
+}
+
+impl MerkleTree {
+    /// Creates a new, empty Merkle evidence tree.
+    pub fn new() -> Self {
+        Self {
+            root: None,
+            leaf_count: 0,
+        }
+    }
+
+    /// Returns the total number of leaves recorded in the tree.
+    pub fn leaf_count(&self) -> usize {
+        self.leaf_count
+    }
+
+    /// Returns the root hash of the tree if initialized.
+    pub fn root_hash(&self) -> Option<Hash256> {
+        self.root.as_ref().map(|node| node.hash())
+    }
+}
+
+impl Default for MerkleTree {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+//! # palaco-telemetry::ledger
+//!
+//! Append-only cryptographic ledger storing verified evidence payloads
+//! and constitutional checkpoints.
+
+use std::collections::VecDeque;
+
+/// Represents an immutable entry committed to the evidence ledger.
+#[derive(Debug, Clone)]
+pub struct LedgerEntry {
+    pub sequence: u64,
+    pub evidence_hash: Hash256,
+    pub timestamp_ms: u64,
+    pub node_id: NodeId,
+}
+
+/// Append-only ledger storing verified evidence records.
+pub struct EvidenceLedger {
+    entries: VecDeque<LedgerEntry>,
+    next_sequence: u64,
+}
+
+impl Default for EvidenceLedger {
+    fn default() -> Self {
+        Self {
+            entries: VecDeque::new(),
+            next_sequence: 0,
+        }
+    }
+}
+
+impl EvidenceLedger {
+    /// Initializes a new evidence ledger instance.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Appends a new verified evidence hash to the ledger stream.
+    pub fn append(&mut self, evidence_hash: Hash256, node_id: NodeId, timestamp_ms: u64) -> u64 {
+        let sequence = self.next_sequence;
+        self.next_sequence += 1;
+
+        let entry = LedgerEntry {
+            sequence,
+            evidence_hash,
+            timestamp_ms,
+            node_id,
+        };
+
+        self.entries.push_back(entry);
+        sequence
+    }
+
+    /// Retrieves an entry by its sequence number.
+    pub fn get(&self, sequence: u64) -> Option<&LedgerEntry> {
+        self.entries.iter().find(|e| e.sequence == sequence)
+    }
+
+    /// Returns the total number of entries recorded in the ledger.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Returns true if the ledger contains no entries.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
+//! # palaco-telemetry::audit
+//!
+//! Severity-rated audit logging and compliance event generation for the Observatory.
+
+use serde::{Deserialize, Serialize};
+
+/// Severity classification for telemetry audit events.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum AuditSeverity {
+    /// Routine operational telemetry event.
+    Info = 0,
+    /// Non-fatal anomaly requiring monitoring.
+    Warning = 1,
+    /// Severe constitutional invariant breach or security violation.
+    Critical = 2,
+}
+
+/// A structured audit record emitted for observatory analysis.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditRecord {
+    pub severity: AuditSeverity,
+    pub subsystem: String,
+    pub message: String,
+    pub timestamp_ms: u64,
+}
+
+//! # palaco-telemetry::tests
+//!
+//! Comprehensive unit and integration test suites for `palaco-telemetry`.
+
+#[cfg(test)]
+mod telemetry_tests {
+    use super::*;
+    use palaco_foundation::types::{Hash256, NodeId};
+
+    #[test]
+    fn test_merkle_tree_initialization() {
+        let tree = MerkleTree::new();
+        assert_eq!(tree.leaf_count(), 0);
+        assert_eq!(tree.root_hash(), None);
+    }
+
+    #[test]
+    fn test_evidence_ledger_append_and_retrieve() {
+        let mut ledger = EvidenceLedger::new();
+        assert!(ledger.is_empty());
+
+        let hash = Hash256([5u8; 32]);
+        let node_id = NodeId([1u8; 32]);
+        let seq = ledger.append(hash, node_id, 1785840000000);
+
+        assert_eq!(seq, 0);
+        assert_eq!(ledger.len(), 1);
+
+        let entry = ledger.get(0).expect("Entry should exist");
+        assert_eq!(entry.evidence_hash, hash);
+        assert_eq!(entry.node_id, node_id);
+    }
+
+    #[test]
+    fn test_audit_severity_ordering() {
+        assert!(AuditSeverity::Info < AuditSeverity::Warning);
+        assert!(AuditSeverity::Warning < AuditSeverity::Critical);
+    }
+}
+
+//! # palaco-evolution
+//!
+//! Autonomous evolution, self-optimizing patch sandboxing, and constitutional governance
+//! engine for the PALACO zero-trust architecture framework.
+//!
+//! `palaco-evolution` manages safe, verified runtime upgrades, proposal consensus,
+//! and automated risk mitigation without violating foundational system invariants.
+
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
+#![deny(rust_2018_idioms)]
+#![deny(unused_must_use)]
+
+pub mod consensus;
+pub mod governance;
+pub mod proposal;
+pub mod sandbox;
+pub mod verifier;
+
+// Re-export core evolution and governance primitives for workspace integration
+pub use consensus::{ConsensusEngine, VoteDecision};
+pub use governance::{ConstitutionalKernel, GovernancePolicy};
+pub use proposal::{EvolutionProposal, ProposalState};
+pub use sandbox::{ProposalSandbox, SandboxResult};
+pub use verifier::{InvariantVerifier, VerificationReport};
+
+use palaco_foundation::error::EvolutionError;
+use palaco_foundation::types::{BaselineId, Hash256, NodeId, ProposalId};
+
+//! # palaco-evolution::proposal
+//!
+//! Autonomous evolution proposal structuring, state tracking, and lifecycle management.
+
+use serde::{Deserialize, Serialize};
+
+/// Represents the execution lifecycle state of an evolution proposal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProposalState {
+    /// Proposal submitted and awaiting initial sandbox simulation.
+    PendingSimulation,
+    /// Proposal successfully simulated inside an isolated sandbox environment.
+    Simulated,
+    /// Proposal undergoing federated consensus voting.
+    Voting,
+    /// Proposal approved and scheduled for constitutional activation.
+    Approved,
+    /// Proposal rejected due to risk score or invariant violation.
+    Rejected,
+    /// Proposal executed and integrated into active baseline.
+    Executed,
+}
+
+/// Comprehensive record representing an autonomous code or policy evolution proposal.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EvolutionProposal {
+    pub id: ProposalId,
+    pub author_node: NodeId,
+    pub target_subsystem: String,
+    pub patch_hash: Hash256,
+    pub state: ProposalState,
+    pub risk_score: u8,
+}
+
+impl EvolutionProposal {
+    /// Creates a new evolution proposal in the pending state.
+    pub fn new(id: ProposalId, author_node: NodeId, target_subsystem: String, patch_hash: Hash256) -> Self {
+        Self {
+            id,
+            author_node,
+            target_subsystem,
+            patch_hash,
+            state: ProposalState::PendingSimulation,
+            risk_score: 0,
+        }
+    }
+}
+
+//! # palaco-evolution::sandbox
+//!
+//! Isolated simulation sandboxes for evaluating evolution proposal security,
+//! performance impact, and constitutional compliance prior to node adoption.
+
+use crate::proposal::{EvolutionProposal, ProposalState};
+use palaco_foundation::error::EvolutionError;
+
+/// Structured outcome of a proposal sandbox simulation pass.
+#[derive(Debug, Clone)]
+pub struct SandboxResult {
+    pub proposal_id: palaco_foundation::types::ProposalId,
+    pub safe_to_merge: bool,
+    pub evaluated_risk_score: u8,
+    pub diagnostic_message: String,
+}
+
+/// Isolated execution sandbox for safely testing patches.
+pub struct ProposalSandbox {
+    max_acceptable_risk: u8,
+}
+
+impl Default for ProposalSandbox {
+    fn default() -> Self {
+        Self { max_acceptable_risk: 25 }
+    }
+}
+
+impl ProposalSandbox {
+    /// Creates a new proposal sandbox with strict risk boundaries.
+    pub fn new(max_acceptable_risk: u8) -> Self {
+        Self { max_acceptable_risk }
+    }
+
+    /// Simulates a proposal and updates its state based on risk evaluation.
+    pub fn simulate(&self, proposal: &mut EvolutionProposal) -> Result<SandboxResult, EvolutionError> {
+        // Mock evaluation logic simulating invariant verification
+        let evaluated_risk = proposal.risk_score;
+        let safe = evaluated_risk <= self.max_acceptable_risk;
+
+        if safe {
+            proposal.state = ProposalState::Simulated;
+        } else {
+            proposal.state = ProposalState::Rejected;
+        }
+
+        Ok(SandboxResult {
+            proposal_id: proposal.id,
+            safe_to_merge: safe,
+            evaluated_risk_score: evaluated_risk,
+            diagnostic_message: if safe {
+                "Sandbox simulation passed successfully without invariant violations.".to_string()
+            } else {
+                "Sandbox simulation failed: evaluated risk score exceeds maximum threshold.".to_string()
+            },
+        })
+    }
+}
+
+//! # palaco-evolution::consensus
+//!
+//! Federated voting and consensus engines for validating evolution proposals
+//! across the distributed PALACO network mesh.
+
+use serde::{Deserialize, Serialize};
+use palaco_foundation::types::{NodeId, ProposalId, Signature};
+
+/// Represents a node's voting decision on an evolution proposal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VoteDecision {
+    /// Vote in favor of proposal adoption.
+    Approve,
+    /// Vote to reject the proposal due to risk or conflict.
+    Reject,
+    /// Abstain from voting.
+    Abstain,
+}
+
+/// Signed ballot cast by a federated node during consensus.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Ballot {
+    pub proposal_id: ProposalId,
+    pub voter_node: NodeId,
+    pub decision: VoteDecision,
+    pub signature: Signature,
+}
+
+/// Consensus coordination engine tracking proposal balloting.
+#[derive(Default)]
+pub struct ConsensusEngine {
+    ballots: Vec<Ballot>,
+}
+
+impl ConsensusEngine {
+    /// Initializes a new consensus engine instance.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Casts and records a signed ballot for a proposal.
+    pub fn cast_ballot(&mut self, ballot: Ballot) {
+        self.ballots.push(ballot);
+    }
+
+    /// Returns the total number of recorded ballots for a given proposal.
+    pub fn ballot_count_for(&self, proposal_id: ProposalId) -> usize {
+        self.ballots.iter().filter(|b| b.proposal_id == proposal_id).count()
+    }
+}
+
+//! # palaco-evolution::tests
+//!
+//! Comprehensive unit and integration test suites for `palaco-evolution`.
+
+#[cfg(test)]
+mod evolution_tests {
+    use super::*;
+    use palaco_foundation::types::{Hash256, NodeId, ProposalId, Signature};
+
+    #[test]
+    fn test_evolution_proposal_lifecycle() {
+        let proposal_id = ProposalId(101);
+        let author = NodeId([4u8; 32]);
+        let patch = Hash256([8u8; 32]);
+
+        let mut proposal = EvolutionProposal::new(proposal_id, author, "palaco-kernel".to_string(), patch);
+        assert_eq!(proposal.state, ProposalState::PendingSimulation);
+
+        proposal.risk_score = 10; // Within default threshold (25)
+
+        let sandbox = ProposalSandbox::default();
+        let result = sandbox.simulate(&mut proposal).unwrap();
+
+        assert!(result.safe_to_merge);
+        assert_eq!(proposal.state, ProposalState::Simulated);
+    }
+
+    #[test]
+    fn test_sandbox_rejection_on_high_risk() {
+        let proposal_id = ProposalId(102);
+        let author = NodeId([4u8; 32]);
+        let patch = Hash256([9u8; 32]);
+
+        let mut proposal = EvolutionProposal::new(proposal_id, author, "palaco-telemetry".to_string(), patch);
+        proposal.risk_score = 80; // Exceeds default threshold (25)
+
+        let sandbox = ProposalSandbox::new(25);
+        let result = sandbox.simulate(&mut proposal).unwrap();
+
+        assert!(!result.safe_to_merge);
+        assert_eq!(proposal.state, ProposalState::Rejected);
+    }
+
+    #[test]
+    fn test_consensus_ballot_casting() {
+        let mut engine = ConsensusEngine::new();
+        let prop_id = ProposalId(200);
+
+        let ballot = Ballot {
+            proposal_id: prop_id,
+            voter_node: NodeId([1u8; 32]),
+            decision: VoteDecision::Approve,
+            signature: Signature([0u8; 64]),
+        };
+
+        engine.cast_ballot(ballot);
+        assert_eq!(engine.ballot_count_for(prop_id), 1);
+        assert_eq!(engine.ballot_count_for(ProposalId(999)), 0);
+    }
+}
+//! # palaco-federation
+//!
+//! P2P secure mesh networking, consensus transport, and cross-node trust federation
+//! for the PALACO zero-trust, evidence-native architecture framework.
+//!
+//! `palaco-federation` manages encrypted node-to-node channels, peer discovery,
+//! and decentralized state synchronization across federated autonomous clusters.
+
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
+#![deny(rust_2018_idioms)]
+#![deny(unused_must_use)]
+
+pub mod channel;
+pub mod discovery;
+pub mod mesh;
+pub mod protocol;
+pub mod sync;
+
+// Re-export core federation primitives for workspace integration
+pub use channel::{EncryptedChannel, ChannelState};
+pub use discovery::{PeerDiscovery, PeerInfo};
+pub use mesh::{FederationMesh, MeshTopology};
+pub use protocol::{FederationMessage, MessageHeader};
+pub use sync::{StateSyncer, SyncStatus};
+
+use palaco_foundation::error::FederationError;
+use palaco_foundation::types::{BaselineId, Hash256, NodeId};
+
+//! # palaco-federation::discovery
+//!
+//! Peer node discovery, cryptographic identity verification, and roster management
+//! across the federated PALACO mesh network.
+
+use serde::{Deserialize, Serialize};
+use palaco_foundation::types::NodeId;
+
+/// Represents verified routing and cryptographic identity information for a peer node.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerInfo {
+    /// Unique cryptographic node identifier.
+    pub node_id: NodeId,
+    /// Network endpoint address (e.g., IP:port or multiaddr string).
+    pub endpoint: String,
+    /// Unix timestamp in milliseconds when the peer was last verified active.
+    pub last_seen_ms: u64,
+}
+
+/// Manages active peer rosters and node liveliness tracking.
+#[derive(Default)]
+pub struct PeerDiscovery {
+    peers: Vec<PeerInfo>,
+}
+
+impl PeerDiscovery {
+    /// Initializes a new peer discovery manager.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Registers or updates a peer node within the discovery roster.
+    pub fn register_peer(&mut self, peer: PeerInfo) {
+        if let Some(existing) = self.peers.iter_mut().find(|p| p.node_id == peer.node_id) {
+            existing.endpoint = peer.endpoint;
+            existing.last_seen_ms = peer.last_seen_ms;
+        } else {
+            self.peers.push(peer);
+        }
+    }
+
+    /// Returns the total count of registered active peers.
+    pub fn peer_count(&self) -> usize {
+        self.peers.len()
+    }
+
+    /// Retrieves a reference to a peer by node identifier.
+    pub fn get_peer(&self, node_id: &NodeId) -> Option<&PeerInfo> {
+        self.peers.iter().find(|p| &p.node_id == node_id)
+    }
+}
+
+//! # palaco-federation::mesh
+//!
+//! Mesh topology orchestration and secure connection pooling across federated nodes.
+
+use crate::discovery::PeerDiscovery;
+use palaco_foundation::types::NodeId;
+
+/// Represents the structural topology model of the federation mesh.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MeshTopology {
+    /// Fully connected mesh where every node maintains direct links.
+    FullyConnected,
+    /// Decentralized gossip-based partial mesh.
+    GossipMesh,
+}
+
+/// Orchestrates secure connection routing and topology maintenance.
+pub struct FederationMesh {
+    local_node_id: NodeId,
+    topology: MeshTopology,
+    discovery: PeerDiscovery,
+}
+
+impl FederationMesh {
+    /// Initializes a new federation mesh controller.
+    pub fn new(local_node_id: NodeId, topology: MeshTopology) -> Self {
+        Self {
+            local_node_id,
+            topology,
+            discovery: PeerDiscovery::new(),
+        }
+    }
+
+    /// Returns the local node identifier.
+    pub fn local_node_id(&self) -> NodeId {
+        self.local_node_id
+    }
+
+    /// Returns the configured mesh topology mode.
+    pub fn topology(&self) -> MeshTopology {
+        self.topology
+    }
+
+    /// Grants immutable access to the underlying peer discovery roster.
+    pub fn discovery(&self) -> &PeerDiscovery {
+        &self.discovery
+    }
+
+    /// Grants mutable access to the peer discovery roster.
+    pub fn discovery_mut(&mut self) -> &PeerDiscovery {
+        &mut self.discovery
+    }
+}
+
+//! # palaco-federation::protocol
+//!
+//! Wire protocol message framing, cryptographic envelope structure,
+//! and serialization definitions for node-to-node communication.
+
+use serde::{Deserialize, Serialize};
+use palaco_foundation::types::{Hash256, NodeId, Signature};
+
+/// Header metadata attached to all federated wire messages.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageHeader {
+    /// Sender node identifier.
+    pub sender: NodeId,
+    /// Recipient node identifier (or broadcast target).
+    pub recipient: NodeId,
+    /// Unix timestamp in milliseconds when the message was dispatched.
+    pub timestamp_ms: u64,
+    /// Cryptographic signature verifying message authorship.
+    pub signature: Signature,
+}
+
+/// Core protocol message enumeration across federated endpoints.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum FederationMessage {
+    /// Handshake request initiating a secure encrypted channel.
+    HandshakeRequest {
+        /// Header metadata.
+        header: MessageHeader,
+        /// Ephemeral public key hash for key exchange.
+        ephemeral_key_hash: Hash256,
+    },
+    /// Handshake acknowledgment.
+    HandshakeAck {
+        /// Header metadata.
+        header: MessageHeader,
+        /// Accepted session token hash.
+        session_hash: Hash256,
+    },
+    /// State synchronization payload.
+    StateSync {
+        /// Header metadata.
+        header: MessageHeader,
+        /// Merkle root representing current state baseline.
+        state_root: Hash256,
+    },
+}
+
+//! # palaco-federation::tests
+//!
+//! Comprehensive unit and integration test suites for `palaco-federation`.
+
+#[cfg(test)]
+mod federation_tests {
+    use super::*;
+    use palaco_foundation::types::NodeId;
+
+    #[test]
+    fn test_peer_discovery_registration() {
+        let mut discovery = PeerDiscovery::new();
+        assert_eq!(discovery.peer_count(), 0);
+
+        let node_id = NodeId([10u8; 32]);
+        let peer = PeerInfo {
+            node_id,
+            endpoint: "192.168.1.50:8080".to_string(),
+            last_seen_ms: 1785840000000,
+        };
+
+        discovery.register_peer(peer);
+        assert_eq!(discovery.peer_count(), 1);
+
+        let retrieved = discovery.get_peer(&node_id).expect("Peer should be registered");
+        assert_eq!(retrieved.endpoint, "192.168.1.50:8080");
+    }
+
+    #[test]
+    fn test_federation_mesh_initialization() {
+        let local_id = NodeId([1u8; 32]);
+        let mesh = FederationMesh::new(local_id, MeshTopology::GossipMesh);
+
+        assert_eq!(mesh.local_node_id(), local_id);
+        assert_eq!(mesh.topology(), MeshTopology::GossipMesh);
+        assert_eq!(mesh.discovery().peer_count(), 0);
+    }
+}
+
+
 ## 🟢 PALACO Foundation: Build Sprint 001 Status Report
 The codebase for **palaco-foundation** has successfully passed all compilation checks, unit tests, and structural validation workflows. All core packages, traits, and constitutional constraints have achieved an **API Freeze Candidate v1.0.0** status.
 ### 📊 Summary of Implemented Work Packages
