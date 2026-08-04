@@ -1,3 +1,137 @@
+//! # palaco-observatory::dashboard
+//!
+//! Real-time system overview, constitutional compliance metrics, and interactive
+//! monitoring dashboard engine for the PALACO zero-trust architecture framework.
+//!
+//! `palaco-observatory::dashboard` aggregates live telemetry, enclave isolation states,
+//! and node health scores into structured visualization models for operators.
+
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
+#![deny(rust_2018_idioms)]
+#![deny(unused_must_use)]
+
+use serde::{Deserialize, Serialize};
+use palaco_foundation::types::NodeId;
+
+/// Represents the overall operational overview of a PALACO federated node.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemOverview {
+    /// Unique identifier of the observed node.
+    pub node_id: NodeId,
+    /// Human-readable node instance name.
+    pub node_name: String,
+    /// Current service state (e.g., Operational, Lockdown).
+    pub operational_state: String,
+    /// Aggregate health score ranging from 0.0 to 1.0.
+    pub health_score: f64,
+    /// Active secure enclave isolation status.
+    pub enclaves_sealed: bool,
+    /// Total number of verified evidence entries in the local ledger.
+    pub ledger_height: u64,
+    /// Total count of active connected peers in the federation mesh.
+    pub active_peer_count: usize,
+}
+
+/// Represents the complete state container for the Observatory Dashboard.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DashboardState {
+    /// High-level node summary.
+    pub overview: SystemOverview,
+    /// Recent system alerts count by severity.
+    pub unread_alerts_count: usize,
+    /// Current constitutional baseline identifier hash string.
+    pub active_baseline_hash: String,
+    /// Unix timestamp in milliseconds when the dashboard state was compiled.
+    pub refreshed_at_ms: u64,
+}
+
+impl DashboardState {
+    /// Creates a new dashboard state snapshot.
+    pub fn new(
+        overview: SystemOverview,
+        unread_alerts_count: usize,
+        active_baseline_hash: String,
+        refreshed_at_ms: u64,
+    ) -> Self {
+        Self {
+            overview,
+            unread_alerts_count,
+            active_baseline_hash,
+            refreshed_at_ms,
+        }
+    }
+
+    /// Renders the dashboard overview into an operator-friendly text interface layout.
+    pub fn render_console_dashboard(&self) -> String {
+        format!(
+            r#"
+====================================================================
+               PALACO OBSERVATORY CONTROL DASHBOARD
+====================================================================
+ Node ID          : {}
+ Node Name        : {}
+ Operational State: {}
+ Health Score     : {:.2} ({})
+ Enclaves Sealed  : {}
+ Ledger Height    : {} blocks
+ Active Peers     : {} nodes
+ Unread Alerts    : {} active
+ Baseline Hash    : {}
+ Last Refreshed   : {} ms
+====================================================================
+"#,
+            self.overview.node_id,
+            self.overview.node_name,
+            self.overview.operational_state,
+            self.overview.health_score,
+            if self.overview.health_score >= 0.75 { "NOMINAL" } else { "WARNING" },
+            if self.overview.enclaves_sealed { "SECURE [✔]" } else { "BREACHED [✖]" },
+            self.overview.ledger_height,
+            self.overview.active_peer_count,
+            self.unread_alerts_count,
+            self.active_baseline_hash,
+            self.refreshed_at_ms
+        )
+    }
+}
+
+//! # palaco-observatory::dashboard::tests
+//!
+//! Unit tests verifying dashboard state generation and console layout rendering.
+
+#[cfg(test)]
+mod dashboard_tests {
+    use super::*;
+    use palaco_foundation::types::NodeId;
+
+    #[test]
+    fn test_dashboard_state_rendering() {
+        let overview = SystemOverview {
+            node_id: NodeId([0x01; 32]),
+            node_name: "palaco-omega-prime".to_string(),
+            operational_state: "Operational".to_string(),
+            health_score: 0.95,
+            enclaves_sealed: true,
+            ledger_height: 142,
+            active_peer_count: 8,
+        };
+
+    let dashboard = DashboardState::new(
+        overview,
+        0,
+        "0xfa39...1b82".to_string(),
+        1785840000000,
+    );
+
+        let rendered = dashboard.render_console_dashboard();
+        assert!(rendered.contains("palaco-omega-prime"));
+        assert!(rendered.contains("NOMINAL"));
+        assert!(rendered.contains("SECURE [✔]"));
+        assert!(rendered.contains("142 blocks"));
+    }
+}
+
 //! # PALACO Full-Power Master Execution Engine
 //!
 //! Spun up at maximum throughput, enforcing zero-trust enclaves, 
