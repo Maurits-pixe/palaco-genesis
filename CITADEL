@@ -1,3 +1,148 @@
+use serde::{Deserialize, Serialize};
+use std::time::SystemTime;
+use tracing::{info, warn};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum AdvisorySeverity {
+    Informational,
+    Recommendation,
+    Warning,
+    Critical,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvisoryMetadata {
+    pub telemetry_cycle: u64,
+    pub timestamp: SystemTime,
+    pub observer: &'static str,
+    pub constitutional_rule: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvisoryRecommendation {
+    pub id: String,
+    pub target_component: String,
+    pub advisory_note: String,
+    pub compliance_score: f64,
+    pub severity: AdvisorySeverity,
+    pub metadata: AdvisoryMetadata,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemSnapshot {
+    pub active_nodes: u32,
+    pub system_coupling_index: f64,
+    pub auditability_score: f64,
+    pub policy_compliance_ratio: f64,
+    pub evidence_backlog: u64,
+    pub unsafe_code_detected: bool,
+}
+
+impl SystemSnapshot {
+    /// Enforces strict validation boundaries ensuring values remain mathematically sound.
+    pub fn new(
+        active_nodes: u32,
+        system_coupling_index: f64,
+        auditability_score: f64,
+        policy_compliance_ratio: f64,
+        evidence_backlog: u64,
+        unsafe_code_detected: bool,
+    ) -> Result<Self, &'static str> {
+        if active_nodes == 0 {
+            return Err("Constitutional Validation Error: Active nodes count cannot be zero.");
+        }
+        if !(0.0..=1.0).contains(&system_coupling_index) {
+            return Err("Constitutional Validation Error: Coupling index must be within [0.0, 1.0].");
+        }
+        if !(0.0..=1.0).contains(&auditability_score) {
+            return Err("Constitutional Validation Error: Auditability score must be within [0.0, 1.0].");
+        }
+        if !(0.0..=1.0).contains(&policy_compliance_ratio) {
+            return Err("Constitutional Validation Error: Policy compliance ratio must be within [0.0, 1.0].");
+        }
+
+        Ok(Self {
+            active_nodes,
+            system_coupling_index,
+            auditability_score,
+            policy_compliance_ratio,
+            evidence_backlog,
+            unsafe_code_detected,
+        })
+    }
+}
+
+pub struct MentorAdvisoryEngine;
+
+impl MentorAdvisoryEngine {
+    pub fn evaluate_system_health(
+        snapshot: &SystemSnapshot,
+        telemetry_cycle: u64,
+    ) -> Result<Vec<AdvisoryRecommendation>, &'static str> {
+        // Enforce WS-006: Observational Isolation & Unsafe Code Forbiddance
+        if snapshot.unsafe_code_detected {
+            return Err("Constitutional Violation: Unsafe code footprint detected within observational boundary.");
+        }
+
+        let mut recommendations = Vec::new();
+        let timestamp = SystemTime::now();
+
+        // Enforce WS-003: Advice Never Overrides Governance
+        if snapshot.system_coupling_index > 0.75 {
+            warn!(coupling = snapshot.system_coupling_index, "High system coupling index observed.");
+            recommendations.push(AdvisoryRecommendation {
+                id: format!("ADV-{}-COUPLING", telemetry_cycle),
+                target_component: String::from("palaco-citadel-core"),
+                advisory_note: String::from("Consider modular decoupling; coupling index exceeds optimal baseline."),
+                compliance_score: 0.82,
+                severity: AdvisorySeverity::Warning,
+                metadata: AdvisoryMetadata {
+                    telemetry_cycle,
+                    timestamp,
+                    observer: "palaco-mentor-telemetry",
+                    constitutional_rule: "WS-003",
+                },
+            });
+        }
+
+        if snapshot.auditability_score < 0.95 {
+            recommendations.push(AdvisoryRecommendation {
+                id: format!("ADV-{}-AUDIT", telemetry_cycle),
+                target_component: String::from("palaco-citadel-gateway"),
+                advisory_note: String::from("Enhance telemetry tracing metadata to optimize audit verification score."),
+                compliance_score: 0.90,
+                severity: AdvisorySeverity::Recommendation,
+                metadata: AdvisoryMetadata {
+                    telemetry_cycle,
+                    timestamp,
+                    observer: "palaco-mentor-telemetry",
+                    constitutional_rule: "WS-004",
+                },
+            });
+        }
+
+        if snapshot.policy_compliance_ratio < 0.98 {
+            recommendations.push(AdvisoryRecommendation {
+                id: format!("ADV-{}-POLICY", telemetry_cycle),
+                target_component: String::from("palaco-security"),
+                advisory_note: String::from("Policy compliance deviation detected. Review recent token allocations."),
+                compliance_score: 0.75,
+                severity: AdvisorySeverity::Critical,
+                metadata: AdvisoryMetadata {
+                    telemetry_cycle,
+                    timestamp,
+                    observer: "palaco-mentor-telemetry",
+                    constitutional_rule: "WS-001",
+                },
+            });
+        }
+
+        info!(active_recommendations = recommendations.len(), "Mentor RC2 telemetry evaluation cycle completed.");
+        Ok(recommendations)
+    }
+}
+
+
 PALACO Mentor Telemetry RC2
 
 De volgende stap is om de telemetrielaag te verheffen van een eenvoudige advisory-engine naar een constitutioneel bewijsbare observatielaag, zonder de read-only eigenschappen te verliezen.
