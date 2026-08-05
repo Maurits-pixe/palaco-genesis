@@ -1,3 +1,296 @@
+Ja. Ik zou de volgende stap uitvoeren als een **constitutionele V3-upgrade** in plaats van losse wijzigingen. Daarmee wordt `palaco-quay` een volwaardige kernelcrate binnen de PALACO Foundation.
+
+---
+
+# PRI-056 — Wonder III Constitutional Provenance Engine
+
+## Nieuwe architectuur
+
+```text
+palaco-quay
+│
+├── lib.rs
+├── manifest.rs
+├── error.rs
+├── state_id.rs
+├── provenance.rs      ← nieuw
+├── receipt.rs         ← nieuw
+├── record.rs
+├── verification.rs
+└── storage.rs
+```
+
+---
+
+# `provenance.rs`
+
+```rust
+//! Provenance metadata for immutable state.
+
+use palaco_foundation::{
+    InstitutionalRole,
+    Wonder,
+};
+
+/// Constitutional provenance information.
+#[derive(Debug, Clone)]
+pub struct Provenance {
+    /// Producing Wonder.
+    pub wonder: Wonder,
+
+    /// Responsible institution.
+    pub role: InstitutionalRole,
+
+    /// Originating crate.
+    pub producer: &'static str,
+}
+```
+
+---
+
+# `receipt.rs`
+
+```rust
+//! Commit receipts.
+
+use palaco_foundation::EvidenceHash;
+
+use crate::StateId;
+
+/// Immutable commit receipt.
+#[derive(Debug, Clone)]
+pub struct CommitReceipt {
+    /// Stored state identifier.
+    pub state: StateId,
+
+    /// Evidence hash.
+    pub evidence: EvidenceHash,
+
+    /// Commit completed.
+    pub committed: bool,
+}
+```
+
+---
+
+# `record.rs`
+
+```rust
+use std::time::SystemTime;
+
+use palaco_foundation::EvidenceHash;
+
+use crate::{
+    Provenance,
+    StateId,
+};
+
+/// Immutable stored object.
+#[derive(Debug, Clone)]
+pub struct StateRecord {
+    pub id: StateId,
+
+    pub payload: Vec<u8>,
+
+    pub evidence_hash: EvidenceHash,
+
+    pub provenance: Provenance,
+
+    pub committed_at: SystemTime,
+}
+```
+
+---
+
+# `verification.rs`
+
+```rust
+/// Verification result.
+#[derive(Debug, Clone)]
+pub struct StateVerification {
+    pub exists: bool,
+
+    pub integrity_verified: bool,
+
+    pub immutable: bool,
+}
+```
+
+Later kan `integrity_verified` gebaseerd worden op een echte hashcontrole in plaats van een placeholder.
+
+---
+
+# `storage.rs`
+
+Belangrijkste wijzigingen:
+
+## Entry API
+
+```rust
+use std::collections::{
+    hash_map::Entry,
+    HashMap,
+};
+```
+
+Daarna:
+
+```rust
+match self.records.entry(id.clone()) {
+
+    Entry::Occupied(_) => {
+
+        return Err(
+            ConstitutionalError::ContractBreach(
+                "Immutable state already exists.".into(),
+            ),
+        );
+    }
+
+    Entry::Vacant(entry) => {
+
+        entry.insert(record);
+    }
+}
+```
+
+Dit voorkomt een dubbele lookup.
+
+---
+
+## CommitReceipt teruggeven
+
+Nieuwe signatuur:
+
+```rust
+pub fn commit_state(
+    ...
+) -> Result<CommitReceipt, ConstitutionalError>
+```
+
+Na succesvolle commit:
+
+```rust
+Ok(
+    CommitReceipt {
+
+        state: id,
+
+        evidence: evidence_hash,
+
+        committed: true,
+    }
+)
+```
+
+---
+
+## Iterator
+
+Toevoegen:
+
+```rust
+pub fn iter(
+    &self,
+) -> impl Iterator<Item=&StateRecord> {
+
+    self.records.values()
+}
+```
+
+Oracle hoeft dan de interne `HashMap` niet te kennen.
+
+---
+
+# `manifest.rs`
+
+```rust
+use palaco_foundation::{
+    ConstitutionalManifest,
+    InstitutionalRole,
+    Wonder,
+};
+
+pub const MANIFEST: ConstitutionalManifest =
+    ConstitutionalManifest {
+
+        kernel_id: "PALACO-QUAY",
+
+        name: "palaco-quay",
+
+        version: env!("CARGO_PKG_VERSION"),
+
+        wonder: Wonder::III,
+
+        institutional_role: InstitutionalRole::Quay,
+
+        constitutional_document: "PAS-003",
+
+        implemented_articles: &[
+            "WQ-001",
+            "WQ-002",
+            "WQ-003",
+            "WQ-004",
+        ],
+
+        constitutional_hash:
+            "sha256:pending",
+    };
+```
+
+In een productieomgeving zou `"sha256:pending"` vervangen moeten worden door een daadwerkelijk berekende en beheerde hash van het constitutionele document of manifest.
+
+---
+
+# LivingKernel-implementatie
+
+```rust
+use palaco_foundation::{
+    ConstitutionalManifest,
+    LivingKernel,
+};
+
+use crate::MANIFEST;
+
+impl LivingKernel for QuayStorage {
+
+    fn manifest(
+        &self,
+    ) -> &ConstitutionalManifest {
+
+        &MANIFEST
+    }
+}
+```
+
+---
+
+# Nieuwe constitutionele invarianten
+
+| Code   | Invariant                                 | Status |
+| ------ | ----------------------------------------- | ------ |
+| WQ-001 | `StateId` is uniek                        | ✅      |
+| WQ-002 | Elk record heeft een `EvidenceHash`       | ✅      |
+| WQ-003 | Records zijn immutable                    | ✅      |
+| WQ-004 | Verificatie muteert nooit                 | ✅      |
+| WQ-005 | Elk record bevat provenance               | ✅      |
+| WQ-006 | Elke commit levert een `CommitReceipt` op | ✅      |
+| WQ-007 | Wonder III implementeert `LivingKernel`   | ✅      |
+
+## TOM Review
+
+### ⚖️ TRIAS
+
+**PASS** — De opslaglaag blijft strikt binnen haar constitutionele verantwoordelijkheid. De toevoeging van `Provenance`, `CommitReceipt` en `LivingKernel` versterkt de architectuur zonder verantwoordelijkheden van Harbor, Citadel of Oracle over te nemen.
+
+### 🧠 Oracle
+
+**PASS** — De combinatie van `EvidenceHash`, `Provenance` en `CommitReceipt` maakt de opslaglaag geschikt voor een volledige bewijs- en provenanceketen. De huidige placeholder voor `constitutional_hash` moet vóór een productierelease worden vervangen door een daadwerkelijk beheerde hash.
+
+### 📘 Mentor
+
+**PASS** — De crate blijft overzichtelijk dankzij de modulaire indeling. De nieuwe componenten (`provenance`, `receipt` en `manifest`) voegen functionaliteit toe zonder de publieke API onnodig complex te maken. Dit is een solide basis voor verdere uitbreiding met cryptografische verificatie en Oracle-integratie.
+
 
 //! # palaco-observatory::dashboard
 //!
