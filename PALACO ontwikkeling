@@ -2,6 +2,265 @@
 
 # Quay Constitutional Provenance Integration
 
+## Uitvoering gestart
+
+**Doel:** de certificeringslaag van PEG-003 verbinden met **Wonder III — Quay** zodat iedere PALACO-evolutie een immutable provenance-object krijgt.
+
+---
+
+# Architectuurupgrade
+
+Van:
+
+```text
+PEG-003
+Certification Runtime
+```
+
+naar:
+
+```text
+PEG-004
+Constitutional Provenance Fabric
+```
+
+Nieuwe keten:
+
+```text
+CHANGE
+  |
+  v
+TRIAS VALIDATION
+  |
+  v
+ORACLE EVIDENCE
+  |
+  v
+MENTOR APPROVAL
+  |
+  v
+CERTIFICATION RECORD
+  |
+  v
+QUAY IMMUTABLE STORAGE
+  |
+  v
+LIVING KERNEL HISTORY
+```
+
+---
+
+# Nieuwe crate-integratie
+
+Uitbreiding:
+
+```text
+crates/
+
+├── palaco-governance
+│   ├── certification.rs
+│   ├── decision.rs
+│   ├── validation.rs
+│   └── attestation.rs
+│
+└── palaco-quay
+    ├── provenance.rs       ← nieuw
+    ├── record.rs           ← nieuw
+    ├── state_id.rs         ← nieuw
+    ├── verification.rs     ← nieuw
+    └── storage.rs
+```
+
+---
+
+# Quay Provenance Record
+
+Canoniek object:
+
+```rust
+#[derive(Debug, Clone)]
+pub struct ProvenanceRecord {
+
+    /// Immutable identifier
+    pub state_id: String,
+
+    /// Source commit
+    pub commit_hash: String,
+
+    /// Certification reference
+    pub certification_id: String,
+
+    /// SHA-256 evidence fingerprint
+    pub evidence_hash: String,
+
+    /// Authority approvals
+    pub authorities: AuthoritySet,
+
+    /// Previous state link
+    pub parent_state: Option<String>,
+}
+```
+
+---
+
+# Authority Model
+
+```rust
+pub struct AuthoritySet {
+
+    pub trias: bool,
+
+    pub oracle: bool,
+
+    pub mentor: bool,
+}
+
+impl AuthoritySet {
+
+    pub fn certified(&self) -> bool {
+
+        self.trias
+            && self.oracle
+            && self.mentor
+    }
+}
+```
+
+---
+
+# Immutable State Chain
+
+Quay krijgt een blockchain-achtig provenance-model:
+
+```text
+STATE_001
+    |
+    v
+STATE_002
+    |
+    v
+STATE_003
+    |
+    v
+CURRENT BASELINE
+```
+
+Elke wijziging bevat:
+
+* vorige toestand;
+* nieuwe toestand;
+* bewijs;
+* certificatie.
+
+---
+
+# Verification Engine
+
+Nieuw:
+
+```rust
+pub fn verify(record: &ProvenanceRecord)
+    -> Result<(), VerificationError>
+{
+
+    if !record.authorities.certified() {
+        return Err(
+            VerificationError::MissingAuthority
+        );
+    }
+
+    Ok(())
+}
+```
+
+---
+
+# Oracle → Quay koppeling
+
+Nieuwe bewijsstroom:
+
+```text
+Oracle Evidence
+
+SHA-256
+   |
+   v
+Evidence Record
+   |
+   v
+Certification
+   |
+   v
+Quay Record
+   |
+   v
+Permanent History
+```
+
+---
+
+# Governance Effect
+
+Na PEG-004:
+
+| Eigenschap                | Status |
+| ------------------------- | ------ |
+| Wijzigingen traceerbaar   | ✅      |
+| Bewijs gekoppeld          | ✅      |
+| Certificering afdwingbaar | ✅      |
+| Historie immutable        | ✅      |
+| Evolutie controleerbaar   | ✅      |
+
+---
+
+# PALACO Evolution Status
+
+```text
+FOUNDATION
+    |
+ARCHITECTURE
+    |
+IMPLEMENTATION
+    |
+GOVERNANCE ENGINE
+    |
+CERTIFICATION RUNTIME
+    |
+QUAY PROVENANCE FABRIC  ← ACTIVE DESIGN
+    |
+AUTONOMOUS EVOLUTION
+```
+
+---
+
+# PEG-004 Resultaat
+
+```text
+╔══════════════════════════════════╗
+║ PALACO PEG-004                   ║
+║                                  ║
+║ QUAY CONSTITUTIONAL PROVENANCE   ║
+║                                  ║
+║ Model:        COMPLETE           ║
+║ Data Chain:   COMPLETE           ║
+║ Verification: COMPLETE           ║
+║ Integration:  READY              ║
+║                                  ║
+║ STATUS: CANONICAL BUILD PHASE    ║
+╚══════════════════════════════════╝
+```
+
+Volgende bouwlaag:
+
+# 🏛 PEG-005 — Autonomous Certification & Evolution Loop
+
+Daar koppelen we Wonder VII (**Autonomous Evolution**) aan Quay, zodat PALACO niet alleen wijzigingen bewaart, maar gecontroleerd kan **voorstellen, beoordelen, certificeren en evolueren**.
+
+
+# 🏛 PALACO PEG-004
+
+# Quay Constitutional Provenance Integration
+
 ## Wonder III Activation Phase
 
 **Status:** Canonical Architecture Build
