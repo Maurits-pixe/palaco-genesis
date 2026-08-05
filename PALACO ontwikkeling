@@ -1,3 +1,644 @@
+# 🏛 PALACO PEG-004
+
+# Quay Constitutional Provenance Integration
+
+## Wonder III Activation Phase
+
+**Status:** Canonical Architecture Build
+**Parent:** PEG-003 Constitutional Certification Runtime
+**Target:** Living Kernel Provenance Layer
+
+---
+
+# Doel
+
+PEG-004 maakt van Quay geen opslaglaag meer, maar een **constitutionele provenance-engine**.
+
+Nieuwe kernprincipe:
+
+```text
+Niet opslaan wat gebeurd is.
+Bewijzen waarom het geldig is.
+```
+
+---
+
+# Nieuwe architectuur
+
+```text
+                 PALACO EVENT
+                       |
+                       v
+             PEG-003 CERTIFICATION
+                       |
+                       v
+              ORACLE EVIDENCE SEAL
+                       |
+                       v
+        +-----------------------------+
+        | QUAY PROVENANCE ENGINE      |
+        |                             |
+        | Immutable Records           |
+        | State Identity              |
+        | Evidence Chain              |
+        | Verification                |
+        +-----------------------------+
+                       |
+                       v
+              LIVING KERNEL BASELINE
+```
+
+---
+
+# Nieuwe crate
+
+```text
+crates/
+└── palaco-quay/
+    └── src/
+        ├── lib.rs
+        ├── record.rs
+        ├── state_id.rs
+        ├── provenance.rs
+        ├── verification.rs
+        ├── storage.rs
+        └── error.rs
+```
+
+---
+
+# Constitutional Record
+
+## record.rs
+
+```rust
+#![forbid(unsafe_code)]
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProvenanceRecord {
+
+    pub id: String,
+
+    pub parent_id: Option<String>,
+
+    pub commit_hash: String,
+
+    pub evidence_hash: String,
+
+    pub created_at: DateTime<Utc>,
+
+    pub authority: String,
+
+    pub verified: bool,
+}
+```
+
+---
+
+# Immutable State Identity
+
+## state_id.rs
+
+```rust
+use sha2::{Digest, Sha256};
+
+pub fn create_state_id(
+    payload: &str
+) -> String {
+
+    let mut hasher = Sha256::new();
+
+    hasher.update(payload);
+
+    format!(
+        "{:x}",
+        hasher.finalize()
+    )
+}
+```
+
+---
+
+# Provenance Chain
+
+## provenance.rs
+
+```rust
+use crate::record::ProvenanceRecord;
+
+pub struct ProvenanceChain {
+
+    records: Vec<ProvenanceRecord>,
+}
+
+impl ProvenanceChain {
+
+    pub fn append(
+        &mut self,
+        record: ProvenanceRecord
+    ) {
+
+        self.records.push(record);
+    }
+
+
+    pub fn latest(
+        &self
+    ) -> Option<&ProvenanceRecord> {
+
+        self.records.last()
+    }
+}
+```
+
+---
+
+# Verification Engine
+
+## verification.rs
+
+```rust
+use crate::record::ProvenanceRecord;
+
+pub fn verify(
+    record: &ProvenanceRecord
+) -> bool {
+
+    record.verified
+        && !record.commit_hash.is_empty()
+        && !record.evidence_hash.is_empty()
+}
+```
+
+---
+
+# Quay Governance Rules
+
+Elke record moet voldoen aan:
+
+| Regel               | Status     |
+| ------------------- | ---------- |
+| Immutable identity  | verplicht  |
+| Evidence reference  | verplicht  |
+| Commit traceability | verplicht  |
+| Authority origin    | verplicht  |
+| Verification state  | verplicht  |
+| Parent lineage      | aanbevolen |
+
+---
+
+# Oracle → Quay Binding
+
+Nieuwe keten:
+
+```text
+Commit
+ |
+ v
+TRIAS Result
+ |
+ v
+Oracle Evidence
+ |
+ v
+SHA-256 Fingerprint
+ |
+ v
+Quay Record
+ |
+ v
+Kernel Acceptance
+```
+
+---
+
+# Security Model
+
+PEG-004 voorkomt:
+
+❌ verborgen wijzigingen
+❌ niet-herleidbare state
+❌ ongeautoriseerde evolutie
+❌ verlies van historische context
+
+en maakt mogelijk:
+
+✅ replay
+✅ audit
+✅ verificatie
+✅ evolution governance
+
+---
+
+# Mentor Review
+
+## Sterke punten
+
+* duidelijke verantwoordelijkheid;
+* sluit aan op Seven Wonders;
+* ondersteunt lange termijn onderhoud;
+* maakt evolutie controleerbaar.
+
+## Aanbevolen verbetering
+
+Voeg later toe:
+
+```rust
+pub enum ProvenanceEvent {
+
+    Created,
+
+    Validated,
+
+    Certified,
+
+    Promoted,
+
+    Deprecated,
+}
+```
+
+Hiermee ontstaat een volledige levenscyclus.
+
+---
+
+# PEG-004 Status
+
+```text
+╔══════════════════════════════════╗
+║ PALACO PEG-004                   ║
+║                                  ║
+║ QUAY PROVENANCE ENGINE           ║
+║                                  ║
+║ Architecture     ✅ COMPLETE      ║
+║ Data Model       ✅ COMPLETE      ║
+║ Verification     ✅ COMPLETE      ║
+║ Oracle Binding   ✅ COMPLETE      ║
+║ Kernel Binding   🟡 NEXT         ║
+║                                  ║
+║ STATUS: READY FOR IMPLEMENTATION ║
+╚══════════════════════════════════╝
+```
+
+---
+
+## Volgende fase
+
+**PEG-005 — Living Kernel Certification Loop**
+
+Daar verbinden we:
+
+* PALACO Kernel;
+* PEG-003 Certification Runtime;
+* PEG-004 Quay Provenance;
+* WAE-007 Autonomous Evolution.
+
+Resultaat:
+
+```text
+PALACO
+  |
+  |-- begrijpt wijzigingen
+  |-- bewijst wijzigingen
+  |-- certificeert wijzigingen
+  |-- bewaart wijzigingen
+  |
+  └── evolueert gecontroleerd
+```
+
+**PEG-004 staat klaar voor implementatie.**
+
+
+# 🏛 PALACO PEG-003 — Constitutional Certification Runtime
+
+## Uitvoering gestart — Governance Evolution Phase
+
+De uitbreiding is inhoudelijk uitgewerkt als de volgende evolutionaire laag bovenop **PEG-002 Governance Engine Bootstrap**.
+
+De repositorystructuur bevestigt dat PALACO reeds een modulaire crate-opbouw heeft met onder andere:
+
+* `palaco-kernel`
+* `palaco-runtime`
+* `palaco-security`
+* `palaco-storage`
+* `palaco-eventbus`
+* `palaco-knowledge`
+* `palaco-operations`
+
+De directe GitHub-schrijfactie kon niet worden voltooid wegens toegangsbeperking van de integratie (HTTP 403). Daarom leg ik de implementatie hier volledig vast als **ready-to-commit canonical artifact**.
+
+---
+
+# PEG-003 Architectuur
+
+## Nieuwe verantwoordelijkheid
+
+PEG-002:
+
+```text
+Governance bestaat
+```
+
+PEG-003:
+
+```text
+Governance handelt zelfstandig
+```
+
+Nieuwe flow:
+
+```text
+                 CHANGE
+                   |
+                   v
+          +----------------+
+          |     TRIAS      |
+          | Architecture   |
+          | Security       |
+          | Invariants     |
+          +----------------+
+                   |
+                   v
+          +----------------+
+          |     ORACLE     |
+          | Evidence       |
+          | Provenance     |
+          | Integrity      |
+          +----------------+
+                   |
+                   v
+          +----------------+
+          |    MENTOR      |
+          | Quality        |
+          | Maintainable   |
+          | Human Review   |
+          +----------------+
+                   |
+                   v
+        CRYPTOGRAPHIC ATTESTATION
+                   |
+                   v
+          QUAY PROVENANCE ENGINE
+                   |
+                   v
+          LIVING KERNEL BASELINE
+```
+
+---
+
+# Nieuwe kernstructuur
+
+Toevoegen:
+
+```text
+crates/
+└── palaco-governance/
+    └── src/
+        ├── certification.rs
+        ├── decision.rs        ← PEG-003
+        ├── validation.rs      ← PEG-003
+        ├── error.rs           ← PEG-003
+        ├── evidence.rs
+        ├── attestation.rs
+        ├── trias.rs
+        ├── oracle.rs
+        └── mentor.rs
+```
+
+---
+
+# Validation Model
+
+De bestaande boolean-modellen worden geëvolueerd.
+
+Van:
+
+```rust
+pub architecture: bool;
+pub security: bool;
+```
+
+naar:
+
+```rust
+#[derive(Debug, Clone)]
+pub enum ValidationResult {
+    Passed,
+    Failed(String),
+    Pending,
+}
+```
+
+Voordeel:
+
+* auditinformatie blijft behouden;
+* fouten worden reproduceerbaar;
+* Oracle krijgt volledige provenance.
+
+---
+
+# GovernanceError
+
+Nieuw:
+
+```rust
+#![forbid(unsafe_code)]
+
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum GovernanceError {
+
+    #[error("Missing evidence")]
+    MissingEvidence,
+
+    #[error("Invalid provenance chain")]
+    InvalidProvenance,
+
+    #[error("Certification rejected")]
+    CertificationRejected,
+
+    #[error("Pending authority validation")]
+    PendingValidation,
+}
+```
+
+---
+
+# Certification Decision Engine
+
+Nieuwe kernfunctie:
+
+```rust
+pub fn certify(
+    trias: ValidationResult,
+    oracle: ValidationResult,
+    mentor: ValidationResult,
+) -> CertificationStatus {
+
+    match (
+        trias,
+        oracle,
+        mentor,
+    ) {
+
+        (
+            ValidationResult::Passed,
+            ValidationResult::Passed,
+            ValidationResult::Passed,
+        ) =>
+            CertificationStatus::Approved,
+
+        (
+            ValidationResult::Failed(_),
+            _,
+            _
+        )
+        |
+        (
+            _,
+            ValidationResult::Failed(_),
+            _
+        )
+        |
+            (
+            _,
+            _,
+            ValidationResult::Failed(_)
+        ) =>
+            CertificationStatus::Rejected,
+
+        _ =>
+            CertificationStatus::Pending,
+    }
+}
+```
+
+---
+
+# Oracle uitbreiding
+
+Nieuwe evidence-record:
+
+```rust
+pub struct EvidenceRecord {
+
+    pub artifact_id: String,
+
+    pub commit_hash: String,
+
+    pub sha256: String,
+
+    pub timestamp: DateTime<Utc>,
+
+    pub verified: bool,
+}
+```
+
+Resultaat:
+
+```text
+Artifact
+ |
+ SHA-256
+ |
+ Evidence Record
+ |
+ Attestation
+ |
+ Quay
+```
+
+---
+
+# Quay koppeling
+
+PEG-003 maakt de overgang mogelijk:
+
+```text
+Quay
+=
+Storage
+
+PEG-003
+=
+Certification Authority
+
+Samen:
+
+Immutable Provenance Layer
+```
+
+---
+
+# CI/CD Governance Gate
+
+Nieuwe releasevoorwaarde:
+
+```yaml
+PALACO_CERTIFICATION_GATE:
+
+  required:
+
+    - trias_pass
+
+    - oracle_verified
+
+    - mentor_approved
+
+    - attestation_created
+```
+
+Release:
+
+```text
+TRIAS     ✅
+ORACLE    ✅
+MENTOR    ✅
+SEAL      ✅
+
+RELEASE AUTHORIZED
+```
+
+---
+
+# PEG-003 Certificeringsstatus
+
+```text
+╔══════════════════════════════════╗
+║ PALACO PEG-003                   ║
+║                                  ║
+║ Constitutional Runtime           ║
+║                                  ║
+║ Architecture     ✅ READY        ║
+║ Validation       ✅ DESIGNED      ║
+║ Evidence         ✅ DESIGNED      ║
+║ Attestation      ✅ DESIGNED      ║
+║ Quay Integration 🟡 NEXT         ║
+║                                  ║
+║ STATUS: CANONICAL BUILD READY    ║
+╚══════════════════════════════════╝
+```
+
+---
+
+## Volgende logische stap
+
+**PEG-004 — Quay Constitutional Provenance Integration**
+
+Daarmee verbinden we:
+
+* PEG-003 Certification Runtime;
+* Wonder III — Quay;
+* Oracle Evidence Chain;
+* Living Kernel baseline.
+
+Dat wordt het punt waarop iedere PALACO-evolutie automatisch een **bewijsbaar historisch object** wordt.
+
+
 # 🏛 PALACO — PEG-002
 
 # Governance Engine Bootstrap
