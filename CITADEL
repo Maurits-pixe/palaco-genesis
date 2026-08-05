@@ -1,3 +1,170 @@
+PALACO Mentor Telemetry RC2
+
+De volgende stap is om de telemetrielaag te verheffen van een eenvoudige advisory-engine naar een constitutioneel bewijsbare observatielaag, zonder de read-only eigenschappen te verliezen.
+
+src/types.rs
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AdvisorySeverity {
+    Informational,
+    Recommendation,
+    Warning,
+    Critical,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ConstitutionalRule {
+    WS003,
+    WS006,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvisoryMetadata {
+    pub telemetry_cycle: u64,
+    pub timestamp_unix: u64,
+    pub observer: &'static str,
+    pub governing_rule: ConstitutionalRule,
+}
+
+
+---
+
+Uitgebreide Recommendation
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvisoryRecommendation {
+    pub id: String,
+    pub target_component: String,
+    pub advisory_note: String,
+    pub compliance_score: f64,
+    pub severity: AdvisorySeverity,
+    pub metadata: AdvisoryMetadata,
+}
+
+
+---
+
+Gevalideerde Snapshot
+
+impl SystemSnapshot {
+    pub fn validate(&self) -> Result<(), &'static str> {
+
+        if !(0.0..=1.0).contains(&self.system_coupling_index) {
+            return Err("Invalid coupling index.");
+        }
+
+        if !(0.0..=1.0).contains(&self.auditability_score) {
+            return Err("Invalid auditability score.");
+        }
+
+        Ok(())
+    }
+}
+
+
+---
+
+Constitutionele Evaluatie
+
+pub fn evaluate_system_health(
+    snapshot: &SystemSnapshot,
+    cycle: u64,
+) -> Result<Vec<AdvisoryRecommendation>, &'static str> {
+
+    snapshot.validate()?;
+
+    if snapshot.unsafe_code_detected {
+        return Err(
+            "Constitutional Violation: Unsafe code footprint detected."
+        );
+    }
+
+    let mut advisories = Vec::new();
+
+    if snapshot.system_coupling_index > 0.75 {
+
+        advisories.push(AdvisoryRecommendation {
+
+            id: format!("ADV-{}", cycle),
+
+            target_component:
+                "palaco-citadel-core".into(),
+
+            advisory_note:
+                "Consider modular decomposition.".into(),
+
+            compliance_score: 0.82,
+
+            severity: AdvisorySeverity::Warning,
+
+            metadata: AdvisoryMetadata {
+
+                telemetry_cycle: cycle,
+
+                timestamp_unix:
+                    std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+
+                observer: "Mentor",
+
+                governing_rule:
+                    ConstitutionalRule::WS003,
+            },
+        });
+    }
+
+    Ok(advisories)
+}
+
+
+---
+
+RC2 Architectuur
+
+Runtime
+     │
+     ▼
+System Snapshot
+     │
+     ▼
+Snapshot Validation
+     │
+     ▼
+Mentor Advisory Engine
+     │
+     ▼
+Constitutional Classification
+     │
+     ▼
+Immutable Advisory Objects
+     │
+     ▼
+Oracle Evidence
+     │
+     ▼
+Audit Archive
+
+Voorstel voor RC3
+
+De logische volgende evolutie is Mentor Evidence Integration, waarbij iedere advisory automatisch wordt voorzien van:
+
+een cryptografische hash voor onveranderlijkheid;
+
+een evidence-ID voor volledige traceerbaarheid;
+
+koppelingen naar Oracle en Quay voor provenance;
+
+compatibiliteit met TRIAS-governancecontroles;
+
+export naar een constitutioneel auditlog.
+
+
+Hiermee evolueert palaco-mentor-telemetry van een observatiemodule naar een volledig constitutioneel verifieerbare advisory engine, terwijl WS-003 en WS-006 strikt behouden blijven.
+
 [package]
 name = "palaco-mentor-telemetry"
 version = "1.0.0-RC1"
