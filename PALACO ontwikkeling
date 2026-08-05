@@ -1,3 +1,22 @@
+// ============================================================================
+// PALACO CORE CANONICAL — PEG-001.001 WORKSPACE BOOTSTRAP SEAL
+// ============================================================================
+
+//! # Palaco Canonical Workspace Bootstrap (`palaco-genesis`)
+//! 
+//! PEG-001.001 Implementation — Production-Grade Repository Layout & Build Gates.
+//! 
+//! Enforces uniform workspace resolver ("3"), strict `#![forbid(unsafe_code)]`,
+//! standardized crate layouts, and automated constitutional build gates.
+
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
+#![deny(rust_2018_idioms)]
+#![deny(unused_must_use)]
+
+/// Canonical workspace boot version identifier.
+pub const WORKSPACE_BOOTSTRAP_VERSION: &str = "PEG-001.001-CANONICAL";
+
 Ja. Ik zou de volgende stap uitvoeren als een **constitutionele V3-upgrade** in plaats van losse wijzigingen. Daarmee wordt `palaco-quay` een volwaardige kernelcrate binnen de PALACO Foundation.
 
 ---
