@@ -1,3 +1,6 @@
+
+Het gesuggereerde datamodel (EvidenceRecord)
+
 # 🏛 PALACO PEG-020
 
 # Constitutional Release Automation
@@ -117,6 +120,23 @@ Nieuwe PALACO-releasecyclus:
 
                     RELEASE BASELINE
 ```
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_evidence_record_builder_and_validation() {
+        let result = EvidenceRecordBuilder::new()
+            .evidence_id("EV-2026-001")
+            .legacy_pointer_sha1("418e928fbb1b2e8bb936f110c497949af31d2813")
+            .integrity_hash("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+            .merkle_leaf_hash("a1b2c3d4e5f6...")
+            .signature(vec![0x12, 0x34, 0x56])
+            .build();
+
+        assert!(result.is_ok(), "Bouwen van EvidenceRecord mislukt: {:?}", result.err());
+    }
+}
 
 ---
 
