@@ -22,3 +22,24 @@ TOM Verification
         │
         ▼
 PEG-007 Federation
+
+crates/palaco-kernel/src/
+├── governance.rs
+├── state_proof.rs
+└── lib.rs
+
+ExecutionPermit
+PermitState
+AuthorityVerifier
+ExecutionGuard
+StateProof
+GovernanceError
+
+VALID PERMIT       → ALLOW
+EXPIRED PERMIT     → DENY
+REVOKED PERMIT     → DENY
+BAD SIGNATURE      → DENY
+WRONG TARGET       → DENY
+MISSING EVIDENCE   → DENY
+VALID STATE PROOF  → ACCEPT
+BROKEN STATE PROOF → DENY
