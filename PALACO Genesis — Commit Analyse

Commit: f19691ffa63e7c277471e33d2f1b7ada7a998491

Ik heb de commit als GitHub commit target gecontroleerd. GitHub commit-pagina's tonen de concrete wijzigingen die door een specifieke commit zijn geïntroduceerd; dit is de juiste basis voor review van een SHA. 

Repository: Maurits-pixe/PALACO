@@ -31,6 +31,14 @@ crates/palaco-kernel/src/
 crates/palaco-kernel/src/governance.rs
 crates/palaco-kernel/src/state_proof.rs
 
+crates/palaco-kernel/src/governance.rs
+        +
+crates/palaco-kernel/src/state_proof.rs
+        +
+lib.rs exports
+        +
+Rust tests
+
 ExecutionPermit
 PermitState
 AuthorityVerifier
