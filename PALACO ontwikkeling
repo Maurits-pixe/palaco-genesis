@@ -1,3 +1,17 @@
+find . \
+    -not -path './.git/*' \
+    -print0 |
+while IFS= read -r -d '' path; do
+    name="$(basename "$path")"
+
+    case "$name" in
+        *"├"*|*"└"*|*"│"*)
+            echo "Malformed path detected: $path"
+            exit 1
+            ;;
+    esac
+done
+
 #!/usr/bin/env bash
 set -euo pipefail
 
