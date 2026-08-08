@@ -28,6 +28,9 @@ crates/palaco-kernel/src/
 ├── state_proof.rs
 └── lib.rs
 
+crates/palaco-kernel/src/governance.rs
+crates/palaco-kernel/src/state_proof.rs
+
 ExecutionPermit
 PermitState
 AuthorityVerifier
