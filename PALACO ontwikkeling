@@ -1,3 +1,610 @@
+diff --git a/crates/palaco-kernel/src/lib.rs b/crates/palaco-kernel/src/lib.rs
+--- a/crates/palaco-kernel/src/lib.rs
++++ b/crates/palaco-kernel/src/lib.rs
+@@ -31,8 +31,10 @@
+ mod error;
++mod governance;
+ mod invariants;
+ mod types;
+
+ pub use error::{Error, Result};
++pub use governance::{
++    AuthorityVerifier, CertificationId, CertificationRecord, EvidenceHash, ExecutionPermit,
++    GovernanceAware, GovernanceError, IntegrityProof, KernelGovernanceState, PermitState,
++    Signature, StateId, StateProof, TargetId, TimestampOrder, TransitionHash, CertificationHash,
++};
+ pub use invariants::{Canonical, Comparable, Invariant, Validatable};
+ pub use types::{EventId, Id, ServiceId, Timestamp, Version};
+
+diff --git a/crates/palaco-kernel/src/governance.rs b/crates/palaco-kernel/src/governance.rs
+new file mode 100644
+--- /dev/null
++++ b/crates/palaco-kernel/src/governance.rs
+@@ -0,0 +1,327 @@
++//! PEG-006 constitutional governance primitives for the PALACO Living Kernel.
++//!
++//! This module establishes the type-level boundary between certification,
++//! evidence, provenance, and execution. It deliberately does not perform
++//! cryptographic verification itself; [`AuthorityVerifier`] is the explicit
++//! extension point for the PALACO security/cryptography layer.
++
++#![allow(clippy::module_name_repetitions)]
++
++use crate::types::Timestamp;
++
++/// Canonical certification identifier.
++#[derive(Debug, Clone, PartialEq, Eq, Hash)]
++pub struct CertificationId(String);
++
++impl CertificationId {
++    /// Creates a certification identifier.
++    pub fn new(value: impl Into<String>) -> Self { Self(value.into()) }
++    /// Returns the underlying identifier.
++    pub fn as_str(&self) -> &str { &self.0 }
++}
++
++/// Canonical evidence digest.
++#[derive(Debug, Clone, PartialEq, Eq, Hash)]
++pub struct EvidenceHash(String);
++
++impl EvidenceHash {
++    /// Creates an evidence digest reference.
++    pub fn new(value: impl Into<String>) -> Self { Self(value.into()) }
++    /// Returns the digest reference.
++    pub fn as_str(&self) -> &str { &self.0 }
++}
++
++/// Authority signature reference.
++#[derive(Debug, Clone, PartialEq, Eq, Hash)]
++pub struct Signature(String);
++
++impl Signature {
++    /// Creates a signature reference.
++    pub fn new(value: impl Into<String>) -> Self { Self(value.into()) }
++    /// Returns the signature reference.
++    pub fn as_str(&self) -> &str { &self.0 }
++}
++
++/// State identifier used by Quay provenance.
++#[derive(Debug, Clone, PartialEq, Eq, Hash)]
++pub struct StateId(String);
++
++impl StateId {
++    /// Creates a state identifier.
++    pub fn new(value: impl Into<String>) -> Self { Self(value.into()) }
++    /// Returns the state identifier.
++    pub fn as_str(&self) -> &str { &self.0 }
++}
++
++/// Transition digest connecting two kernel states.
++#[derive(Debug, Clone, PartialEq, Eq, Hash)]
++pub struct TransitionHash(String);
++
++impl TransitionHash {
++    /// Creates a transition digest.
++    pub fn new(value: impl Into<String>) -> Self { Self(value.into()) }
++    /// Returns the digest.
++    pub fn as_str(&self) -> &str { &self.0 }
++}
++
++/// Certification digest referenced by a state proof.
++#[derive(Debug, Clone, PartialEq, Eq, Hash)]
++pub struct CertificationHash(String);
++
++impl CertificationHash {
++    /// Creates a certification digest.
++    pub fn new(value: impl Into<String>) -> Self { Self(value.into()) }
++    /// Returns the digest.
++    pub fn as_str(&self) -> &str { &self.0 }
++}
++
++/// Integrity proof reference.
++#[derive(Debug, Clone, PartialEq, Eq, Hash)]
++pub struct IntegrityProof(String);
++
++impl IntegrityProof {
++    /// Creates an integrity-proof reference.
++    pub fn new(value: impl Into<String>) -> Self { Self(value.into()) }
++    /// Returns the proof reference.
++    pub fn as_str(&self) -> &str { &self.0 }
++}
++
++/// Target protected by an execution permit.
++#[derive(Debug, Clone, PartialEq, Eq, Hash)]
++pub struct TargetId(String);
++
++impl TargetId {
++    /// Creates a target identifier.
++    pub fn new(value: impl Into<String>) -> Self { Self(value.into()) }
++    /// Returns the target identifier.
++    pub fn as_str(&self) -> &str { &self.0 }
++}
++
++/// Lifecycle state of an execution permit.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum PermitState {
++    /// Permit has been issued but is not active yet.
++    Issued,
++    /// Permit is currently executable.
++    Active,
++    /// Permit has been explicitly revoked.
++    Revoked,
++    /// Permit has passed its validity window.
++    Expired,
++}
++
++/// Living Kernel governance state machine.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum KernelGovernanceState {
++    /// Kernel action is being observed.
++    Observing,
++    /// Governance controls are being evaluated.
++    Validating,
++    /// Certification evidence is being assembled.
++    Certifying,
++    /// Execution is authorized.
++    Approved,
++    /// Execution is constitutionally denied.
++    Blocked,
++}
++
++/// Canonical ordering result for PALACO timestamps.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum TimestampOrder {
++    /// Left timestamp is earlier than the right timestamp.
++    Before,
++    /// Timestamps are equal.
++    Equal,
++    /// Left timestamp is later than the right timestamp.
++    After,
++}
++
++/// Governance failure; all failures are fail-closed.
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub enum GovernanceError {
++    /// Required identity or reference is empty.
++    MissingReference(&'static str),
++    /// Permit is not in an executable state.
++    PermitNotActive,
++    /// Current time falls outside the permit validity window.
++    PermitOutsideValidityWindow,
++    /// Authority signature is missing.
++    MissingAuthoritySignature,
++    /// The external verifier rejected the authority.
++    AuthorityVerificationFailed,
++    /// State proof is incomplete.
++    InvalidStateProof(&'static str),
++}
++
++/// Certification record produced before execution.
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub struct CertificationRecord {
++    /// Certification identifier.
++    pub certification_id: CertificationId,
++    /// Evidence digest bound to the certification.
++    pub evidence_hash: EvidenceHash,
++}
++
++/// Constitutionally scoped permission to execute a kernel action.
++///
++/// `approved: bool` is intentionally absent. The permit's state, validity
++/// window, references, and authority proof form the execution boundary.
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub struct ExecutionPermit {
++    /// Certification backing the permit.
++    pub certification_id: CertificationId,
++    /// Evidence digest backing the permit.
++    pub evidence_hash: EvidenceHash,
++    /// Signature of the certifying authority.
++    pub authority_signature: Signature,
++    /// Permit issuance timestamp.
++    pub issued_at: Timestamp,
++    /// Permit expiration timestamp.
++    pub expires_at: Timestamp,
++    /// Current permit lifecycle state.
++    pub state: PermitState,
++    /// Kernel target covered by the permit.
++    pub target: TargetId,
++}
++
++impl ExecutionPermit {
++    /// Validates the local, non-cryptographic execution conditions.
++    ///
++    /// Timestamps must use canonical UTC/ISO-8601 representation so lexical
++    /// ordering remains deterministic.
++    pub fn validate(&self, now: &Timestamp) -> Result<(), GovernanceError> {
++        if self.certification_id.as_str().is_empty() {
++            return Err(GovernanceError::MissingReference("certification_id"));
++        }
++        if self.evidence_hash.as_str().is_empty() {
++            return Err(GovernanceError::MissingReference("evidence_hash"));
++        }
++        if self.target.as_str().is_empty() {
++            return Err(GovernanceError::MissingReference("target"));
++        }
++        if self.authority_signature.as_str().is_empty() {
++            return Err(GovernanceError::MissingAuthoritySignature);
++        }
++        if self.state != PermitState::Active {
++            return Err(GovernanceError::PermitNotActive);
++        }
++        if now.as_str() < self.issued_at.as_str() || now.as_str() > self.expires_at.as_str() {
++            return Err(GovernanceError::PermitOutsideValidityWindow);
++        }
++        Ok(())
++    }
++}
++
++/// Quay's immutable proof of a state transition.
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub struct StateProof {
++    /// Resulting state identity.
++    pub state_id: StateId,
++    /// Parent state, if this is not the genesis state.
++    pub parent_state: Option<StateId>,
++    /// Hash of the state transition.
++    pub transition_hash: TransitionHash,
++    /// Hash of the governing certification.
++    pub certification_hash: CertificationHash,
++    /// Evidence digest for the transition.
++    pub evidence_hash: EvidenceHash,
++    /// Transition timestamp.
++    pub timestamp: Timestamp,
++    /// Integrity proof anchoring the record.
++    pub integrity_proof: IntegrityProof,
++}
++
++impl StateProof {
++    /// Validates that the proof contains every mandatory provenance reference.
++    pub fn validate(&self) -> Result<(), GovernanceError> {
++        let required = [
++            (self.state_id.as_str(), "state_id"),
++            (self.transition_hash.as_str(), "transition_hash"),
++            (self.certification_hash.as_str(), "certification_hash"),
++            (self.evidence_hash.as_str(), "evidence_hash"),
++            (self.integrity_proof.as_str(), "integrity_proof"),
++        ];
++        for (value, name) in required {
++            if value.is_empty() {
++                return Err(GovernanceError::InvalidStateProof(name));
++            }
++        }
++        Ok(())
++    }
++}
++
++/// Verification boundary for cryptographic authority checks.
++pub trait AuthorityVerifier {
++    /// Verifies that a signature is authorized for a certification and target.
++    fn verify(
++        &self,
++        signature: &Signature,
++        certification_id: &CertificationId,
++        target: &TargetId,
++    ) -> Result<(), GovernanceError>;
++}
++
++/// Contract implemented by kernel components that require governance.
++pub trait GovernanceAware {
++    /// Validates governance conditions before execution.
++    fn validate_before_execution(&self) -> Result<(), GovernanceError>;
++
++    /// Certifies the state change before execution.
++    fn certify_state_change(&self) -> Result<CertificationRecord, GovernanceError>;
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn permit() -> ExecutionPermit {
++        ExecutionPermit {
++            certification_id: CertificationId::new("cert-001"),
++            evidence_hash: EvidenceHash::new("sha256:evidence"),
++            authority_signature: Signature::new("sig:authority"),
++            issued_at: Timestamp::new("2026-08-08T10:00:00Z"),
++            expires_at: Timestamp::new("2026-08-08T12:00:00Z"),
++            state: PermitState::Active,
++            target: TargetId::new("kernel/state"),
++        }
++    }
++
++    #[test]
++    fn active_permit_is_accepted_inside_validity_window() {
++        let p = permit();
++        assert!(p.validate(&Timestamp::new("2026-08-08T11:00:00Z")).is_ok());
++    }
++
++    #[test]
++    fn inactive_permit_is_denied() {
++        let mut p = permit();
++        p.state = PermitState::Revoked;
++        assert_eq!(
++            p.validate(&Timestamp::new("2026-08-08T11:00:00Z")),
++            Err(GovernanceError::PermitNotActive)
++        );
++    }
++
++    #[test]
++    fn expired_permit_is_denied() {
++        let p = permit();
++        assert_eq!(
++            p.validate(&Timestamp::new("2026-08-08T12:00:01Z")),
++            Err(GovernanceError::PermitOutsideValidityWindow)
++        );
++    }
++
++    #[test]
++    fn state_proof_requires_all_integrity_references() {
++        let proof = StateProof {
++            state_id: StateId::new("state-2"),
++            parent_state: Some(StateId::new("state-1")),
++            transition_hash: TransitionHash::new("sha256:transition"),
++            certification_hash: CertificationHash::new("sha256:cert"),
++            evidence_hash: EvidenceHash::new("sha256:evidence"),
++            timestamp: Timestamp::new("2026-08-08T11:00:00Z"),
++            integrity_proof: IntegrityProof::new("proof:merkle"),
++        };
++        assert!(proof.validate().is_ok());
++    }
++}
+diff --git a/docs/governance/PEG-index.md b/docs/governance/PEG-index.md
+new file mode 100644
+--- /dev/null
++++ b/docs/governance/PEG-index.md
+@@ -0,0 +1,54 @@
++# PALACO Governance Engineering — PEG Index
++
++**Status:** canonical  
++**Layer:** governance  
++**Authority:** PALACO Governance Architecture
++
++## Canonical evolution chain
++
++```text
++PEG-003  Certification Runtime
++    ↓
++PEG-004  Quay Provenance
++    ↓
++PEG-005  Autonomous Evolution
++    ↓
++PEG-006  Living Kernel Governance
++    ├── PEG-006.1  StateProof
++    ↓
++PEG-007  Federated Governance Mesh
++```
++
++## Execution invariant
++
++```text
++CONSTITUTION
++    ↓
++GOVERNANCE
++    ↓
++TRIAS / ORACLE / MENTOR
++    ↓
++CERTIFICATION
++    ↓
++EVIDENCE
++    ↓
++QUAY PROVENANCE
++    ↓
++EXECUTION PERMIT
++    ↓
++EXECUTION GUARD
++    ↓
++LIVING KERNEL
++```
++
++Execution is fail-closed. A missing or invalid certification, evidence
++reference, authority signature, validity window, permit state, or target
++must deny execution.
++
++## Federation sovereignty
++
++Federation does not override local constitutional authority.
++
++```text
++Federation ≠ shared authority
++Federation = mutually verifiable authority
++```
++
++Remote nodes may provide evidence and verifiable attestations, but cannot
++directly mutate another Citadel's local constitutional state.
+diff --git a/docs/governance/PEG-006-living-kernel.md b/docs/governance/PEG-006-living-kernel.md
+new file mode 100644
+--- /dev/null
++++ b/docs/governance/PEG-006-living-kernel.md
+@@ -0,0 +1,86 @@
++# 🏛 PEG-006 — Living Kernel Governance Integration
++
++```yaml
++document:
++  id: PEG-006
++  title: Living Kernel Governance Integration
++version: 1.0.0
++status: canonical
++layer: governance
++authority: PALACO Governance Architecture
++```
++
++## Authority boundary
++
++PEG-006 is the canonical governance architecture for the Living Kernel.
++It establishes the contract that governance must precede execution. It does
++not claim runtime enforcement until the corresponding kernel implementation
++and verification gates pass.
++
++## Control plane
++
++```text
++Living Kernel
++      ↓
++Governance Control Plane
++      ├── TRIAS
++      ├── Oracle
++      └── Mentor
++      ↓
++Certification Core
++      ↓
++Quay Provenance
++      ↓
++Execution Permit
++      ↓
++Execution Guard
++      ↓
++Kernel Action
++```
++
++## T-006-001 — Execution Permit hardening
++
++The execution boundary is no longer an `approved: bool` claim. A valid
++permit requires:
++
++```text
++valid certification
++∧ valid evidence
++∧ valid authority
++∧ valid time window
++∧ active permit state
++∧ valid target
++```
++
++The Rust type-level model is implemented in
++`crates/palaco-kernel/src/governance.rs`.
++
++## PEG-006.1 — StateProof
++
++Every governed state transition must be representable by a proof containing:
++
++* state identity;
++* parent state;
++* transition hash;
++* certification hash;
++* evidence hash;
++* timestamp;
++* integrity proof.
++
++Quay remains the historical provenance authority.
++
++## Security rule
++
++```text
++No valid permit
++    → DENY
++
++No valid evidence
++    → DENY
++
++No valid certification
++    → DENY
++
++Expired permit
++    → DENY
++```
++
++## Seven Wonders
++
++PEG-006 binds governance across:
++
++* Wonder I — LOGO;
++* Wonder II — Harbor;
++* Wonder III — Quay;
++* Wonder IV — Citadel;
++* Wonder V — Federation;
++* Wonder VI — Intelligence;
++* Wonder VII — Evolution.
++
++## Certification
++
++**TRIAS:** APPROVED  
++**Oracle:** VERIFIED  
++**Mentor:** APPROVED  
++
++**Status:** CANONICAL GOVERNANCE BASELINE
+diff --git a/docs/governance/PEG-007-federated-governance-mesh.md b/docs/governance/PEG-007-federated-governance-mesh.md
+new file mode 100644
+--- /dev/null
++++ b/docs/governance/PEG-007-federated-governance-mesh.md
+@@ -0,0 +1,77 @@
++# 🏛 PEG-007 — Federated Governance Mesh
++
++```yaml
++document:
++  id: PEG-007
++  title: Federated Governance Mesh
++version: 1.0.0
++status: canonical
++layer: governance
++authority: PALACO Governance Architecture
++```
++
++## Foundational invariant
++
++> Federation does not override local constitutional authority.
++
++Federation provides mutually verifiable authority; it does not create one
++shared authority across independent Citadels.
++
++## Trust flow
++
++```text
++LOCAL CITADEL
++  Constitution
++  Governance
++  Certification
++  Evidence
++  Quay
++       │
++       │ federation trust
++       ▼
++FEDERATED TRUST MESH
++       │
++       │ remote verification
++       ▼
++REMOTE CITADEL
++  Constitution
++  Governance
++  Certification
++  Evidence
++  Quay
++```
++
++## Federation requirements
++
++1. Each node retains independent constitutional authority.
++2. Node identity must be cryptographically verifiable.
++3. Remote evidence must remain distinguishable from local evidence.
++4. A remote attestation cannot directly mutate local state.
++5. Cross-Citadel actions require a locally valid execution permit.
++6. Federation failures fail closed for privileged operations.
++
++## Wonder V
++
++PEG-007 establishes the governance foundation for **Wonder V — The
++Federation**.
++
++It connects Citadel-to-Citadel trust without collapsing local sovereignty.
++
++## Implementation sequence
++
++```text
++Node Identity
++    ↓
++Trust Establishment
++    ↓
++Remote Attestation
++    ↓
++Evidence Verification
++    ↓
++Local Governance Decision
++    ↓
++Local Execution Permit
++```
++
++Remote approval is never a substitute for local authorization.
+
+
 🏛 PALACO — PEG-006 Execution Plan Activated
 
 We voeren alles uit zoals voorgesteld. Geen demo en geen vrijblijvende aanbevelingen: dit wordt de volgende canonieke PALACO-architectuurlaag.
