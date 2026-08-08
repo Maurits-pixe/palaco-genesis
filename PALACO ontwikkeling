@@ -1,3 +1,306 @@
+Ja. Deze test legt precies de juiste richting vast voor **PEG-020 — Constitutional Release Automation**, maar ik zou hem niet letterlijk zo accepteren: `"a1b2c3d4e5f6..."` is geen valide hash en de builder moet dat ook daadwerkelijk afdwingen.
+
+Ik zou PEG-020 daarom nu als volgt verharden.
+
+## Canonical `EvidenceRecord`
+
+```rust
+#![forbid(unsafe_code)]
+#![warn(missing_docs)]
+
+/// PEG-020 canonical evidence record.
+#[derive(Debug, Clone)]
+pub struct EvidenceRecord {
+    /// Stable evidence identifier.
+    pub evidence_id: String,
+
+    /// Historical Git/SHA-1 provenance pointer.
+    pub legacy_pointer_sha1: String,
+
+    /// Canonical integrity hash.
+    pub integrity_hash: String,
+
+    /// Merkle leaf hash.
+    pub merkle_leaf_hash: String,
+
+    /// Cryptographic signature bytes.
+    pub signature: Vec<u8>,
+}
+
+/// Builder for [`EvidenceRecord`].
+#[derive(Debug, Default)]
+pub struct EvidenceRecordBuilder {
+    evidence_id: Option<String>,
+    legacy_pointer_sha1: Option<String>,
+    integrity_hash: Option<String>,
+    merkle_leaf_hash: Option<String>,
+    signature: Option<Vec<u8>>,
+}
+
+impl EvidenceRecordBuilder {
+    /// Creates an empty builder.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the evidence identifier.
+    pub fn evidence_id(
+        mut self,
+        value: impl Into<String>,
+    ) -> Self {
+        self.evidence_id = Some(value.into());
+        self
+    }
+
+    /// Sets the historical SHA-1 pointer.
+    pub fn legacy_pointer_sha1(
+        mut self,
+        value: impl Into<String>,
+    ) -> Self {
+        self.legacy_pointer_sha1 = Some(value.into());
+        self
+    }
+
+    /// Sets the canonical integrity hash.
+    pub fn integrity_hash(
+        mut self,
+        value: impl Into<String>,
+    ) -> Self {
+        self.integrity_hash = Some(value.into());
+        self
+    }
+
+    /// Sets the Merkle leaf hash.
+    pub fn merkle_leaf_hash(
+        mut self,
+        value: impl Into<String>,
+    ) -> Self {
+        self.merkle_leaf_hash = Some(value.into());
+        self
+    }
+
+    /// Sets the cryptographic signature.
+    pub fn signature(
+        mut self,
+        value: Vec<u8>,
+    ) -> Self {
+        self.signature = Some(value);
+        self
+    }
+
+    /// Builds and validates the evidence record.
+    pub fn build(self) -> Result<EvidenceRecord, EvidenceRecordError> {
+        let evidence_id = self
+            .evidence_id
+            .ok_or(EvidenceRecordError::MissingEvidenceId)?;
+
+        let legacy_pointer_sha1 = self
+            .legacy_pointer_sha1
+            .ok_or(EvidenceRecordError::MissingLegacyPointer)?;
+
+        let integrity_hash = self
+            .integrity_hash
+            .ok_or(EvidenceRecordError::MissingIntegrityHash)?;
+
+        let merkle_leaf_hash = self
+            .merkle_leaf_hash
+            .ok_or(EvidenceRecordError::MissingMerkleHash)?;
+
+        let signature = self
+            .signature
+            .ok_or(EvidenceRecordError::MissingSignature)?;
+
+        validate_sha1(&legacy_pointer_sha1)?;
+        validate_sha256(&integrity_hash)?;
+        validate_sha256(&merkle_leaf_hash)?;
+
+        if signature.is_empty() {
+            return Err(EvidenceRecordError::EmptySignature);
+        }
+
+        Ok(EvidenceRecord {
+            evidence_id,
+            legacy_pointer_sha1,
+            integrity_hash,
+            merkle_leaf_hash,
+            signature,
+        })
+    }
+}
+
+/// Evidence record validation failures.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EvidenceRecordError {
+    /// Evidence ID is missing.
+    MissingEvidenceId,
+
+    /// Legacy SHA-1 pointer is missing.
+    MissingLegacyPointer,
+
+    /// Integrity hash is missing.
+    MissingIntegrityHash,
+
+    /// Merkle hash is missing.
+    MissingMerkleHash,
+
+    /// Signature is missing.
+    MissingSignature,
+
+    /// Signature contains no bytes.
+    EmptySignature,
+
+    /// SHA-1 pointer is malformed.
+    InvalidSha1,
+
+    /// SHA-256 hash is malformed.
+    InvalidSha256,
+}
+
+fn is_hex(value: &str) -> bool {
+    value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn validate_sha1(value: &str) -> Result<(), EvidenceRecordError> {
+    if value.len() != 40 || !is_hex(value) {
+        return Err(EvidenceRecordError::InvalidSha1);
+    }
+
+    Ok(())
+}
+
+fn validate_sha256(value: &str) -> Result<(), EvidenceRecordError> {
+    if value.len() != 64 || !is_hex(value) {
+        return Err(EvidenceRecordError::InvalidSha256);
+    }
+
+    Ok(())
+}
+```
+
+## De test wordt dan daadwerkelijk betekenisvol
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_evidence_record_builder_and_validation() {
+        let result = EvidenceRecordBuilder::new()
+            .evidence_id("EV-2026-001")
+            .legacy_pointer_sha1(
+                "418e928fbb1b2e8bb936f110c497949af31d2813",
+            )
+            .integrity_hash(
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            )
+            .merkle_leaf_hash(
+                "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
+            )
+            .signature(vec![0x12, 0x34, 0x56])
+            .build();
+
+        assert!(
+            result.is_ok(),
+            "Bouwen van EvidenceRecord mislukt: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_sha1() {
+        let result = EvidenceRecordBuilder::new()
+            .evidence_id("EV-2026-002")
+            .legacy_pointer_sha1("not-a-sha1")
+            .integrity_hash(
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            )
+            .merkle_leaf_hash(
+                "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
+            )
+            .signature(vec![1])
+            .build();
+
+        assert_eq!(
+            result,
+            Err(EvidenceRecordError::InvalidSha1)
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_merkle_hash() {
+        let result = EvidenceRecordBuilder::new()
+            .evidence_id("EV-2026-003")
+            .legacy_pointer_sha1(
+                "418e928fbb1b2e8bb936f110c497949af31d2813",
+            )
+            .integrity_hash(
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            )
+            .merkle_leaf_hash("a1b2c3d4e5f6...")
+            .signature(vec![1])
+            .build();
+
+        assert_eq!(
+            result,
+            Err(EvidenceRecordError::InvalidSha256)
+        );
+    }
+}
+```
+
+### Eén belangrijke architectuurkeuze
+
+Ik zou de drie waarden **niet als hetzelfde soort hash behandelen**:
+
+```text
+legacy_pointer_sha1
+        │
+        └── historische Git/provenance pointer
+
+integrity_hash
+        │
+        └── canonical SHA-256 integrity commitment
+
+merkle_leaf_hash
+        │
+        └── positie in Evidence Merkle structure
+
+signature
+        │
+        └── authenticiteit/attestation
+```
+
+Dat onderscheid is belangrijk voor **PEG-020** én sluit rechtstreeks aan op de Quay-provenance-engine.
+
+### PEG-020 status
+
+**TRIAS:** ✅ contractueel helder
+**Oracle:** ✅ evidence-model geschikt voor Merkle/provenance-keten
+**Mentor:** ✅ builder + typed validation duidelijk
+**Cryptographic hardening:** 🟡 volgende stap: `String` hashes vervangen door gevalideerde hash-newtypes
+
+Daarmee hebben we nu een nette keten:
+
+```text
+Git SHA-1
+   ↓
+EvidenceRecord
+   ↓
+SHA-256 Integrity
+   ↓
+Merkle Leaf
+   ↓
+Signature
+   ↓
+Quay Immutable State
+   ↓
+Oracle Evidence
+   ↓
+Constitutional Release
+```
+
+Dit is een veel sterkere basis dan alleen een release-ID opslaan.
 
 Het gesuggereerde datamodel (EvidenceRecord)
 
