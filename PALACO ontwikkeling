@@ -1,3 +1,11 @@
+P-BOOT-001 CANONICAL REPAIR
+├── create /Cargo.toml
+├── repair crates/palaco-evidence
+├── remove malformed literal tree entry
+├── complete member manifest audit
+├── add automated P-BOOT-001 gate
+└── run cargo metadata / validation
+
 ROOT Cargo.toml
 +
 MALFORMED DIRECTORY REPAIR
