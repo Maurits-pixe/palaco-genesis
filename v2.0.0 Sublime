@@ -5552,5 +5552,74 @@ echo "P-BOOT-001: PASS"
 echo "Workspace integrity verified."
 echo "=========================================="
 
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== P-BOOT-001 CANONICAL WORKSPACE AUDIT ==="
+
+echo "[1/6] Root Cargo.toml"
+test -f Cargo.toml
+echo "        PASS"
+
+echo "[2/6] Malformed filesystem entries"
+
+while IFS= read -r -d '' path; do
+    name="$(basename "$path")"
+
+    case "$name" in
+        *"├"*|*"└"*|*"│"*)
+            echo "Malformed path detected: $path"
+            exit 1
+            ;;
+    esac
+done < <(
+    find . \
+        -not -path './.git/*' \
+        -print0
+)
+
+echo "        PASS"
+
+echo "[3/6] Cargo metadata"
+
+cargo metadata \
+    --format-version 1 \
+    --no-deps \
+    >/tmp/p-boot-001-metadata.json
+
+echo "        PASS"
+
+echo "[4/6] Workspace members"
+
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+metadata = json.loads(
+    Path("/tmp/p-boot-001-metadata.json").read_text()
+)
+
+members = metadata["workspace_members"]
+
+if not members:
+    raise SystemExit("Workspace contains no members")
+
+print(f"        PASS ({len(members)} members)")
+PY
+
+echo "[5/6] Workspace compilation"
+
+cargo check --workspace
+
+echo "        PASS"
+
+echo "[6/6] Canonical result"
+
+echo
+echo "=========================================="
+echo "P-BOOT-001: PASS"
+echo "Workspace integrity verified."
+echo "=========================================="
+
 
 
