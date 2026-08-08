@@ -1,0 +1,24 @@
+PEG-006 Runtime Enforcement
+        │
+        ├── ExecutionPermit
+        ├── PermitState
+        ├── AuthorityVerifier
+        ├── ExecutionGuard
+        │
+        ▼
+State Transition Gate
+        │
+        ▼
+StateProof
+        │
+        ▼
+Quay Provenance
+        │
+        ▼
+Kernel Enforcement
+        │
+        ▼
+TOM Verification
+        │
+        ▼
+PEG-007 Federation
