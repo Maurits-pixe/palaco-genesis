@@ -1,3 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== P-BOOT-001 CANONICAL WORKSPACE AUDIT ==="
+
+test -f Cargo.toml
+
+echo "[1/5] Root Cargo.toml ........ PASS"
+
+cargo metadata \
+    --format-version 1 \
+    --no-deps \
+    >/tmp/p-boot-001-metadata.json
+
+echo "[2/5] Cargo metadata ........ PASS"
+
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+data = json.loads(
+    Path("/tmp/p-boot-001-metadata.json").read_text()
+)
+
+members = data["workspace_members"]
+
+assert members, "workspace has no members"
+
+print(f"[3/5] Workspace members ..... PASS ({len(members)})")
+PY
+
+python3 - <<'PY'
+from pathlib import Path
+
+crates = Path("crates")
+
+assert crates.is_dir(), "crates directory missing"
+
+malformed = []
+
+for path in crates.iterdir():
+    if any(c in path.name for c in ("├", "└", "│")):
+        malformed.append(str(path))
+
+assert not malformed, (
+    "Malformed directory entries: "
+    + ", ".join(malformed)
+)
+
+print("[4/5] Directory integrity ... PASS")
+PY
+
+cargo check --workspace
+
+echo "[5/5] Workspace validation .. PASS"
+echo
+echo "P-BOOT-001: PASS"
+
 P-BOOT-001 CANONICAL REPAIR
 ├── create /Cargo.toml
 ├── repair crates/palaco-evidence
