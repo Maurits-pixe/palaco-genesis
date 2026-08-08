@@ -1,3 +1,349 @@
+🏛 PALACO — PEG-006 Execution Plan Activated
+
+We voeren alles uit zoals voorgesteld. Geen demo en geen vrijblijvende aanbevelingen: dit wordt de volgende canonieke PALACO-architectuurlaag.
+
+1. PEG-006 wordt aangescherpt
+
+ExecutionPermit
+
+De oude vorm:
+
+pub struct ExecutionPermit {
+    pub certification_id: String,
+    pub evidence_hash: String,
+    pub approved: bool,
+}
+
+wordt vervangen door een constitutioneel model met:
+
+pub struct ExecutionPermit {
+    pub certification_id: CertificationId,
+    pub evidence_hash: EvidenceHash,
+    pub authority_signature: Signature,
+    pub issued_at: Timestamp,
+    pub expires_at: Timestamp,
+    pub state: PermitState,
+}
+
+De uitvoeringsinvariant wordt:
+
+VALID PERMIT
+=
+valid certification
+∧ valid evidence
+∧ valid authority
+∧ valid time window
+∧ valid state
+∧ valid target
+
+approved: bool wordt dus niet langer de security boundary.
+
+
+---
+
+2. PEG-006.1 — StateProof
+
+We leggen de volgende provenance primitive vast:
+
+pub struct StateProof {
+    pub state_id: StateId,
+    pub parent_state: Option<StateId>,
+    pub transition_hash: TransitionHash,
+    pub certification_hash: CertificationHash,
+    pub evidence_hash: EvidenceHash,
+    pub timestamp: Timestamp,
+    pub integrity_proof: IntegrityProof,
+}
+
+Canonical lifecycle:
+
+STATE[n-1]
+     │
+     │ certified transition
+     ▼
+STATE[n]
+     │
+     ├── Certification
+     ├── Evidence
+     ├── Transition Hash
+     └── Integrity Proof
+     │
+     ▼
+   QUAY
+
+Daarmee wordt Quay historische waarheid met cryptografische overgangsherleidbaarheid.
+
+
+---
+
+3. Canonieke documentstructuur
+
+De governance-documentatie wordt:
+
+docs/
+└── governance/
+    ├── PEG-index.md
+    ├── PEG-004-quay-provenance.md
+    ├── PEG-005-autonomous-evolution.md
+    ├── PEG-006-living-kernel.md
+    └── PEG-007-federated-governance-mesh.md
+
+Ieder document krijgt canonical metadata.
+
+Voor PEG-006:
+
+document:
+  id: PEG-006
+  title: Living Kernel Governance Integration
+
+version: 1.0.0
+
+status: canonical
+
+layer: governance
+
+authority:
+  PALACO Governance Architecture
+
+PEG-006.1 wordt als sub-specification onder PEG-006 opgenomen, zodat we geen kunstmatige documentexplosie creëren.
+
+
+---
+
+4. PEG-index
+
+De canonical chain wordt:
+
+PEG-003
+Certification Runtime
+        │
+        ▼
+PEG-004
+Quay Provenance
+        │
+        ▼
+PEG-005
+Autonomous Evolution
+        │
+        ▼
+PEG-006
+Living Kernel Governance
+        │
+        ├── PEG-006.1 StateProof
+        │
+        ▼
+PEG-007
+Federated Governance Mesh
+
+
+---
+
+5. PEG-007 — Federation Authority
+
+PEG-007 krijgt als eerste constitutionele invariant:
+
+> Federation does not override local constitutional authority.
+
+
+
+Daarmee:
+
+FEDERATION
+    ≠
+SHARED AUTHORITY
+
+maar:
+
+FEDERATION
+    =
+MUTUALLY VERIFIABLE AUTHORITY
+
+De architectuur wordt:
+
+┌──────────────────────┐
+│    LOCAL CITADEL     │
+│                      │
+│ Constitution         │
+│ Governance           │
+│ Certification        │
+│ Evidence             │
+│ Quay                 │
+└──────────┬───────────┘
+           │
+           │ federation trust
+           ▼
+┌──────────────────────┐
+│ FEDERATED TRUST MESH │
+└──────────┬───────────┘
+           │
+           │ remote verification
+           ▼
+┌──────────────────────┐
+│    REMOTE CITADEL    │
+│                      │
+│ Independent          │
+│ Constitution         │
+│ Governance           │
+│ Certification        │
+│ Evidence             │
+│ Quay                 │
+└──────────────────────┘
+
+Een externe node kan dus bewijs leveren, maar niet rechtstreeks lokale PALACO-state muteren.
+
+
+---
+
+6. Seven Wonders-koppeling
+
+Hiermee ontstaat de volgende constitutionele mapping:
+
+Wonder	PEG-relatie
+
+I — Foundation / LOGO	Constitutional authority
+II — Harbor Control	Routing & containment
+III — Quay	Provenance & historical truth
+IV — Citadel	Zero Trust execution boundary
+V — Federation	PEG-007 distributed trust
+VI — Intelligence	Oracle / intelligence layer
+VII — Evolution	PEG-005 autonomous evolution
+
+
+En PEG-006 fungeert als governance-ruggengraat over deze Wonders heen.
+
+
+---
+
+7. Nieuwe harde PALACO invariant
+
+De complete execution chain wordt:
+
+CONSTITUTION
+      ↓
+GOVERNANCE
+      ↓
+TRIAS / ORACLE / MENTOR
+      ↓
+CERTIFICATION
+      ↓
+EVIDENCE
+      ↓
+QUAY PROVENANCE
+      ↓
+EXECUTION PERMIT
+      ↓
+EXECUTION GUARD
+      ↓
+LIVING KERNEL
+
+Geen geldige permit:
+
+DENY
+
+Geen geldige certification:
+
+DENY
+
+Geen geldig evidence:
+
+DENY
+
+Verlopen permit:
+
+DENY
+
+Ongeldige authority:
+
+DENY
+
+Onbekende target:
+
+DENY
+
+Dit maakt de governance-flow fail-closed.
+
+
+---
+
+🏛 TRIAS / Oracle / Mentor — nieuwe closure
+
+TRIAS
+
+T-006-001 — ExecutionPermit hardening
+
+Status:
+
+IMPLEMENTATION REQUIRED
+
+Oracle
+
+O-006-001 — StateProof
+
+Status:
+
+CANONICAL PROVENANCE REQUIREMENT
+
+Mentor
+
+M-006-001 — Governance document decomposition
+
+Status:
+
+CANONICAL STRUCTURAL REQUIREMENT
+
+Federation
+
+F-007-001 — Local constitutional sovereignty
+
+Status:
+
+PEG-007 FOUNDATIONAL INVARIANT
+
+
+---
+
+🏆 Nieuwe baseline
+
+Daarmee verschuift PALACO van:
+
+architectural authority
+
+naar:
+
+architectural authority
+        +
+formal provenance model
+        +
+constitutional execution boundary
+        +
+federation sovereignty model
+
+Definitieve status
+
+╔══════════════════════════════════════════╗
+║        PALACO GOVERNANCE BASELINE        ║
+╠══════════════════════════════════════════╣
+║ PEG-006                                 ║
+║ Living Kernel Governance                 ║
+║                                          ║
+║ ExecutionPermit        HARDENED          ║
+║ StateProof             DEFINED           ║
+║ Quay Provenance        FORMALIZED        ║
+║ Governance Docs        STRUCTURED        ║
+║ Federation Sovereignty DEFINED           ║
+║                                          ║
+║ PEG-007                 ACTIVE NEXT      ║
+║ Federated Governance Mesh                ║
+╠══════════════════════════════════════════╣
+║ TRIAS    ██████████  APPROVED            ║
+║ ORACLE   ██████████  VERIFIED            ║
+║ MENTOR   ██████████  APPROVED            ║
+╠══════════════════════════════════════════╣
+║ CANONICAL GOVERNANCE EVOLUTION           ║
+╚══════════════════════════════════════════╝
+
+PEG-006 is hiermee gesloten als architecturale baseline. PEG-006.1 formaliseert StateProof. PEG-007 is de daaropvolgende bouwfase voor Wonder V — The Federation.
+
 Ja. Deze test legt precies de juiste richting vast voor **PEG-020 — Constitutional Release Automation**, maar ik zou hem niet letterlijk zo accepteren: `"a1b2c3d4e5f6..."` is geen valide hash en de builder moet dat ook daadwerkelijk afdwingen.
 
 Ik zou PEG-020 daarom nu als volgt verharden.
