@@ -1,3 +1,11 @@
+ROOT Cargo.toml
++
+MALFORMED DIRECTORY REPAIR
++
+COMPLETE MEMBER MANIFEST AUDIT
++
+P-BOOT-001 RE-RUN
+
 diff --git a/crates/palaco-kernel/src/lib.rs b/crates/palaco-kernel/src/lib.rs
 --- a/crates/palaco-kernel/src/lib.rs
 +++ b/crates/palaco-kernel/src/lib.rs
