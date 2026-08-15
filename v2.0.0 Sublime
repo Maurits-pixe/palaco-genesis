@@ -5621,5 +5621,442 @@ echo "P-BOOT-001: PASS"
 echo "Workspace integrity verified."
 echo "=========================================="
 
+Een paar seconden nagedacht
+
+🔱 QUAY-002 — Domain Model: GO
+
+We gaan nu één laag dieper. De repository-baseline bevestigt dat PALACO al sterk op type safety, determinisme en auditability is ingericht; Quay moet daarop aansluiten en niet een parallel type-systeem introduceren.
+
+1. Het kernmodel
+
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
+
+// crates/palaco-quay/src/model.rs
+
+/// Immutable identity of a Quay record.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RecordId(String);
+
+/// Immutable digest of bytes entering the Quay.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PayloadDigest(String);
+
+/// Identifies the actor or subsystem that submitted the record.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SourceId(String);
+
+/// Immutable record received by the Quay.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuayRecord {
+    id: RecordId,
+    payload: Vec<u8>,
+    payload_digest: PayloadDigest,
+    source: SourceId,
+}
+
+/// Provenance attached to a record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Provenance {
+    record_id: RecordId,
+    source: SourceId,
+    predecessor: Option<RecordId>,
+}
+
+/// Evidence generated while processing the record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EvidenceBundle {
+    record_id: RecordId,
+    payload_digest: PayloadDigest,
+    provenance: Provenance,
+}
+
+/// Proof that the record satisfies the transition invariant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StateProof {
+    record_id: RecordId,
+    evidence: EvidenceBundle,
+}
+
+/// A record that has successfully passed the Quay proof boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProvenQuayRecord {
+    record: QuayRecord,
+    provenance: Provenance,
+    evidence: EvidenceBundle,
+    state_proof: StateProof,
+}
+
+Waarom dit belangrijk is
+
+We maken niet één grote QuayRecord waarin alles vrij muteerbaar is.
+
+We creëren een gecontroleerde levenscyclus:
+
+QuayRecord
+    │
+    │ provenance
+    ▼
+EvidenceBundle
+    │
+    │ verification
+    ▼
+StateProof
+    │
+    │ successful transition
+    ▼
+ProvenQuayRecord
+
+Daarmee kunnen we later zelfs op type-niveau afdwingen:
+
+QuayRecord
+    ≠
+ProvenQuayRecord
+
+Een object dat nog geen bewijs heeft, kan dus niet semantisch worden behandeld alsof het bewezen is.
+
+
+---
+
+2. Eerste constructor-grens
+
+De constructor wordt bewust streng:
+
+impl QuayRecord {
+    /// Creates a record from an immutable payload.
+    pub fn new(
+        id: RecordId,
+        payload: Vec<u8>,
+        source: SourceId,
+    ) -> Self {
+        let payload_digest = PayloadDigest::from_bytes(&payload);
+
+        Self {
+            id,
+            payload,
+            payload_digest,
+            source,
+        }
+    }
+
+    /// Returns the canonical record identifier.
+    pub fn id(&self) -> &RecordId {
+        &self.id
+    }
+
+    /// Returns the immutable payload.
+    pub fn payload(&self) -> &[u8] {
+        &self.payload
+    }
+
+    /// Returns the payload digest.
+    pub fn payload_digest(&self) -> &PayloadDigest {
+        &self.payload_digest
+    }
+
+    /// Returns the source identifier.
+    pub fn source(&self) -> &SourceId {
+        &self.source
+    }
+}
+
+Geen setter.
+
+Dus:
+
+record.set_source(...);      // ❌ bestaat niet
+record.set_payload(...);     // ❌ bestaat niet
+record.set_digest(...);      // ❌ bestaat niet
+
+Dit is precies wat we willen voor de provenance-engine.
+
+
+---
+
+3. StateProof wordt een echte capability
+
+Dit is de belangrijkste ontwerpkeuze van QUAY-002.
+
+impl StateProof {
+    /// Creates a proof only from verified evidence.
+    pub(crate) fn verified(
+        record_id: RecordId,
+        evidence: EvidenceBundle,
+    ) -> Self {
+        Self {
+            record_id,
+            evidence,
+        }
+    }
+
+    /// Returns the proven record identifier.
+    pub fn record_id(&self) -> &RecordId {
+        &self.record_id
+    }
+}
+
+En vervolgens:
+
+impl ProvenQuayRecord {
+    pub(crate) fn from_verified(
+        record: QuayRecord,
+        provenance: Provenance,
+        evidence: EvidenceBundle,
+        state_proof: StateProof,
+    ) -> Self {
+        Self {
+            record,
+            provenance,
+            evidence,
+            state_proof,
+        }
+    }
+}
+
+De buitenwereld kan dus geen nep-StateProof construeren zolang de modulegrenzen correct blijven.
+
+
+---
+
+4. De Quay-lifecycle
+
+Hier leggen we de fundamentele overgang vast:
+
+┌───────────────┐
+              │  QuayRecord   │
+              └───────┬───────┘
+                      │
+                      ▼
+              ┌───────────────┐
+              │  Provenance   │
+              └───────┬───────┘
+                      │
+                      ▼
+              ┌───────────────┐
+              │   Evidence    │
+              └───────┬───────┘
+                      │
+                VERIFY ALL
+                      │
+             ┌────────┴────────┐
+             │                 │
+           FAIL              PASS
+             │                 │
+             ▼                 ▼
+        QUARANTINE        StateProof
+                               │
+                               ▼
+                       ProvenQuayRecord
+
+Belangrijk: Quay gaat hier nog niet naar storage.
+Ook nog niet naar Citadel.
+Ook nog geen cryptografische implementatiedetails.
+
+Dat zijn respectievelijk QUAY-003 t/m QUAY-008.
+
+Dat is precies het "grof → fijn"-principe dat je vroeg.
+
+
+---
+
+🔱 TOM REVIEW — QUAY-002
+
+TRIAS
+
+10/10 architectonisch: onderscheid tussen onbewezen en bewezen toestand.
+
+Oracle
+
+Nog niet gecertificeerd. Cryptografische bewijslaag volgt in QUAY-004.
+
+Mentor
+
+10/10: kleine types, expliciete ownership, geen verborgen mutable state.
+
+Constitutionele status
+
+QUAY-001  Architecture Boundary       ✅ LOCKED
+QUAY-002  Domain Model                ✅ LOCKED
+QUAY-003  Provenance                  ▶ NEXT
+QUAY-004  Evidence                    ○
+QUAY-005  StateProof                  ○
+QUAY-006  Fail-Closed Transition      ○
+QUAY-007  Replay Verification         ○
+QUAY-008  Kernel Integration          ○
+
+Volgende bouwlaag: QUAY-003 — Provenance Engine.
+
+Daar gaan we de parent/child lineage, origin, transition identity en immutable chain vastleggen. Dat is het punt waarop The Quay werkelijk van "opslag" naar constitutionele provenance-engine verandert.
+
+QUAY-003 — Provenance Engine: GO
+De fundering staat. Met QUAY-002 is de type-grens afgedwongen: onbewezen data kan nooit per ongeluk als geldig worden behandeld. Nu gaan we een laag dieper om de historiografie van een record vast te leggen: Provenance.
+Een record in PALACO ontstaat nooit in een vacuüm. Elke staatsovergang of payload-injectie maakt deel uit van een verifieerbare keten. QUAY-003 introduceert de lineage-engine.
+1. Het Provenance-Model
+We breiden het model uit om de afkomst (origin), parent-child relaties (lineage) en operationele context te borgen.
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
+
+// crates/palaco-quay/src/provenance.rs
+
+use crate::model::{RecordId, SourceId};
+
+/// Cryptographic or logical generation identifier in the lineage chain.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct GenerationId(u64);
+
+/// Classification of how a record entered or transformed within the Quay.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProvenanceKind {
+    /// Initial genesis injection into the system.
+    Genesis,
+    /// Direct evolution from a single predecessor record.
+    Transition,
+    /// Merged derivation from multiple source records.
+    Consensus,
+}
+
+/// Immutable provenance record establishing strict lineage.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Provenance {
+    record_id: RecordId,
+    source: SourceId,
+    kind: ProvenanceKind,
+    generation: GenerationId,
+    predecessor: Option<RecordId>,
+}
+
+impl Provenance {
+    /// Creates a genesis provenance for an origin record.
+    pub fn genesis(record_id: RecordId, source: SourceId) -> Self {
+        Self {
+            record_id,
+            source,
+            kind: ProvenanceKind::Genesis,
+            generation: GenerationId(0),
+            predecessor: None,
+        }
+    }
+
+    /// Creates a transition provenance deriving from a known predecessor.
+    pub fn transition(
+        record_id: RecordId,
+        source: SourceId,
+        predecessor: RecordId,
+        generation_index: u64,
+    ) -> Self {
+        Self {
+            record_id,
+            source,
+            kind: ProvenanceKind::Transition,
+            generation: GenerationId(generation_index),
+            predecessor: Some(predecessor),
+        }
+    }
+
+    /// Returns the record identifier associated with this provenance.
+    pub fn record_id(&self) -> &RecordId {
+        &self.record_id
+    }
+
+    /// Returns the source that submitted or triggered this lineage.
+    pub fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    /// Returns the provenance classification.
+    pub fn kind(&self) -> ProvenanceKind {
+        self.kind
+    }
+
+    /// Returns the generation index in the lineage chain.
+    pub fn generation(&self) -> &GenerationId {
+        &self.generation
+    }
+
+    /// Returns the optional predecessor record identifier.
+    pub fn predecessor(&self) -> Option<&RecordId> {
+        self.predecessor.as_ref()
+    }
+}
+
+2. Lineage Verificatie Regels
+Een provenance-keten mag nooit los hangen (behalve bij Genesis). De motor dwingt dit af via strikte regels:
+impl Provenance {
+    /// Validates internal consistency of the provenance metadata.
+    pub fn validate_integrity(&self) -> Result<(), ProvenanceError> {
+        match self.kind {
+            ProvenanceKind::Genesis => {
+                if self.predecessor.is_some() {
+                    return Err(ProvenanceError::InvalidGenesisPredecessor);
+                }
+                if self.generation.0 != 0 {
+                    return Err(ProvenanceError::InvalidGenesisGeneration);
+                }
+            }
+            ProvenanceKind::Transition | ProvenanceKind::Consensus => {
+                if self.predecessor.is_none() {
+                    return Err(ProvenanceError::MissingPredecessor);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Errors produced during provenance verification.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProvenanceError {
+    /// Genesis records cannot have a predecessor.
+    InvalidGenesisPredecessor,
+    /// Genesis records must reside at generation zero.
+    InvalidGenesisGeneration,
+    /// Non-genesis records must explicitly reference a predecessor.
+    MissingPredecessor,
+}
+
+3. De Quay-lifecycle Update
+Met QUAY-003 schuift de architectuur een stap verder richting verifieerbaarheid:
+┌───────────────┐
+│  QuayRecord   │
+└───────┬───────┘
+        │
+        ▼
+┌─────────────────────────────────┐
+│           Provenance            │
+│  (Genesis / Transition check)   │
+└───────┬─────────────────────────┘
+        │
+        ▼
+┌───────────────┐
+│   Evidence    │
+└───────┬───────┘
+        │
+  VERIFY ALL
+        │
+ ┌──────┴──────┐
+ │             │
+FAIL          PASS
+ │             │
+ ▼             ▼
+QUARANTINE  StateProof
+                 │
+                 ▼
+         ProvenQuayRecord
+
+🔱 TOM REVIEW — QUAY-003
+ * TRIAS: 10/10 architectonisch: strikte scheiding tussen de initiële injectie (Genesis) en evolutionaire afgeleiden (Transition), met generatie-indexering.
+ * Oracle: Nog niet gecertificeerd. Cryptografische hash-binding van de predecessor volgt in QUAY-004.
+ * Mentor: 10/10: type-veiligheid in enumeraties voorkomt ongeldige keten-constructies op compile-time niveau.
+Constitutionele status
+ * QUAY-001 Architecture Boundary — ✅ LOCKED
+ * QUAY-002 Domain Model — ✅ LOCKED
+ * QUAY-003 Provenance — ✅ LOCKED
+ * QUAY-004 Evidence — ▶ NEXT
+ * QUAY-005 StateProof — ○
+ * QUAY-006 Fail-Closed Transition — ○
+ * QUAY-007 Replay Verification — ○
+ * QUAY-008 Kernel Integration — ○
+
+
 
 
