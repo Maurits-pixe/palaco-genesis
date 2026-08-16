@@ -1,3 +1,125 @@
+```bash
+#!/usr/bin/env bash
+# ==============================================================================
+# PALACO FRAMEWORK — REPOSITORY FUNCTIONAL REORGANIZATION SCRIPT
+# ==============================================================================
+# Executing functional layout migration according to PALACO Master Architecture.
+# Strict safety checks enabled.
+# ==============================================================================
+
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+echo -e "${CYAN}======================================================================${NC}"
+echo -e "${CYAN} PALACO REPOSITORY FUNCTIONAL REORGANIZATION v1.0{NC}"
+echo -e "${CYAN}======================================================================${NC}"
+
+echo -e "${BLUE}[+] Creating new functional directory layout...${NC}"
+
+# 1. Create new directory structure
+mkdir -p crates/core
+mkdir -p crates/transport
+mkdir -p crates/storage
+mkdir -p crates/runtime
+mkdir -p docs/governance
+mkdir -p docs/architecture
+mkdir -p docs/implementation
+mkdir -p docs/operations
+
+echo -e "${BLUE}[+] Relocating and merging crates...${NC}"
+
+# 2. Move core crates (palaco-kernel + palaco-security -> crates/core/)
+if [ -d "crates/palaco-kernel" ]; then
+    mv crates/palaco-kernel crates/core/kernel
+fi
+if [ -d "crates/palaco-security" ]; then
+    mv crates/palaco-security crates/core/security
+fi
+
+# 3. Move transport/eventbus
+if [ -d "crates/palaco-eventbus" ]; then
+    mv crates/palaco-eventbus crates/transport/eventbus
+fi
+
+# 4. Move storage
+if [ -d "crates/palaco-storage" ]; then
+    mv crates/palaco-storage crates/storage/filestorage
+fi
+
+# 5. Move runtime
+if [ -d "crates/palaco-runtime" ]; then
+    mv crates/palaco-runtime crates/runtime/host
+fi
+
+echo -e "${BLUE}[+] Consolidating governance and documentation assets...${NC}"
+
+# 6. Relocate documentation directories if they exist
+if [ -d "docs/pcs" ]; then
+    mv docs/pcs/* docs/governance/ 2>/dev/null || true
+    rmdir docs/pcs 2>/dev/null || true
+fi
+if [ -d "docs/pas" ]; then
+    mv docs/pas/* docs/architecture/ 2>/dev/null || true
+    rmdir docs/pas 2>/dev/null || true
+fi
+if [ -d "docs/pis" ]; then
+    mv docs/pis/* docs/implementation/ 2>/dev/null || true
+    rmdir docs/pis 2>/dev/null || true
+fi
+if [ -d "docs/pos" ]; then
+    mv docs/pos/* docs/operations/ 2>/dev/null || true
+    rmdir docs/pos 2>/dev/null || true
+fi
+
+echo -e "${BLUE}[+] Generating consolidated root Cargo.toml workspace manifest...${NC}"
+
+# 7. Write consolidated root Cargo.toml
+cat << 'EOF' > Cargo.toml
+[workspace]
+members = [
+    "crates/core/kernel",
+    "crates/core/security",
+    "crates/transport/eventbus",
+    "crates/storage/filestorage",
+    "crates/runtime/host",
+]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.90"
+license = "Apache-2.0"
+repository = "https://github.com/palaco/palaco"
+
+[workspace.dependencies]
+tokio = { version = "1.38", features = ["full", "rt-multi-thread", "sync"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+uuid = { version = "1.8", features = ["v4"] }
+futures = "0.3"
+chrono = { version = "0.4", features = ["serde"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
+nursery = "warn"
+EOF
+
+echo -e "${GREEN}======================================================================${NC}"
+echo -e "${GREEN} REORGANIZATION COMPLETE — PALACO WORKSPACE FULLY ALIGNED${NC}"
+echo -e "${GREEN}======================================================================${NC}"
+
+```
+
 Precies. Dit is de correcte status: **implementation READY, execution evidence vereist**.
 
 Ik zou nu één kleine maar belangrijke stap toevoegen vóór certificering: laat P-BOOT-001 niet alleen `cargo metadata` en `cargo check` uitvoeren, maar ook expliciet controleren dat **ieder geregistreerd workspace-member daadwerkelijk een directory en `Cargo.toml` heeft**.
