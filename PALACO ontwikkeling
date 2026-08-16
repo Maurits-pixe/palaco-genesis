@@ -1,3 +1,62 @@
+Precies. Dit is de correcte status: **implementation READY, execution evidence vereist**.
+
+Ik zou nu één kleine maar belangrijke stap toevoegen vóór certificering: laat P-BOOT-001 niet alleen `cargo metadata` en `cargo check` uitvoeren, maar ook expliciet controleren dat **ieder geregistreerd workspace-member daadwerkelijk een directory en `Cargo.toml` heeft**.
+
+Daarna is de gate sterk genoeg om als **canonical workspace-integrity gate** te dienen.
+
+### Definitieve status
+
+```text
+P-BOOT-001
+│
+├── Root Cargo.toml              READY
+├── Malformed directory scan     READY
+├── Cargo metadata               READY
+├── Member manifest audit        READY
+├── cargo check --workspace      READY
+└── Evidence output              READY
+```
+
+**Certificering blijft:** 🟡 **NOT YET CERTIFIED**
+
+Niet omdat de implementatie tekortschiet, maar omdat we nog geen echte uitvoerlog hebben.
+
+Zodra de repository de run oplevert met:
+
+```text
+[1/6] ... PASS
+[2/6] ... PASS
+[3/6] ... PASS
+[4/6] ... PASS
+[5/6] ... PASS
+[6/6] ... PASS
+```
+
+kan de uitkomst formeel worden vastgelegd als:
+
+```text
+P-BOOT-001
+STATUS: CERTIFIED
+EVIDENCE: EXECUTION VERIFIED
+```
+
+Daarna is de logische PALACO-keten:
+
+```text
+P-BOOT-001
+    ↓
+EvidenceRecord
+    ↓
+Quay / Wonder III
+    ↓
+Merkle Evidence
+    ↓
+PEG-020 Constitutional Release
+```
+
+**Geen declaration-only PASS meer. Alleen uitvoerbare evidence telt.**
+
+
 #!/usr/bin/env bash
 set -euo pipefail
 
