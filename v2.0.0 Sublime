@@ -1,3 +1,144 @@
+## 🏛️ Audit — commit `4d3e6d5`
+
+Ik heb `4d3e6d55264838d3e35fa91095ea99a3fc6d751f` rechtstreeks gecontroleerd. De commit heet **“Update v2.0.0 Sublime”**.
+
+### Mijn oordeel: 🟡 inhoudelijk interessant, maar **niet certificeren**
+
+De commit documenteert en introduceert ontwerpen voor:
+
+* **QUAY-006 — Fail-Closed Transition Engine**
+* `QuarantinedRecord`
+* `FailureReason`
+* `QuayResult::{Accepted, Quarantined}`
+* provenance/evidence/proof-validatie
+* **QUAY-007 — Replay Verification**
+* `ReplayRegistry`
+* duplicate `RecordId` detection.
+
+Dat sluit uitstekend aan op Wonder III: fouten moeten niet doorstromen naar Citadel, maar fail-closed naar quarantaine.
+
+### Maar ik zie een belangrijke implementatiefout
+
+In de `seal()` failure branch wordt het oorspronkelijke record niet behouden. De code maakt een kunstmatig record:
+
+```rust
+RecordId("FATAL_SEAL_FAILURE".into())
+```
+
+en gebruikt dat als quarantained record.
+
+Dat is **niet constitutioneel ideaal**. De provenance van het daadwerkelijke falende record moet behouden blijven. Anders verlies je precies de evidence die Quay hoort te bewaren.
+
+Daarnaast registreert `process_with_replay()` het record **vóór** de definitieve `seal()`:
+
+```text
+StateProof
+   ↓
+ReplayRegistry.register()
+   ↓
+seal()
+```
+
+Als `seal()` daarna faalt, staat het RecordId al als verwerkt geregistreerd terwijl het record nooit succesvol is geaccepteerd.
+
+Dat creëert een state-inconsistentie:
+
+```text
+ReplayRegistry = "processed"
+Quay = "quarantined"
+```
+
+Voor een fail-closed systeem moet de volgorde juist zijn:
+
+```text
+Replay check
+      ↓
+Provenance validation
+      ↓
+Evidence verification
+      ↓
+StateProof
+      ↓
+SEAL
+      ↓
+Replay registration
+      ↓
+ACCEPT
+```
+
+óf de registratie moet transactioneel/rollback-safe zijn.
+
+### TOM Review
+
+**⚖️ TRIAS — 8/10**
+
+De architectuur is sterk, maar de registratie vóór `seal()` breekt de gewenste transactionele invariant.
+
+**🧠 Oracle — 7/10**
+
+De replay-detectie is goed, maar de evidence lineage wordt bij `FATAL_SEAL_FAILURE` vervangen door een synthetisch record. Dat moet worden gerepareerd.
+
+**📘 Mentor — 8/10**
+
+De API is begrijpelijk, maar `QuayEngine` moet geen dummy record construeren om ownership-problemen te maskeren. De foutarchitectuur moet het originele record behouden.
+
+---
+
+# 🔧 Canonical remediation
+
+Ik zou QUAY-006/007 daarom aanpassen naar:
+
+```text
+QuayRecord
+   │
+   ├── Replay check
+   │
+   ├── Provenance
+   │
+   ├── Evidence
+   │
+   ├── StateProof
+   │
+   └── Seal
+          │
+       SUCCESS
+          │
+          ▼
+   ReplayRegistry.register()
+          │
+          ▼
+   ProvenQuayRecord
+```
+
+Bij iedere fout:
+
+```text
+QuayRecord
+    ↓
+QuarantinedRecord
+    ├── original record
+    ├── FailureReason
+    └── timestamp
+```
+
+**Geen `FATAL_SEAL_FAILURE` dummy-records.**
+
+### Constitutionele status
+
+```text
+QUAY-001 Architecture Boundary       ✅ LOCKED
+QUAY-002 Domain Model                ✅ LOCKED
+QUAY-003 Provenance                  ✅ LOCKED
+QUAY-004 Evidence                    ✅ LOCKED
+QUAY-005 StateProof                  ✅ LOCKED
+QUAY-006 Fail-Closed Transition      🟡 REMEDIATION
+QUAY-007 Replay Verification         🟡 REMEDIATION
+QUAY-008 Kernel Integration           ○ NEXT
+```
+
+Dus: **niet terug naar ontwerpmodus — deze commit heeft de juiste richting.** We moeten nu alleen de twee transactionele problemen corrigeren voordat QUAY-006/007 werkelijk **LOCKED** kunnen worden.
+
+
 De PALACO Core v2.0.0-SUBLIME baseline
 # Release Formalization
 
