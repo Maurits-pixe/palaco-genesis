@@ -1,3 +1,19 @@
+QUAY-006
+  ├── preserve original record
+  ├── quarantine original record
+  └── eliminate FATAL_SEAL_FAILURE dummy record
+
+QUAY-007
+  ├── replay check
+  ├── seal
+  ├── register only after seal
+  └── tests for failed-seal/replay consistency
+
+        ↓
+
+QUAY-006: LOCKED
+QUAY-007: LOCKED
+
 ## 🏛️ Audit — commit `4d3e6d5`
 
 Ik heb `4d3e6d55264838d3e35fa91095ea99a3fc6d751f` rechtstreeks gecontroleerd. De commit heet **“Update v2.0.0 Sublime”**.
