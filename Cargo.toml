@@ -1,0 +1,44 @@
+[workspace]
+members = []
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["PALACO Core Team"]
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+tokio = { version = "1.38", features = ["full"] }
+thiserror = "2.0"
+tracing = "0.1"
+criterion = "0.5"
+cargo-tarpaulin = "0.31"
+
+[workspace.metadata.cargo-deny]
+config = ".cargo-deny.toml"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+
+[package]
+name = "palaco-genesis"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "smoke"
+harness = false
