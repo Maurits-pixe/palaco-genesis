@@ -40,7 +40,7 @@ palaco-audit = { path = "crates/palaco-audit" }
 palaco-observatory = { path = "crates/palaco-observatory" }
 
 [workspace.lints.rust]
-unsafe_code = "forbidden"
+unsafe_code = "forbid"
 missing_docs = "warn"
 
 [workspace.lints.clippy]

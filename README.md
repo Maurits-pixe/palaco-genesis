@@ -54,6 +54,6 @@ cargo test --workspace --all-features
 
 ## Documentation
 
-- `/home/runner/work/palaco-genesis/palaco-genesis/docs/foundation/engineering-baseline-v1.md`
-- `/home/runner/work/palaco-genesis/palaco-genesis/docs/architecture/core-workspace-notes.md`
-- `/home/runner/work/palaco-genesis/palaco-genesis/docs/reference/repository-structure.md`
+- `docs/foundation/engineering-baseline-v1.md`
+- `docs/architecture/core-workspace-notes.md`
+- `docs/reference/repository-structure.md`
