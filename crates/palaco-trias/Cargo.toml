@@ -7,7 +7,8 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Governance and authority contracts for PALACO."
-lints.workspace = true
+[lints]
+workspace = true
 
 [dependencies]
 palaco-oracle = { workspace = true }

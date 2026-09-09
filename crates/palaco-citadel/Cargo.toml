@@ -7,7 +7,8 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Execution boundary contracts for PALACO."
-lints.workspace = true
+[lints]
+workspace = true
 
 [dependencies]
 palaco-trias = { workspace = true }
