@@ -2,6 +2,11 @@
 PALACO Genesis: Model-Driven Service Orchestration Platform
 PALACO Foundation Engineering Baseline v1.0.0.
 
+## Repository Structure
+- `.github/workflows/ci.yml` — CI workflow
+- `Cargo.toml` — Rust workspace configuration
+- `docs/palaco-core.md` — Core architecture and engineering standards
+
 ```text
   ██████╗  █████╗ ██╗      █████╗  ██████╗ ██████╗ 
   ██╔══██╗██╔══██╗██║     ██╔══██╗██╔════╝██╔═══██╗

@@ -24,3 +24,4 @@ Voer de volgende commando's uit om de workspace lokaal te valideren:
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets
 cargo test --workspace
+```
