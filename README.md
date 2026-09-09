@@ -2,6 +2,11 @@
 PALACO Genesis: Model-Driven Service Orchestration Platform
 PALACO Foundation Engineering Baseline v1.0.0.
 
+## Repository bootstrap roadmap
+
+De specificatie voor de GitHub repository-bootstrap is vastgelegd in
+[`docs/pri-045-github-repository-bootstrap.md`](docs/pri-045-github-repository-bootstrap.md).
+
 ```text
   ██████╗  █████╗ ██╗      █████╗  ██████╗ ██████╗ 
   ██╔══██╗██╔══██╗██║     ██╔══██╗██╔════╝██╔═══██╗
