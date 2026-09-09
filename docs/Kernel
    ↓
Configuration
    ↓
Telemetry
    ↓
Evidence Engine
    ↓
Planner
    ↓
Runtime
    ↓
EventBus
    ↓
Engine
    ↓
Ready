@@ -1,0 +1,17 @@
+Kernel
+    ↓
+Configuration
+    ↓
+Telemetry
+    ↓
+Evidence Engine
+    ↓
+Planner
+    ↓
+Runtime
+    ↓
+EventBus
+    ↓
+Engine
+    ↓
+Ready

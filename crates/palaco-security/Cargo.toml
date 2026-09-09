@@ -1,0 +1,14 @@
+[package]
+name = "palaco-security"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "PALACO Security: Policies, access control, and audit trails"
+
+[dependencies]
+palaco-kernel = { path = "../palaco-kernel" }
+palaco-eventbus = { path = "../palaco-eventbus" }
+
+[dev-dependencies]

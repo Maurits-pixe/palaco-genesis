@@ -1,0 +1,16 @@
+[package]
+name = "palaco-gateway"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "PALACO Gateway: API gateway and external interface"
+
+[dependencies]
+palaco-kernel = { path = "../palaco-kernel" }
+palaco-eventbus = { path = "../palaco-eventbus" }
+palaco-runtime = { path = "../palaco-runtime" }
+palaco-security = { path = "../palaco-security" }
+
+[dev-dependencies]
