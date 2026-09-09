@@ -1,0 +1,13 @@
+[package]
+name = "palaco-oracle"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Analysis and advisory contracts for PALACO."
+lints.workspace = true
+
+[dependencies]
+palaco-evidence = { workspace = true }
