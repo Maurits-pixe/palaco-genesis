@@ -1,0 +1,50 @@
+[workspace]
+members = [
+    "crates/palaco-types",
+    "crates/palaco-errors",
+    "crates/palaco-events",
+    "crates/palaco-evidence",
+    "crates/palaco-oracle",
+    "crates/palaco-trias",
+    "crates/palaco-knowledge",
+    "crates/palaco-citadel",
+    "crates/palaco-runtime",
+    "crates/palaco-audit",
+    "crates/palaco-observatory",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["PALACO Core Team"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Maurits-pixe/palaco-genesis"
+rust-version = "1.81"
+
+[workspace.dependencies]
+thiserror = "2.0"
+tracing = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+
+palaco-types = { path = "crates/palaco-types" }
+palaco-errors = { path = "crates/palaco-errors" }
+palaco-events = { path = "crates/palaco-events" }
+palaco-evidence = { path = "crates/palaco-evidence" }
+palaco-oracle = { path = "crates/palaco-oracle" }
+palaco-trias = { path = "crates/palaco-trias" }
+palaco-knowledge = { path = "crates/palaco-knowledge" }
+palaco-citadel = { path = "crates/palaco-citadel" }
+palaco-runtime = { path = "crates/palaco-runtime" }
+palaco-audit = { path = "crates/palaco-audit" }
+palaco-observatory = { path = "crates/palaco-observatory" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
