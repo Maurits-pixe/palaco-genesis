@@ -1,0 +1,33 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "crates/palaco-foundation",
+    "crates/palaco-eventbus",
+    "crates/palaco-harbor",
+    "crates/palaco-quay",
+    "crates/palaco-citadel",
+    "crates/palaco-federation",
+    "crates/palaco-intelligence",
+    "crates/palaco-evolution",
+    "runtime/palaco-kernel",
+]
+
+[workspace.package]
+version = "0.1.0-alpha.1"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+uuid = { version = "1", features = ["serde", "v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+sha2 = "0.10"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
