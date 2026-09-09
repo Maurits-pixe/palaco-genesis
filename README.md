@@ -2,6 +2,12 @@
 PALACO Genesis: Model-Driven Service Orchestration Platform
 PALACO Foundation Engineering Baseline v1.0.0.
 
+## Repository Infrastructure
+
+- Content hub: `content/`
+- Language hub: `languages/`
+- Infrastructure guide: `docs/REPOSITORY_INFRASTRUCTURE.md`
+
 ```text
   ██████╗  █████╗ ██╗      █████╗  ██████╗ ██████╗ 
   ██╔══██╗██╔══██╗██║     ██╔══██╗██╔════╝██╔═══██╗
