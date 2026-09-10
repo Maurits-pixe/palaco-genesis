@@ -166,14 +166,31 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 name = "palaco-audit"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "chrono",
+ "palaco-citadel",
+ "palaco-events",
+ "palaco-evidence",
+ "palaco-foundation",
+ "palaco-oracle",
  "palaco-runtime",
+ "palaco-trias",
+ "palaco-types",
+ "uuid",
 ]
 
 [[package]]
 name = "palaco-citadel"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "chrono",
+ "palaco-events",
+ "palaco-evidence",
+ "palaco-foundation",
+ "palaco-oracle",
  "palaco-quay",
+ "palaco-trias",
+ "palaco-types",
+ "uuid",
 ]
 
 [[package]]
@@ -290,7 +307,15 @@ dependencies = [
 name = "palaco-runtime"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "chrono",
  "palaco-citadel",
+ "palaco-events",
+ "palaco-evidence",
+ "palaco-foundation",
+ "palaco-oracle",
+ "palaco-trias",
+ "palaco-types",
+ "uuid",
 ]
 
 [[package]]

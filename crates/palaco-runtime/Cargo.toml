@@ -12,3 +12,14 @@ workspace = true
 
 [dependencies]
 palaco-citadel = { workspace = true }
+palaco-foundation = { path = "../palaco-foundation" }
+
+[dev-dependencies]
+chrono.workspace = true
+palaco-evidence = { workspace = true }
+palaco-events = { workspace = true }
+palaco-foundation = { path = "../palaco-foundation" }
+palaco-oracle = { workspace = true }
+palaco-trias = { workspace = true }
+palaco-types = { workspace = true }
+uuid.workspace = true
