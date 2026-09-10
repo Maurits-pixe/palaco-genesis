@@ -201,7 +201,11 @@ dependencies = [
 name = "palaco-evidence"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "chrono",
  "palaco-events",
+ "palaco-foundation",
+ "palaco-types",
+ "uuid",
 ]
 
 [[package]]
@@ -267,7 +271,12 @@ dependencies = [
 name = "palaco-oracle"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "chrono",
+ "palaco-events",
  "palaco-evidence",
+ "palaco-foundation",
+ "palaco-types",
+ "uuid",
 ]
 
 [[package]]
@@ -288,7 +297,13 @@ dependencies = [
 name = "palaco-trias"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "chrono",
+ "palaco-events",
+ "palaco-evidence",
+ "palaco-foundation",
  "palaco-oracle",
+ "palaco-types",
+ "uuid",
 ]
 
 [[package]]
