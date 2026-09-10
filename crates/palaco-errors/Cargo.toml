@@ -1,15 +1,14 @@
 [package]
-name = "palaco-citadel"
+name = "palaco-errors"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Execution boundary contracts for PALACO."
-
+description = "Shared PALACO error contracts."
 [lints]
 workspace = true
 
 [dependencies]
-palaco-quay = { path = "../palaco-quay" }
+thiserror = { workspace = true }
