@@ -1,0 +1,14 @@
+[package]
+name = "palaco-trias"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Governance and authority contracts for PALACO."
+[lints]
+workspace = true
+
+[dependencies]
+palaco-oracle = { workspace = true }
