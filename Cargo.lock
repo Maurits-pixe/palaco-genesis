@@ -267,7 +267,16 @@ dependencies = [
 name = "palaco-kernel"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "chrono",
  "palaco-citadel",
+ "palaco-events",
+ "palaco-evidence",
+ "palaco-foundation",
+ "palaco-oracle",
+ "palaco-runtime",
+ "palaco-trias",
+ "palaco-types",
+ "uuid",
 ]
 
 [[package]]
@@ -281,7 +290,17 @@ dependencies = [
 name = "palaco-observatory"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "chrono",
  "palaco-audit",
+ "palaco-citadel",
+ "palaco-events",
+ "palaco-evidence",
+ "palaco-foundation",
+ "palaco-oracle",
+ "palaco-runtime",
+ "palaco-trias",
+ "palaco-types",
+ "uuid",
 ]
 
 [[package]]
