@@ -32,7 +32,7 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Build coverage report
-        run: cargo llvm-cov --workspace --all-features --all-targets --lcov --output-path lcov.info -- cargo test --workspace --all-features --all-targets
+        run: cargo llvm-cov --workspace --all-features --all-targets --lcov --output-path lcov.info -- --all-targets
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
