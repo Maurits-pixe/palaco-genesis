@@ -142,6 +142,8 @@ impl CurrentlyAssessable for ObservatorySnapshot {
             return CurrentValidity::Pending;
         }
 
+        let runtime_validity = self.audit_record.runtime_plan.current_validity(at);
+
         if self
             .sensor_observations
             .iter()
@@ -157,7 +159,7 @@ impl CurrentlyAssessable for ObservatorySnapshot {
             return CurrentValidity::InsufficientEvidence;
         }
 
-        self.observed_validity
+        runtime_validity
     }
 }
 
@@ -305,6 +307,27 @@ mod tests {
             CurrentValidity::SafeStateRequired
         );
         assert_eq!(snapshot.disposition, ObservatoryDisposition::SafeState);
+
+        Ok(())
+    }
+
+    #[test]
+    fn observatory_snapshot_preserves_runtime_expiry_after_observation() -> Result<(), &'static str>
+    {
+        let snapshot = ObservatorySnapshot::new(
+            audit_record(AuthorizationScope::Execute)?,
+            timestamp(2026, 1, 20, 0, 0, 0)?,
+            vec![sensor_observation(
+                TrustLevel::High,
+                ObservationCoverage::Complete,
+                timestamp(2026, 1, 20, 0, 0, 0)?,
+            )],
+        );
+
+        assert_eq!(
+            snapshot.current_validity(timestamp(2026, 2, 1, 0, 0, 0)?),
+            CurrentValidity::Expired
+        );
 
         Ok(())
     }
