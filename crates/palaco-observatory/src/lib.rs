@@ -5,8 +5,9 @@
 
 use palaco_audit::AuditRecord;
 use palaco_foundation::{
+    identity::NodeId,
     traits::{CurrentlyAssessable, Validatable},
-    types::{CurrentValidity, Timestamp},
+    types::{CurrentValidity, Timestamp, TrustLevel},
 };
 
 /// Current observability posture for a snapshot.
@@ -21,11 +22,56 @@ pub enum ObservatoryDisposition {
     SafeState,
 }
 
+/// Coverage observed for a sensor at a specific observation instant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ObservationCoverage {
+    /// The sensor delivered the expected observation set.
+    #[default]
+    Complete,
+    /// The sensor delivered only part of the expected observation set.
+    Partial,
+    /// The sensor delivered no usable observation set.
+    Missing,
+}
+
+/// Sensor trust assertion captured by the observability layer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SensorObservation {
+    /// Sensor node that produced the reading.
+    pub sensor: NodeId,
+    /// Trust level currently assigned to the sensor.
+    pub trust: TrustLevel,
+    /// Coverage observed for this sensor.
+    pub coverage: ObservationCoverage,
+    /// Time at which the sensor observation was captured.
+    pub observed_at: Timestamp,
+}
+
+impl SensorObservation {
+    /// Creates a sensor observation for the observability layer.
+    #[must_use]
+    pub fn new(
+        sensor: NodeId,
+        trust: TrustLevel,
+        coverage: ObservationCoverage,
+        observed_at: Timestamp,
+    ) -> Self {
+        Self {
+            sensor,
+            trust,
+            coverage,
+            observed_at,
+        }
+    }
+}
+
 /// Observatory snapshot built from audit records.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObservatorySnapshot {
     /// Audit record exposed through the observability layer.
     pub audit_record: AuditRecord,
+    /// Sensor observations known at snapshot time.
+    pub sensor_observations: Vec<SensorObservation>,
     /// Validity seen at observation time.
     pub observed_validity: CurrentValidity,
     /// Resulting observability disposition.
@@ -37,9 +83,42 @@ pub struct ObservatorySnapshot {
 impl ObservatorySnapshot {
     /// Creates an observatory snapshot from an audit record.
     #[must_use]
-    pub fn new(audit_record: AuditRecord, observed_at: Timestamp) -> Self {
+    pub fn new(
+        audit_record: AuditRecord,
+        observed_at: Timestamp,
+        sensor_observations: Vec<SensorObservation>,
+    ) -> Self {
         let observed_validity = audit_record.runtime_plan.current_validity(observed_at);
-        let disposition = match observed_validity {
+        let disposition = Self::disposition_for(observed_validity, &sensor_observations);
+
+        Self {
+            audit_record,
+            sensor_observations,
+            observed_validity,
+            disposition,
+            observed_at,
+        }
+    }
+
+    fn disposition_for(
+        observed_validity: CurrentValidity,
+        sensor_observations: &[SensorObservation],
+    ) -> ObservatoryDisposition {
+        if sensor_observations
+            .iter()
+            .any(|sensor| sensor.coverage == ObservationCoverage::Missing)
+        {
+            return ObservatoryDisposition::SafeState;
+        }
+
+        if sensor_observations.iter().any(|sensor| {
+            sensor.coverage == ObservationCoverage::Partial
+                || matches!(sensor.trust, TrustLevel::Unknown | TrustLevel::Low)
+        }) {
+            return ObservatoryDisposition::Degraded;
+        }
+
+        match observed_validity {
             CurrentValidity::Valid => ObservatoryDisposition::Current,
             CurrentValidity::Pending | CurrentValidity::InsufficientEvidence => {
                 ObservatoryDisposition::Degraded
@@ -47,13 +126,6 @@ impl ObservatorySnapshot {
             CurrentValidity::Expired
             | CurrentValidity::Revoked
             | CurrentValidity::SafeStateRequired => ObservatoryDisposition::SafeState,
-        };
-
-        Self {
-            audit_record,
-            observed_validity,
-            disposition,
-            observed_at,
         }
     }
 }
@@ -67,10 +139,25 @@ impl Validatable for ObservatorySnapshot {
 impl CurrentlyAssessable for ObservatorySnapshot {
     fn current_validity(&self, at: Timestamp) -> CurrentValidity {
         if at < self.observed_at {
-            CurrentValidity::Pending
-        } else {
-            self.observed_validity
+            return CurrentValidity::Pending;
         }
+
+        if self
+            .sensor_observations
+            .iter()
+            .any(|sensor| sensor.coverage == ObservationCoverage::Missing)
+        {
+            return CurrentValidity::SafeStateRequired;
+        }
+
+        if self.sensor_observations.iter().any(|sensor| {
+            sensor.coverage == ObservationCoverage::Partial
+                || matches!(sensor.trust, TrustLevel::Unknown | TrustLevel::Low)
+        }) {
+            return CurrentValidity::InsufficientEvidence;
+        }
+
+        self.observed_validity
     }
 }
 
@@ -82,14 +169,16 @@ mod tests {
         evidence::Evidence,
         identity::{NodeId, PolicyVersionId, StateSnapshotId},
         traits::CurrentlyAssessable,
-        types::{CurrentValidity, DecisionContext, TrustLevel, ValidityWindow},
+        types::{CurrentValidity, DecisionContext, Timestamp, TrustLevel, ValidityWindow},
     };
     use palaco_oracle::PlausibleState;
     use palaco_runtime::RuntimePlan;
     use palaco_trias::{AuthorizationScope, GovernanceDecision};
     use palaco_types::DomainMarker;
 
-    use crate::{ObservatoryDisposition, ObservatorySnapshot};
+    use crate::{
+        ObservationCoverage, ObservatoryDisposition, ObservatorySnapshot, SensorObservation,
+    };
 
     fn timestamp(
         year: i32,
@@ -151,11 +240,24 @@ mod tests {
         ))
     }
 
+    fn sensor_observation(
+        trust: TrustLevel,
+        coverage: ObservationCoverage,
+        observed_at: Timestamp,
+    ) -> SensorObservation {
+        SensorObservation::new(NodeId::new(), trust, coverage, observed_at)
+    }
+
     #[test]
     fn observatory_snapshot_marks_current_execution_as_current() -> Result<(), &'static str> {
         let snapshot = ObservatorySnapshot::new(
             audit_record(AuthorizationScope::Execute)?,
             timestamp(2026, 1, 20, 0, 0, 0)?,
+            vec![sensor_observation(
+                TrustLevel::High,
+                ObservationCoverage::Complete,
+                timestamp(2026, 1, 20, 0, 0, 0)?,
+            )],
         );
 
         assert_eq!(snapshot.observed_validity, CurrentValidity::Valid);
@@ -169,6 +271,11 @@ mod tests {
         let snapshot = ObservatorySnapshot::new(
             audit_record(AuthorizationScope::Observe)?,
             timestamp(2026, 1, 20, 0, 0, 0)?,
+            vec![sensor_observation(
+                TrustLevel::Low,
+                ObservationCoverage::Partial,
+                timestamp(2026, 1, 20, 0, 0, 0)?,
+            )],
         );
 
         assert_eq!(
@@ -176,6 +283,28 @@ mod tests {
             CurrentValidity::InsufficientEvidence
         );
         assert_eq!(snapshot.disposition, ObservatoryDisposition::Degraded);
+
+        Ok(())
+    }
+
+    #[test]
+    fn observatory_snapshot_marks_missing_sensor_coverage_as_safe_state() -> Result<(), &'static str>
+    {
+        let snapshot = ObservatorySnapshot::new(
+            audit_record(AuthorizationScope::Execute)?,
+            timestamp(2026, 1, 20, 0, 0, 0)?,
+            vec![sensor_observation(
+                TrustLevel::Medium,
+                ObservationCoverage::Missing,
+                timestamp(2026, 1, 20, 0, 0, 0)?,
+            )],
+        );
+
+        assert_eq!(
+            snapshot.current_validity(timestamp(2026, 1, 20, 0, 0, 0)?),
+            CurrentValidity::SafeStateRequired
+        );
+        assert_eq!(snapshot.disposition, ObservatoryDisposition::SafeState);
 
         Ok(())
     }
