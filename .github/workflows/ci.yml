@@ -1,6 +1,7 @@
 name: PALACO CI/CD
 
 on:
+  workflow_dispatch:
   push:
     branches: ["main", "master"]
   pull_request:
@@ -37,3 +38,6 @@ jobs:
 
       - name: Run Tests
         run: cargo test --workspace --all-features
+
+      - name: Validate Cargo Metadata
+        run: cargo metadata --format-version=1 --no-deps > /dev/null

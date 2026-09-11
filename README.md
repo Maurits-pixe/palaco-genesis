@@ -8,7 +8,10 @@ PALACO Genesis is a Rust monorepo workspace for the PALACO platform.
 - `content/` — PALACO knowledge assets
 - `languages/` — code organized by programming language
 - `docs/REPOSITORY_INFRASTRUCTURE.md` — repository structure and conventions
-- `.github/workflows/ci.yml` — CI workflow
+- `.github/workflows/ci.yml` — core validation workflow
+- `.github/workflows/benchmark.yml` — benchmark-target build workflow
+- `.github/workflows/security.yml` — dependency security audit workflow
+- `.github/workflows/coverage.yml` — coverage generation workflow
 - `Cargo.toml` — Rust workspace configuration
 - `docs/palaco-core.md` — Core architecture and engineering standards
 
