@@ -3,8 +3,8 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-use palaco_evidence::EvidenceBundle;
 use palaco_constitution::{HistoricalClassification, ProvenanceRecord};
+use palaco_evidence::EvidenceBundle;
 
 /// Advisory knowledge record linked to the evidence chain.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

@@ -3,8 +3,8 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-use palaco_oracle::OracleReport;
 use palaco_constitution::{AuthorityScope, ProvenanceRecord};
+use palaco_oracle::OracleReport;
 
 /// Governance decision produced from an oracle report.
 #[derive(Debug, Clone, PartialEq, Eq)]

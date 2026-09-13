@@ -4,10 +4,9 @@
 #![warn(missing_docs)]
 
 use palaco_constitution::{
-    ensure_authority_has_provenance, ensure_context_before_action,
-    ensure_decision_has_evidence, ensure_execution_is_authorized, AuthorizationGrant,
-    AuthorityScope, ConstitutionalError, IdentityHandle, ProvenanceRecord, RevocationRecord,
-    TraceRecord, TraceStatus,
+    ensure_authority_has_provenance, ensure_context_before_action, ensure_decision_has_evidence,
+    ensure_execution_is_authorized, AuthorityScope, AuthorizationGrant, ConstitutionalError,
+    IdentityHandle, ProvenanceRecord, RevocationRecord, TraceRecord, TraceStatus,
 };
 use palaco_evidence::EvidenceBundle;
 use palaco_knowledge::KnowledgeRecord;
@@ -90,7 +89,10 @@ pub fn prepare_action(
 ) -> Result<TraceRecord, ConstitutionalError> {
     ensure_context_before_action(request.context_ready)?;
     ensure_decision_has_evidence(true)?;
-    ensure_authority_has_provenance(&action_path.decision.authority, &action_path.decision.provenance)?;
+    ensure_authority_has_provenance(
+        &action_path.decision.authority,
+        &action_path.decision.provenance,
+    )?;
 
     if action_path.authority != action_path.decision.authority {
         return Err(ConstitutionalError::MissingAuthorization);
@@ -138,7 +140,9 @@ mod tests {
 
     fn decision() -> GovernanceDecision {
         GovernanceDecision {
-            report: OracleReport { evidence: evidence() },
+            report: OracleReport {
+                evidence: evidence(),
+            },
             authority: AuthorityScope {
                 capability: "rio.execute".to_string(),
             },
@@ -177,7 +181,13 @@ mod tests {
         };
 
         let result = prepare_answer(&request(true), &answer_path, "trace-1");
-        assert!(matches!(result, Ok(TraceRecord { status: TraceStatus::Completed, .. })));
+        assert!(matches!(
+            result,
+            Ok(TraceRecord {
+                status: TraceStatus::Completed,
+                ..
+            })
+        ));
     }
 
     #[test]

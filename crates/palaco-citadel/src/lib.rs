@@ -3,8 +3,8 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-use palaco_trias::GovernanceDecision;
 use palaco_constitution::AuthorizationGrant;
+use palaco_trias::GovernanceDecision;
 
 /// Execution boundary request validated by governance.
 #[derive(Debug, Clone, PartialEq, Eq)]
