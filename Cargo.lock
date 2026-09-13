@@ -13,8 +13,13 @@ dependencies = [
 name = "palaco-citadel"
 version = "0.1.0"
 dependencies = [
+ "palaco-constitution",
  "palaco-trias",
 ]
+
+[[package]]
+name = "palaco-constitution"
+version = "0.1.0"
 
 [[package]]
 name = "palaco-errors"
@@ -41,6 +46,7 @@ dependencies = [
 name = "palaco-knowledge"
 version = "0.1.0"
 dependencies = [
+ "palaco-constitution",
  "palaco-evidence",
 ]
 
@@ -59,6 +65,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "palaco-rio-core"
+version = "0.1.0"
+dependencies = [
+ "palaco-constitution",
+ "palaco-events",
+ "palaco-evidence",
+ "palaco-knowledge",
+ "palaco-oracle",
+ "palaco-trias",
+]
+
+[[package]]
 name = "palaco-runtime"
 version = "0.1.0"
 dependencies = [
@@ -69,6 +87,7 @@ dependencies = [
 name = "palaco-trias"
 version = "0.1.0"
 dependencies = [
+ "palaco-constitution",
  "palaco-oracle",
 ]
 

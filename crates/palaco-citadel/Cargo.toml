@@ -11,4 +11,5 @@ description = "Execution boundary contracts for PALACO."
 workspace = true
 
 [dependencies]
+palaco-constitution = { workspace = true }
 palaco-trias = { workspace = true }
