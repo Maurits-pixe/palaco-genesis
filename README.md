@@ -4,6 +4,11 @@ PALACO Genesis is a Rust monorepo workspace for the PALACO platform.
 
 ## Repository layout
 
+## Repository bootstrap roadmap
+
+De specificatie voor de GitHub repository-bootstrap is vastgelegd in
+[`docs/pri-045-github-repository-bootstrap.md`](docs/pri-045-github-repository-bootstrap.md).
+
 ```text
 .
 ├── .github/workflows/        # CI workflows
