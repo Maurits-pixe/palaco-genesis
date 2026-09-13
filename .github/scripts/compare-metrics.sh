@@ -20,6 +20,10 @@ main_size=$(jq -r '.main.binary_size_mb // 0' "$build_file")
 current_size=${CURRENT_BINARY_SIZE_MB:-$main_size}
 size_delta=$(awk "BEGIN { printf \"%.2f\", ($current_size - $main_size) }")
 
+main_deps=$(jq -r '.main.dependency_count // 0' "$build_file")
+current_deps=${CURRENT_DEPENDENCY_COUNT:-$main_deps}
+deps_delta=$(awk "BEGIN { printf \"%.2f\", ($current_deps - $main_deps) }")
+
 cat <<EOF
 ## CI Metrics Comparison
 
@@ -28,6 +32,7 @@ cat <<EOF
 | Coverage (%) | $main_coverage | $current_coverage | $coverage_delta |
 | Build time (s) | $main_build | $current_build | $build_delta |
 | Binary size (MB) | $main_size | $current_size | $size_delta |
+| Dependency count | $main_deps | $current_deps | $deps_delta |
 
 ### Baseline Sources
 - $perf_file
