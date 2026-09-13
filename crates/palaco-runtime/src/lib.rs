@@ -6,7 +6,7 @@
 use palaco_citadel::ExecutionBoundary;
 
 /// Runtime plan derived from an execution boundary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimePlan {
     /// Boundary request consumed by the runtime.
     pub boundary: ExecutionBoundary,

@@ -4,10 +4,15 @@
 #![warn(missing_docs)]
 
 use palaco_evidence::EvidenceBundle;
+use palaco_constitution::{HistoricalClassification, ProvenanceRecord};
 
 /// Advisory knowledge record linked to the evidence chain.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct KnowledgeRecord {
     /// Evidence from which this knowledge record was derived.
     pub evidence: EvidenceBundle,
+    /// Historical status assigned during constitutional classification.
+    pub classification: HistoricalClassification,
+    /// Provenance supporting this knowledge record.
+    pub provenance: ProvenanceRecord,
 }

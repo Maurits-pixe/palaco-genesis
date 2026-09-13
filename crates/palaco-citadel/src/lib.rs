@@ -4,10 +4,13 @@
 #![warn(missing_docs)]
 
 use palaco_trias::GovernanceDecision;
+use palaco_constitution::AuthorizationGrant;
 
 /// Execution boundary request validated by governance.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionBoundary {
     /// Governance decision authorizing the boundary crossing.
     pub decision: GovernanceDecision,
+    /// Explicit authorization grant for execution.
+    pub authorization: AuthorizationGrant,
 }

@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/palaco-constitution",
     "crates/palaco-types",
     "crates/palaco-errors",
     "crates/palaco-events",
@@ -11,6 +12,7 @@ members = [
     "crates/palaco-runtime",
     "crates/palaco-audit",
     "crates/palaco-observatory",
+    "crates/palaco-rio-core",
 ]
 resolver = "2"
 
@@ -27,6 +29,7 @@ thiserror = "2.0"
 tracing = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 
+palaco-constitution = { path = "crates/palaco-constitution" }
 palaco-types = { path = "crates/palaco-types" }
 palaco-errors = { path = "crates/palaco-errors" }
 palaco-events = { path = "crates/palaco-events" }
@@ -38,6 +41,7 @@ palaco-citadel = { path = "crates/palaco-citadel" }
 palaco-runtime = { path = "crates/palaco-runtime" }
 palaco-audit = { path = "crates/palaco-audit" }
 palaco-observatory = { path = "crates/palaco-observatory" }
+palaco-rio-core = { path = "crates/palaco-rio-core" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

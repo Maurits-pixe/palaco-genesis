@@ -11,4 +11,5 @@ description = "Governance and authority contracts for PALACO."
 workspace = true
 
 [dependencies]
+palaco-constitution = { workspace = true }
 palaco-oracle = { workspace = true }
