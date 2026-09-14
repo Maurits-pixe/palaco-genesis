@@ -1,0 +1,25 @@
+[package]
+name = "palaco-kernel"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+palaco-foundation = { path = "../../crates/palaco-foundation" }
+palaco-runtime = { path = "../../crates/palaco-runtime" }
+
+[dev-dependencies]
+chrono.workspace = true
+palaco-citadel = { workspace = true }
+palaco-evidence = { workspace = true }
+palaco-events = { workspace = true }
+palaco-oracle = { workspace = true }
+palaco-trias = { workspace = true }
+palaco-types = { workspace = true }
+uuid.workspace = true

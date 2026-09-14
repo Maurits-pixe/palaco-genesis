@@ -121,6 +121,8 @@ pub enum ConstitutionalError {
     MissingProvenance,
     /// Evidence was required but missing.
     MissingEvidence,
+    /// Requested authority did not match the governing decision.
+    AuthorityMismatch,
     /// Authorization was required but missing or invalid.
     MissingAuthorization,
     /// A revocation invalidated the attempted action.

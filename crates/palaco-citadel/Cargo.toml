@@ -7,9 +7,20 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Execution boundary contracts for PALACO."
+
 [lints]
 workspace = true
 
 [dependencies]
+palaco-foundation = { path = "../palaco-foundation" }
+palaco-quay = { path = "../palaco-quay" }
 palaco-constitution = { workspace = true }
 palaco-trias = { workspace = true }
+
+[dev-dependencies]
+chrono.workspace = true
+palaco-evidence = { workspace = true }
+palaco-events = { workspace = true }
+palaco-oracle = { workspace = true }
+palaco-types = { workspace = true }
+uuid.workspace = true

@@ -1,5 +1,14 @@
 [workspace]
+resolver = "2"
 members = [
+    "crates/palaco-foundation",
+    "crates/palaco-eventbus",
+    "crates/palaco-harbor",
+    "crates/palaco-quay",
+    "crates/palaco-citadel",
+    "crates/palaco-federation",
+    "crates/palaco-intelligence",
+    "crates/palaco-evolution",
     "crates/palaco-constitution",
     "crates/palaco-types",
     "crates/palaco-errors",
@@ -8,16 +17,15 @@ members = [
     "crates/palaco-oracle",
     "crates/palaco-trias",
     "crates/palaco-knowledge",
-    "crates/palaco-citadel",
     "crates/palaco-runtime",
     "crates/palaco-audit",
     "crates/palaco-observatory",
+    "runtime/palaco-kernel",
     "crates/palaco-rio-core",
 ]
-resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 edition = "2021"
 authors = ["PALACO Core Team"]
 license = "MIT OR Apache-2.0"
@@ -25,9 +33,12 @@ repository = "https://github.com/Maurits-pixe/palaco-genesis"
 rust-version = "1.81"
 
 [workspace.dependencies]
-thiserror = "2.0"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
 tracing = "0.1"
-serde = { version = "1.0", features = ["derive"] }
+uuid = { version = "1", features = ["serde", "v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+sha2 = "0.10"
 
 palaco-constitution = { path = "crates/palaco-constitution" }
 palaco-types = { path = "crates/palaco-types" }
@@ -52,3 +63,10 @@ unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
 todo = "deny"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

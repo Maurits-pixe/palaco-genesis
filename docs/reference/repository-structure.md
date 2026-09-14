@@ -8,12 +8,21 @@ This repository follows a standard Rust workspace layout.
 - Keep canonical specifications under `specs/`.
 - Keep CI configuration under `.github/workflows/`.
 - Keep long-form governance and architectural material under `docs/`.
-- Order workspace members from low-level shared contracts to high-level execution and observability crates.
+- Order workspace members from the PALACO foundation layer through runtime-facing crates.
 - Use top-level `engine/`, `services/`, `apps/`, `database/`, and `verification/` directories for repository assembly boundaries.
 
 ## Workspace layers
 
-### Foundation
+### Genesis foundation
+- `palaco-foundation`
+- `palaco-eventbus`
+- `palaco-harbor`
+- `palaco-quay`
+- `palaco-federation`
+- `palaco-intelligence`
+- `palaco-evolution`
+
+### Shared contracts
 - `palaco-constitution`
 - `palaco-types`
 - `palaco-errors`
@@ -31,6 +40,7 @@ This repository follows a standard Rust workspace layout.
 - `palaco-audit`
 - `palaco-observatory`
 - `palaco-rio-core`
+- `palaco-kernel`
 
 ## Canonical assembly
 

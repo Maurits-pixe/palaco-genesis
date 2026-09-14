@@ -1,6 +1,6 @@
 # palaco-genesis
 
-PALACO Genesis is a Rust monorepo workspace for the PALACO platform.
+PALACO Genesis is the Rust workspace baseline for the PALACO platform.
 
 ## Repository layout
 
@@ -13,19 +13,28 @@ De specificatie voor de GitHub repository-bootstrap is vastgelegd in
 .
 ├── .github/workflows/        # CI workflows
 ├── crates/                   # Rust workspace crates
-│   ├── palaco-types/         # Foundational shared types
+│   ├── palaco-foundation/    # Temporal validity and evidence foundation
+│   ├── palaco-eventbus/      # Event transport boundary
+│   ├── palaco-harbor/        # Intake and ingress layer
+│   ├── palaco-quay/          # Coordination boundary
+│   ├── palaco-citadel/       # Execution boundary layer
+│   ├── palaco-federation/    # Federated domain contracts
+│   ├── palaco-intelligence/  # Intelligence domain contracts
+│   ├── palaco-evolution/     # Evolution domain contracts
 │   ├── palaco-constitution/  # Constitutional identity/authority/provenance rules
+│   ├── palaco-types/         # Foundational shared types
 │   ├── palaco-errors/        # Shared error contracts
 │   ├── palaco-events/        # Domain event contracts
 │   ├── palaco-evidence/      # Evidence chain contracts
 │   ├── palaco-oracle/        # Analysis and advisory layer
 │   ├── palaco-trias/         # Governance and authority layer
 │   ├── palaco-knowledge/     # Versioned knowledge contracts
-│   ├── palaco-citadel/       # Execution boundary layer
-│   ├── palaco-runtime/       # Runtime orchestration layer
+│   ├── palaco-runtime/       # Runtime orchestration contracts
 │   ├── palaco-audit/         # Audit trail layer
 │   ├── palaco-observatory/   # Observability and reporting layer
 │   └── palaco-rio-core/      # RIO interaction and orchestration contracts
+├── runtime/
+│   └── palaco-kernel/        # Runtime kernel crate
 ├── specs/                    # Canonical PALACO specifications
 ├── engine/                   # ENGINE COMPLEET assembly boundaries
 ├── services/                 # Service assembly placeholders
@@ -33,31 +42,33 @@ De specificatie voor de GitHub repository-bootstrap is vastgelegd in
 ├── database/                 # Database assembly placeholders
 ├── verification/             # Verification assembly placeholders
 ├── docs/
-│   ├── architecture/         # Architecture and workspace references
-│   ├── books/                # PALACO publication hierarchy
-│   ├── foundation/           # Baseline and foundational documents
-│   └── reference/            # Repository and contributor references
-├── Cargo.toml                # Workspace manifest
-└── rust-toolchain.toml       # Rust toolchain pinning
+│   ├── architecture/
+│   ├── books/
+│   ├── foundation/
+│   └── reference/
+├── Cargo.toml
+└── rust-toolchain.toml
 ```
 
 ## Layering order
 
-The workspace is organized from foundational crates to execution-facing crates, with RIO core layered above the constitutional and execution contracts:
+The workspace is organized from foundational crates to execution-facing crates, with the runtime kernel and RIO core layered above the shared constitutional and runtime contracts:
 
-1. `palaco-constitution`
-2. `palaco-types`
-3. `palaco-errors`
-4. `palaco-events`
-5. `palaco-evidence`
-6. `palaco-oracle`
-7. `palaco-trias`
-8. `palaco-knowledge`
-9. `palaco-citadel`
-10. `palaco-runtime`
-11. `palaco-audit`
-12. `palaco-observatory`
-13. `palaco-rio-core`
+1. `palaco-foundation`
+2. `palaco-constitution`
+3. `palaco-types`
+4. `palaco-errors`
+5. `palaco-events`
+6. `palaco-evidence`
+7. `palaco-oracle`
+8. `palaco-trias`
+9. `palaco-knowledge`
+10. `palaco-citadel`
+11. `palaco-runtime`
+12. `palaco-audit`
+13. `palaco-observatory`
+14. `palaco-rio-core`
+15. `palaco-kernel`
 
 ## Canonical assembly
 
@@ -69,11 +80,5 @@ The workspace is organized from foundational crates to execution-facing crates, 
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --all-features
+cargo test --workspace
 ```
-
-## Documentation
-
-- `docs/foundation/engineering-baseline-v1.md`
-- `docs/architecture/core-workspace-notes.md`
-- `docs/reference/repository-structure.md`

@@ -88,14 +88,14 @@ pub fn prepare_action(
     trace_id: impl Into<String>,
 ) -> Result<TraceRecord, ConstitutionalError> {
     ensure_context_before_action(request.context_ready)?;
-    ensure_decision_has_evidence(true)?;
+    ensure_decision_has_evidence(!action_path.decision.report.evidence.evidence.id.is_nil())?;
     ensure_authority_has_provenance(
         &action_path.decision.authority,
         &action_path.decision.provenance,
     )?;
 
     if action_path.authority != action_path.decision.authority {
-        return Err(ConstitutionalError::MissingAuthorization);
+        return Err(ConstitutionalError::AuthorityMismatch);
     }
 
     ensure_execution_is_authorized(
@@ -112,9 +112,38 @@ pub fn prepare_action(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{LocalResult, TimeZone, Utc};
     use palaco_constitution::{HistoricalClassification, ProvenanceRecord};
     use palaco_events::EventEnvelope;
+    use palaco_foundation::{
+        evidence::Evidence,
+        identity::{NodeId, PolicyVersionId, StateSnapshotId},
+        types::{DecisionContext, TrustLevel, ValidityWindow},
+    };
     use palaco_oracle::OracleReport;
+    use palaco_types::DomainMarker;
+
+    fn timestamp(
+        year: i32,
+        month: u32,
+        day: u32,
+        hour: u32,
+        minute: u32,
+        second: u32,
+    ) -> Result<chrono::DateTime<Utc>, &'static str> {
+        match Utc.with_ymd_and_hms(year, month, day, hour, minute, second) {
+            LocalResult::Single(value) => Ok(value),
+            LocalResult::Ambiguous(_, _) | LocalResult::None => Err("invalid UTC timestamp"),
+        }
+    }
+
+    fn context(observed_at: chrono::DateTime<Utc>) -> DecisionContext {
+        DecisionContext {
+            state: StateSnapshotId::new(),
+            policy_version: PolicyVersionId::new(),
+            observed_at,
+        }
+    }
 
     fn request(context_ready: bool) -> RioRequest {
         RioRequest {
@@ -132,23 +161,51 @@ mod tests {
         }
     }
 
-    fn evidence() -> EvidenceBundle {
-        EvidenceBundle {
-            source_event: EventEnvelope::default(),
-        }
+    fn evidence() -> Result<EvidenceBundle, &'static str> {
+        Ok(EvidenceBundle::new(
+            EventEnvelope {
+                marker: DomainMarker,
+            },
+            Evidence::new(
+                uuid::Uuid::new_v4(),
+                timestamp(2026, 1, 10, 12, 0, 0)?,
+                NodeId::new(),
+                TrustLevel::High,
+                ValidityWindow::new(
+                    timestamp(2026, 1, 1, 0, 0, 0)?,
+                    timestamp(2026, 1, 31, 23, 59, 59)?,
+                ),
+            ),
+            palaco_evidence::EvidenceCompleteness::Complete,
+        ))
     }
 
-    fn decision() -> GovernanceDecision {
-        GovernanceDecision {
-            report: OracleReport {
-                evidence: evidence(),
-            },
-            authority: AuthorityScope {
-                capability: "rio.execute".to_string(),
+    fn decision() -> Result<GovernanceDecision, &'static str> {
+        let context = context(timestamp(2026, 1, 15, 12, 0, 0)?);
+
+        Ok(GovernanceDecision::new(
+            OracleReport::new(evidence()?, context, palaco_oracle::PlausibleState::Stable),
+            context,
+            palaco_trias::AuthorizationScope::Execute,
+            timestamp(2026, 1, 15, 12, 0, 0)?,
+            ValidityWindow::new(
+                timestamp(2026, 1, 1, 0, 0, 0)?,
+                timestamp(2026, 1, 31, 23, 59, 59)?,
+            ),
+        ))
+    }
+
+    fn authorization(scope: &AuthorityScope) -> AuthorizationGrant {
+        AuthorizationGrant {
+            authorization_id: "grant-1".to_string(),
+            scope: scope.clone(),
+            granted_to: IdentityHandle {
+                subject: "person:1".to_string(),
+                surface: "rio-web".to_string(),
             },
             provenance: ProvenanceRecord {
-                source: "specs/TRIAS".to_string(),
-                record_locator: "decision-1".to_string(),
+                source: "specs/AUTHORITY".to_string(),
+                record_locator: "grant-1".to_string(),
             },
         }
     }
@@ -166,18 +223,18 @@ mod tests {
     }
 
     #[test]
-    fn answer_flow_completes_with_evidence() {
+    fn answer_flow_completes_with_evidence() -> Result<(), &'static str> {
         let answer_path = RioAnswerPath {
             knowledge: vec![KnowledgeRecord {
-                evidence: evidence(),
+                evidence: evidence()?,
                 classification: HistoricalClassification::Specification,
                 provenance: ProvenanceRecord {
                     source: "specs/RIO".to_string(),
                     record_locator: "rio-qna".to_string(),
                 },
             }],
-            evidence: Some(evidence()),
-            decision: Some(decision()),
+            evidence: Some(evidence()?),
+            decision: Some(decision()?),
         };
 
         let result = prepare_answer(&request(true), &answer_path, "trace-1");
@@ -188,20 +245,84 @@ mod tests {
                 ..
             })
         ));
+
+        Ok(())
     }
 
     #[test]
-    fn action_flow_requires_authorization() {
+    fn action_flow_requires_authorization() -> Result<(), &'static str> {
         let action_path = RioActionPath {
             authority: AuthorityScope {
-                capability: "rio.execute".to_string(),
+                capability: "palaco.execute".to_string(),
             },
             authorization: None,
             revocation: None,
-            decision: decision(),
+            decision: decision()?,
         };
 
         let result = prepare_action(&request(true), &action_path, "trace-1");
         assert_eq!(result, Err(ConstitutionalError::MissingAuthorization));
+
+        Ok(())
+    }
+
+    #[test]
+    fn answer_flow_requires_decision_provenance() -> Result<(), &'static str> {
+        let mut invalid_decision = decision()?;
+        invalid_decision.provenance = ProvenanceRecord::default();
+
+        let answer_path = RioAnswerPath {
+            knowledge: vec![KnowledgeRecord {
+                evidence: evidence()?,
+                classification: HistoricalClassification::Specification,
+                provenance: ProvenanceRecord {
+                    source: "specs/RIO".to_string(),
+                    record_locator: "rio-qna".to_string(),
+                },
+            }],
+            evidence: Some(evidence()?),
+            decision: Some(invalid_decision),
+        };
+
+        let result = prepare_answer(&request(true), &answer_path, "trace-1");
+        assert_eq!(result, Err(ConstitutionalError::MissingProvenance));
+
+        Ok(())
+    }
+
+    #[test]
+    fn action_flow_requires_decision_evidence() -> Result<(), &'static str> {
+        let mut invalid_decision = decision()?;
+        invalid_decision.report.evidence.evidence.id = uuid::Uuid::nil();
+
+        let action_path = RioActionPath {
+            authority: invalid_decision.authority.clone(),
+            authorization: Some(authorization(&invalid_decision.authority)),
+            revocation: None,
+            decision: invalid_decision,
+        };
+
+        let result = prepare_action(&request(true), &action_path, "trace-1");
+        assert_eq!(result, Err(ConstitutionalError::MissingEvidence));
+
+        Ok(())
+    }
+
+    #[test]
+    fn action_flow_rejects_mismatched_authority() -> Result<(), &'static str> {
+        let decision = decision()?;
+        let action_path = RioActionPath {
+            authority: AuthorityScope {
+                capability: "rio.observe".to_string(),
+            },
+            authorization: Some(authorization(&decision.authority)),
+            revocation: None,
+            decision,
+        };
+
+        let result = prepare_action(&request(true), &action_path, "trace-1");
+        assert_eq!(result, Err(ConstitutionalError::AuthorityMismatch));
+
+        Ok(())
     }
 }

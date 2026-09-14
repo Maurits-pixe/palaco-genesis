@@ -17,5 +17,9 @@ palaco-knowledge = { workspace = true }
 palaco-trias = { workspace = true }
 
 [dev-dependencies]
+chrono.workspace = true
 palaco-events = { workspace = true }
+palaco-foundation = { path = "../palaco-foundation" }
 palaco-oracle = { workspace = true }
+palaco-types = { workspace = true }
+uuid.workspace = true
