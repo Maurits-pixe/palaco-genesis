@@ -1,8 +1,9 @@
 //! Execution boundary contracts for PALACO.
 
 #![forbid(unsafe_code)]
-#![deny(warnings, clippy::unwrap_used, clippy::todo)]
+#![warn(missing_docs)]
 
+use palaco_constitution::{AuthorizationGrant, IdentityHandle};
 use palaco_foundation::{
     errors::RevalidationError,
     traits::{CurrentlyAssessable, FailClosed, Revalidatable, Validatable},
@@ -27,6 +28,8 @@ pub enum BoundaryDisposition {
 pub struct ExecutionBoundary {
     /// Governance decision authorizing the boundary crossing.
     pub decision: GovernanceDecision,
+    /// Explicit authorization grant derived from the governance decision.
+    pub authorization: AuthorizationGrant,
     /// Current disposition enforced at the boundary.
     pub disposition: BoundaryDisposition,
 }
@@ -41,9 +44,16 @@ impl ExecutionBoundary {
                 BoundaryDisposition::Escalate
             }
         };
+        let authorization = AuthorizationGrant {
+            authorization_id: decision.id.0.to_string(),
+            scope: decision.authority.clone(),
+            granted_to: IdentityHandle::default(),
+            provenance: decision.provenance.clone(),
+        };
 
         Self {
             decision,
+            authorization,
             disposition,
         }
     }

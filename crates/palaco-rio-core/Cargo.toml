@@ -1,23 +1,25 @@
 [package]
-name = "palaco-trias"
+name = "palaco-rio-core"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Governance and authority contracts for PALACO."
+description = "RIO interaction and orchestration contracts for PALACO."
 [lints]
 workspace = true
 
 [dependencies]
-palaco-foundation = { path = "../palaco-foundation" }
 palaco-constitution = { workspace = true }
-palaco-oracle = { workspace = true }
+palaco-evidence = { workspace = true }
+palaco-knowledge = { workspace = true }
+palaco-trias = { workspace = true }
 
 [dev-dependencies]
 chrono.workspace = true
-palaco-evidence = { workspace = true }
 palaco-events = { workspace = true }
+palaco-foundation = { path = "../palaco-foundation" }
+palaco-oracle = { workspace = true }
 palaco-types = { workspace = true }
 uuid.workspace = true

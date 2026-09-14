@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+use palaco_constitution::{AuthorityScope, ProvenanceRecord};
 use palaco_foundation::{
     errors::{RevalidationError, RevocationReason, ValidationError},
     identity::DecisionId,
@@ -23,6 +24,21 @@ pub enum AuthorizationScope {
     Execute,
 }
 
+impl AuthorizationScope {
+    #[must_use]
+    fn authority(self) -> AuthorityScope {
+        let capability = match self {
+            Self::Observe => "palaco.observe",
+            Self::Advise => "palaco.advise",
+            Self::Execute => "palaco.execute",
+        };
+
+        AuthorityScope {
+            capability: capability.to_string(),
+        }
+    }
+}
+
 /// Governance decision produced from an oracle report.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GovernanceDecision {
@@ -38,6 +54,10 @@ pub struct GovernanceDecision {
     pub issued_at: Timestamp,
     /// Window during which the decision may remain current.
     pub validity_window: ValidityWindow,
+    /// Authority scope approved by governance.
+    pub authority: AuthorityScope,
+    /// Provenance of the governance outcome.
+    pub provenance: ProvenanceRecord,
 }
 
 impl GovernanceDecision {
@@ -50,8 +70,15 @@ impl GovernanceDecision {
         issued_at: Timestamp,
         validity_window: ValidityWindow,
     ) -> Self {
+        let id = DecisionId::new();
+
         Self {
-            id: DecisionId::new(),
+            authority: scope.authority(),
+            provenance: ProvenanceRecord {
+                source: "palaco-trias".to_string(),
+                record_locator: format!("decision:{}", id.0),
+            },
+            id,
             report,
             context,
             scope,
