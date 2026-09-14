@@ -88,14 +88,14 @@ pub fn prepare_action(
     trace_id: impl Into<String>,
 ) -> Result<TraceRecord, ConstitutionalError> {
     ensure_context_before_action(request.context_ready)?;
-    ensure_decision_has_evidence(true)?;
+    ensure_decision_has_evidence(!action_path.decision.report.evidence.evidence.id.is_nil())?;
     ensure_authority_has_provenance(
         &action_path.decision.authority,
         &action_path.decision.provenance,
     )?;
 
     if action_path.authority != action_path.decision.authority {
-        return Err(ConstitutionalError::MissingAuthorization);
+        return Err(ConstitutionalError::AuthorityMismatch);
     }
 
     ensure_execution_is_authorized(
@@ -195,6 +195,21 @@ mod tests {
         ))
     }
 
+    fn authorization(scope: &AuthorityScope) -> AuthorizationGrant {
+        AuthorizationGrant {
+            authorization_id: "grant-1".to_string(),
+            scope: scope.clone(),
+            granted_to: IdentityHandle {
+                subject: "person:1".to_string(),
+                surface: "rio-web".to_string(),
+            },
+            provenance: ProvenanceRecord {
+                source: "specs/AUTHORITY".to_string(),
+                record_locator: "grant-1".to_string(),
+            },
+        }
+    }
+
     #[test]
     fn answer_flow_requires_context() {
         let result = prepare_answer(&request(false), &RioAnswerPath::default(), "trace-1");
@@ -247,6 +262,66 @@ mod tests {
 
         let result = prepare_action(&request(true), &action_path, "trace-1");
         assert_eq!(result, Err(ConstitutionalError::MissingAuthorization));
+
+        Ok(())
+    }
+
+    #[test]
+    fn answer_flow_requires_decision_provenance() -> Result<(), &'static str> {
+        let mut invalid_decision = decision()?;
+        invalid_decision.provenance = ProvenanceRecord::default();
+
+        let answer_path = RioAnswerPath {
+            knowledge: vec![KnowledgeRecord {
+                evidence: evidence()?,
+                classification: HistoricalClassification::Specification,
+                provenance: ProvenanceRecord {
+                    source: "specs/RIO".to_string(),
+                    record_locator: "rio-qna".to_string(),
+                },
+            }],
+            evidence: Some(evidence()?),
+            decision: Some(invalid_decision),
+        };
+
+        let result = prepare_answer(&request(true), &answer_path, "trace-1");
+        assert_eq!(result, Err(ConstitutionalError::MissingProvenance));
+
+        Ok(())
+    }
+
+    #[test]
+    fn action_flow_requires_decision_evidence() -> Result<(), &'static str> {
+        let mut invalid_decision = decision()?;
+        invalid_decision.report.evidence.evidence.id = uuid::Uuid::nil();
+
+        let action_path = RioActionPath {
+            authority: invalid_decision.authority.clone(),
+            authorization: Some(authorization(&invalid_decision.authority)),
+            revocation: None,
+            decision: invalid_decision,
+        };
+
+        let result = prepare_action(&request(true), &action_path, "trace-1");
+        assert_eq!(result, Err(ConstitutionalError::MissingEvidence));
+
+        Ok(())
+    }
+
+    #[test]
+    fn action_flow_rejects_mismatched_authority() -> Result<(), &'static str> {
+        let decision = decision()?;
+        let action_path = RioActionPath {
+            authority: AuthorityScope {
+                capability: "rio.observe".to_string(),
+            },
+            authorization: Some(authorization(&decision.authority)),
+            revocation: None,
+            decision,
+        };
+
+        let result = prepare_action(&request(true), &action_path, "trace-1");
+        assert_eq!(result, Err(ConstitutionalError::AuthorityMismatch));
 
         Ok(())
     }

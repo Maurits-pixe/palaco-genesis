@@ -54,10 +54,15 @@ palaco/
 │   └── CODEOWNERS
 │
 ├── crates/
+├── runtime/
 ├── docs/
-├── validation/
-├── scripts/
-└── sdk/
+├── specs/
+├── engine/
+├── services/
+├── apps/
+├── database/
+├── verification/
+└── tests/
 ```
 
 ---
