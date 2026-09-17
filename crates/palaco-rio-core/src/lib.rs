@@ -12,6 +12,11 @@ use palaco_evidence::EvidenceBundle;
 use palaco_knowledge::KnowledgeRecord;
 use palaco_trias::GovernanceDecision;
 
+/// RIO session lifecycle primitives.
+pub mod session;
+
+pub use session::{RioSession, RioSessionId, RioSessionState};
+
 /// Human-to-RIO request entering the constitutional flow.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RioRequest {
