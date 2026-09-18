@@ -125,7 +125,7 @@ mod tests {
                 parent_event_id: None,
                 source_hash: None,
             },
-            trace_id: TraceId::new("trace-1").expect("test fixture"),
+            trace_id: TraceId::new("trace-1").map_err(|_| "invalid test trace id").unwrap(),
             idempotency_key: "key-1".into(),
         }
     }
