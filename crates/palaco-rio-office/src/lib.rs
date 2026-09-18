@@ -143,8 +143,11 @@ mod tests {
             },
         );
         assert!(proposed.is_ok());
-        let result = proposed.unwrap_or_else(|_| event(EventType::EmailReceived));
-        assert!(result.proposed_action.is_some());
+        if let Ok(result) = proposed {
+            assert!(result.proposed_action.is_some());
+        } else {
+            panic!("proposal unexpectedly rejected");
+        }
         assert_eq!(result.execution, ExecutionState::NotStarted);
     }
 }
