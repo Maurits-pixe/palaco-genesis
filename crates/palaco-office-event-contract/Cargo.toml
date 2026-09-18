@@ -1,0 +1,15 @@
+[package]
+name = "palaco-office-event-contract"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+publish = false
+description = "PALACO_EVENT_V1 Office Automation contract reference integrated into the PALACO workspace."
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = "1"
+sha2.workspace = true
