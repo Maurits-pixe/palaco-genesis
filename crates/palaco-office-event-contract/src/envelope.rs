@@ -91,8 +91,8 @@ impl EventEnvelope {
 mod tests {
     use super::*;
 
-    fn envelope() -> EventEnvelope {
-        EventEnvelope {
+    fn envelope() -> Result<EventEnvelope, &'static str> {
+        Ok(EventEnvelope {
             event_id: "evt-1".into(),
             event_type: EventType::EmailReceived,
             event_version: "1.0.0".into(),
@@ -125,27 +125,29 @@ mod tests {
                 parent_event_id: None,
                 source_hash: None,
             },
-            trace_id: TraceId::new("trace-1").map_err(|_| "invalid test trace id").unwrap(),
+            trace_id: TraceId::new("trace-1")?,
             idempotency_key: "key-1".into(),
-        }
+        })
     }
 
     #[test]
-    fn execution_requires_explicit_grant() {
-        let event = envelope();
+    fn execution_requires_explicit_grant() -> Result<(), &'static str> {
+        let event = envelope()?;
         assert_eq!(
             event.execution_gate(),
             Err("execution blocked: authorization is not GRANTED")
         );
+        Ok(())
     }
 
     #[test]
-    fn revoke_blocks_execution() {
-        let mut event = envelope();
+    fn revoke_blocks_execution() -> Result<(), &'static str> {
+        let mut event = envelope()?;
         event.authorization.state = AuthorizationState::Granted;
         assert!(event.execution_gate().is_ok());
         event.revoke();
         assert_eq!(event.execution, ExecutionState::Blocked);
         assert!(!event.authorization.permits_execution());
+        Ok(())
     }
 }
