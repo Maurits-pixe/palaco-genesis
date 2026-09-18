@@ -44,7 +44,7 @@ pub fn execution_commit_gate(event: &EventEnvelope) -> Result<CommitDecision, Co
     if !matches!(event.authorization, AuthorizationState::Granted) {
         return Err(CommitError::AuthorizationNotGranted);
     }
-    if event.authorization_reference().is_none() {
+    if event.authorization.reference.as_deref().map(str::trim).filter(|v| !v.is_empty()).is_none() {
         return Err(CommitError::MissingAuthorizationReference);
     }
 
@@ -107,9 +107,7 @@ mod tests {
     #[test]
     fn granted_without_reference_is_blocked() {
         let mut e = event();
-        if let Some(a) = e.authorization_data_mut() {
-            a.reference = None;
-        }
+        e.authorization.reference = None;
         assert_eq!(
             execution_commit_gate(&e),
             Err(CommitError::MissingAuthorizationReference)
