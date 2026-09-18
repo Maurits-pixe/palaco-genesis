@@ -22,6 +22,7 @@ members = [
     "crates/palaco-observatory",
     "runtime/palaco-kernel",
     "crates/palaco-rio-core",
+    "crates/palaco-office-event-contract",
 ]
 
 [workspace.package]
