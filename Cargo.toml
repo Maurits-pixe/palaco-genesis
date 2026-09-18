@@ -25,6 +25,7 @@ members = [
     "crates/palaco-office-event-contract",
     "crates/palaco-office-intake",
     "crates/palaco-calendar-intake",
+    "crates/palaco-office-execution",
 ]
 
 [workspace.package]
