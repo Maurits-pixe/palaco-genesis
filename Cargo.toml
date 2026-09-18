@@ -28,6 +28,7 @@ members = [
     "crates/palaco-office-execution",
     "crates/palaco-rio-office",
     "crates/palaco-office-authorization",
+    "crates/palaco-office-execution-adapter",
 ]
 
 [workspace.package]
