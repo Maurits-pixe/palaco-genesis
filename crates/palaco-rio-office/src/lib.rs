@@ -133,7 +133,7 @@ mod tests {
     }
 
     #[test]
-    fn rio_can_propose_without_executing() {
+    fn rio_can_propose_without_executing() -> Result<(), &'static str> {
         let proposed = propose_action(
             &event(EventType::EmailReceived),
             ProposedAction {
@@ -141,13 +141,9 @@ mod tests {
                 destination: "todo".to_owned(),
                 description: "Follow up".to_owned(),
             },
-        );
-        assert!(proposed.is_ok());
-        if let Ok(result) = proposed {
-            assert!(result.proposed_action.is_some());
-        } else {
-            panic!("proposal unexpectedly rejected");
-        }
-        assert_eq!(result.execution, ExecutionState::NotStarted);
+        )?;
+        assert!(proposed.proposed_action.is_some());
+        assert_eq!(proposed.execution, ExecutionState::NotStarted);
+        Ok(())
     }
 }
