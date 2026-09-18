@@ -115,7 +115,7 @@ mod tests {
 
     #[test]
     fn created_event_starts_without_authorization() {
-        let trace = TraceId::new("trace-1".to_owned()).unwrap_or_else(|_| TraceId::new("fallback".to_owned()).expect("trace construction"));
+        let trace = TraceId::new("trace-1".to_owned()).unwrap_or_else(|_| unreachable!("literal trace id is valid"));
         let result = normalize_outlook_calendar_event(&snapshot(), "event-1", &trace, key());
         match result {
             IntakeOutcome::Accepted(event) => {
@@ -131,7 +131,7 @@ mod tests {
     fn missing_provenance_is_quarantined() {
         let mut value = snapshot();
         value.source_ref.clear();
-        let trace = TraceId::new("trace-2".to_owned()).unwrap_or_else(|_| TraceId::new("fallback".to_owned()).expect("trace construction"));
+        let trace = TraceId::new("trace-2".to_owned()).unwrap_or_else(|_| unreachable!("literal trace id is valid"));
         let result = normalize_outlook_calendar_event(&value, "event-2", &trace, key());
         assert!(matches!(result, IntakeOutcome::Quarantined { .. }));
     }
