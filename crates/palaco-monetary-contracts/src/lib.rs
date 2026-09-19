@@ -598,6 +598,150 @@ impl MonetaryJournal {
     }
 }
 
+/// End-to-end sandbox trace: registry -> wallet -> account -> reward -> ledger -> reversal.
+///
+/// This orchestration records each successful state transition in the journal. It does
+/// not replace the individual authorization gates and does not mutate balances directly.
+pub fn sandbox_trace_reward_flow(
+    currencies: &mut CurrencyRegistry,
+    wallets: &mut WalletRegistry,
+    ledger: &mut SandboxLedger,
+    journal: &mut MonetaryJournal,
+) -> Result<(), &'static str> {
+    currencies.register(CurrencyDefinition::sandbox_master_coin())?;
+    journal.record(
+        "event-currency-registered",
+        "2026-09-19T06:00:00Z",
+        "MC",
+        "auth-currency-register",
+        "prov-currency-register",
+        MonetaryEvent::CurrencyRegistered {
+            currency_id: "MC".into(),
+            version: "0.1.0-sandbox".into(),
+            provenance_ref: "prov-currency-register".into(),
+        },
+    )?;
+
+    currencies.activate("MC", "auth-currency-activate", "prov-currency-activate")?;
+    journal.record(
+        "event-currency-activated",
+        "2026-09-19T06:01:00Z",
+        "MC",
+        "auth-currency-activate",
+        "prov-currency-activate",
+        MonetaryEvent::CurrencyActivated {
+            currency_id: "MC".into(),
+            authorization_ref: "auth-currency-activate".into(),
+            provenance_ref: "prov-currency-activate".into(),
+        },
+    )?;
+
+    wallets.create_wallet(Wallet {
+        wallet_id: "wallet-1".into(),
+        owner_id: "citadel-1".into(),
+        profile: WalletProfile::Blanco,
+        account_ids: Vec::new(),
+    })?;
+    journal.record(
+        "event-wallet-created",
+        "2026-09-19T06:02:00Z",
+        "wallet-1",
+        "auth-wallet-create",
+        "prov-wallet-create",
+        MonetaryEvent::WalletCreated {
+            wallet_id: "wallet-1".into(),
+            owner_id: "citadel-1".into(),
+            profile: WalletProfile::Blanco,
+        },
+    )?;
+
+    wallets.add_account(
+        WalletAccount {
+            account_id: "account-1".into(),
+            wallet_id: "wallet-1".into(),
+            owner_id: "citadel-1".into(),
+            currency_id: "MC".into(),
+        },
+        currencies,
+    )?;
+    journal.record(
+        "event-account-created",
+        "2026-09-19T06:03:00Z",
+        "account-1",
+        "auth-account-create",
+        "prov-account-create",
+        MonetaryEvent::AccountCreated {
+            account_id: "account-1".into(),
+            wallet_id: "wallet-1".into(),
+            currency_id: "MC".into(),
+        },
+    )?;
+
+    let reward = RewardGrant {
+        reward_id: "reward-1".into(),
+        account_id: "account-1".into(),
+        currency_id: "MC".into(),
+        amount: 25,
+        rule_ref: "rule-loyalty-1".into(),
+        authorization_ref: "auth-reward",
+        provenance_ref: "prov-reward".into(),
+    };
+    reward.validate(currencies)?;
+    journal.record(
+        "event-reward-granted",
+        "2026-09-19T06:04:00Z",
+        "reward-1",
+        "auth-reward",
+        "prov-reward",
+        reward.event(),
+    )?;
+
+    sandbox_seed(
+        ledger,
+        currencies,
+        "account-1",
+        "treasury",
+        "MC",
+        25,
+        "auth-ledger-seed",
+        "prov-ledger-seed",
+        "seed-reward-1",
+    )?;
+    journal.record(
+        "event-ledger-committed",
+        "2026-09-19T06:05:00Z",
+        "tx-seed-reward-1",
+        "auth-ledger-seed",
+        "prov-ledger-seed",
+        MonetaryEvent::LedgerCommitted {
+            transaction_id: "seed-seed-reward-1".into(),
+            currency_id: "MC".into(),
+            idempotency_key: "seed-reward-1".into(),
+        },
+    )?;
+
+    let reversal = Reversal {
+        reversal_id: "reversal-1".into(),
+        original_transaction_id: "seed-seed-reward-1".into(),
+        authorization_ref: "auth-reversal",
+        provenance_ref: "prov-reversal",
+    };
+    reversal.validate()?;
+    journal.record(
+        "event-reversal",
+        "2026-09-19T06:06:00Z",
+        "reversal-1",
+        "auth-reversal",
+        "prov-reversal",
+        MonetaryEvent::TransactionReversed {
+            reversal_id: "reversal-1".into(),
+            original_transaction_id: "seed-seed-reward-1".into(),
+        },
+    )?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod journal_tests {
     use super::*;
@@ -608,6 +752,25 @@ mod journal_tests {
             currency_id: "MC".into(),
             idempotency_key: format!("idem-{id}"),
         }
+    }
+
+    #[test]
+    fn end_to_end_reward_flow_reconstructs_complete_chain() {
+        let mut currencies = CurrencyRegistry::default();
+        let mut wallets = WalletRegistry::default();
+        let mut ledger = SandboxLedger::default();
+        let mut journal = MonetaryJournal::default();
+
+        assert!(sandbox_trace_reward_flow(&mut currencies, &mut wallets, &mut ledger, &mut journal).is_ok());
+
+        let entries: Vec<_> = journal.entries().collect();
+        assert_eq!(entries.len(), 6);
+        assert_eq!(entries.iter().map(|e| e.sequence).collect::<Vec<_>>(), vec![1, 2, 3, 4, 5, 6]);
+        assert_eq!(journal.trace_currency("MC").count(), 4);
+        assert_eq!(journal.trace_wallet("wallet-1").count(), 2);
+        assert_eq!(journal.trace_account("account-1").count(), 2);
+        assert_eq!(journal.trace_reward("reward-1").count(), 1);
+        assert_eq!(journal.trace_transaction("seed-seed-reward-1").count(), 2);
     }
 
     #[test]
