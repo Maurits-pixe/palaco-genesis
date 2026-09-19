@@ -92,12 +92,14 @@ impl Reversal {
 
 /// A signed, balanced double-entry posting.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LedgerEntry { pub account_id: String, pub amount: i128 }
+pub struct LedgerEntry { pub account_id: String, pub currency_id: String, pub amount: i128 }
 
 /// A transaction is committed only when debits equal credits and its key is unique.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LedgerTransaction {
+    pub transaction_id: String,
     pub idempotency_key: String,
+    pub currency_id: String,
     pub authorization_ref: String,
     pub provenance_ref: String,
     pub entries: Vec<LedgerEntry>,
@@ -105,13 +107,16 @@ pub struct LedgerTransaction {
 
 impl LedgerTransaction {
     pub fn validate(&self) -> Result<(), &'static str> {
+        if self.transaction_id.is_empty() { return Err("missing transaction id"); }
         if self.idempotency_key.is_empty() { return Err("missing idempotency key"); }
+        if self.currency_id.is_empty() { return Err("missing currency"); }
         if self.authorization_ref.is_empty() { return Err("missing authorization"); }
         if self.provenance_ref.is_empty() { return Err("missing provenance"); }
         if self.entries.is_empty() { return Err("transaction has no entries"); }
         let sum = self.entries.iter().try_fold(0i128, |acc, e| acc.checked_add(e.amount).ok_or("amount overflow"))?;
         if sum != 0 { return Err("unbalanced double-entry transaction"); }
         if self.entries.iter().any(|e| e.account_id.is_empty()) { return Err("missing ledger account"); }
+        if self.entries.iter().any(|e| e.currency_id != self.currency_id) { return Err("mixed currencies in transaction"); }
         Ok(())
     }
 }
@@ -134,8 +139,8 @@ mod tests {
     use super::*;
     fn tx(key: &str) -> LedgerTransaction {
         LedgerTransaction {
-            idempotency_key: key.into(), authorization_ref: "auth".into(), provenance_ref: "prov".into(),
-            entries: vec![LedgerEntry { account_id: "debit".into(), amount: -100 }, LedgerEntry { account_id: "credit".into(), amount: 100 }],
+            transaction_id: format!("tx-{key}"), idempotency_key: key.into(), currency_id: "MC".into(), authorization_ref: "auth".into(), provenance_ref: "prov".into(),
+            entries: vec![LedgerEntry { account_id: "debit".into(), currency_id: "MC".into(), amount: -100 }, LedgerEntry { account_id: "credit".into(), currency_id: "MC".into(), amount: 100 }],
         }
     }
     #[test] fn authorized_operation_can_commit() {
@@ -149,4 +154,34 @@ mod tests {
     #[test] fn double_entry_must_balance() { let mut t=tx("a"); t.entries[1].amount=99; assert_eq!(t.validate(),Err("unbalanced double-entry transaction")); }
     #[test] fn duplicate_idempotency_key_is_rejected() { let mut l=SandboxLedger::default(); assert_eq!(l.commit(tx("same")),Ok(())); assert_eq!(l.commit(tx("same")),Err("duplicate idempotency key")); }
     #[test] fn instruments_remain_distinct() { assert_ne!(NativeInstrument::MasterCoin.id(), NativeInstrument::MissionCoin7.id()); }
+}
+
+
+#[cfg(test)]
+mod currency_safety_tests {
+    use super::*;
+
+    #[test]
+    fn mixed_currencies_are_rejected() {
+        let mut t = LedgerTransaction {
+            transaction_id: "tx-mixed".into(),
+            idempotency_key: "idem-mixed".into(),
+            currency_id: "MC".into(),
+            authorization_ref: "auth".into(),
+            provenance_ref: "prov".into(),
+            entries: vec![
+                LedgerEntry { account_id: "a".into(), currency_id: "MC".into(), amount: -10 },
+                LedgerEntry { account_id: "b".into(), currency_id: "MC7".into(), amount: 10 },
+            ],
+        };
+        assert_eq!(t.validate(), Err("mixed currencies in transaction"));
+        t.entries[1].currency_id = "MC".into();
+        assert_eq!(t.validate(), Ok(()));
+    }
+
+    #[test]
+    fn reversal_requires_lineage() {
+        let reversal = Reversal { reversal_id: "r1".into(), original_transaction_id: String::new(), authorization_ref: "a".into(), provenance_ref: "p".into() };
+        assert_eq!(reversal.validate(), Err("missing original transaction"));
+    }
 }
