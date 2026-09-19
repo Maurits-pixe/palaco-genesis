@@ -43,6 +43,53 @@ impl MonetaryOperation {
     }
 }
 
+
+/// Sandbox currency definition with explicit independent policy and version.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CurrencyDefinition {
+    pub id: String,
+    pub instrument: NativeInstrument,
+    pub version: String,
+    pub compliance_status: ComplianceStatus,
+    pub transferable: bool,
+}
+
+impl CurrencyDefinition {
+    pub fn sandbox_master_coin() -> Self {
+        Self { id: "MC".into(), instrument: NativeInstrument::MasterCoin, version: "0.1.0-sandbox".into(), compliance_status: ComplianceStatus::Draft, transferable: false }
+    }
+    pub fn sandbox_mission_coin7() -> Self {
+        Self { id: "MC7".into(), instrument: NativeInstrument::MissionCoin7, version: "0.1.0-sandbox".into(), compliance_status: ComplianceStatus::Draft, transferable: false }
+    }
+}
+
+/// A wallet has an owner, profile and currency-scoped account references.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Wallet {
+    pub wallet_id: String,
+    pub owner_id: String,
+    pub profile: WalletProfile,
+    pub account_ids: Vec<String>,
+}
+
+/// Reversal preserves the original transaction lineage instead of mutating history.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reversal {
+    pub reversal_id: String,
+    pub original_transaction_id: String,
+    pub authorization_ref: String,
+    pub provenance_ref: String,
+}
+
+impl Reversal {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.original_transaction_id.is_empty() { return Err("missing original transaction"); }
+        if self.authorization_ref.is_empty() { return Err("missing authorization"); }
+        if self.provenance_ref.is_empty() { return Err("missing provenance"); }
+        Ok(())
+    }
+}
+
 /// A signed, balanced double-entry posting.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LedgerEntry { pub account_id: String, pub amount: i128 }
