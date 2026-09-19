@@ -557,6 +557,11 @@ impl MonetaryJournal {
         })
     }
 
+    /// Record one typed event after its authorization/provenance context exists.
+    pub fn record(&mut self, event_id: &str, timestamp_utc: &str, aggregate_ref: &str, authorization_ref: &str, provenance_ref: &str, event: MonetaryEvent) -> Result<u64, &'static str> {
+        self.append(event_id, timestamp_utc, aggregate_ref, authorization_ref, provenance_ref, event)
+    }
+
     pub fn trace_wallet(&self, wallet_id: &str) -> impl Iterator<Item = &MonetaryJournalEntry> {
         self.entries.iter().filter(move |entry| match &entry.event {
             MonetaryEvent::WalletCreated { wallet_id: id, .. } |
