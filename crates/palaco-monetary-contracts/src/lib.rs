@@ -381,3 +381,108 @@ mod registry_tests {
         assert_eq!(sandbox_seed(&mut ledger, &currencies, "a1", "treasury", "MC", 25, "auth", "prov", "seed-1"), Err("duplicate idempotency key"));
     }
 }
+
+/// Canonical audit/event vocabulary for the monetary sandbox.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MonetaryEvent {
+    CurrencyRegistered { currency_id: String, version: String, provenance_ref: String },
+    CurrencyActivated { currency_id: String, authorization_ref: String, provenance_ref: String },
+    WalletCreated { wallet_id: String, owner_id: String, profile: WalletProfile },
+    WalletProfileChanged { wallet_id: String, profile: WalletProfile },
+    AccountCreated { account_id: String, wallet_id: String, currency_id: String },
+    RewardGranted { reward_id: String, account_id: String, currency_id: String, amount: i128, rule_ref: String },
+    LedgerCommitted { transaction_id: String, currency_id: String, idempotency_key: String },
+    TransactionReversed { reversal_id: String, original_transaction_id: String },
+}
+
+impl MonetaryEvent {
+    /// Every event exposes a stable domain name for audit routing.
+    pub const fn event_type(&self) -> &'static str {
+        match self {
+            Self::CurrencyRegistered { .. } => "currency.registered",
+            Self::CurrencyActivated { .. } => "currency.activated",
+            Self::WalletCreated { .. } => "wallet.created",
+            Self::WalletProfileChanged { .. } => "wallet.profile_changed",
+            Self::AccountCreated { .. } => "account.created",
+            Self::RewardGranted { .. } => "reward.granted",
+            Self::LedgerCommitted { .. } => "ledger.committed",
+            Self::TransactionReversed { .. } => "transaction.reversed",
+        }
+    }
+}
+
+/// Reward issuance is represented as a ledger intent; it never writes a balance directly.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RewardGrant {
+    pub reward_id: String,
+    pub account_id: String,
+    pub currency_id: String,
+    pub amount: i128,
+    pub rule_ref: String,
+    pub authorization_ref: String,
+    pub provenance_ref: String,
+}
+
+impl RewardGrant {
+    pub fn validate(&self, currencies: &CurrencyRegistry) -> Result<(), &'static str> {
+        if self.reward_id.is_empty() { return Err("missing reward id"); }
+        if self.account_id.is_empty() { return Err("missing reward account"); }
+        if self.rule_ref.is_empty() { return Err("missing reward rule"); }
+        if self.authorization_ref.is_empty() { return Err("missing authorization"); }
+        if self.provenance_ref.is_empty() { return Err("missing provenance"); }
+        if self.amount <= 0 { return Err("reward amount must be positive"); }
+        let currency = currencies.active(&self.currency_id)?;
+        if currency.transferable { return Err("sandbox reward currency must not be transferable"); }
+        Ok(())
+    }
+
+    pub fn event(&self) -> MonetaryEvent {
+        MonetaryEvent::RewardGranted {
+            reward_id: self.reward_id.clone(),
+            account_id: self.account_id.clone(),
+            currency_id: self.currency_id.clone(),
+            amount: self.amount,
+            rule_ref: self.rule_ref.clone(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod event_tests {
+    use super::*;
+
+    #[test]
+    fn reward_requires_active_non_transferable_currency() {
+        let mut currencies = CurrencyRegistry::default();
+        let mut mc = CurrencyDefinition::sandbox_master_coin();
+        mc.transferable = false;
+        assert!(currencies.register(mc).is_ok());
+        assert!(currencies.activate("MC", "auth", "prov").is_ok());
+
+        let reward = RewardGrant {
+            reward_id: "reward-1".into(),
+            account_id: "account-1".into(),
+            currency_id: "MC".into(),
+            amount: 10,
+            rule_ref: "rule-1".into(),
+            authorization_ref: "auth".into(),
+            provenance_ref: "prov".into(),
+        };
+        assert!(reward.validate(&currencies).is_ok());
+        assert_eq!(reward.event().event_type(), "reward.granted");
+    }
+
+    #[test]
+    fn reward_rejects_transferable_currency() {
+        let mut currencies = CurrencyRegistry::default();
+        let mut mc = CurrencyDefinition::sandbox_master_coin();
+        mc.transferable = true;
+        assert!(currencies.register(mc).is_ok());
+        assert!(currencies.activate("MC", "auth", "prov").is_ok());
+        let reward = RewardGrant {
+            reward_id: "reward-2".into(), account_id: "account-1".into(), currency_id: "MC".into(),
+            amount: 10, rule_ref: "rule-1".into(), authorization_ref: "auth".into(), provenance_ref: "prov".into(),
+        };
+        assert_eq!(reward.validate(&currencies), Err("sandbox reward currency must not be transferable"));
+    }
+}
