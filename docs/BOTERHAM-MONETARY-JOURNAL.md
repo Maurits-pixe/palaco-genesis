@@ -68,3 +68,14 @@ Those remain separate authorization and implementation gates.
 The `record` method is the named application boundary for appending a typed event. It delegates to the same validation path as `append`; it does not create or infer authorization. Callers must supply the authorization and provenance references explicitly.
 
 This preserves the constitutional distinction between **recording an authorized action** and **authorizing an action**.
+
+
+## End-to-end sandbox trace
+
+The sandbox now provides an explicit orchestration test covering:
+
+**Currency registration → Currency activation → Wallet creation → Account creation → Reward validation/recording → Ledger seed → Reversal recording**
+
+Each successful transition is journaled only after the underlying operation succeeds. The flow therefore cannot use the journal as an authorization shortcut.
+
+The test asserts monotonic sequence values and trace reconstruction across currency, wallet, account, reward and transaction references.
