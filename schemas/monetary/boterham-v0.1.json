@@ -1,0 +1,15 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "title":"PALACO BOTERHAM Monetary Contract v0.1",
+  "type":"object",
+  "required":["currency_id","currency_version","transaction_id","authorization_ref","provenance_ref","status"],
+  "properties":{
+    "currency_id":{"type":"string","minLength":1},
+    "currency_version":{"type":"string","minLength":1},
+    "transaction_id":{"type":"string","minLength":1},
+    "authorization_ref":{"type":"string","minLength":1},
+    "provenance_ref":{"type":"string","minLength":1},
+    "status":{"enum":["PROPOSED","CLASSIFIED","AUTHORIZED","COMMITTED","REJECTED","EXPIRED","REVOKED","REVERSED","SUSPENDED"]}
+  },
+  "additionalProperties":false
+}
