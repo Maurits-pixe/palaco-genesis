@@ -61,3 +61,10 @@ This implementation is **sandbox-only**. It does not provide:
 - production compliance approval.
 
 Those remain separate authorization and implementation gates.
+
+
+## Event recording boundary
+
+The `record` method is the named application boundary for appending a typed event. It delegates to the same validation path as `append`; it does not create or infer authorization. Callers must supply the authorization and provenance references explicitly.
+
+This preserves the constitutional distinction between **recording an authorized action** and **authorizing an action**.
