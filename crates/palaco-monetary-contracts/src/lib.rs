@@ -185,3 +185,199 @@ mod currency_safety_tests {
         assert_eq!(reversal.validate(), Err("missing original transaction"));
     }
 }
+
+
+/// Registry of explicitly registered currencies. In-memory sandbox only.
+#[derive(Debug, Default)]
+pub struct CurrencyRegistry {
+    currencies: Vec<CurrencyDefinition>,
+}
+
+impl CurrencyRegistry {
+    /// Register a currency exactly once.
+    pub fn register(&mut self, currency: CurrencyDefinition) -> Result<(), &'static str> {
+        if currency.id.is_empty() { return Err("missing currency id"); }
+        if self.currencies.iter().any(|c| c.id == currency.id) {
+            return Err("duplicate currency registration");
+        }
+        self.currencies.push(currency);
+        Ok(())
+    }
+
+    /// Activate a registered currency only with explicit authorization and provenance.
+    pub fn activate(&mut self, currency_id: &str, authorization_ref: &str, provenance_ref: &str) -> Result<(), &'static str> {
+        if authorization_ref.is_empty() { return Err("missing authorization"); }
+        if provenance_ref.is_empty() { return Err("missing provenance"); }
+        let currency = self.currencies.iter_mut().find(|c| c.id == currency_id).ok_or("currency not registered")?;
+        if matches!(currency.compliance_status, ComplianceStatus::Suspended | ComplianceStatus::Revoked | ComplianceStatus::Archived) {
+            return Err("currency cannot be activated");
+        }
+        currency.compliance_status = ComplianceStatus::Active;
+        Ok(())
+    }
+
+    /// Resolve a currency only when it is active.
+    pub fn active(&self, currency_id: &str) -> Result<&CurrencyDefinition, &'static str> {
+        let currency = self.currencies.iter().find(|c| c.id == currency_id).ok_or("currency not registered")?;
+        if currency.compliance_status != ComplianceStatus::Active {
+            return Err("currency is not active");
+        }
+        Ok(currency)
+    }
+
+    pub fn get(&self, currency_id: &str) -> Option<&CurrencyDefinition> {
+        self.currencies.iter().find(|c| c.id == currency_id)
+    }
+}
+
+/// A currency-scoped ledger account belongs to one wallet owner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WalletAccount {
+    pub account_id: String,
+    pub wallet_id: String,
+    pub owner_id: String,
+    pub currency_id: String,
+}
+
+/// In-memory wallet/account registry for the sandbox.
+#[derive(Debug, Default)]
+pub struct WalletRegistry {
+    wallets: Vec<Wallet>,
+    accounts: Vec<WalletAccount>,
+    profile_history: Vec<(String, WalletProfile)>,
+}
+
+impl WalletRegistry {
+    pub fn create_wallet(&mut self, wallet: Wallet) -> Result<(), &'static str> {
+        if wallet.wallet_id.is_empty() { return Err("missing wallet id"); }
+        if wallet.owner_id.is_empty() { return Err("missing owner id"); }
+        if self.wallets.iter().any(|w| w.wallet_id == wallet.wallet_id) {
+            return Err("duplicate wallet");
+        }
+        self.profile_history.push((wallet.wallet_id.clone(), wallet.profile));
+        self.wallets.push(wallet);
+        Ok(())
+    }
+
+    /// Profile changes are append-traced; the previous profile is never overwritten in history.
+    pub fn change_profile(&mut self, wallet_id: &str, profile: WalletProfile) -> Result<(), &'static str> {
+        let wallet = self.wallets.iter_mut().find(|w| w.wallet_id == wallet_id).ok_or("wallet not found")?;
+        wallet.profile = profile;
+        self.profile_history.push((wallet_id.into(), profile));
+        Ok(())
+    }
+
+    /// Create an account only for a registered wallet and an active currency.
+    pub fn add_account(&mut self, account: WalletAccount, currencies: &CurrencyRegistry) -> Result<(), &'static str> {
+        if account.account_id.is_empty() { return Err("missing account id"); }
+        if account.wallet_id.is_empty() || account.owner_id.is_empty() { return Err("missing wallet ownership"); }
+        if self.accounts.iter().any(|a| a.account_id == account.account_id) {
+            return Err("duplicate account");
+        }
+        let wallet = self.wallets.iter().find(|w| w.wallet_id == account.wallet_id).ok_or("wallet not found")?;
+        if wallet.owner_id != account.owner_id { return Err("wallet owner mismatch"); }
+        currencies.active(&account.currency_id)?;
+        self.accounts.push(account);
+        Ok(())
+    }
+
+    pub fn profile_history(&self, wallet_id: &str) -> impl Iterator<Item = WalletProfile> + '_ {
+        self.profile_history.iter().filter_map(move |(id, profile)| (id == wallet_id).then_some(*profile))
+    }
+}
+
+/// Controlled sandbox seed: creates a balanced ledger transaction; it never mutates a balance directly.
+pub fn sandbox_seed(
+    ledger: &mut SandboxLedger,
+    currencies: &CurrencyRegistry,
+    account_id: &str,
+    treasury_account_id: &str,
+    currency_id: &str,
+    amount: i128,
+    authorization_ref: &str,
+    provenance_ref: &str,
+    idempotency_key: &str,
+) -> Result<(), &'static str> {
+    if amount <= 0 { return Err("seed amount must be positive"); }
+    currencies.active(currency_id)?;
+    let tx = LedgerTransaction {
+        transaction_id: format!("seed-{idempotency_key}"),
+        idempotency_key: idempotency_key.into(),
+        currency_id: currency_id.into(),
+        authorization_ref: authorization_ref.into(),
+        provenance_ref: provenance_ref.into(),
+        entries: vec![
+            LedgerEntry { account_id: treasury_account_id.into(), currency_id: currency_id.into(), amount: -amount },
+            LedgerEntry { account_id: account_id.into(), currency_id: currency_id.into(), amount },
+        ],
+    };
+    ledger.commit(tx)
+}
+
+#[cfg(test)]
+mod registry_tests {
+    use super::*;
+
+    fn active_registry() -> CurrencyRegistry {
+        let mut registry = CurrencyRegistry::default();
+        registry.register(CurrencyDefinition::sandbox_master_coin()).expect("test setup");
+        registry.activate("MC", "auth", "prov").expect("test setup");
+        registry
+    }
+
+    #[test]
+    fn duplicate_currency_registration_is_rejected() {
+        let mut registry = CurrencyRegistry::default();
+        assert_eq!(registry.register(CurrencyDefinition::sandbox_master_coin()), Ok(()));
+        assert_eq!(registry.register(CurrencyDefinition::sandbox_master_coin()), Err("duplicate currency registration"));
+    }
+
+    #[test]
+    fn unauthorized_activation_fails_closed() {
+        let mut registry = CurrencyRegistry::default();
+        registry.register(CurrencyDefinition::sandbox_master_coin()).expect("test setup");
+        assert_eq!(registry.activate("MC", "", "prov"), Err("missing authorization"));
+        assert_eq!(registry.get("MC").map(|c| c.compliance_status), Some(ComplianceStatus::Draft));
+    }
+
+    #[test]
+    fn suspended_currency_cannot_activate() {
+        let mut registry = active_registry();
+        let currency = registry.currencies.iter_mut().find(|c| c.id == "MC");
+        if let Some(c) = currency { c.compliance_status = ComplianceStatus::Suspended; }
+        assert_eq!(registry.activate("MC", "auth", "prov"), Err("currency cannot be activated"));
+    }
+
+    #[test]
+    fn wallet_profile_change_is_traceable() {
+        let mut wallets = WalletRegistry::default();
+        wallets.create_wallet(Wallet { wallet_id: "w1".into(), owner_id: "c1".into(), profile: WalletProfile::Blanco, account_ids: Vec::new() }).expect("test setup");
+        wallets.change_profile("w1", WalletProfile::Filantroop).expect("test setup");
+        let history: Vec<_> = wallets.profile_history("w1").collect();
+        assert_eq!(history, vec![WalletProfile::Blanco, WalletProfile::Filantroop]);
+    }
+
+    #[test]
+    fn mc_and_mc7_remain_separate_accounts() {
+        let mut currencies = CurrencyRegistry::default();
+        currencies.register(CurrencyDefinition::sandbox_master_coin()).expect("test setup");
+        currencies.register(CurrencyDefinition::sandbox_mission_coin7()).expect("test setup");
+        currencies.activate("MC", "auth-mc", "prov-mc").expect("test setup");
+        currencies.activate("MC7", "auth-mc7", "prov-mc7").expect("test setup");
+
+        let mut wallets = WalletRegistry::default();
+        wallets.create_wallet(Wallet { wallet_id: "w1".into(), owner_id: "c1".into(), profile: WalletProfile::Blanco, account_ids: Vec::new() }).expect("test setup");
+        wallets.add_account(WalletAccount { account_id: "a-mc".into(), wallet_id: "w1".into(), owner_id: "c1".into(), currency_id: "MC".into() }, &currencies).expect("test setup");
+        wallets.add_account(WalletAccount { account_id: "a-mc7".into(), wallet_id: "w1".into(), owner_id: "c1".into(), currency_id: "MC7".into() }, &currencies).expect("test setup");
+        assert_eq!(wallets.accounts.len(), 2);
+        assert_ne!(wallets.accounts[0].currency_id, wallets.accounts[1].currency_id);
+    }
+
+    #[test]
+    fn sandbox_seed_posts_ledger_entries_instead_of_mutating_balance() {
+        let currencies = active_registry();
+        let mut ledger = SandboxLedger::default();
+        assert_eq!(sandbox_seed(&mut ledger, &currencies, "a1", "treasury", "MC", 25, "auth", "prov", "seed-1"), Ok(()));
+        assert_eq!(sandbox_seed(&mut ledger, &currencies, "a1", "treasury", "MC", 25, "auth", "prov", "seed-1"), Err("duplicate idempotency key"));
+    }
+}
