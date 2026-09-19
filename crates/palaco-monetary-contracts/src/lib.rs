@@ -320,8 +320,8 @@ mod registry_tests {
 
     fn active_registry() -> CurrencyRegistry {
         let mut registry = CurrencyRegistry::default();
-        registry.register(CurrencyDefinition::sandbox_master_coin());;
-        registry.activate("MC", "auth", "prov");;
+        assert!(registry.register(CurrencyDefinition::sandbox_master_coin()).is_ok());
+        assert!(registry.activate("MC", "auth", "prov").is_ok());;
         registry
     }
 
@@ -351,8 +351,8 @@ mod registry_tests {
     #[test]
     fn wallet_profile_change_is_traceable() {
         let mut wallets = WalletRegistry::default();
-        wallets.create_wallet(Wallet { wallet_id: "w1".into(), owner_id: "c1".into(), profile: WalletProfile::Blanco, account_ids: Vec::new() });;
-        wallets.change_profile("w1", WalletProfile::Filantroop);;
+        assert!(wallets.create_wallet(Wallet { wallet_id: "w1".into(), owner_id: "c1".into(), profile: WalletProfile::Blanco, account_ids: Vec::new() }).is_ok());
+        assert!(wallets.change_profile("w1", WalletProfile::Filantroop).is_ok());
         let history: Vec<_> = wallets.profile_history("w1").collect();
         assert_eq!(history, vec![WalletProfile::Blanco, WalletProfile::Filantroop]);
     }
@@ -367,8 +367,8 @@ mod registry_tests {
 
         let mut wallets = WalletRegistry::default();
         wallets.create_wallet(Wallet { wallet_id: "w1".into(), owner_id: "c1".into(), profile: WalletProfile::Blanco, account_ids: Vec::new() });;
-        wallets.add_account(WalletAccount { account_id: "a-mc".into(), wallet_id: "w1".into(), owner_id: "c1".into(), currency_id: "MC".into() }, &currencies);;
-        wallets.add_account(WalletAccount { account_id: "a-mc7".into(), wallet_id: "w1".into(), owner_id: "c1".into(), currency_id: "MC7".into() }, &currencies);;
+        assert!(wallets.add_account(WalletAccount { account_id: "a-mc".into(), wallet_id: "w1".into(), owner_id: "c1".into(), currency_id: "MC".into() }, &currencies).is_ok());
+        assert!(wallets.add_account(WalletAccount { account_id: "a-mc7".into(), wallet_id: "w1".into(), owner_id: "c1".into(), currency_id: "MC7".into() }, &currencies).is_ok());
         assert_eq!(wallets.accounts.len(), 2);
         assert_ne!(wallets.accounts[0].currency_id, wallets.accounts[1].currency_id);
     }
@@ -484,5 +484,160 @@ mod event_tests {
             amount: 10, rule_ref: "rule-1".into(), authorization_ref: "auth".into(), provenance_ref: "prov".into(),
         };
         assert_eq!(reward.validate(&currencies), Err("sandbox reward currency must not be transferable"));
+    }
+}
+
+
+/// Immutable-in-use, append-only event journal for the monetary sandbox.
+///
+/// The journal records what happened; it never grants authority. Authorization and
+/// provenance are captured on every record so an event cannot be detached from its
+/// constitutional context.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MonetaryJournalEntry {
+    pub sequence: u64,
+    pub event_id: String,
+    pub event_type: String,
+    pub timestamp_utc: String,
+    pub aggregate_ref: String,
+    pub authorization_ref: String,
+    pub provenance_ref: String,
+    pub event: MonetaryEvent,
+}
+
+/// Append-only sandbox journal. Its entries are private: the public API exposes
+/// read-only iterators and trace queries, never mutation or deletion.
+#[derive(Debug, Default)]
+pub struct MonetaryJournal {
+    entries: Vec<MonetaryJournalEntry>,
+}
+
+impl MonetaryJournal {
+    pub fn append(
+        &mut self,
+        event_id: &str,
+        timestamp_utc: &str,
+        aggregate_ref: &str,
+        authorization_ref: &str,
+        provenance_ref: &str,
+        event: MonetaryEvent,
+    ) -> Result<u64, &'static str> {
+        if event_id.is_empty() { return Err("missing event id"); }
+        if timestamp_utc.is_empty() { return Err("missing timestamp"); }
+        if aggregate_ref.is_empty() { return Err("missing aggregate reference"); }
+        if authorization_ref.is_empty() { return Err("missing authorization"); }
+        if provenance_ref.is_empty() { return Err("missing provenance"); }
+        if self.entries.iter().any(|entry| entry.event_id == event_id) {
+            return Err("duplicate event id");
+        }
+        let sequence = u64::try_from(self.entries.len()).map_err(|_| "journal sequence overflow")?
+            .checked_add(1).ok_or("journal sequence overflow")?;
+        self.entries.push(MonetaryJournalEntry {
+            sequence,
+            event_id: event_id.into(),
+            event_type: event.event_type().into(),
+            timestamp_utc: timestamp_utc.into(),
+            aggregate_ref: aggregate_ref.into(),
+            authorization_ref: authorization_ref.into(),
+            provenance_ref: provenance_ref.into(),
+            event,
+        });
+        Ok(sequence)
+    }
+
+    pub fn entries(&self) -> impl Iterator<Item = &MonetaryJournalEntry> {
+        self.entries.iter()
+    }
+
+    pub fn trace_transaction(&self, transaction_id: &str) -> impl Iterator<Item = &MonetaryJournalEntry> {
+        self.entries.iter().filter(move |entry| match &entry.event {
+            MonetaryEvent::LedgerCommitted { transaction_id: id, .. } |
+            MonetaryEvent::TransactionReversed { original_transaction_id: id, .. } => id == transaction_id,
+            _ => entry.aggregate_ref == transaction_id,
+        })
+    }
+
+    pub fn trace_wallet(&self, wallet_id: &str) -> impl Iterator<Item = &MonetaryJournalEntry> {
+        self.entries.iter().filter(move |entry| match &entry.event {
+            MonetaryEvent::WalletCreated { wallet_id: id, .. } |
+            MonetaryEvent::WalletProfileChanged { wallet_id: id, .. } => id == wallet_id,
+            MonetaryEvent::AccountCreated { wallet_id: id, .. } => id == wallet_id,
+            _ => entry.aggregate_ref == wallet_id,
+        })
+    }
+
+    pub fn trace_account(&self, account_id: &str) -> impl Iterator<Item = &MonetaryJournalEntry> {
+        self.entries.iter().filter(move |entry| match &entry.event {
+            MonetaryEvent::AccountCreated { account_id: id, .. } |
+            MonetaryEvent::RewardGranted { account_id: id, .. } => id == account_id,
+            _ => entry.aggregate_ref == account_id,
+        })
+    }
+
+    pub fn trace_reward(&self, reward_id: &str) -> impl Iterator<Item = &MonetaryJournalEntry> {
+        self.entries.iter().filter(move |entry| match &entry.event {
+            MonetaryEvent::RewardGranted { reward_id: id, .. } => id == reward_id,
+            _ => entry.aggregate_ref == reward_id,
+        })
+    }
+
+    pub fn trace_currency(&self, currency_id: &str) -> impl Iterator<Item = &MonetaryJournalEntry> {
+        self.entries.iter().filter(move |entry| match &entry.event {
+            MonetaryEvent::CurrencyRegistered { currency_id: id, .. } |
+            MonetaryEvent::CurrencyActivated { currency_id: id, .. } |
+            MonetaryEvent::RewardGranted { currency_id: id, .. } |
+            MonetaryEvent::LedgerCommitted { currency_id: id, .. } |
+            MonetaryEvent::AccountCreated { currency_id: id, .. } => id == currency_id,
+            _ => entry.aggregate_ref == currency_id,
+        })
+    }
+}
+
+#[cfg(test)]
+mod journal_tests {
+    use super::*;
+
+    fn journal_event(id: &str) -> MonetaryEvent {
+        MonetaryEvent::LedgerCommitted {
+            transaction_id: id.into(),
+            currency_id: "MC".into(),
+            idempotency_key: format!("idem-{id}"),
+        }
+    }
+
+    #[test]
+    fn journal_sequence_is_monotonic_and_traceable() {
+        let mut journal = MonetaryJournal::default();
+        assert_eq!(journal.append("e1", "2026-09-19T06:00:00Z", "tx-1", "auth", "prov", journal_event("tx-1")), Ok(1));
+        assert_eq!(journal.append("e2", "2026-09-19T06:01:00Z", "tx-1", "auth", "prov", journal_event("tx-2")), Ok(2));
+        let trace: Vec<_> = journal.trace_transaction("tx-1").collect();
+        assert_eq!(trace.len(), 1);
+        assert_eq!(trace[0].sequence, 1);
+    }
+
+    #[test]
+    fn duplicate_event_id_is_rejected() {
+        let mut journal = MonetaryJournal::default();
+        assert!(journal.append("e1", "2026-09-19T06:00:00Z", "tx-1", "auth", "prov", journal_event("tx-1")).is_ok());
+        assert_eq!(journal.append("e1", "2026-09-19T06:01:00Z", "tx-1", "auth", "prov", journal_event("tx-2")), Err("duplicate event id"));
+    }
+
+    #[test]
+    fn authorization_and_provenance_are_required() {
+        let mut journal = MonetaryJournal::default();
+        assert_eq!(journal.append("e1", "2026-09-19T06:00:00Z", "tx-1", "", "prov", journal_event("tx-1")), Err("missing authorization"));
+        assert_eq!(journal.append("e1", "2026-09-19T06:00:00Z", "tx-1", "auth", "", journal_event("tx-1")), Err("missing provenance"));
+        assert_eq!(journal.entries().count(), 0);
+    }
+
+    #[test]
+    fn mc_and_mc7_trace_as_distinct_currencies() {
+        let mut journal = MonetaryJournal::default();
+        let mc = MonetaryEvent::LedgerCommitted { transaction_id: "tx-mc".into(), currency_id: "MC".into(), idempotency_key: "i1".into() };
+        let mc7 = MonetaryEvent::LedgerCommitted { transaction_id: "tx-mc7".into(), currency_id: "MC7".into(), idempotency_key: "i2".into() };
+        assert!(journal.append("e1", "2026-09-19T06:00:00Z", "MC", "auth", "prov", mc).is_ok());
+        assert!(journal.append("e2", "2026-09-19T06:01:00Z", "MC7", "auth", "prov", mc7).is_ok());
+        assert_eq!(journal.trace_currency("MC").count(), 1);
+        assert_eq!(journal.trace_currency("MC7").count(), 1);
     }
 }
