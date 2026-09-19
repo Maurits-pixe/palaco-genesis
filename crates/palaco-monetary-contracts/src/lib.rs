@@ -320,8 +320,8 @@ mod registry_tests {
 
     fn active_registry() -> CurrencyRegistry {
         let mut registry = CurrencyRegistry::default();
-        registry.register(CurrencyDefinition::sandbox_master_coin()).expect("test setup");
-        registry.activate("MC", "auth", "prov").expect("test setup");
+        registry.register(CurrencyDefinition::sandbox_master_coin());;
+        registry.activate("MC", "auth", "prov");;
         registry
     }
 
@@ -335,7 +335,7 @@ mod registry_tests {
     #[test]
     fn unauthorized_activation_fails_closed() {
         let mut registry = CurrencyRegistry::default();
-        registry.register(CurrencyDefinition::sandbox_master_coin()).expect("test setup");
+        registry.register(CurrencyDefinition::sandbox_master_coin());;
         assert_eq!(registry.activate("MC", "", "prov"), Err("missing authorization"));
         assert_eq!(registry.get("MC").map(|c| c.compliance_status), Some(ComplianceStatus::Draft));
     }
@@ -351,8 +351,8 @@ mod registry_tests {
     #[test]
     fn wallet_profile_change_is_traceable() {
         let mut wallets = WalletRegistry::default();
-        wallets.create_wallet(Wallet { wallet_id: "w1".into(), owner_id: "c1".into(), profile: WalletProfile::Blanco, account_ids: Vec::new() }).expect("test setup");
-        wallets.change_profile("w1", WalletProfile::Filantroop).expect("test setup");
+        wallets.create_wallet(Wallet { wallet_id: "w1".into(), owner_id: "c1".into(), profile: WalletProfile::Blanco, account_ids: Vec::new() });;
+        wallets.change_profile("w1", WalletProfile::Filantroop);;
         let history: Vec<_> = wallets.profile_history("w1").collect();
         assert_eq!(history, vec![WalletProfile::Blanco, WalletProfile::Filantroop]);
     }
@@ -360,15 +360,15 @@ mod registry_tests {
     #[test]
     fn mc_and_mc7_remain_separate_accounts() {
         let mut currencies = CurrencyRegistry::default();
-        currencies.register(CurrencyDefinition::sandbox_master_coin()).expect("test setup");
-        currencies.register(CurrencyDefinition::sandbox_mission_coin7()).expect("test setup");
-        currencies.activate("MC", "auth-mc", "prov-mc").expect("test setup");
-        currencies.activate("MC7", "auth-mc7", "prov-mc7").expect("test setup");
+        currencies.register(CurrencyDefinition::sandbox_master_coin());;
+        currencies.register(CurrencyDefinition::sandbox_mission_coin7());;
+        currencies.activate("MC", "auth-mc", "prov-mc");;
+        currencies.activate("MC7", "auth-mc7", "prov-mc7");;
 
         let mut wallets = WalletRegistry::default();
-        wallets.create_wallet(Wallet { wallet_id: "w1".into(), owner_id: "c1".into(), profile: WalletProfile::Blanco, account_ids: Vec::new() }).expect("test setup");
-        wallets.add_account(WalletAccount { account_id: "a-mc".into(), wallet_id: "w1".into(), owner_id: "c1".into(), currency_id: "MC".into() }, &currencies).expect("test setup");
-        wallets.add_account(WalletAccount { account_id: "a-mc7".into(), wallet_id: "w1".into(), owner_id: "c1".into(), currency_id: "MC7".into() }, &currencies).expect("test setup");
+        wallets.create_wallet(Wallet { wallet_id: "w1".into(), owner_id: "c1".into(), profile: WalletProfile::Blanco, account_ids: Vec::new() });;
+        wallets.add_account(WalletAccount { account_id: "a-mc".into(), wallet_id: "w1".into(), owner_id: "c1".into(), currency_id: "MC".into() }, &currencies);;
+        wallets.add_account(WalletAccount { account_id: "a-mc7".into(), wallet_id: "w1".into(), owner_id: "c1".into(), currency_id: "MC7".into() }, &currencies);;
         assert_eq!(wallets.accounts.len(), 2);
         assert_ne!(wallets.accounts[0].currency_id, wallets.accounts[1].currency_id);
     }
