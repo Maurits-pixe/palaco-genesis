@@ -43,7 +43,7 @@ An injected `verify(bytes)` callback must come from a trusted server integration
 - A second tab must reload after an expected-head conflict. There is no last-write-wins fallback.
 - Refresh must replay retained events with signature verification and an independently pinned head. A browser-supplied checkpoint is insufficient.
 - Offline/timeout/unknown authority means UNKNOWN and disables actions; it does not invent a new authorized state. Failed requests do not alter the authoritative state.
-- This reducer does not implement durable storage, compare-and-swap transactions, distributed locking, transport retries or a revocation service. Those are explicit integration gates. Until they exist, there are no active release controls.
+- The pure reducer is supplemented by `sqlite_journal.py`, a local candidate transaction harness. Independent connections serialize writes; expected checkpoints and unique per-release request IDs prevent lost updates. Exact retries return a historical receipt alongside the current state. Reopening replays history against caller-supplied trusted genesis and head. SQL triggers reject updates/deletes. This is not distributed locking, production authorization or a revocation service. There are no active release controls.
 
 ## RIO freshness
 
@@ -62,3 +62,9 @@ All stay closed until independently satisfied: repository contract agreement, ne
 Interim reviewer: Maurits (`github:Maurits-pixe`), one identity. No verified public key is installed. Ambassadors require a new explicit policy with keys, effective boundary and preservation of prior history. Do not infer trust from an email, GitHub username, green CI or the appearance of a seal.
 
 See `THREAT-MODEL.md` for unresolved integration risks and acceptance criteria. See the private central evidence package in the palaco-genesis draft for publication records and screenshots. This documentation does not make private source or Sites resources publicly accessible.
+
+## ERA and storage acceptance scope
+
+`era_boundary.py` implements a separate draft temporal interval check: uncertainty must fit wholly inside a validity window. Missing verification, unknown/conflicting/degraded time and unsupported representations yield UNKNOWN. SATISFIED is a time condition only. No signing or execution permission follows from it. The private central `ERA-INTEGRATION.md` maps the source requirements and open work; private source text is not copied into public repositories.
+
+Tests use temporary SQLite files and independent writer connections: restart, competing writes, exact/changed retries, injected transaction failure, lock timeout and terminal revocation. They do not test power loss, distributed finality or a live browser/service flow. Database administrators can bypass triggers; separately trusted checkpoints remain required. Request time is caller-supplied in this harness; a production adapter must sample verified time after waits and recheck it at the actual commit boundary. Freshness history persistence remains open. No SQLite file is shipped or connected to the sites.
