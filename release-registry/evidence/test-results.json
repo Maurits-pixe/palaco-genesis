@@ -1,0 +1,38 @@
+[
+  {
+    "name": "registry negative and contract tests",
+    "level": "CHECKED",
+    "started_at": "2026-09-26T14:06:23.760081+00:00",
+    "finished_at": "2026-09-26T14:06:23.943422+00:00",
+    "exit_code": 0,
+    "output": "test_pin_and_closed_gates (test_contract.ContractTests.test_pin_and_closed_gates) ... ok\ntest_current_requires_all_trust_inputs (test_registry.FreshnessTests.test_current_requires_all_trust_inputs) ... ok\ntest_empty_history_is_not_a_reset (test_registry.FreshnessTests.test_empty_history_is_not_a_reset) ... ok\ntest_expiry_boundary (test_registry.FreshnessTests.test_expiry_boundary) ... ok\ntest_history_retains_old_state (test_registry.FreshnessTests.test_history_retains_old_state) ... ok\ntest_invalid_times_and_unknown_fields (test_registry.FreshnessTests.test_invalid_times_and_unknown_fields) ... ok\ntest_invalid_ttl (test_registry.FreshnessTests.test_invalid_ttl) ... ok\ntest_null_verification_unknown (test_registry.FreshnessTests.test_null_verification_unknown) ... ok\ntest_revocation_beats_offline (test_registry.FreshnessTests.test_revocation_beats_offline) ... ok\ntest_version_and_clock_mismatch (test_registry.FreshnessTests.test_version_and_clock_mismatch) ... ok\ntest_candidate_chain_and_refresh (test_registry.RegistryTests.test_candidate_chain_and_refresh) ... ok\ntest_changed_replayed_history (test_registry.RegistryTests.test_changed_replayed_history) ... ok\ntest_context_binding (test_registry.RegistryTests.test_context_binding) ... ok\ntest_delayed_expired_future_and_long_requests (test_registry.RegistryTests.test_delayed_expired_future_and_long_requests) ... ok\ntest_domain_separation (test_registry.RegistryTests.test_domain_separation) ... ok\ntest_invalid_contract (test_registry.RegistryTests.test_invalid_contract) ... ok\ntest_invalid_genesis_identity (test_registry.RegistryTests.test_invalid_genesis_identity) ... ok\ntest_invalid_state_combinations (test_registry.RegistryTests.test_invalid_state_combinations) ... ok\ntest_no_adapter_and_failed_verifier (test_registry.RegistryTests.test_no_adapter_and_failed_verifier) ... ok\ntest_no_floats (test_registry.RegistryTests.test_no_floats) ... ok\ntest_offline (test_registry.RegistryTests.test_offline) ... ok\ntest_replay_and_concurrent_tabs (test_registry.RegistryTests.test_replay_and_concurrent_tabs) ... ok\ntest_revocation_terminal (test_registry.RegistryTests.test_revocation_terminal) ... ok\ntest_truncated_or_unanchored_history (test_registry.RegistryTests.test_truncated_or_unanchored_history) ... ok\n\n----------------------------------------------------------------------\nRan 24 tests in 0.009s\n\nOK\n",
+    "scope": "Local automated check; not independent review or production authorization"
+  },
+  {
+    "name": "PALACO RIO nine-language regression",
+    "level": "CHECKED",
+    "started_at": "2026-09-26T14:06:23.943422+00:00",
+    "finished_at": "2026-09-26T14:06:24.482479+00:00",
+    "exit_code": 0,
+    "output": "PASS: all nine languages and six tabs; guide sources, empty inputs, hostile text, retained drafts, reference, evidence and authority checks.\n",
+    "scope": "Local automated check; not independent review or production authorization"
+  },
+  {
+    "name": "Standalone RIO nine-language regression",
+    "level": "CHECKED",
+    "started_at": "2026-09-26T14:06:24.482479+00:00",
+    "finished_at": "2026-09-26T14:06:24.935122+00:00",
+    "exit_code": 0,
+    "output": "PASS: all nine languages and six tabs; guide sources, empty inputs, hostile text, retained drafts, reference, evidence and authority checks.\n",
+    "scope": "Local automated check; not independent review or production authorization"
+  },
+  {
+    "name": "Freshness panel syntax",
+    "level": "CHECKED",
+    "started_at": "2026-09-26T14:06:24.935122+00:00",
+    "finished_at": "2026-09-26T14:06:24.990816+00:00",
+    "exit_code": 0,
+    "output": "",
+    "scope": "Local automated check; not independent review or production authorization"
+  }
+]

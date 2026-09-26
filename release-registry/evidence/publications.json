@@ -1,0 +1,384 @@
+{
+  "schema_version": "PALACO-PUBLICATIONS-0.1",
+  "recorded_at": "2026-09-26T14:06:23.315912+00:00",
+  "evidence_scope": "Hosting metadata and local source hashes; not signed release authorization",
+  "publications": [
+    {
+      "site": "PALACO",
+      "source_repository": "https://git.chatgpt-team.site/0dc00d42-2358-412d-b16e-e116740677d4/appgprj_6ab772b288ec8191ac374484f6ba094e.git",
+      "source_commit": "d70f2fb40d1f167861b43613fb7d445bfcb995dc",
+      "project_id": "appgprj_6ab772b288ec8191ac374484f6ba094e",
+      "build_id": "appgprj_6ab772b288ec8191ac374484f6ba094e~appgver_f6abdf0146e48191b2812929e545b508",
+      "build_kind": "Sites saved static artifact; no independent CI build ID available",
+      "version_number": 6,
+      "deployment_id": "appgdep_6ab7bad6e1d88191801c7de3eea116e0",
+      "deployment_status": "succeeded",
+      "published_at": "2026-09-26T12:30:28.983474+00:00",
+      "live_url": "https://palaco.mauritsvang1.chatgpt.site",
+      "immutable_deployment_url": null,
+      "immutable_url_status": "NOT_PROVIDED_BY_HOST",
+      "publication_status": "PUBLISHED",
+      "citadel_release_status": "DRAFT",
+      "languages": [
+        "nl",
+        "en",
+        "de",
+        "fr",
+        "es",
+        "ru",
+        "eo",
+        "ar",
+        "zh"
+      ],
+      "la_content_language": "nl; English original reference artwork",
+      "vorm9evin9_version": null,
+      "vorm9evin9_version_status": "UNKNOWN â€” no authoritative version label found",
+      "host_archive": {
+        "archive_format": "tar",
+        "sediment_file_id": "file_00000000df108210ae2611923c8f6707",
+        "content_hash": "sha256:6e3bbc855c428f7a431dec4d46d1ccc2eaf9eaa608ed85da1b583cd4080ee204",
+        "size_bytes": 4761600,
+        "file_count": 13
+      },
+      "previous_qa": {
+        "date": "2026-09-26",
+        "widths": [
+          320,
+          390,
+          768,
+          1440
+        ],
+        "level": "REPORTED",
+        "original_report": "qa-report-original.md"
+      },
+      "captured_source_basis": "local source at exact published commit; not a remote response capture",
+      "host_evidence_level": "CHECKED",
+      "local_source_clean": true,
+      "asset_checksums": [
+        {
+          "path": "i18n.js",
+          "sha256": "96cee9384caa5254150eb2d749586641ce5bd45889b3d93217fff2bfaf61001c",
+          "bytes": 3945
+        },
+        {
+          "path": "index.html",
+          "sha256": "b0dafb1846a033281240650528d33d6be36ae24dec690e7f723f180ebed94103",
+          "bytes": 20057
+        },
+        {
+          "path": "la-black-reference.png",
+          "sha256": "e9744513419416eeaab7b813fc2b5670089815dc605f6f02fc8132eb4f3f0106",
+          "bytes": 2169213
+        },
+        {
+          "path": "la-foundation-reference.png",
+          "sha256": "41e3cba94d4f143eed75ffa660ad1e10e3497dd2789f6ebcd7956dcf11f484db",
+          "bytes": 2091704
+        },
+        {
+          "path": "la.css",
+          "sha256": "c842577ea4ca663f3b94c17b73c6e7e82e922b00b1c586734f50a0268657e8c7",
+          "bytes": 7087
+        },
+        {
+          "path": "la.js",
+          "sha256": "d1db249ca0a2ecfd7d52f79b82f89cd978b144d007661c7b1f63b287b39dd4cf",
+          "bytes": 15181
+        },
+        {
+          "path": "polish.css",
+          "sha256": "bd17349dfcddd9c6c42bf402d911d47f438d1ced4b0922fa05495e2364e13675",
+          "bytes": 6137
+        },
+        {
+          "path": "polish.js",
+          "sha256": "4cdf231ba53fe11e3efe5ee8affe80d352be71a9b2040e78e493b2ad3b928997",
+          "bytes": 814
+        },
+        {
+          "path": "rio-functional.css",
+          "sha256": "3407dd0fa550da6ff090931d1d0005a3ce9084646830400060a4975233241f70",
+          "bytes": 709
+        },
+        {
+          "path": "rio-la-locales.js",
+          "sha256": "7d48f2c35631d80d54342901f76efe2c72671147edb4877edbd9b9f91dcee039",
+          "bytes": 8381
+        },
+        {
+          "path": "rio.js",
+          "sha256": "4ba7c0cddca3ed3350c7e66d866b6d4036960a5b2e4b923d72e4fc2dde4e0ccf",
+          "bytes": 72684
+        },
+        {
+          "path": "translations.js",
+          "sha256": "0201d9001d2ebeb0e4e400aa816ef1dd6747eed5d0178adf9ad001800188985e",
+          "bytes": 346837
+        }
+      ],
+      "asset_manifest_sha256": "daa6f143acf68d51b55501fc69d7e86faed5bc6addd47ffe78dade85cff4b87f",
+      "local_tar_gz_sha256": "0f7da12c8fe5ae6144e35870db9b8cc766d2d62c1f182e531ac16ae71152329c",
+      "archive_note": "Local tar.gz hash and host archive hash use different representations; do not equate them.",
+      "language_assets_sha256": {
+        "i18n.js": "96cee9384caa5254150eb2d749586641ce5bd45889b3d93217fff2bfaf61001c",
+        "la.js": "d1db249ca0a2ecfd7d52f79b82f89cd978b144d007661c7b1f63b287b39dd4cf",
+        "rio-la-locales.js": "7d48f2c35631d80d54342901f76efe2c72671147edb4877edbd9b9f91dcee039",
+        "translations.js": "0201d9001d2ebeb0e4e400aa816ef1dd6747eed5d0178adf9ad001800188985e"
+      },
+      "snapshot_id": "palaco-v6-d70f2fb40d1f167861b43613fb7d445bfcb995dc"
+    },
+    {
+      "site": "RIO",
+      "source_repository": "https://git.chatgpt-team.site/0dc00d42-2358-412d-b16e-e116740677d4/appgprj_6ab78237825481918782ba6608c64532.git",
+      "source_commit": "78940ab28cdd57ccee18b38993ae13e5932ed54f",
+      "project_id": "appgprj_6ab78237825481918782ba6608c64532",
+      "build_id": "appgprj_6ab78237825481918782ba6608c64532~appgver_ffa516abc6f08191a73e7a08fa4b31ba",
+      "build_kind": "Sites saved static artifact; no independent CI build ID available",
+      "version_number": 3,
+      "deployment_id": "appgdep_6ab7baf05f148191bfa9f415a9dcc109",
+      "deployment_status": "succeeded",
+      "published_at": "2026-09-26T12:30:54.410921+00:00",
+      "live_url": "https://rio.mauritsvang1.chatgpt.site",
+      "immutable_deployment_url": null,
+      "immutable_url_status": "NOT_PROVIDED_BY_HOST",
+      "publication_status": "PUBLISHED",
+      "citadel_release_status": "DRAFT",
+      "languages": [
+        "nl",
+        "en",
+        "de",
+        "fr",
+        "es",
+        "ru",
+        "eo",
+        "ar",
+        "zh"
+      ],
+      "la_content_language": "nl; English original reference artwork",
+      "vorm9evin9_version": null,
+      "vorm9evin9_version_status": "UNKNOWN â€” no authoritative version label found",
+      "host_archive": {
+        "archive_format": "tar",
+        "sediment_file_id": "file_000000004ea08210b0dc6196c3e0b874",
+        "content_hash": "sha256:30c41d02aa650b55221fe5c8791786387199259424309b13b3c5aeb4cd31a173",
+        "size_bytes": 460800,
+        "file_count": 9
+      },
+      "previous_qa": {
+        "date": "2026-09-26",
+        "widths": [
+          320,
+          390,
+          768,
+          1440
+        ],
+        "level": "REPORTED",
+        "original_report": "qa-report-original.md"
+      },
+      "captured_source_basis": "local source at exact published commit; not a remote response capture",
+      "host_evidence_level": "CHECKED",
+      "local_source_clean": true,
+      "asset_checksums": [
+        {
+          "path": "i18n.js",
+          "sha256": "96cee9384caa5254150eb2d749586641ce5bd45889b3d93217fff2bfaf61001c",
+          "bytes": 3945
+        },
+        {
+          "path": "index.html",
+          "sha256": "ac6dbb7345d27d35ceb3434eb460cbf0105a963a10c82e2ea5e4460a91a01668",
+          "bytes": 13060
+        },
+        {
+          "path": "polish.css",
+          "sha256": "92de097830588207d9e37a1dd94d284cea28fb90e1efce1f369209d70f7c94da",
+          "bytes": 3792
+        },
+        {
+          "path": "polish.js",
+          "sha256": "1c71a9b81c2947d2f7b0aab8057a2f3466d675a60561bd8b86998316270b5d90",
+          "bytes": 48
+        },
+        {
+          "path": "rio-functional.css",
+          "sha256": "3407dd0fa550da6ff090931d1d0005a3ce9084646830400060a4975233241f70",
+          "bytes": 709
+        },
+        {
+          "path": "rio-la-locales.js",
+          "sha256": "7d48f2c35631d80d54342901f76efe2c72671147edb4877edbd9b9f91dcee039",
+          "bytes": 8381
+        },
+        {
+          "path": "rio.js",
+          "sha256": "4ba7c0cddca3ed3350c7e66d866b6d4036960a5b2e4b923d72e4fc2dde4e0ccf",
+          "bytes": 72684
+        },
+        {
+          "path": "translations.js",
+          "sha256": "0201d9001d2ebeb0e4e400aa816ef1dd6747eed5d0178adf9ad001800188985e",
+          "bytes": 346837
+        }
+      ],
+      "asset_manifest_sha256": "54d4eab8aad9195fc5f78e705c8fefc5eb96881ea694e9c58d483913d2afc1cf",
+      "local_tar_gz_sha256": "57b661fce36b06e1916ca54b00740368668dbb2e35abd2b712609fba7827df8d",
+      "archive_note": "Local tar.gz hash and host archive hash use different representations; do not equate them.",
+      "language_assets_sha256": {
+        "i18n.js": "96cee9384caa5254150eb2d749586641ce5bd45889b3d93217fff2bfaf61001c",
+        "rio-la-locales.js": "7d48f2c35631d80d54342901f76efe2c72671147edb4877edbd9b9f91dcee039",
+        "translations.js": "0201d9001d2ebeb0e4e400aa816ef1dd6747eed5d0178adf9ad001800188985e"
+      },
+      "snapshot_id": "rio-v3-78940ab28cdd57ccee18b38993ae13e5932ed54f"
+    },
+    {
+      "site": "Citadel",
+      "source_repository": "https://git.chatgpt-team.site/0dc00d42-2358-412d-b16e-e116740677d4/appgprj_6ab7a775b77c81919762aeaabdd5a25c.git",
+      "source_commit": "c787aa61e82fbc06d5bdc3d1f8f7f375cf960b92",
+      "project_id": "appgprj_6ab7a775b77c81919762aeaabdd5a25c",
+      "build_id": "appgprj_6ab7a775b77c81919762aeaabdd5a25c~appgver_4068496226208191b1ff53f71d2adb93",
+      "build_kind": "Sites saved static artifact; no independent CI build ID available",
+      "version_number": 3,
+      "deployment_id": "appgdep_6ab7bb19893c8191afdf9c50a3e25a88",
+      "deployment_status": "succeeded",
+      "published_at": "2026-09-26T12:31:35.595836+00:00",
+      "live_url": "https://citadel.mauritsvang1.chatgpt.site",
+      "immutable_deployment_url": null,
+      "immutable_url_status": "NOT_PROVIDED_BY_HOST",
+      "publication_status": "PUBLISHED",
+      "citadel_release_status": "DRAFT",
+      "languages": [
+        "nl"
+      ],
+      "la_content_language": "nl; English original reference artwork",
+      "vorm9evin9_version": null,
+      "vorm9evin9_version_status": "UNKNOWN â€” no authoritative version label found",
+      "host_archive": {
+        "archive_format": "tar",
+        "sediment_file_id": "file_00000000b994824684d5bf7483ab856a",
+        "content_hash": "sha256:d03098fd0563fad3b003de9dde3ce6615e756966f0ff7dd0824e58214be60172",
+        "size_bytes": 4321280,
+        "file_count": 9
+      },
+      "previous_qa": {
+        "date": "2026-09-26",
+        "widths": [
+          320,
+          390,
+          768,
+          1440
+        ],
+        "level": "REPORTED",
+        "original_report": "qa-report-original.md"
+      },
+      "captured_source_basis": "local source at exact published commit; not a remote response capture",
+      "host_evidence_level": "CHECKED",
+      "local_source_clean": true,
+      "asset_checksums": [
+        {
+          "path": "app.js",
+          "sha256": "1a09a9d5c41d976240ab414f368b241d8f599b6784316bfedaecd60cb25be70e",
+          "bytes": 3491
+        },
+        {
+          "path": "index.html",
+          "sha256": "165f814c0625b92f665d971f38787d158b7a04e3041da6c23dd9b1440245b4fb",
+          "bytes": 8568
+        },
+        {
+          "path": "la-black-reference.png",
+          "sha256": "e9744513419416eeaab7b813fc2b5670089815dc605f6f02fc8132eb4f3f0106",
+          "bytes": 2169213
+        },
+        {
+          "path": "la-foundation-reference.png",
+          "sha256": "41e3cba94d4f143eed75ffa660ad1e10e3497dd2789f6ebcd7956dcf11f484db",
+          "bytes": 2091704
+        },
+        {
+          "path": "la.css",
+          "sha256": "c842577ea4ca663f3b94c17b73c6e7e82e922b00b1c586734f50a0268657e8c7",
+          "bytes": 7087
+        },
+        {
+          "path": "la.js",
+          "sha256": "50fd8c9471446a17382133d6f95f950d087e183ca01957d105179237cc1506b5",
+          "bytes": 15360
+        },
+        {
+          "path": "polish.css",
+          "sha256": "1268c05b3c13839871ce9923284bd0d819e4d3deb6f31fefd7e20f4058a017e5",
+          "bytes": 1841
+        },
+        {
+          "path": "style.css",
+          "sha256": "a45ba7081b05d2a52aa4dda4242b51bfd50dbc0d5dfb404d8d05413d3ab8f40b",
+          "bytes": 8344
+        }
+      ],
+      "asset_manifest_sha256": "80e06598809113214901bd0d049e6d73739ea49fa6ea0af2f78261e61701546e",
+      "local_tar_gz_sha256": "a7384e7ab81d3cf59cc07ec4e576c9025b6b0934a0be43f12523e8ad9fc93f49",
+      "archive_note": "Local tar.gz hash and host archive hash use different representations; do not equate them.",
+      "language_assets_sha256": {
+        "la.js": "50fd8c9471446a17382133d6f95f950d087e183ca01957d105179237cc1506b5"
+      },
+      "snapshot_id": "citadel-v3-c787aa61e82fbc06d5bdc3d1f8f7f375cf960b92"
+    }
+  ],
+  "repositories": [
+    {
+      "repository": "Maurits-pixe/PALACO",
+      "observed_main": "14d25ccad5cf1999baa0a6339d116c452561766f",
+      "reported_permissions": {
+        "pull": true,
+        "push": true
+      },
+      "auth_shared": false,
+      "site_source_mapping": "NOT_ESTABLISHED",
+      "participation": "draft contract only"
+    },
+    {
+      "repository": "Maurits-pixe/palaco-genesis",
+      "observed_main": "af2942e0de7890e41ca33f0b99090ef0514b0e4b",
+      "reported_permissions": {
+        "pull": true,
+        "push": true
+      },
+      "auth_shared": false,
+      "site_source_mapping": "NOT_ESTABLISHED",
+      "participation": "draft contract only"
+    },
+    {
+      "repository": "Maurits-pixe/PALACO-BOOK-1",
+      "observed_main": "393b0596ec4b1bb87d73d3e9ec81e08e00133031",
+      "reported_permissions": {
+        "pull": true,
+        "push": true
+      },
+      "auth_shared": false,
+      "site_source_mapping": "NOT_ESTABLISHED",
+      "participation": "draft contract only"
+    },
+    {
+      "repository": "Maurits-pixe/PALACO-INDUSTRIE",
+      "observed_main": "d462e02de35dd9cea54c50fb6180bfd07c76aa30",
+      "reported_permissions": {
+        "pull": true,
+        "push": true
+      },
+      "auth_shared": false,
+      "site_source_mapping": "NOT_ESTABLISHED",
+      "participation": "draft contract only"
+    },
+    {
+      "repository": "Maurits-pixe/PALACO-Citadel",
+      "observed_main": "4a726054761cfb85a29a2e2548694e6ed2195096",
+      "reported_permissions": {
+        "pull": true,
+        "push": true
+      },
+      "auth_shared": false,
+      "site_source_mapping": "NOT_ESTABLISHED",
+      "participation": "draft contract only"
+    }
+  ]
+}
