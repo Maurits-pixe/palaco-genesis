@@ -1,0 +1,26 @@
+{
+  "descriptor_version": "0.1",
+  "status": "DRAFT",
+  "source_commit": "c84ecde45dd3221b4d6c99efe2201971a3e6a14a",
+  "citadel_id": "EVA-LA-001",
+  "world_id": "WORLD-EVA-001",
+  "manifest_digest": "eead3c419c98cebf76c95b9a44fc0a198ce0c1dfcc9f92b98e59c2f1c66e66e7",
+  "canonical_encoding": "PALACO-JSON-A1",
+  "cryptographic_profile": "SHA256-DOMAIN-A1",
+  "head_digest": "d68236c4889b07210e8687149bf81b85458228fe1cb40debeca70d63e2aec512",
+  "files": [
+    {
+      "name": "bundle.json",
+      "sha256": "212dbb9a5981f1c9105a3ba00adfc910c6c19c7c487ea501698575e0ca854ae9"
+    },
+    {
+      "name": "expected.json",
+      "sha256": "907396453d927d44414260f436c84741454ee9e643afe2a392bdba21b694928e"
+    },
+    {
+      "name": "manifest.json",
+      "sha256": "d9ac3bf2b4f6f5e81efb3aa012a77865f3790b5b47fa247a1c63cec01f260688"
+    }
+  ],
+  "signature": null
+}

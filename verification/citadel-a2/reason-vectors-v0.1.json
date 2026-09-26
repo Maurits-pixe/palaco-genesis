@@ -1,0 +1,372 @@
+{
+  "contract_version": "0.1",
+  "cases": [
+    {
+      "reason": "MALFORMED_JSON_PROFILE",
+      "result": "INVALID",
+      "mutations": [],
+      "raw": "{\"a\":1,\"a\":2}"
+    },
+    {
+      "reason": "BUNDLE_OBJECT_REQUIRED",
+      "result": "INVALID",
+      "mutations": [],
+      "raw": "[]"
+    },
+    {
+      "reason": "BUNDLE_FIELDS",
+      "result": "INVALID",
+      "mutations": [],
+      "raw": "{}"
+    },
+    {
+      "reason": "MANIFEST_SCHEMA",
+      "result": "INVALID",
+      "mutations": [
+        {
+          "path": [
+            "manifest",
+            "purpose"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "reason": "MANIFEST_FIELDS",
+      "result": "INVALID",
+      "mutations": [
+        {
+          "path": [
+            "manifest",
+            "purpose"
+          ],
+          "value": ""
+        }
+      ]
+    },
+    {
+      "reason": "MANIFEST_DIGEST",
+      "result": "INVALID",
+      "mutations": [
+        {
+          "path": [
+            "manifest",
+            "purpose"
+          ],
+          "value": "altered"
+        }
+      ]
+    },
+    {
+      "reason": "ANCHOR_FORMAT",
+      "result": "INVALID",
+      "mutations": [],
+      "manifest_anchor": "bad"
+    },
+    {
+      "reason": "RECORDS_ARRAY_REQUIRED",
+      "result": "INVALID",
+      "mutations": [
+        {
+          "path": [
+            "records"
+          ],
+          "value": {}
+        }
+      ]
+    },
+    {
+      "reason": "ENVELOPE_FIELDS",
+      "result": "INVALID",
+      "mutations": [
+        {
+          "path": [
+            "records",
+            "0",
+            "extra"
+          ],
+          "value": null
+        }
+      ]
+    },
+    {
+      "reason": "ENVELOPE_SCHEMA",
+      "result": "INVALID",
+      "mutations": [
+        {
+          "path": [
+            "records",
+            "0",
+            "sequence"
+          ],
+          "value": true
+        }
+      ]
+    },
+    {
+      "reason": "ENVELOPE_VALUES",
+      "result": "INVALID",
+      "mutations": [
+        {
+          "path": [
+            "records",
+            "0",
+            "record_id"
+          ],
+          "value": ""
+        }
+      ]
+    },
+    {
+      "reason": "ENVELOPE_ENUM",
+      "result": "INVALID",
+      "mutations": [
+        {
+          "path": [
+            "records",
+            "0",
+            "record_type"
+          ],
+          "value": "Other"
+        }
+      ]
+    },
+    {
+      "reason": "CHAIN_ORDER",
+      "result": "INVALID",
+      "mutations": [
+        {
+          "path": [
+            "records",
+            "0",
+            "previous_digest"
+          ],
+          "value": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "reason": "RECORD_DIGEST",
+      "result": "INVALID",
+      "mutations": [
+        {
+          "path": [
+            "records",
+            "0",
+            "payload",
+            "question"
+          ],
+          "value": "altered"
+        }
+      ]
+    },
+    {
+      "reason": "REFERENCE_FORMAT",
+      "result": "INVALID",
+      "mutations": [
+        {
+          "path": [
+            "records",
+            "2",
+            "provenance_refs"
+          ],
+          "value": [
+            "!"
+          ]
+        }
+      ],
+      "rehash": true
+    },
+    {
+      "reason": "SELF_REFERENCE",
+      "result": "INVALID",
+      "mutations": [
+        {
+          "path": [
+            "records",
+            "2",
+            "provenance_refs"
+          ],
+          "value": [
+            "eva-la-001:record:3"
+          ]
+        }
+      ],
+      "rehash": true
+    },
+    {
+      "reason": "REFERENCE_TYPE",
+      "result": "INVALID",
+      "mutations": [
+        {
+          "path": [
+            "records",
+            "2",
+            "evidence_refs"
+          ],
+          "value": [
+            "eva-la-001:record:1"
+          ]
+        }
+      ],
+      "rehash": true
+    },
+    {
+      "reason": "DUPLICATE_REFERENCE",
+      "result": "INVALID",
+      "mutations": [
+        {
+          "path": [
+            "records",
+            "2",
+            "evidence_refs"
+          ],
+          "value": [
+            "eva-la-001:record:2",
+            "eva-la-001:record:2"
+          ]
+        }
+      ],
+      "rehash": true
+    },
+    {
+      "reason": "EXTERNAL_ANCHORS_REQUIRED",
+      "result": "INCOMPLETE",
+      "mutations": [],
+      "manifest_anchor": ""
+    },
+    {
+      "reason": "SEQUENCE_GAP",
+      "result": "INCOMPLETE",
+      "mutations": [
+        {
+          "path": [
+            "records",
+            "0",
+            "sequence"
+          ],
+          "value": 2
+        }
+      ]
+    },
+    {
+      "reason": "DEPENDENCY_MISSING_OR_NOT_PRIOR",
+      "result": "INCOMPLETE",
+      "mutations": [
+        {
+          "path": [
+            "records",
+            "2",
+            "provenance_refs"
+          ],
+          "value": [
+            "missing"
+          ]
+        }
+      ],
+      "rehash": true
+    },
+    {
+      "reason": "ANCHORED_HEAD_NOT_PRESENT",
+      "result": "INCOMPLETE",
+      "mutations": [],
+      "head_anchor": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "reason": "MANIFEST_ANCHOR_CONFLICT",
+      "result": "CONFLICT",
+      "mutations": [],
+      "manifest_anchor": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "reason": "RESOURCE_CONTEXT_CONFLICT",
+      "result": "CONFLICT",
+      "mutations": [
+        {
+          "path": [
+            "records",
+            "0",
+            "citadel_id"
+          ],
+          "value": "OTHER"
+        }
+      ]
+    },
+    {
+      "reason": "DUPLICATE_ID_OR_SEQUENCE",
+      "result": "CONFLICT",
+      "mutations": [
+        {
+          "path": [
+            "records",
+            "1",
+            "record_id"
+          ],
+          "value": "eva-la-001:record:1"
+        }
+      ]
+    },
+    {
+      "reason": "UNSUPPORTED_MANIFEST_PROFILE",
+      "result": "UNKNOWN",
+      "mutations": [
+        {
+          "path": [
+            "manifest",
+            "schema_version"
+          ],
+          "value": "9"
+        }
+      ]
+    },
+    {
+      "reason": "NO_RECORDS",
+      "result": "UNKNOWN",
+      "mutations": [
+        {
+          "path": [
+            "records"
+          ],
+          "value": []
+        }
+      ]
+    },
+    {
+      "reason": "UNSUPPORTED_RECORD_VERSION",
+      "result": "UNKNOWN",
+      "mutations": [
+        {
+          "path": [
+            "records",
+            "0",
+            "schema_version"
+          ],
+          "value": "9"
+        }
+      ]
+    },
+    {
+      "reason": "SIGNATURE_PROFILE_NOT_IMPLEMENTED",
+      "result": "UNKNOWN",
+      "mutations": [
+        {
+          "path": [
+            "records",
+            "2",
+            "signature"
+          ],
+          "value": {
+            "value": "unsupported"
+          }
+        }
+      ],
+      "rehash": true
+    },
+    {
+      "reason": "A1_INTEGRITY_MATCHES_EXTERNAL_ANCHORS",
+      "result": "VALID",
+      "mutations": []
+    }
+  ]
+}

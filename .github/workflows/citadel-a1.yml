@@ -22,3 +22,9 @@ jobs:
           CITADEL_A1_BINARY: ${{ github.workspace }}/target/debug/citadel-a1
           CITADEL_A1_CANONICAL_BINARY: ${{ github.workspace }}/target/debug/citadel-a1-canonical
         run: python3 tools/citadel_a1/test_verify.py
+      - name: A2 receipt contract and unsigned release gate
+        env:
+          CITADEL_A1_BINARY: ${{ github.workspace }}/target/debug/citadel-a1
+        run: |
+          python3 tools/citadel_a2/test_contracts.py
+          python3 tools/citadel_a2/test_release.py

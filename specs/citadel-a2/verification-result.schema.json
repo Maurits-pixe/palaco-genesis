@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VerificationResult v0.1 / A1 integrity receipt",
+  "type": "object",
+  "required": [
+    "result",
+    "reason",
+    "scope",
+    "identity",
+    "authority",
+    "current_validity",
+    "signatures",
+    "archive_inclusion"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "enum": [
+        "INVALID",
+        "INCOMPLETE",
+        "CONFLICT",
+        "UNKNOWN",
+        "VALID"
+      ]
+    },
+    "reason": {
+      "enum": [
+        "MALFORMED_JSON_PROFILE",
+        "BUNDLE_OBJECT_REQUIRED",
+        "BUNDLE_FIELDS",
+        "MANIFEST_SCHEMA",
+        "MANIFEST_FIELDS",
+        "MANIFEST_DIGEST",
+        "ANCHOR_FORMAT",
+        "RECORDS_ARRAY_REQUIRED",
+        "ENVELOPE_FIELDS",
+        "ENVELOPE_SCHEMA",
+        "ENVELOPE_VALUES",
+        "ENVELOPE_ENUM",
+        "CHAIN_ORDER",
+        "RECORD_DIGEST",
+        "REFERENCE_FORMAT",
+        "SELF_REFERENCE",
+        "REFERENCE_TYPE",
+        "DUPLICATE_REFERENCE",
+        "EXTERNAL_ANCHORS_REQUIRED",
+        "SEQUENCE_GAP",
+        "DEPENDENCY_MISSING_OR_NOT_PRIOR",
+        "ANCHORED_HEAD_NOT_PRESENT",
+        "MANIFEST_ANCHOR_CONFLICT",
+        "RESOURCE_CONTEXT_CONFLICT",
+        "DUPLICATE_ID_OR_SEQUENCE",
+        "UNSUPPORTED_MANIFEST_PROFILE",
+        "NO_RECORDS",
+        "UNSUPPORTED_RECORD_VERSION",
+        "SIGNATURE_PROFILE_NOT_IMPLEMENTED",
+        "A1_INTEGRITY_MATCHES_EXTERNAL_ANCHORS"
+      ]
+    },
+    "scope": {
+      "const": "A1_ENVELOPE_INTEGRITY"
+    },
+    "identity": {
+      "const": "UNKNOWN"
+    },
+    "authority": {
+      "const": "UNKNOWN"
+    },
+    "current_validity": {
+      "const": "UNKNOWN"
+    },
+    "signatures": {
+      "const": "UNKNOWN"
+    },
+    "archive_inclusion": {
+      "const": "UNKNOWN"
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "result": {
+          "const": "INVALID"
+        },
+        "reason": {
+          "enum": [
+            "MALFORMED_JSON_PROFILE",
+            "BUNDLE_OBJECT_REQUIRED",
+            "BUNDLE_FIELDS",
+            "MANIFEST_SCHEMA",
+            "MANIFEST_FIELDS",
+            "MANIFEST_DIGEST",
+            "ANCHOR_FORMAT",
+            "RECORDS_ARRAY_REQUIRED",
+            "ENVELOPE_FIELDS",
+            "ENVELOPE_SCHEMA",
+            "ENVELOPE_VALUES",
+            "ENVELOPE_ENUM",
+            "CHAIN_ORDER",
+            "RECORD_DIGEST",
+            "REFERENCE_FORMAT",
+            "SELF_REFERENCE",
+            "REFERENCE_TYPE",
+            "DUPLICATE_REFERENCE"
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "result": {
+          "const": "INCOMPLETE"
+        },
+        "reason": {
+          "enum": [
+            "EXTERNAL_ANCHORS_REQUIRED",
+            "SEQUENCE_GAP",
+            "DEPENDENCY_MISSING_OR_NOT_PRIOR",
+            "ANCHORED_HEAD_NOT_PRESENT"
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "result": {
+          "const": "CONFLICT"
+        },
+        "reason": {
+          "enum": [
+            "MANIFEST_ANCHOR_CONFLICT",
+            "RESOURCE_CONTEXT_CONFLICT",
+            "DUPLICATE_ID_OR_SEQUENCE"
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "result": {
+          "const": "UNKNOWN"
+        },
+        "reason": {
+          "enum": [
+            "UNSUPPORTED_MANIFEST_PROFILE",
+            "NO_RECORDS",
+            "UNSUPPORTED_RECORD_VERSION",
+            "SIGNATURE_PROFILE_NOT_IMPLEMENTED"
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "result": {
+          "const": "VALID"
+        },
+        "reason": {
+          "enum": [
+            "A1_INTEGRITY_MATCHES_EXTERNAL_ANCHORS"
+          ]
+        }
+      }
+    }
+  ]
+}
