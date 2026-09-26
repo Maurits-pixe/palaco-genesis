@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/palaco-citadel-contracts",
     "crates/palaco-foundation",
     "crates/palaco-eventbus",
     "crates/palaco-harbor",
@@ -70,3 +71,5 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+

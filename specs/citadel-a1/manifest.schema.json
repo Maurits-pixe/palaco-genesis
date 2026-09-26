@@ -1,0 +1,60 @@
+{
+  "title": "CitadelManifest v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "citadel_id",
+    "world_id",
+    "purpose",
+    "edition",
+    "presentation",
+    "lifecycle",
+    "canonical_encoding",
+    "cryptographic_profile",
+    "manifest_digest"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.1"
+    },
+    "citadel_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_:./-]{1,128}$"
+    },
+    "world_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_:./-]{1,128}$"
+    },
+    "purpose": {
+      "type": "string",
+      "minLength": 1
+    },
+    "edition": {
+      "type": "string",
+      "minLength": 1
+    },
+    "presentation": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "lifecycle": {
+      "const": "DRAFT"
+    },
+    "canonical_encoding": {
+      "const": "PALACO-JSON-A1"
+    },
+    "cryptographic_profile": {
+      "const": "SHA256-DOMAIN-A1"
+    },
+    "manifest_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
