@@ -58,7 +58,7 @@ def check(raw,root,expected_digest,expected_commit):
         receipt=verify(contents['bundle.json'],value['manifest_digest'],value['head_digest'])
         if receipt['result']!='VALID':return result(receipt['result'],'BUNDLE_'+receipt['reason'])
         if value['signature'] is not None:return result('UNKNOWN','SIGNATURE_PROFILE_NOT_IMPLEMENTED','VALID')
-        return result('INCOMPLETE','TWO_DESIGNATED_REVIEWERS_AND_SIGNATURE_POLICY_REQUIRED','VALID')
+        return result('INCOMPLETE','DESIGNATED_REVIEWER_AND_SIGNATURE_POLICY_REQUIRED','VALID')
     except (ValueError,TypeError,KeyError,UnicodeError,RecursionError,OSError):
         return result('INVALID','MALFORMED_OR_MISSING_RELEASE_MATERIAL')
 

@@ -1,0 +1,23 @@
+{
+  "policy_version": "0.2",
+  "status": "DRAFT",
+  "required_distinct_reviewers": 1,
+  "governance_phase": "INTERIM",
+  "successor_authority": "AMBASSADORS",
+  "transition_requires_new_policy_version": true,
+  "designated_reviewers": [
+    {
+      "reviewer_id": "github:Maurits-pixe",
+      "display_name": "Maurits",
+      "github_account": "Maurits-pixe",
+      "contact_email": "Mauritsvangeen@hotmail.com",
+      "public_key": null,
+      "identity_key_binding_verified": false
+    }
+  ],
+  "signature_profile": null,
+  "trusted_key_distribution": null,
+  "revocation_policy": null,
+  "rollback_policy": null,
+  "production_release_enabled": false
+}

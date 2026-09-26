@@ -44,10 +44,13 @@ class ReleaseGate(unittest.TestCase):
             (root/'bundle.json').unlink()
             self.assertEqual(self.run_case(root=root)['result'],'INVALID')
 
-    def test_policy_requires_two_unassigned_reviewers(self):
-        policy=json.loads((ROOT/'specs/citadel-a2/release-policy-v0.1.json').read_text())
-        self.assertEqual(policy['required_distinct_reviewers'],2)
-        self.assertEqual(policy['designated_reviewers'],[])
+    def test_policy_requires_maurits_with_pending_key(self):
+        policy=json.loads((ROOT/'specs/citadel-a2/release-policy-v0.2.json').read_text())
+        self.assertEqual(policy['required_distinct_reviewers'],1)
+        self.assertEqual(len(policy['designated_reviewers']),1)
+        self.assertEqual(policy['designated_reviewers'][0]['reviewer_id'],'github:Maurits-pixe')
+        self.assertIsNone(policy['designated_reviewers'][0]['public_key'])
+        self.assertFalse(policy['designated_reviewers'][0]['identity_key_binding_verified'])
         self.assertFalse(policy['production_release_enabled'])
         self.assertEqual(policy['governance_phase'],'INTERIM')
         self.assertEqual(policy['successor_authority'],'AMBASSADORS')

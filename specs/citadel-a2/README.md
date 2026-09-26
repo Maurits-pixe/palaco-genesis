@@ -1,12 +1,12 @@
 # A2 — verification and release contract candidate v0.1
 
-Status: DRAFT implementation candidate for review, before B1 PostgreSQL. A1 remains the executable envelope-integrity baseline. A2 adds a machine-readable receipt schema, reason registry, 30 differential reason vectors and an unsigned release-candidate checksum gate. It does not declare a signed or approved release.
+Status: DRAFT implementation candidate for review, before B1 PostgreSQL. A1 remains the executable envelope-integrity baseline. A2 adds a machine-readable receipt schema, reason registry, 30 differential reason vectors, an unsigned release-candidate checksum gate and an optional Ed25519 approval-verification profile. It does not declare a production release or activate the Citadel.
 
 ## Interim governance and later handover
 
-User decision: temporarily require **two distinct designated reviewers**. The Ambassadors take over later. `release-policy-v0.1.json` records this interim phase and future authority, but names and trusted keys have not yet been designated. Production release remains disabled.
+Current user decision: **Maurits alone is the interim release reviewer**; the Ambassadors take over later. `release-policy-v0.2.json` records `github:Maurits-pixe` and the supplied contact email as one identity. The public key and identity-to-key binding are still missing, so production release remains disabled. `release-policy-v0.1.json` is preserved as the earlier two-reviewer draft; it is superseded and must not be loaded as the current policy. These governance-intent documents are not executable cryptographic trust stores.
 
-Two signatures by the same person/key do not satisfy two reviewers; key-to-reviewer identity must be independently established. A bot or automated agent review does not count as a designated reviewer approval. The future handover to Ambassadors requires a new policy version, an explicit effective release boundary and recorded authorization by the then-current authority. Do not silently relabel the existing keys or treat the word Ambassador as a credential. Retain historical policies and approvals for reproducibility. The Ambassadors' own approval threshold remains a future policy decision; do not inherit the interim threshold implicitly.
+Email and GitHub handles do not count as separate people or prove key ownership. A bot or automated agent review does not count as Maurits' approval. If a future approved interim policy requires two reviewers, signatures from the same person or key cannot satisfy it. The handover to Ambassadors requires a new policy version, an explicit effective release boundary and recorded authorization by the then-current authority. Do not silently relabel existing keys or treat the word Ambassador as a credential. Retain historical policies and approvals for reproducibility. The Ambassadors' approval threshold remains a future policy decision; do not inherit the interim threshold implicitly.
 
 ## VerificationResult v0.1
 
@@ -51,12 +51,18 @@ Published vectors, schema/profile identifiers and baseline tags are append-only 
 ## Verifiable manifest release process
 
 1. Authorized maintainers approve the exact commit, profile IDs, vectors, checksum inventory and resolved semantic review. Record who approved what; CI alone is insufficient.
-2. Build a release descriptor binding commit, manifest digest, fixture head, schema/profile IDs and file checksums. Choose and freeze a signature profile and canonical descriptor schema before implementation; no ad hoc signature format is approved here.
+2. Build a release descriptor binding commit, manifest digest, fixture head, schema/profile IDs and file checksums. Review and freeze the candidate signature profile and approval envelope before production use; implementing the profile does not approve it.
 3. Sign that descriptor with an authorized release key. Distribute its verification key and authority scope through an independently trusted channel. A public key embedded only in the bundle is not a trust anchor.
 4. Publish descriptor, detached signature, immutable artifacts and verification instructions under a unique baseline tag. Verify from a clean download with both independent implementations. Verify tag/commit and file checksums as well as signature.
 5. Define release sequence/rollback policy, key rotation, key revocation and compromised-release withdrawal. Signature validity does not imply present authorization. Preserve withdrawn artifacts for audit, clearly recording their status.
 
-Open A2 decisions: identity and key custody of the two interim reviewers, signature algorithm/profile, signed descriptor schema, trusted distribution channel, rollback/revocation and Ambassador handover policy. Until these are decided and implemented, releases are checksum-verifiable candidates only, not authenticated production manifests.
+Open A2 gates: Maurits' key custody and verified public key; approval of the candidate signature profile; trusted policy distribution and durable continuity-state storage; key revocation/rotation procedure and Ambassador handover. Cryptographic approval checks and rollback/revocation negative tests are implemented in the candidate profile, but authentic production trust configuration and integration are not.
+
+## Optional signed-approval profile
+
+See [approval-profile-v0.1.md](approval-profile-v0.1.md) for exact signed bytes, policy pinning, identity/key uniqueness and continuity semantics. `verify_approvals.py` supports a trusted, explicitly pinned interim policy requiring one or two distinct reviewers. The current governance choice is one. Threshold reduction changes the signed policy digest and cannot be accepted against an unchanged trusted policy anchor. A signature self-supplied by an untrusted key never counts.
+
+The profile uses the [PyCA Ed25519 API](https://cryptography.io/en/latest/hazmat/primitives/asymmetric/ed25519/), pinned to `cryptography==50.0.1` for these tests. Tests generate synthetic private keys in memory; no production keys, signed production artifacts or secrets are created. A successful scoped signature result is not an instruction to merge, tag, deploy or activate.
 
 ## Executable unsigned candidate gate
 
