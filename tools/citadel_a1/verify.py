@@ -14,6 +14,10 @@ RECORD_KEYS = set("record_id record_type schema_version citadel_id world_id sequ
 TYPES = set("QuestionRecord EvidenceObject EpistemicAssessment DecisionThreshold DecisionRecord AuthorizationRecord ConsequenceRecord ReassessmentRecord RevocationEvent ProofLifecycleEvent".split())
 STATES = set("UNKNOWN SUPPORTED CONTESTED INSUFFICIENT REFUTED".split())
 
+def blank(value):
+    # Frozen A1 code points, independent of language/runtime Unicode tables.
+    return all(ord(c) <= 0x20 or ord(c) in (0x85, 0xa0, 0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000) or 0x2000 <= ord(c) <= 0x200a for c in value)
+
 def reject(_):
     raise ValueError("non-integer JSON number")
 
@@ -72,14 +76,16 @@ def verify(raw, expected_manifest, expected_head):
         validate_json(bundle)
     except (ValueError, UnicodeError, RecursionError):
         return receipt("INVALID", "MALFORMED_JSON_PROFILE")
-    if not isinstance(bundle, dict) or set(bundle) != {"manifest", "records"}:
+    if not isinstance(bundle, dict):
+        return receipt("INVALID", "BUNDLE_OBJECT_REQUIRED")
+    if set(bundle) != {"manifest", "records"}:
         return receipt("INVALID", "BUNDLE_FIELDS")
     m = bundle["manifest"]
     if not isinstance(m, dict) or set(m) != MANIFEST_KEYS or any(not isinstance(m[k], str) for k in MANIFEST_KEYS - {"presentation"}) or not isinstance(m["presentation"], list) or any(not isinstance(x, str) for x in m["presentation"]):
         return receipt("INVALID", "MANIFEST_SCHEMA")
     if (m["schema_version"], m["canonical_encoding"], m["cryptographic_profile"], m["lifecycle"]) != ("0.1", "PALACO-JSON-A1", "SHA256-DOMAIN-A1", "DRAFT"):
         return receipt("UNKNOWN", "UNSUPPORTED_MANIFEST_PROFILE")
-    if not IDENTIFIER.fullmatch(m["citadel_id"]) or not IDENTIFIER.fullmatch(m["world_id"]) or not m["purpose"].strip() or not m["edition"].strip() or not m["presentation"] or any(not s.strip() for s in m["presentation"]) or not DIGEST.fullmatch(m["manifest_digest"]):
+    if not IDENTIFIER.fullmatch(m["citadel_id"]) or not IDENTIFIER.fullmatch(m["world_id"]) or blank(m["purpose"]) or blank(m["edition"]) or not m["presentation"] or any(blank(s) for s in m["presentation"]) or not DIGEST.fullmatch(m["manifest_digest"]):
         return receipt("INVALID", "MANIFEST_FIELDS")
     if digest("MANIFEST", without(m, "manifest_digest")) != m["manifest_digest"]:
         return receipt("INVALID", "MANIFEST_DIGEST")
@@ -105,7 +111,7 @@ def verify(raw, expected_manifest, expected_head):
             return receipt("INVALID", "ENVELOPE_SCHEMA")
         if r["schema_version"] != "0.1":
             return receipt("UNKNOWN", "UNSUPPORTED_RECORD_VERSION")
-        if not IDENTIFIER.fullmatch(r["record_id"]) or not IDENTIFIER.fullmatch(r["actor_ref"]) or not isinstance(r["payload"], dict) or not r["created_at_display"].strip() or not DIGEST.fullmatch(r["record_digest"]) or not DIGEST.fullmatch(r["payload_digest"]) or (r["previous_digest"] is not None and not DIGEST.fullmatch(r["previous_digest"])):
+        if not IDENTIFIER.fullmatch(r["record_id"]) or not IDENTIFIER.fullmatch(r["actor_ref"]) or not isinstance(r["payload"], dict) or blank(r["created_at_display"]) or not DIGEST.fullmatch(r["record_digest"]) or not DIGEST.fullmatch(r["payload_digest"]) or (r["previous_digest"] is not None and not DIGEST.fullmatch(r["previous_digest"])):
             return receipt("INVALID", "ENVELOPE_VALUES")
         if r["record_type"] not in TYPES or r["epistemic_state"] not in STATES:
             return receipt("INVALID", "ENVELOPE_ENUM")

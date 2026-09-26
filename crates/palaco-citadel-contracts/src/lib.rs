@@ -321,10 +321,10 @@ pub fn verify(input: &[u8], expected_manifest: &str, expected_head: &str) -> Ver
     }
     if !identifier(&manifest.citadel_id)
         || !identifier(&manifest.world_id)
-        || manifest.purpose.trim().is_empty()
-        || manifest.edition.trim().is_empty()
+        || blank(&manifest.purpose)
+        || blank(&manifest.edition)
         || manifest.presentation.is_empty()
-        || manifest.presentation.iter().any(|p| p.trim().is_empty())
+        || manifest.presentation.iter().any(|p| blank(p))
         || !digest_format(&manifest.manifest_digest)
     {
         return receipt(Invalid, "MANIFEST_FIELDS");
@@ -380,7 +380,7 @@ pub fn verify(input: &[u8], expected_manifest: &str, expected_head: &str) -> Ver
         if !identifier(&r.record_id)
             || !identifier(&r.actor_ref)
             || !r.payload.is_object()
-            || r.created_at_display.trim().is_empty()
+            || blank(&r.created_at_display)
             || !digest_format(&r.record_digest)
             || !digest_format(&r.payload_digest)
             || r.previous_digest
@@ -480,4 +480,13 @@ pub fn verify(input: &[u8], expected_manifest: &str, expected_head: &str) -> Ver
         return receipt(Unknown, "SIGNATURE_PROFILE_NOT_IMPLEMENTED");
     }
     receipt(Valid, "A1_INTEGRITY_MATCHES_EXTERNAL_ANCHORS")
+}
+
+// Frozen A1 code points; do not inherit runtime Unicode whitespace tables.
+fn blank(value: &str) -> bool {
+    value.chars().all(|c| {
+        matches!(c as u32,
+        0..=0x20 | 0x85 | 0xa0 | 0x1680 | 0x2000..=0x200a |
+        0x2028 | 0x2029 | 0x202f | 0x205f | 0x3000)
+    })
 }

@@ -4,6 +4,8 @@ from pathlib import Path
 from verify import canonical, digest, without
 
 target = Path(__file__).resolve().parents[2] / "verification" / "citadel-a1"
+if any((target / name).exists() for name in ("bundle.json", "expected.json")):
+    raise SystemExit("Frozen A1 vectors must never be overwritten. Author a new versioned profile/vector instead.")
 target.mkdir(parents=True, exist_ok=True)
 manifest = dict(schema_version="0.1", citadel_id="EVA-LA-001", world_id="WORLD-EVA-001", purpose="Long-Term Constitutional Memory", edition="Foundation / canonical baseline", presentation=["Foundation", "Black Edition"], lifecycle="DRAFT", canonical_encoding="PALACO-JSON-A1", cryptographic_profile="SHA256-DOMAIN-A1")
 manifest["manifest_digest"] = digest("MANIFEST", manifest)
@@ -19,5 +21,6 @@ for index, (kind, payload, epistemic, evidence) in enumerate([
 bundle = {"manifest": manifest, "records": records}
 expected = dict(manifest_digest=manifest["manifest_digest"], head_digest=records[-1]["record_digest"], result="VALID", scope="A1_ENVELOPE_INTEGRITY", payload_canonical_utf8=[canonical(r["payload"]).decode("utf-8") for r in records], payload_digests=[r["payload_digest"] for r in records], record_digests=[r["record_digest"] for r in records])
 for name, value in (("bundle.json", bundle), ("expected.json", expected)):
-    (target / name).write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    with (target / name).open("x", encoding="utf-8", newline="\n") as output:
+        output.write(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
 print(json.dumps({k:expected[k] for k in ("manifest_digest", "head_digest")}))

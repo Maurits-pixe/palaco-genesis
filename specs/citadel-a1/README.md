@@ -29,8 +29,10 @@ This is a deliberately restricted deterministic JSON profile, **not a claim of R
 2. Object keys match `[a-z][a-z0-9_]{0,63}`. Sort keys in ascending ASCII byte order.
 3. Values: null, booleans, Unicode scalar strings, arrays, objects and integers in `[-9007199254740991, 9007199254740991]`. Floating-point syntax, exponents, negative zero and non-finite values are forbidden.
 4. Preserve string Unicode scalar values exactly; **no Unicode normalization**. Escape quote and backslash; use `\b`, `\t`, `\n`, `\f`, `\r`; other U+0000–U+001F controls use lowercase `\u00xx`. Other characters, including non-ASCII, remain UTF-8. Lone surrogates are invalid.
-5. No insignificant whitespace or final newline in canonical bytes. Array order is significant. Nesting is at most 64 container levels; verifier input is at most 1 MiB.
+5. No insignificant whitespace or final newline in canonical bytes. Array order is significant. Root value has depth 0; each object member value or array element adds 1. Every value must have depth <=64 (including scalars and empty containers); verifier input is at most 1 MiB.
 6. Nullable envelope fields must be explicitly present as null; omission is not an alias for null. Unknown envelope/manifest fields are invalid. Payload must be an object; its semantic schema is not asserted by A1.
+
+Required nonblank display strings (`purpose`, `edition`, presentation entries and `created_at_display`) reject empty strings or strings consisting exclusively of the frozen code-point set U+0000–0020, U+0085, U+00A0, U+1680, U+2000–200A, U+2028, U+2029, U+202F, U+205F, U+3000. No runtime-dependent trim/strip predicate is normative. This validation does not normalize or remove characters from the canonical bytes.
 
 ## Digests and exclusions
 
@@ -43,6 +45,8 @@ SHA-256 lowercase hex, 64 characters. Hash UTF-8 domain prefix including a final
 | record_digest | `PALACO:CITADEL:RECORD:A1\0` | Entire envelope (including payload) minus only `record_digest` |
 
 No field other than the explicitly excluded self-digest is dropped. The display timestamp is hashed as recorded, but never used to order records, infer freshness or authorize execution. A1 signatures must be null for a VALID integrity result; a supplied signature produces UNKNOWN after integrity checks because signature verification is not implemented.
+
+Only the complete `record_digest` binds record type, schema version, Citadel ID, world ID and manifest to the payload. `payload_digest` is a content checksum, never a standalone record identity, authorization proof or cross-context acceptance token.
 
 ## Chain and dependency rules
 
@@ -62,9 +66,8 @@ The verifier returns the first detected issue in input order: malformed JSON/pro
 
 ```sh
 cargo test -p palaco-citadel-contracts
-cargo build -p palaco-citadel-contracts --bin citadel-a1
-python3 tools/citadel_a1/test_verify.py
-CITADEL_A1_BINARY="$PWD/target/debug/citadel-a1" python3 tools/citadel_a1/test_verify.py
+cargo build --locked -p palaco-citadel-contracts --bins
+CITADEL_A1_BINARY="$PWD/target/debug/citadel-a1" CITADEL_A1_CANONICAL_BINARY="$PWD/target/debug/citadel-a1-canonical" python3 tools/citadel_a1/test_verify.py
 ```
 
 Verify the frozen vector directly with **either** executable:
@@ -74,7 +77,15 @@ cargo run -p palaco-citadel-contracts --bin citadel-a1 -- verification/citadel-a
 python3 tools/citadel_a1/verify.py verification/citadel-a1/bundle.json eead3c419c98cebf76c95b9a44fc0a198ce0c1dfcc9f92b98e59c2f1c66e66e7 d68236c4889b07210e8687149bf81b85458228fe1cb40debeca70d63e2aec512
 ```
 
-`generate_vector.py` is an explicit fixture-authoring tool. CI never regenerates expected bytes/hashes. Deliberate contract changes require review of both the new vector and both implementations.
+`generate_vector.py` refuses to overwrite existing reference objects. CI never regenerates expected bytes/hashes. `frozen-sha256-v1.json` pins the original bundle, expected values and manifest byte-for-byte. These files and their checksum inventory must not be rewritten; a changed contract requires a new schema/profile and a new versioned vector directory. Repository controls and review must protect the inventory itself; a checksum committed beside data is not an authenticated release.
+
+The CI canonical probe compares actual Rust byte arrays and all three domain digests with Python, including full manifest and record objects, Unicode/controls, empty/null values and depth boundaries. The mutation matrix compares complete receipts and CLI exit status, not just successful compilation or result labels.
+
+## Formal merge and release gate
+
+Keep PR #99 DRAFT until canonical/negative tests pass at the exact reviewed head and semantic review findings are resolved. Green CI establishes tested implementation consistency only. An independent agent review found and reproduced a Rust/Python blank-string divergence; it was corrected with the frozen predicate above. Human constitutional authorization is not established by that review.
+
+After an explicitly approved merge, an authorized maintainer may create the immutable baseline tag `eva-la-a1-v0.1.0` on the verified merged commit. Do not move or reuse the tag. Publish the original vectors, their checksum inventory, commit ID, profile IDs and verification instructions together. No merge, tag or signed release is performed by these tests. A2's release trust policy must be approved before a manifest is used as a production trust anchor. See [A2 contract candidate](../citadel-a2/README.md).
 
 ## Threat model v0.1 (A1 scope)
 
