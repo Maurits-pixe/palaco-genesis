@@ -215,7 +215,12 @@ mod tests {
     }
 
     fn session() -> RioSession {
-        RioSession::open(identity(), "rio-web", provenance("session-test"), Utc::now())
+        RioSession::open(
+            identity(),
+            "rio-web",
+            provenance("session-test"),
+            Utc::now(),
+        )
     }
 
     #[test]
