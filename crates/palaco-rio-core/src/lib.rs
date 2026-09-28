@@ -12,9 +12,15 @@ use palaco_evidence::EvidenceBundle;
 use palaco_knowledge::KnowledgeRecord;
 use palaco_trias::GovernanceDecision;
 
+/// RIO conversation and message runtime primitives.
+pub mod conversation;
 /// RIO session lifecycle primitives.
 pub mod session;
 
+pub use conversation::{
+    RioConversation, RioConversationError, RioConversationId, RioConversationState, RioMessage,
+    RioMessageId, RioMessageRole,
+};
 pub use session::{RioSession, RioSessionId, RioSessionState};
 
 /// Human-to-RIO request entering the constitutional flow.
