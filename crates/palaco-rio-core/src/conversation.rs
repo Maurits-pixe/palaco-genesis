@@ -284,9 +284,9 @@ mod tests {
 
     #[test]
     fn different_session_cannot_append() -> Result<(), RioConversationError> {
-        let session = session();
+        let active_session = session();
         let other_session = session();
-        let mut conversation = RioConversation::open(&session, Utc::now())?;
+        let mut conversation = RioConversation::open(&active_session, Utc::now())?;
         let result = conversation.append(
             &other_session,
             RioMessageRole::Human,
