@@ -16,6 +16,8 @@ use palaco_trias::GovernanceDecision;
 pub mod conversation;
 /// RIO immutable event stream and deterministic replay primitives.
 pub mod event;
+/// RIO persistence adapter and outbox transaction boundary.
+pub mod persistence;
 /// RIO session lifecycle primitives.
 pub mod session;
 
@@ -27,6 +29,10 @@ pub use event::{
     RioEventDigest, RioEventEnvelope, RioEventId, RioEventInput, RioEventPayload, RioEventReceipt,
     RioEventSnapshot, RioEventStore, RioPersistenceError, RioReplayConversation, RioReplayError,
     RioReplayMessage, RioReplaySession, RioReplayState, RioStreamId,
+};
+pub use persistence::{
+    RioCommitReceipt, RioCommitRequest, RioOutboxRecord, RioOutboxState, RioPersistenceAdapter,
+    RioPersistenceAdapterError, RioReferencePersistenceAdapter,
 };
 pub use session::{RioSession, RioSessionId, RioSessionState};
 
