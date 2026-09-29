@@ -416,18 +416,18 @@ impl RioEventEnvelope {
     ) -> Self {
         let session_id = input.payload.session_id();
         let conversation_id = input.payload.conversation_id();
-        let event_digest = compute_event_digest(
-            input.event_id,
+        let event_digest = compute_event_digest(&RioEventDigestInput {
+            event_id: input.event_id,
             stream_id,
             sequence,
-            input.occurred_at,
-            input.recorded_at,
+            occurred_at: input.occurred_at,
+            recorded_at: input.recorded_at,
             session_id,
             conversation_id,
-            &input.provenance,
-            &input.payload,
+            provenance: &input.provenance,
+            payload: &input.payload,
             predecessor_digest,
-        );
+        });
 
         Self {
             event_id: input.event_id,
@@ -957,18 +957,18 @@ fn apply_event(state: &mut RioReplayState, event: &RioEventEnvelope) -> Result<(
         return Err(RioReplayError::EmptyEventProvenance);
     }
 
-    let expected_digest = compute_event_digest(
-        event.event_id,
-        event.stream_id,
-        event.sequence,
-        event.occurred_at,
-        event.recorded_at,
-        event.session_id,
-        event.conversation_id,
-        &event.provenance,
-        &event.payload,
-        event.predecessor_digest,
-    );
+    let expected_digest = compute_event_digest(&RioEventDigestInput {
+        event_id: event.event_id,
+        stream_id: event.stream_id,
+        sequence: event.sequence,
+        occurred_at: event.occurred_at,
+        recorded_at: event.recorded_at,
+        session_id: event.session_id,
+        conversation_id: event.conversation_id,
+        provenance: &event.provenance,
+        payload: &event.payload,
+        predecessor_digest: event.predecessor_digest,
+    });
     if event.event_digest != expected_digest {
         return Err(RioReplayError::DigestMismatch);
     }
@@ -1137,7 +1137,7 @@ fn receipt_from_event(event: &RioEventEnvelope) -> RioEventReceipt {
     }
 }
 
-fn compute_event_digest(
+struct RioEventDigestInput<'a> {
     event_id: RioEventId,
     stream_id: RioStreamId,
     sequence: u64,
@@ -1145,23 +1145,25 @@ fn compute_event_digest(
     recorded_at: DateTime<Utc>,
     session_id: RioSessionId,
     conversation_id: Option<RioConversationId>,
-    provenance: &ProvenanceRecord,
-    payload: &RioEventPayload,
+    provenance: &'a ProvenanceRecord,
+    payload: &'a RioEventPayload,
     predecessor_digest: Option<RioEventDigest>,
-) -> RioEventDigest {
+}
+
+fn compute_event_digest(input: &RioEventDigestInput<'_>) -> RioEventDigest {
     digest_strings(&[
         "RIO_EVENT_V1".to_string(),
-        uuid_text(event_id.as_uuid()),
-        uuid_text(stream_id.as_uuid()),
-        sequence.to_string(),
-        canonical_time(&occurred_at),
-        canonical_time(&recorded_at),
-        uuid_text(session_id.as_uuid()),
-        optional_uuid_text(conversation_id),
-        provenance.source.clone(),
-        provenance.record_locator.clone(),
-        payload.canonical(),
-        optional_digest_text(predecessor_digest),
+        uuid_text(input.event_id.as_uuid()),
+        uuid_text(input.stream_id.as_uuid()),
+        input.sequence.to_string(),
+        canonical_time(&input.occurred_at),
+        canonical_time(&input.recorded_at),
+        uuid_text(input.session_id.as_uuid()),
+        optional_uuid_text(input.conversation_id),
+        input.provenance.source.clone(),
+        input.provenance.record_locator.clone(),
+        input.payload.canonical(),
+        optional_digest_text(input.predecessor_digest),
     ])
 }
 
@@ -1188,7 +1190,7 @@ fn canonical_fields(tag: &str, fields: &[String]) -> String {
 }
 
 fn canonical_field(value: &str) -> String {
-    format!("{}:{}", value.as_bytes().len(), value)
+    format!("{}:{}", value.len(), value)
 }
 
 fn canonical_time(value: &DateTime<Utc>) -> String {
@@ -1259,7 +1261,7 @@ mod tests {
     use crate::RioSession;
 
     fn now(second: i64) -> DateTime<Utc> {
-        DateTime::<Utc>::from_timestamp(1_790_000_000 + second, 0).unwrap_or_else(|| Utc::now())
+        DateTime::<Utc>::from_timestamp(1_790_000_000 + second, 0).unwrap_or_else(Utc::now)
     }
 
     fn identity() -> IdentityHandle {
