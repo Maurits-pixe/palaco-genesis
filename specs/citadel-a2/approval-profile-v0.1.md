@@ -1,6 +1,6 @@
 # ED25519-A2-APPROVALS-0.1 — candidate
 
-Status: DRAFT, not a production trust policy. Current governance intent is `release-policy-v0.2.json`: Maurits alone temporarily, Ambassadors later. An implementation test must never be counted as his approval.
+Status: DRAFT, not a production trust policy. Current governance intent is `release-policy-v0.3.json`: two designated interim reviewers, Maurits and the second reviewer recorded there; Ambassadors later through explicit transfer. Both production key bindings and the second reviewer's identity, distinctness and acceptance remain open. An implementation test must never be counted as either person's approval. Governance-intent v0.3 is not an executable policy: the executable profile below retains version 0.2 and requires independently pinned trust configuration. Threshold-one compatibility does not authorize use of one reviewer under the current governance decision.
 
 ## Independently trusted inputs
 
@@ -44,4 +44,4 @@ python3 -m pip install -r tools/citadel_a2/requirements.txt
 python3 tools/citadel_a2/test_approvals.py
 ```
 
-Before production use: designate and verify Maurits' real public key through an independent channel, approve/freeze this candidate, establish authenticated policy distribution and revocation/rotation, provide durable continuity storage, and obtain explicit release authorization.
+Before production use: verify both designated reviewers' distinct identities and real public keys through an independent channel, approve/freeze this candidate, establish authenticated policy distribution and revocation/rotation, provide durable continuity storage, and obtain explicit release authorization.
