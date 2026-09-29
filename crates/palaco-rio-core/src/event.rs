@@ -783,10 +783,7 @@ impl RioEventStore {
     }
 
     /// Appends one event and returns its commit receipt.
-    pub fn append(
-        &mut self,
-        input: RioEventInput,
-    ) -> Result<RioEventReceipt, RioPersistenceError> {
+    pub fn append(&mut self, input: RioEventInput) -> Result<RioEventReceipt, RioPersistenceError> {
         let mut receipts = self.append_batch(vec![input])?;
         receipts.pop().ok_or(RioPersistenceError::EmptyBatch)
     }
@@ -845,8 +842,7 @@ impl RioEventStore {
                     .ok_or(RioPersistenceError::SequenceOverflow)?;
             }
 
-            replay_events(self.stream_id, &candidate)
-                .map_err(RioPersistenceError::Rejected)?;
+            replay_events(self.stream_id, &candidate).map_err(RioPersistenceError::Rejected)?;
             self.events.extend(new_envelopes);
         }
 
@@ -884,9 +880,7 @@ impl RioEventStore {
         &self,
         snapshot: &RioEventSnapshot,
     ) -> Result<RioReplayState, RioReplayError> {
-        if snapshot.stream_id != self.stream_id
-            || snapshot.state.stream_id != self.stream_id
-        {
+        if snapshot.stream_id != self.stream_id || snapshot.state.stream_id != self.stream_id {
             return Err(RioReplayError::SnapshotStreamMismatch);
         }
         if snapshot.state.last_sequence != snapshot.last_sequence
@@ -936,21 +930,19 @@ fn replay_events(
     Ok(state)
 }
 
-fn apply_event(
-    state: &mut RioReplayState,
-    event: &RioEventEnvelope,
-) -> Result<(), RioReplayError> {
+fn apply_event(state: &mut RioReplayState, event: &RioEventEnvelope) -> Result<(), RioReplayError> {
     if event.stream_id != state.stream_id {
         return Err(RioReplayError::StreamMismatch);
     }
 
-    let expected_sequence = state
-        .last_sequence
-        .checked_add(1)
-        .ok_or(RioReplayError::SequenceGap {
-            expected: u64::MAX,
-            found: event.sequence,
-        })?;
+    let expected_sequence =
+        state
+            .last_sequence
+            .checked_add(1)
+            .ok_or(RioReplayError::SequenceGap {
+                expected: u64::MAX,
+                found: event.sequence,
+            })?;
     if event.sequence != expected_sequence {
         return Err(RioReplayError::SequenceGap {
             expected: expected_sequence,
@@ -1267,8 +1259,7 @@ mod tests {
     use crate::RioSession;
 
     fn now(second: i64) -> DateTime<Utc> {
-        DateTime::<Utc>::from_timestamp(1_790_000_000 + second, 0)
-            .unwrap_or_else(|| Utc::now())
+        DateTime::<Utc>::from_timestamp(1_790_000_000 + second, 0).unwrap_or_else(|| Utc::now())
     }
 
     fn identity() -> IdentityHandle {
@@ -1431,7 +1422,10 @@ mod tests {
             .replay_from_snapshot(&snapshot)
             .map_err(|error| format!("{error:?}"))?;
         assert_eq!(
-            restored.sessions().get(&session_id).map(|value| value.state),
+            restored
+                .sessions()
+                .get(&session_id)
+                .map(|value| value.state),
             Some(RioSessionState::Revoked)
         );
         assert_eq!(restored.last_sequence(), snapshot.last_sequence());
@@ -1486,12 +1480,7 @@ mod tests {
                 now(1),
                 provenance("event/invalid-conversation"),
             ),
-            RioEventInput::session_revoked(
-                session_id,
-                now(2),
-                now(2),
-                provenance("event/revoked"),
-            ),
+            RioEventInput::session_revoked(session_id, now(2), now(2), provenance("event/revoked")),
         ];
 
         assert!(matches!(
