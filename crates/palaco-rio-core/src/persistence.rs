@@ -45,11 +45,7 @@ impl RioCommitRequest {
             self.expected_sequence.to_string(),
             self.idempotency_key.clone(),
         ];
-        fields.extend(
-            self.events
-                .iter()
-                .map(RioEventInput::canonical_for_adapter),
-        );
+        fields.extend(self.events.iter().map(RioEventInput::canonical_for_adapter));
         digest_fields(&fields)
     }
 }
@@ -405,12 +401,7 @@ mod tests {
         idempotency_key: &str,
         event: RioEventInput,
     ) -> RioCommitRequest {
-        RioCommitRequest::new(
-            stream_id,
-            expected_sequence,
-            idempotency_key,
-            vec![event],
-        )
+        RioCommitRequest::new(stream_id, expected_sequence, idempotency_key, vec![event])
     }
 
     #[test]
@@ -511,10 +502,7 @@ mod tests {
             .map_err(|error| format!("{error:?}"))?;
         let result = adapter.commit(changed_request);
 
-        assert_eq!(
-            result,
-            Err(RioPersistenceAdapterError::IdempotencyConflict)
-        );
+        assert_eq!(result, Err(RioPersistenceAdapterError::IdempotencyConflict));
         assert_eq!(adapter.events().len(), 1);
         assert_eq!(adapter.outbox().len(), 1);
 
