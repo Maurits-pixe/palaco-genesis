@@ -14,12 +14,19 @@ use palaco_trias::GovernanceDecision;
 
 /// RIO conversation and message runtime primitives.
 pub mod conversation;
+/// RIO immutable event stream and deterministic replay primitives.
+pub mod event;
 /// RIO session lifecycle primitives.
 pub mod session;
 
 pub use conversation::{
     RioConversation, RioConversationError, RioConversationId, RioConversationState, RioMessage,
     RioMessageId, RioMessageRole,
+};
+pub use event::{
+    RioEventDigest, RioEventEnvelope, RioEventId, RioEventInput, RioEventPayload, RioEventReceipt,
+    RioEventSnapshot, RioEventStore, RioPersistenceError, RioReplayConversation, RioReplayError,
+    RioReplayMessage, RioReplaySession, RioReplayState, RioStreamId,
 };
 pub use session::{RioSession, RioSessionId, RioSessionState};
 

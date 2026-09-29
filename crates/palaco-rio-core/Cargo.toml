@@ -17,6 +17,7 @@ palaco-knowledge = { workspace = true }
 palaco-trias = { workspace = true }
 chrono.workspace = true
 uuid.workspace = true
+sha2.workspace = true
 
 [dev-dependencies]
 palaco-events = { workspace = true }

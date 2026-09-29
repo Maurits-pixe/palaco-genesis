@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::{RioSession, RioSessionId};
 
 /// Stable identifier for a RIO conversation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RioConversationId(Uuid);
 
 impl RioConversationId {

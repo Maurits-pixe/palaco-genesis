@@ -5,7 +5,7 @@ use palaco_constitution::{IdentityHandle, ProvenanceRecord};
 use uuid::Uuid;
 
 /// Stable identifier for a RIO conversation session.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RioSessionId(Uuid);
 
 impl RioSessionId {
