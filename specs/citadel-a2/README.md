@@ -4,9 +4,9 @@ Status: DRAFT implementation candidate for review, before B1 PostgreSQL. A1 rema
 
 ## Interim governance and later handover
 
-Current user decision: **Maurits alone is the interim release reviewer**; the Ambassadors take over later. `release-policy-v0.2.json` records `github:Maurits-pixe` and the supplied contact email as one identity. The public key and identity-to-key binding are still missing, so production release remains disabled. `release-policy-v0.1.json` is preserved as the earlier two-reviewer draft; it is superseded and must not be loaded as the current policy. These governance-intent documents are not executable cryptographic trust stores.
+Current user decision (2026-09-29): **two designated interim reviewers**, Maurits (`github:Maurits-pixe`) and the second reviewer recorded in `release-policy-v0.3.json`. The second reviewer's contact was supplied by the owner; their person identity, distinctness, acceptance, GitHub account and identity-to-key binding remain unverified. Both production public keys remain missing. The second reviewer's local designation ID is not a verified identity. Production release remains disabled and release authority is unassigned. Versions 0.1 and 0.2 are retained as historical governance intent and are superseded by v0.3. These governance-intent documents are not executable cryptographic trust stores. The executable approval-profile version remains 0.2; this documentation update does not install a trusted policy or change verifier semantics.
 
-Email and GitHub handles do not count as separate people or prove key ownership. A bot or automated agent review does not count as Maurits' approval. If a future approved interim policy requires two reviewers, signatures from the same person or key cannot satisfy it. The handover to Ambassadors requires a new policy version, an explicit effective release boundary and recorded authorization by the then-current authority. Do not silently relabel existing keys or treat the word Ambassador as a credential. Retain historical policies and approvals for reproducibility. The Ambassadors' approval threshold remains a future policy decision; do not inherit the interim threshold implicitly.
+Email and GitHub handles do not count as separate people or prove key ownership. A bot or automated agent review does not count as Maurits' approval. The current two-reviewer requirement cannot be satisfied by signatures from the same person or key. The handover to Ambassadors requires a new policy version, an explicit effective release boundary and recorded authorization by the then-current authority. Do not silently relabel existing keys or treat the word Ambassador as a credential. Retain historical policies and approvals for reproducibility. The Ambassadors' approval threshold remains a future policy decision; do not inherit the interim threshold implicitly.
 
 ## VerificationResult v0.1
 
@@ -44,6 +44,23 @@ An attacker can supply any bundle field, rewrite/reorder/truncate exports, repla
 
 Compromised release keys, a compromised anchor channel, malicious but correctly hashed evidence, rollback to an old valid release and unauthorized writes are not solved by A1. Fail closed for unsupported trust material. Do not infer authenticated identity or tenant access from `actor_ref`, `citadel_id`, a matching digest or another PALACO repository's login.
 
+### Closure checklist — 2026-09-29
+
+Threat model status: **OPEN / REVIEW REQUIRED**. The following is a closure checklist, not evidence that controls were executed or approved. Existing tests described above do not establish production readiness.
+
+| Threat / boundary | Required closure evidence | Current gap |
+|---|---|---|
+| Reviewer impersonation or one person counted twice | Independently confirmed person/account/public-key binding and acceptance for each reviewer; two distinct people | Second identity and both key bindings unverified |
+| Stolen, replaced or revoked signing key | Reviewed custody, rotation and emergency revocation procedure; authenticated current policy anchor; negative stale-policy test | Production procedure and anchor distribution open |
+| Replay, concurrent acceptance or restored old snapshot | Atomic compare-and-advance of release sequence/digest; concurrent-writer, crash and restore tests against durable state | Offline verifier does not persist state |
+| Local clock rollback or expired authorization reuse | Trusted-time policy where expiry is used; terminal revocation/expiry; rollback and stale-snapshot negative tests | Current signature profile does not establish current authorization |
+| Altered, reordered or truncated export / replaced anchors | Both verifiers check exact exported bytes against independently acquired current anchors; missing dependencies fail closed | Full constitutional export case not implemented |
+| Unauthorized writes or tenant/context substitution | Authentication plus explicit resource/action authorization at the transaction boundary; deny and cross-tenant tests | Ledger/API flow not implemented |
+| False or malicious but correctly hashed evidence | Explicit assessment, decision threshold, authorization and reassessment; integrity never treated as truth or authority | Full constitutional flow not implemented |
+| Source/artifact substitution or unapproved release | Exact commit, descriptor and artifact inventory bound to approvals; reviewed provenance and explicit release actor | Release authority, source attestation and baseline open |
+
+The two designated reviewers must record their assessment against an exact commit and identify accepted assumptions and unresolved blockers. A test run or this checklist cannot count as their approval. No reviewer invitation or acceptance is implied.
+
 ## Schema and profile evolution
 
 Published vectors, schema/profile identifiers and baseline tags are append-only release artifacts. A change to canonical bytes, allowed values, digest domain, verification meaning or precedence requires a new explicit profile/schema and new vectors. Old verifiers must reject unsupported versions with UNKNOWN. Unknown fields remain INVALID; omission and null remain distinct. Migration produces new records with explicit provenance to old records; it must not rewrite historical digests. Retain old verifier versions to reproduce historical results.
@@ -56,11 +73,11 @@ Published vectors, schema/profile identifiers and baseline tags are append-only 
 4. Publish descriptor, detached signature, immutable artifacts and verification instructions under a unique baseline tag. Verify from a clean download with both independent implementations. Verify tag/commit and file checksums as well as signature.
 5. Define release sequence/rollback policy, key rotation, key revocation and compromised-release withdrawal. Signature validity does not imply present authorization. Preserve withdrawn artifacts for audit, clearly recording their status.
 
-Open A2 gates: Maurits' key custody and verified public key; approval of the candidate signature profile; trusted policy distribution and durable continuity-state storage; key revocation/rotation procedure and Ambassador handover. Cryptographic approval checks and rollback/revocation negative tests are implemented in the candidate profile, but authentic production trust configuration and integration are not.
+Open A2 gates: both reviewers' verified identity/key bindings and key custody; explicit release authority; approval of the candidate signature profile; trusted policy distribution and durable continuity-state storage; key revocation/rotation procedure and Ambassador handover. Cryptographic approval checks and rollback/revocation negative tests are implemented in the candidate profile, but authentic production trust configuration and integration are not.
 
 ## Optional signed-approval profile
 
-See [approval-profile-v0.1.md](approval-profile-v0.1.md) for exact signed bytes, policy pinning, identity/key uniqueness and continuity semantics. `verify_approvals.py` supports a trusted, explicitly pinned interim policy requiring one or two distinct reviewers. The current governance choice is one. Threshold reduction changes the signed policy digest and cannot be accepted against an unchanged trusted policy anchor. A signature self-supplied by an untrusted key never counts.
+See [approval-profile-v0.1.md](approval-profile-v0.1.md) for exact signed bytes, policy pinning, identity/key uniqueness and continuity semantics. `verify_approvals.py` supports a trusted, explicitly pinned interim policy requiring one or two distinct reviewers. The current governance choice is two; threshold-one support is retained only for historical/profile compatibility and must not be selected as the current production policy. Threshold reduction changes the signed policy digest and cannot be accepted against an unchanged trusted policy anchor. A signature self-supplied by an untrusted key never counts.
 
 The profile uses the [PyCA Ed25519 API](https://cryptography.io/en/latest/hazmat/primitives/asymmetric/ed25519/), pinned to `cryptography==50.0.1` for these tests. Tests generate synthetic private keys in memory; no production keys, signed production artifacts or secrets are created. A successful scoped signature result is not an instruction to merge, tag, deploy or activate.
 
