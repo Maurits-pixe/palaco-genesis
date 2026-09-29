@@ -1,0 +1,34 @@
+{
+  "policy_version": "0.3",
+  "status": "DRAFT",
+  "required_distinct_reviewers": 2,
+  "governance_phase": "INTERIM",
+  "successor_authority": "AMBASSADORS",
+  "transition_requires_new_policy_version": true,
+  "designated_reviewers": [
+    {
+      "reviewer_id": "github:Maurits-pixe",
+      "display_name": "Maurits",
+      "github_account": "Maurits-pixe",
+      "contact_email": "Mauritsvangeen@hotmail.com",
+      "public_key": null,
+      "identity_key_binding_verified": false
+    },
+    {
+      "reviewer_id": "designated:eva-la-reviewer-2",
+      "display_name": "Second designated reviewer",
+      "github_account": null,
+      "contact_email": "iii6v9@gmail.com",
+      "public_key": null,
+      "identity_key_binding_verified": false
+    }
+  ],
+  "signature_profile": null,
+  "trusted_key_distribution": null,
+  "revocation_policy": null,
+  "rollback_policy": null,
+  "production_release_enabled": false,
+  "supersedes": "release-policy-v0.2.json",
+  "decision_date": "2026-09-29",
+  "release_authority": null
+}
