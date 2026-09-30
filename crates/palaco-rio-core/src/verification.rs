@@ -1064,8 +1064,7 @@ impl RioVerificationRun {
         {
             return Err(RioRecordError::InvalidLifecycle);
         }
-        if matches!(self.status, RioVerificationRunStatus::Mismatch)
-            && self.counts.mismatched == 0
+        if matches!(self.status, RioVerificationRunStatus::Mismatch) && self.counts.mismatched == 0
         {
             return Err(RioRecordError::InvalidLifecycle);
         }
