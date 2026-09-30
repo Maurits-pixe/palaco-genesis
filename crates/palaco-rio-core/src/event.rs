@@ -253,6 +253,21 @@ impl RioEventInput {
         }
     }
 
+    /// Returns canonical event material for an adapter request fingerprint.
+    pub(crate) fn canonical_for_adapter(&self) -> String {
+        canonical_fields(
+            "RIO_EVENT_INPUT_V1",
+            &[
+                uuid_text(self.event_id.as_uuid()),
+                canonical_time(&self.occurred_at),
+                canonical_time(&self.recorded_at),
+                self.provenance.source.clone(),
+                self.provenance.record_locator.clone(),
+                self.payload.canonical(),
+            ],
+        )
+    }
+
     /// Creates a session-opened event input.
     pub fn session_opened(
         session_id: RioSessionId,
