@@ -18,10 +18,10 @@ pub mod conversation;
 pub mod event;
 /// RIO persistence adapter and outbox transaction boundary.
 pub mod persistence;
-/// RIO canonical verification-run and evidence records.
-pub mod verification;
 /// RIO session lifecycle primitives.
 pub mod session;
+/// RIO canonical verification-run and evidence records.
+pub mod verification;
 
 pub use conversation::{
     RioConversation, RioConversationError, RioConversationId, RioConversationState, RioMessage,
@@ -36,6 +36,7 @@ pub use persistence::{
     RioCommitReceipt, RioCommitRequest, RioOutboxRecord, RioOutboxState, RioPersistenceAdapter,
     RioPersistenceAdapterError, RioReferencePersistenceAdapter,
 };
+pub use session::{RioSession, RioSessionId, RioSessionState};
 pub use verification::{
     RioEvidenceId, RioEvidenceInput, RioEvidenceRecord, RioExecutionId, RioManifestRef,
     RioObservationId, RioObservationInput, RioObservationRecord, RioRecordDigest, RioRecordError,
@@ -44,7 +45,6 @@ pub use verification::{
     RioVerificationRunId, RioVerificationRunInput, RioVerificationRunStatus, RIO_RECORD_SCHEMA_V1,
     RIO_RECORD_VERSION_V1,
 };
-pub use session::{RioSession, RioSessionId, RioSessionState};
 
 /// Human-to-RIO request entering the constitutional flow.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -601,11 +601,7 @@ impl RioVerificationRecord {
         validate_text(&input.verifier_ref, "verifier_ref")?;
         validate_text(&input.ruleset_ref, "ruleset_ref")?;
         validate_provenance(&input.provenance)?;
-        validate_outcome(
-            input.outcome,
-            input.expected_digest,
-            input.observed_digest,
-        )?;
+        validate_outcome(input.outcome, input.expected_digest, input.observed_digest)?;
 
         let record = Self {
             schema_version: input.schema_version,
@@ -850,10 +846,7 @@ pub struct RioManifestRef {
 
 impl RioManifestRef {
     /// Creates a manifest reference with a non-empty name and digest.
-    pub fn new(
-        name: impl Into<String>,
-        digest: RioRecordDigest,
-    ) -> Result<Self, RioRecordError> {
+    pub fn new(name: impl Into<String>, digest: RioRecordDigest) -> Result<Self, RioRecordError> {
         let name = name.into();
         validate_text(&name, "manifest_name")?;
         validate_digest(digest)?;
@@ -1014,7 +1007,10 @@ impl RioVerificationRun {
             run_digest: RioRecordDigest::from_canonical_bytes(&[]),
         };
         let run_digest = digest_body(record.canonical_body().as_bytes());
-        let record = Self { run_digest, ..record };
+        let record = Self {
+            run_digest,
+            ..record
+        };
         record.validate()?;
         Ok(record)
     }
@@ -1068,9 +1064,7 @@ impl RioVerificationRun {
         {
             return Err(RioRecordError::InvalidLifecycle);
         }
-        if matches!(self.status, RioVerificationRunStatus::Mismatch)
-            && self.counts.mismatched == 0
-        {
+        if matches!(self.status, RioVerificationRunStatus::Mismatch) && self.counts.mismatched == 0 {
             return Err(RioRecordError::InvalidLifecycle);
         }
         if matches!(self.status, RioVerificationRunStatus::Undetermined)
@@ -1436,9 +1430,7 @@ fn validate_previous_run(
     if run_id.is_some() != digest.is_some() {
         return Err(RioRecordError::PreviousRunBinding);
     }
-    if run_id.is_some_and(|value| value.is_nil())
-        || digest.is_some_and(RioRecordDigest::is_zero)
-    {
+    if run_id.is_some_and(|value| value.is_nil()) || digest.is_some_and(RioRecordDigest::is_zero) {
         return Err(RioRecordError::PreviousRunBinding);
     }
     Ok(())
@@ -1613,11 +1605,10 @@ mod tests {
             ended_at: Some(now(3)),
             status: RioVerificationRunStatus::Verified,
             counts: RioVerificationCounts::new(1, 1, 0, 0, 0, 1),
-            manifests: vec![RioManifestRef::new(
-                "test-manifest",
-                value_digest("manifest"),
-            )
-            .map_err(|error| format!("{error:?}"))?],
+            manifests: vec![
+                RioManifestRef::new("test-manifest", value_digest("manifest"))
+                    .map_err(|error| format!("{error:?}"))?,
+            ],
             unresolved_items: Vec::new(),
             previous_run_id: None,
             previous_run_digest: None,
@@ -1640,12 +1631,9 @@ mod tests {
         let observation_id = RioObservationId::new();
         let evidence_id = RioEvidenceId::new();
 
-        let observation = RioObservationRecord::new(observation_input(
-            observation_id,
-            test_id,
-            execution_id,
-        ))
-        .map_err(|error| format!("{error:?}"))?;
+        let observation =
+            RioObservationRecord::new(observation_input(observation_id, test_id, execution_id))
+                .map_err(|error| format!("{error:?}"))?;
         let evidence = RioEvidenceRecord::new(RioEvidenceInput {
             schema_version: RIO_RECORD_SCHEMA_V1.to_string(),
             record_version: RIO_RECORD_VERSION_V1,
@@ -1677,10 +1665,8 @@ mod tests {
             provenance: provenance("verification/1"),
         })
         .map_err(|error| format!("{error:?}"))?;
-        let run = RioVerificationRun::new(
-            run_input(run_id).map_err(|error| error.to_string())?,
-        )
-        .map_err(|error| format!("{error:?}"))?;
+        let run = RioVerificationRun::new(run_input(run_id).map_err(|error| error.to_string())?)
+            .map_err(|error| format!("{error:?}"))?;
 
         Ok((run, observation, evidence, verification))
     }
@@ -1735,7 +1721,9 @@ mod tests {
         let record_set = RioVerificationRecordSet::new(run, observation, evidence, verification)
             .map_err(|error| format!("{error:?}"))?;
 
-        record_set.validate().map_err(|error| format!("{error:?}"))?;
+        record_set
+            .validate()
+            .map_err(|error| format!("{error:?}"))?;
         assert_eq!(
             record_set.verification().outcome(),
             RioVerificationOutcome::Verified
