@@ -8,6 +8,10 @@ Current user decision (2026-09-29): **two designated interim reviewers**, Maurit
 
 Email and GitHub handles do not count as separate people or prove key ownership. A bot or automated agent review does not count as Maurits' approval. The current two-reviewer requirement cannot be satisfied by signatures from the same person or key. The handover to Ambassadors requires a new policy version, an explicit effective release boundary and recorded authorization by the then-current authority. Do not silently relabel existing keys or treat the word Ambassador as a credential. Retain historical policies and approvals for reproducibility. The Ambassadors' approval threshold remains a future policy decision; do not inherit the interim threshold implicitly.
 
+## Reviewer key ceremony and rotation
+
+See [key-binding-rotation-v0.1.md](key-binding-rotation-v0.1.md) for the concrete binding, custody, rotation, emergency hold/recovery and release-authority procedure. Status: DRAFT PROCEDURE / NOT EXECUTED. Both real public keys, verified bindings, authenticated current-policy distribution and durable continuity remain open. No reviewer acceptance or release authority is inferred.
+
 ## VerificationResult v0.1
 
 Receipt fields: `result`, `reason`, `scope`, `identity`, `authority`, `current_validity`, `signatures`, `archive_inclusion`. In A1, scope is exactly `A1_ENVELOPE_INTEGRITY`; the last five fields remain `UNKNOWN`. Consumers must check scope and dimensions and must never treat a VALID A1 receipt as permission to execute. The receipt itself is not signed evidence.
