@@ -9,5 +9,6 @@ This tree holds the canonical specifications that define the PALACO constitution
 - `IDENTITY/` — identity invariants for humans, agents, and services
 - `PROVENANCE/` — provenance and traceability requirements
 - `AUTHORITY/` — authority, authorization, and revocation constraints
+- `ERA/` — temporal evidence, proof, authority-boundary, and commit-race specifications
 - `TRIAS/` — governance, dissent, and constitutional review
 - `PVB-011/` — cryptographic verification boundary
