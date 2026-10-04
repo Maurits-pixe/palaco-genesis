@@ -1,0 +1,227 @@
+{
+  "source_commit": "cfd53ce523d74a629966f6816ea6062e81d29841",
+  "level": "CHECKED",
+  "started_at": "2026-09-26T14:31:24.548614+00:00",
+  "finished_at": "2026-09-26T14:31:24.844590+00:00",
+  "environment": {
+    "python": "3.12.14 (main, Aug 25 2026, 14:01:42) [MSC v.1944 64 bit (AMD64)]",
+    "implementation": "CPython",
+    "os": "Windows-11-10.0.26200-SP0",
+    "architecture": "AMD64",
+    "sqlite": "3.53.1",
+    "dependencies": "Python standard library only"
+  },
+  "command": "python -m unittest discover -s release-registry -p 'test_*.py' -v",
+  "method_count": 39,
+  "success": true,
+  "classification_definition": "Method-level: positive = valid-path/invariant only; negative = refusal/error/stale-boundary case; mixed = success plus refusal or recovery in one method. Subtests are not counted separately.",
+  "classification_counts": {
+    "positive": 4,
+    "negative": 28,
+    "mixed": 7
+  },
+  "tests": [
+    {
+      "id": "test_contract.ContractTests.test_pin_and_closed_gates",
+      "classification": "positive"
+    },
+    {
+      "id": "test_era_boundary.EraBoundaryTests.test_expiration_is_not_revocation",
+      "classification": "negative"
+    },
+    {
+      "id": "test_era_boundary.EraBoundaryTests.test_missing_conflicting_and_synthetic_time",
+      "classification": "negative"
+    },
+    {
+      "id": "test_era_boundary.EraBoundaryTests.test_uncertainty_overlaps_expiry",
+      "classification": "negative"
+    },
+    {
+      "id": "test_era_boundary.EraBoundaryTests.test_uncertainty_overlaps_start",
+      "classification": "negative"
+    },
+    {
+      "id": "test_era_boundary.EraBoundaryTests.test_unknown_schema_fields_and_reversed_interval",
+      "classification": "negative"
+    },
+    {
+      "id": "test_era_boundary.EraBoundaryTests.test_verified_interval_only_satisfies_time",
+      "classification": "mixed"
+    },
+    {
+      "id": "test_registry.FreshnessTests.test_current_requires_all_trust_inputs",
+      "classification": "mixed"
+    },
+    {
+      "id": "test_registry.FreshnessTests.test_empty_history_is_not_a_reset",
+      "classification": "negative"
+    },
+    {
+      "id": "test_registry.FreshnessTests.test_expiry_boundary",
+      "classification": "negative"
+    },
+    {
+      "id": "test_registry.FreshnessTests.test_history_retains_old_state",
+      "classification": "mixed"
+    },
+    {
+      "id": "test_registry.FreshnessTests.test_invalid_times_and_unknown_fields",
+      "classification": "negative"
+    },
+    {
+      "id": "test_registry.FreshnessTests.test_invalid_ttl",
+      "classification": "negative"
+    },
+    {
+      "id": "test_registry.FreshnessTests.test_null_verification_unknown",
+      "classification": "negative"
+    },
+    {
+      "id": "test_registry.FreshnessTests.test_revocation_beats_offline",
+      "classification": "mixed"
+    },
+    {
+      "id": "test_registry.FreshnessTests.test_version_and_clock_mismatch",
+      "classification": "negative"
+    },
+    {
+      "id": "test_registry.RegistryTests.test_candidate_chain_and_refresh",
+      "classification": "positive"
+    },
+    {
+      "id": "test_registry.RegistryTests.test_changed_replayed_history",
+      "classification": "negative"
+    },
+    {
+      "id": "test_registry.RegistryTests.test_context_binding",
+      "classification": "negative"
+    },
+    {
+      "id": "test_registry.RegistryTests.test_delayed_expired_future_and_long_requests",
+      "classification": "negative"
+    },
+    {
+      "id": "test_registry.RegistryTests.test_domain_separation",
+      "classification": "positive"
+    },
+    {
+      "id": "test_registry.RegistryTests.test_invalid_contract",
+      "classification": "negative"
+    },
+    {
+      "id": "test_registry.RegistryTests.test_invalid_genesis_identity",
+      "classification": "negative"
+    },
+    {
+      "id": "test_registry.RegistryTests.test_invalid_state_combinations",
+      "classification": "negative"
+    },
+    {
+      "id": "test_registry.RegistryTests.test_no_adapter_and_failed_verifier",
+      "classification": "negative"
+    },
+    {
+      "id": "test_registry.RegistryTests.test_no_floats",
+      "classification": "negative"
+    },
+    {
+      "id": "test_registry.RegistryTests.test_offline",
+      "classification": "negative"
+    },
+    {
+      "id": "test_registry.RegistryTests.test_replay_and_concurrent_tabs",
+      "classification": "negative"
+    },
+    {
+      "id": "test_registry.RegistryTests.test_revocation_terminal",
+      "classification": "negative"
+    },
+    {
+      "id": "test_registry.RegistryTests.test_truncated_or_unanchored_history",
+      "classification": "negative"
+    },
+    {
+      "id": "test_sqlite_journal.DurableJournalTests.test_failed_write_rolls_back",
+      "classification": "negative"
+    },
+    {
+      "id": "test_sqlite_journal.DurableJournalTests.test_id_reuse_changed_payload_rejected",
+      "classification": "negative"
+    },
+    {
+      "id": "test_sqlite_journal.DurableJournalTests.test_locked_database_and_retry",
+      "classification": "mixed"
+    },
+    {
+      "id": "test_sqlite_journal.DurableJournalTests.test_restart_and_exact_retry",
+      "classification": "positive"
+    },
+    {
+      "id": "test_sqlite_journal.DurableJournalTests.test_retry_requires_current_verification_and_window",
+      "classification": "negative"
+    },
+    {
+      "id": "test_sqlite_journal.DurableJournalTests.test_revocation_survives_restart_and_retry",
+      "classification": "mixed"
+    },
+    {
+      "id": "test_sqlite_journal.DurableJournalTests.test_sql_updates_and_deletes_denied",
+      "classification": "negative"
+    },
+    {
+      "id": "test_sqlite_journal.DurableJournalTests.test_two_connections_one_winner",
+      "classification": "mixed"
+    },
+    {
+      "id": "test_sqlite_journal.DurableJournalTests.test_untrusted_checkpoint_and_genesis",
+      "classification": "negative"
+    }
+  ],
+  "files": {
+    "contract.json": {
+      "git_blob_sha1": "d0820f5e46a94411265dcd85c37341c09f0467a2",
+      "sha256": "be84f30a03e985b18bbd827839198e572e5dfe0d71afa7ff67f6a24e10ef908a"
+    },
+    "contract.sha256": {
+      "git_blob_sha1": "32c5774a87306fa0339ecbbf5590eddf18c82957",
+      "sha256": "d639ddbc2a16e9a4604a10cafee40f8b4371796885d5cfb0fdcb8822c7eafc16"
+    },
+    "registry.py": {
+      "git_blob_sha1": "9664ade1318b179807fbe230556de3459b7dc420",
+      "sha256": "0ecc4eb669bd4a393a8a6242dfe9f42c3a9d298dcf0517f75c78d09205be6e19"
+    },
+    "sqlite_journal.py": {
+      "git_blob_sha1": "01f3fc2f08a998b35f48d8d6f7491d2360ff5bc5",
+      "sha256": "8579ba3c7d1f56edd7b5778f47003ba3735aa9a88ebfb027462345ebe2e33463"
+    },
+    "era_boundary.py": {
+      "git_blob_sha1": "b7b543589cc2d7c5b0e5a139c6e1cc0bca100493",
+      "sha256": "ffa65ac32a0cad40db95cf3f3d8d12041d209a77138bf6cc5a6cf3e37b1bc953"
+    },
+    "test_contract.py": {
+      "git_blob_sha1": "70e6f110dffca059fc6fad61f572293e026b3d46",
+      "sha256": "6b1f971d71402b6ed19d7fdda6d218b4191d0a9cd98d51db564cdbabc44a16ef"
+    },
+    "test_registry.py": {
+      "git_blob_sha1": "06ba18865929106eea90f1ac6852cba8468565b9",
+      "sha256": "f65ffac73de92918b5df84de000683af6c351ece7ff6217b41ac451eef16150b"
+    },
+    "test_sqlite_journal.py": {
+      "git_blob_sha1": "4f6bf05696d034d7b21333203d2ad887a4bb7fc4",
+      "sha256": "c43f883dc81a231d18631f3eb40ae4778f68367d49fe7aa38cb0c05675726cfb"
+    },
+    "test_era_boundary.py": {
+      "git_blob_sha1": "2d6e50ab21a354b52c7d0bc417444d4ea2cbd067",
+      "sha256": "18c8e257c14e8b9704c1e61b0567ca7b4c24f00732f6417558597d5008a26c40"
+    }
+  },
+  "output": "test_pin_and_closed_gates (test_contract.ContractTests.test_pin_and_closed_gates) ... ok\ntest_expiration_is_not_revocation (test_era_boundary.EraBoundaryTests.test_expiration_is_not_revocation) ... ok\ntest_missing_conflicting_and_synthetic_time (test_era_boundary.EraBoundaryTests.test_missing_conflicting_and_synthetic_time) ... ok\ntest_uncertainty_overlaps_expiry (test_era_boundary.EraBoundaryTests.test_uncertainty_overlaps_expiry) ... ok\ntest_uncertainty_overlaps_start (test_era_boundary.EraBoundaryTests.test_uncertainty_overlaps_start) ... ok\ntest_unknown_schema_fields_and_reversed_interval (test_era_boundary.EraBoundaryTests.test_unknown_schema_fields_and_reversed_interval) ... ok\ntest_verified_interval_only_satisfies_time (test_era_boundary.EraBoundaryTests.test_verified_interval_only_satisfies_time) ... ok\ntest_current_requires_all_trust_inputs (test_registry.FreshnessTests.test_current_requires_all_trust_inputs) ... ok\ntest_empty_history_is_not_a_reset (test_registry.FreshnessTests.test_empty_history_is_not_a_reset) ... ok\ntest_expiry_boundary (test_registry.FreshnessTests.test_expiry_boundary) ... ok\ntest_history_retains_old_state (test_registry.FreshnessTests.test_history_retains_old_state) ... ok\ntest_invalid_times_and_unknown_fields (test_registry.FreshnessTests.test_invalid_times_and_unknown_fields) ... ok\ntest_invalid_ttl (test_registry.FreshnessTests.test_invalid_ttl) ... ok\ntest_null_verification_unknown (test_registry.FreshnessTests.test_null_verification_unknown) ... ok\ntest_revocation_beats_offline (test_registry.FreshnessTests.test_revocation_beats_offline) ... ok\ntest_version_and_clock_mismatch (test_registry.FreshnessTests.test_version_and_clock_mismatch) ... ok\ntest_candidate_chain_and_refresh (test_registry.RegistryTests.test_candidate_chain_and_refresh) ... ok\ntest_changed_replayed_history (test_registry.RegistryTests.test_changed_replayed_history) ... ok\ntest_context_binding (test_registry.RegistryTests.test_context_binding) ... ok\ntest_delayed_expired_future_and_long_requests (test_registry.RegistryTests.test_delayed_expired_future_and_long_requests) ... ok\ntest_domain_separation (test_registry.RegistryTests.test_domain_separation) ... ok\ntest_invalid_contract (test_registry.RegistryTests.test_invalid_contract) ... ok\ntest_invalid_genesis_identity (test_registry.RegistryTests.test_invalid_genesis_identity) ... ok\ntest_invalid_state_combinations (test_registry.RegistryTests.test_invalid_state_combinations) ... ok\ntest_no_adapter_and_failed_verifier (test_registry.RegistryTests.test_no_adapter_and_failed_verifier) ... ok\ntest_no_floats (test_registry.RegistryTests.test_no_floats) ... ok\ntest_offline (test_registry.RegistryTests.test_offline) ... ok\ntest_replay_and_concurrent_tabs (test_registry.RegistryTests.test_replay_and_concurrent_tabs) ... ok\ntest_revocation_terminal (test_registry.RegistryTests.test_revocation_terminal) ... ok\ntest_truncated_or_unanchored_history (test_registry.RegistryTests.test_truncated_or_unanchored_history) ... ok\ntest_failed_write_rolls_back (test_sqlite_journal.DurableJournalTests.test_failed_write_rolls_back) ... ok\ntest_id_reuse_changed_payload_rejected (test_sqlite_journal.DurableJournalTests.test_id_reuse_changed_payload_rejected) ... ok\ntest_locked_database_and_retry (test_sqlite_journal.DurableJournalTests.test_locked_database_and_retry) ... ok\ntest_restart_and_exact_retry (test_sqlite_journal.DurableJournalTests.test_restart_and_exact_retry) ... ok\ntest_retry_requires_current_verification_and_window (test_sqlite_journal.DurableJournalTests.test_retry_requires_current_verification_and_window) ... ok\ntest_revocation_survives_restart_and_retry (test_sqlite_journal.DurableJournalTests.test_revocation_survives_restart_and_retry) ... ok\ntest_sql_updates_and_deletes_denied (test_sqlite_journal.DurableJournalTests.test_sql_updates_and_deletes_denied) ... ok\ntest_two_connections_one_winner (test_sqlite_journal.DurableJournalTests.test_two_connections_one_winner) ... ok\ntest_untrusted_checkpoint_and_genesis (test_sqlite_journal.DurableJournalTests.test_untrusted_checkpoint_and_genesis) ... ok\n\n----------------------------------------------------------------------\nRan 39 tests in 0.296s\n\nOK\n",
+  "limits": [
+    "Synthetic verifier callbacks",
+    "Single-process independent SQLite connections",
+    "Reopening is not abrupt process crash or power loss",
+    "No external execution commit gate or cryptographic EDTR verification"
+  ]
+}
+

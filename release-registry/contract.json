@@ -1,0 +1,23 @@
+{
+  "schema_version": "PALACO-REGISTRY-0.1",
+  "status": "DRAFT",
+  "citadel_id": "EVA-LA-001",
+  "world_id": "WORLD-EVA-001",
+  "production_release_enabled": false,
+  "release_states": ["DRAFT", "REVIEWABLE", "AUTHORIZED", "ENABLED", "REVOKED"],
+  "observation_states": ["CURRENT", "STALE", "UNKNOWN", "REVOKED"],
+  "evidence_levels": ["REPORTED", "CHECKED", "PROVEN"],
+  "presentation_editions": ["foundation", "black"],
+  "maximum_freshness_seconds": 86400,
+  "interim_reviewer": "github:Maurits-pixe",
+  "reviewer_public_key": null,
+  "successor_authority": "AMBASSADORS",
+  "handover_requires_new_policy": true,
+  "merge_gates": {
+    "cross_repository_contracts_agree": false,
+    "negative_tests_pass": false,
+    "reviewer_key_binding_verified": false,
+    "release_authority_explicit": false,
+    "threat_model_closed": false
+  }
+}

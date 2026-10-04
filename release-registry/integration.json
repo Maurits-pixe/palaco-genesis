@@ -1,0 +1,10 @@
+{
+  "schema_version": "PALACO-REGISTRY-0.1",
+  "repository": "Maurits-pixe/palaco-genesis",
+  "role": "Private central evidence and draft reference-model participant. A1/A2 PRs remain separate and unmerged.",
+  "runtime_integration": "NOT_CONNECTED",
+  "contract_sha256": "be84f30a03e985b18bbd827839198e572e5dfe0d71afa7ff67f6a24e10ef908a",
+  "production_release_enabled": false,
+  "shared_login": false,
+  "site_source_mapping": "NOT_ESTABLISHED"
+}
