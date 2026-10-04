@@ -22,8 +22,8 @@ members = [
     "crates/palaco-observatory",
     "runtime/palaco-kernel",
     "crates/palaco-rio-core",
+    "crates/palaco-monetary-contracts",
 ]
-
 [workspace.package]
 version = "0.1.0-alpha.1"
 edition = "2021"
@@ -31,7 +31,6 @@ authors = ["PALACO Core Team"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Maurits-pixe/palaco-genesis"
 rust-version = "1.81"
-
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
@@ -39,7 +38,6 @@ tracing = "0.1"
 uuid = { version = "1", features = ["serde", "v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 sha2 = "0.10"
-
 palaco-constitution = { path = "crates/palaco-constitution" }
 palaco-types = { path = "crates/palaco-types" }
 palaco-errors = { path = "crates/palaco-errors" }
@@ -53,17 +51,14 @@ palaco-runtime = { path = "crates/palaco-runtime" }
 palaco-audit = { path = "crates/palaco-audit" }
 palaco-observatory = { path = "crates/palaco-observatory" }
 palaco-rio-core = { path = "crates/palaco-rio-core" }
-
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
-
 [workspace.lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
 todo = "deny"
-
 [profile.release]
 opt-level = 3
 lto = true
