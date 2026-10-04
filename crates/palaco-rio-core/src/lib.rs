@@ -12,6 +12,40 @@ use palaco_evidence::EvidenceBundle;
 use palaco_knowledge::KnowledgeRecord;
 use palaco_trias::GovernanceDecision;
 
+/// RIO conversation and message runtime primitives.
+pub mod conversation;
+/// RIO immutable event stream and deterministic replay primitives.
+pub mod event;
+/// RIO persistence adapter and outbox transaction boundary.
+pub mod persistence;
+/// RIO session lifecycle primitives.
+pub mod session;
+/// RIO canonical verification-run and evidence records.
+pub mod verification;
+
+pub use conversation::{
+    RioConversation, RioConversationError, RioConversationId, RioConversationState, RioMessage,
+    RioMessageId, RioMessageRole,
+};
+pub use event::{
+    RioEventDigest, RioEventEnvelope, RioEventId, RioEventInput, RioEventPayload, RioEventReceipt,
+    RioEventSnapshot, RioEventStore, RioPersistenceError, RioReplayConversation, RioReplayError,
+    RioReplayMessage, RioReplaySession, RioReplayState, RioStreamId,
+};
+pub use persistence::{
+    RioCommitReceipt, RioCommitRequest, RioOutboxRecord, RioOutboxState, RioPersistenceAdapter,
+    RioPersistenceAdapterError, RioReferencePersistenceAdapter,
+};
+pub use session::{RioSession, RioSessionId, RioSessionState};
+pub use verification::{
+    RioEvidenceId, RioEvidenceInput, RioEvidenceRecord, RioExecutionId, RioManifestRef,
+    RioObservationId, RioObservationInput, RioObservationRecord, RioRecordDigest, RioRecordError,
+    RioTestId, RioVerificationCounts, RioVerificationId, RioVerificationInput,
+    RioVerificationOutcome, RioVerificationRecord, RioVerificationRecordSet, RioVerificationRun,
+    RioVerificationRunId, RioVerificationRunInput, RioVerificationRunStatus, RIO_RECORD_SCHEMA_V1,
+    RIO_RECORD_VERSION_V1,
+};
+
 /// Human-to-RIO request entering the constitutional flow.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RioRequest {
