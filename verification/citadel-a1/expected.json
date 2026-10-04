@@ -1,0 +1,21 @@
+{
+  "manifest_digest": "eead3c419c98cebf76c95b9a44fc0a198ce0c1dfcc9f92b98e59c2f1c66e66e7",
+  "head_digest": "d68236c4889b07210e8687149bf81b85458228fe1cb40debeca70d63e2aec512",
+  "result": "VALID",
+  "scope": "A1_ENVELOPE_INTEGRITY",
+  "payload_canonical_utf8": [
+    "{\"language\":\"nl\",\"question\":\"Kan EVA deze waarneming onderbouwen?\"}",
+    "{\"independent_verification\":false,\"observation\":\"Café — 水 — 🏰\\nLine 2\",\"sample_count\":3}",
+    "{\"assessment\":\"Fixture only; no authority\",\"confidence_label\":\"insufficient\"}"
+  ],
+  "payload_digests": [
+    "5d6088513d4864f4cda12cea0293a36719ef490b71d835fd05446e87da227c69",
+    "91ceeb8ac320458404ae6156ac08889102d26701ebb31f2732b019eca15b52f6",
+    "2a80fa4b9e03c9f81d36dd1c2506e0aaa0a37b67bc14ebad5465c99e56641187"
+  ],
+  "record_digests": [
+    "60d5fdc92dbc4aba28ad685a907bf2fe4484a46c9312d005ff72ffa97300e1e1",
+    "63ff88942c56717a1e5967dcb8e36378d8d414b084ad43e8a2d634ae04c22b23",
+    "d68236c4889b07210e8687149bf81b85458228fe1cb40debeca70d63e2aec512"
+  ]
+}

@@ -1,0 +1,24 @@
+name: Citadel A1 interoperability
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  independent-verifiers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked -p palaco-citadel-contracts
+      - run: cargo build --locked -p palaco-citadel-contracts --bins
+      - name: Independent Python verification and cross-language mutation matrix
+        env:
+          CITADEL_A1_BINARY: ${{ github.workspace }}/target/debug/citadel-a1
+          CITADEL_A1_CANONICAL_BINARY: ${{ github.workspace }}/target/debug/citadel-a1-canonical
+        run: python3 tools/citadel_a1/test_verify.py
