@@ -218,6 +218,17 @@ completed commit.
 - **ERA009-I08:** Temporal evidence constrains commit eligibility but never
   creates authorization.
 
+### Reference model status
+
+`palaco-citadel::InMemoryCommitGate` is an initial process-local reference model
+for registry ordering, revocation checks, and idempotent attempt replay. Its
+mutex provides only in-process serialization; records are neither durable nor
+replicated, and the model does not verify revocation authority, temporal
+uncertainty, identity, decision validity, or cryptographic proofs. It is not
+suitable for financial or exchange execution. A production implementation must
+provide durable atomic storage and independently validated trust and recovery
+controls before relying on this behavior.
+
 ## Open validation gates
 
 Before using ERA as a financial, exchange, or official time reference, separate
