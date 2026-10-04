@@ -19,10 +19,15 @@ use std::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommitOutcome {
     /// The attempt was ordered and accepted.
-    Committed { sequence: u64 },
+    Committed {
+        /// Registry sequence assigned to the accepted attempt.
+        sequence: u64,
+    },
     /// The attempt was ordered and denied.
     Denied {
+        /// Registry sequence assigned to the denied attempt.
         sequence: u64,
+        /// Condition that caused the denial.
         reason: CommitDenialReason,
     },
 }
@@ -91,7 +96,14 @@ pub enum CommitRegistryEvent {
 struct CommitRegistryState {
     next_sequence: Option<u64>,
     records: Vec<CommitRegistryRecord>,
-    attempts: HashMap<String, (String, String, CommitOutcome)>,
+    attempts: HashMap<
+        String,
+        (
+            AuthorizationGrant,
+            palaco_constitution::AuthorityScope,
+            CommitOutcome,
+        ),
+    >,
     revoked_authorizations: HashSet<String>,
 }
 
@@ -187,12 +199,8 @@ impl InMemoryCommitGate {
             .state
             .lock()
             .map_err(|_| CommitGateError::LockPoisoned)?;
-        let request_identity = (
-            grant.authorization_id.clone(),
-            requested_scope.capability.clone(),
-        );
-        if let Some((authorization_id, scope, outcome)) = state.attempts.get(&attempt_id) {
-            if (authorization_id, scope) == (&request_identity.0, &request_identity.1) {
+        if let Some((previous_grant, previous_scope, outcome)) = state.attempts.get(&attempt_id) {
+            if previous_grant == grant && previous_scope == requested_scope {
                 return Ok(*outcome);
             }
             return Err(CommitGateError::IdempotencyConflict);
@@ -215,7 +223,9 @@ impl InMemoryCommitGate {
 
         let authorization_id = grant.authorization_id.clone();
         let requested_scope_name = requested_scope.capability.clone();
-        let sequence = state.next_sequence.ok_or(CommitGateError::SequenceExhausted)?;
+        let sequence = state
+            .next_sequence
+            .ok_or(CommitGateError::SequenceExhausted)?;
         let outcome = match reason {
             Some(reason) => CommitOutcome::Denied { sequence, reason },
             None => CommitOutcome::Committed { sequence },
@@ -228,7 +238,7 @@ impl InMemoryCommitGate {
         })?;
         state.attempts.insert(
             attempt_id,
-            (authorization_id, requested_scope_name, outcome),
+            (grant.clone(), requested_scope.clone(), outcome),
         );
         Ok(outcome)
     }
@@ -334,7 +344,9 @@ impl FailClosed for ExecutionBoundary {
 #[cfg(test)]
 mod tests {
     use chrono::{LocalResult, TimeZone, Utc};
-    use palaco_constitution::{AuthorityScope, AuthorizationGrant, IdentityHandle, ProvenanceRecord};
+    use palaco_constitution::{
+        AuthorityScope, AuthorizationGrant, IdentityHandle, ProvenanceRecord,
+    };
     use palaco_events::EventEnvelope;
     use palaco_foundation::{
         evidence::Evidence,
@@ -521,6 +533,12 @@ mod tests {
                     capability: "palaco.observe".to_string(),
                 },
             ),
+            Err(crate::CommitGateError::IdempotencyConflict)
+        );
+        let mut altered_grant = grant.clone();
+        altered_grant.provenance.record_locator = "different-grant".to_string();
+        assert_eq!(
+            gate.try_commit("attempt-1", &altered_grant, &scope),
             Err(crate::CommitGateError::IdempotencyConflict)
         );
         assert_eq!(gate.records().map(|records| records.len()), Ok(1));
