@@ -20,6 +20,8 @@ pub mod event;
 pub mod persistence;
 /// RIO session lifecycle primitives.
 pub mod session;
+/// RIO canonical verification-run and evidence records.
+pub mod verification;
 
 pub use conversation::{
     RioConversation, RioConversationError, RioConversationId, RioConversationState, RioMessage,
@@ -35,6 +37,14 @@ pub use persistence::{
     RioPersistenceAdapterError, RioReferencePersistenceAdapter,
 };
 pub use session::{RioSession, RioSessionId, RioSessionState};
+pub use verification::{
+    RioEvidenceId, RioEvidenceInput, RioEvidenceRecord, RioExecutionId, RioManifestRef,
+    RioObservationId, RioObservationInput, RioObservationRecord, RioRecordDigest, RioRecordError,
+    RioTestId, RioVerificationCounts, RioVerificationId, RioVerificationInput,
+    RioVerificationOutcome, RioVerificationRecord, RioVerificationRecordSet, RioVerificationRun,
+    RioVerificationRunId, RioVerificationRunInput, RioVerificationRunStatus, RIO_RECORD_SCHEMA_V1,
+    RIO_RECORD_VERSION_V1,
+};
 
 /// Human-to-RIO request entering the constitutional flow.
 #[derive(Debug, Clone, PartialEq, Eq)]
