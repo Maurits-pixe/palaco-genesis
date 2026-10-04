@@ -1,0 +1,20 @@
+[package]
+name = "palaco-evidence"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Evidence chain contracts for PALACO."
+[lints]
+workspace = true
+
+[dependencies]
+palaco-events = { workspace = true }
+palaco-foundation = { path = "../palaco-foundation" }
+
+[dev-dependencies]
+chrono.workspace = true
+palaco-types = { workspace = true }
+uuid.workspace = true

@@ -1,0 +1,11 @@
+[package]
+name = "palaco-monetary-contracts"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]

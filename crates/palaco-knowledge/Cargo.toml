@@ -1,0 +1,15 @@
+[package]
+name = "palaco-knowledge"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Versioned knowledge contracts for PALACO."
+[lints]
+workspace = true
+
+[dependencies]
+palaco-constitution = { workspace = true }
+palaco-evidence = { workspace = true }

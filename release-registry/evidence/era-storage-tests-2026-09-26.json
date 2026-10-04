@@ -1,0 +1,166 @@
+{
+  "level": "CHECKED",
+  "recorded_at": "2026-09-26 14:26:48 UTC",
+  "local_tests": {
+    "count": 39,
+    "result": "PASS",
+    "command": "python -m unittest discover -s release-registry -p 'test_*.py' -v",
+    "scope": "Windows local SQLite temporary-file integration and reference-model tests; synthetic verifier fixtures"
+  },
+  "files": [
+    {
+      "sha256": "8579ba3c7d1f56edd7b5778f47003ba3735aa9a88ebfb027462345ebe2e33463",
+      "file": "sqlite_journal.py"
+    },
+    {
+      "sha256": "c43f883dc81a231d18631f3eb40ae4778f68367d49fe7aa38cb0c05675726cfb",
+      "file": "test_sqlite_journal.py"
+    },
+    {
+      "sha256": "ffa65ac32a0cad40db95cf3f3d8d12041d209a77138bf6cc5a6cf3e37b1bc953",
+      "file": "era_boundary.py"
+    },
+    {
+      "sha256": "18c8e257c14e8b9704c1e61b0567ca7b4c24f00732f6417558597d5008a26c40",
+      "file": "test_era_boundary.py"
+    },
+    {
+      "sha256": "be84f30a03e985b18bbd827839198e572e5dfe0d71afa7ff67f6a24e10ef908a",
+      "file": "contract.json"
+    }
+  ],
+  "repositories": [
+    {
+      "repository": "Maurits-pixe/PALACO",
+      "commit": "183ddd9e69e9adbfda17ea1d853f37a4e82a5f91",
+      "workflow_observation": {
+        "workflow_runs": [
+          {
+            "id": 36248444528,
+            "name": "Draft registry contract checks",
+            "status": "completed",
+            "conclusion": "success",
+            "run_number": 2,
+            "jobs_url": "https://api.github.com/repos/Maurits-pixe/PALACO/actions/runs/36248444528/jobs",
+            "logs_url": "https://api.github.com/repos/Maurits-pixe/PALACO/actions/runs/36248444528/logs",
+            "workflow_id": 367737429
+          }
+        ]
+      }
+    },
+    {
+      "repository": "Maurits-pixe/palaco-genesis",
+      "commit": "5963df0974fa49384584d7272150635647592798",
+      "workflow_observation": {
+        "workflow_runs": [
+          {
+            "id": 36248450449,
+            "name": "PALACO CI",
+            "status": "in_progress",
+            "conclusion": null,
+            "run_number": 55,
+            "jobs_url": "https://api.github.com/repos/Maurits-pixe/palaco-genesis/actions/runs/36248450449/jobs",
+            "logs_url": "https://api.github.com/repos/Maurits-pixe/palaco-genesis/actions/runs/36248450449/logs",
+            "workflow_id": 353985386
+          },
+          {
+            "id": 36248450320,
+            "name": "PALACO CI/CD",
+            "status": "completed",
+            "conclusion": "success",
+            "run_number": 82,
+            "jobs_url": "https://api.github.com/repos/Maurits-pixe/palaco-genesis/actions/runs/36248450320/jobs",
+            "logs_url": "https://api.github.com/repos/Maurits-pixe/palaco-genesis/actions/runs/36248450320/logs",
+            "workflow_id": 353912392
+          },
+          {
+            "id": 36248450451,
+            "name": "Draft registry contract checks",
+            "status": "completed",
+            "conclusion": "success",
+            "run_number": 4,
+            "jobs_url": "https://api.github.com/repos/Maurits-pixe/palaco-genesis/actions/runs/36248450451/jobs",
+            "logs_url": "https://api.github.com/repos/Maurits-pixe/palaco-genesis/actions/runs/36248450451/logs",
+            "workflow_id": 367737474
+          }
+        ]
+      }
+    },
+    {
+      "repository": "Maurits-pixe/PALACO-BOOK-1",
+      "commit": "90d54191a0139b713b7d432a4727d851f2345759",
+      "workflow_observation": {
+        "workflow_runs": [
+          {
+            "id": 36248455437,
+            "name": "CI",
+            "status": "in_progress",
+            "conclusion": null,
+            "run_number": 178,
+            "jobs_url": "https://api.github.com/repos/Maurits-pixe/PALACO-BOOK-1/actions/runs/36248455437/jobs",
+            "logs_url": "https://api.github.com/repos/Maurits-pixe/PALACO-BOOK-1/actions/runs/36248455437/logs",
+            "workflow_id": 365849484
+          },
+          {
+            "id": 36248455430,
+            "name": "Draft registry contract checks",
+            "status": "completed",
+            "conclusion": "success",
+            "run_number": 2,
+            "jobs_url": "https://api.github.com/repos/Maurits-pixe/PALACO-BOOK-1/actions/runs/36248455430/jobs",
+            "logs_url": "https://api.github.com/repos/Maurits-pixe/PALACO-BOOK-1/actions/runs/36248455430/logs",
+            "workflow_id": 367737518
+          }
+        ]
+      }
+    },
+    {
+      "repository": "Maurits-pixe/PALACO-INDUSTRIE",
+      "commit": "a3495652f466380a021d3d222a48ad2a4099959a",
+      "workflow_observation": {
+        "workflow_runs": [
+          {
+            "id": 36248461153,
+            "name": "Authentication regression checks",
+            "status": "completed",
+            "conclusion": "success",
+            "run_number": 10,
+            "jobs_url": "https://api.github.com/repos/Maurits-pixe/PALACO-INDUSTRIE/actions/runs/36248461153/jobs",
+            "logs_url": "https://api.github.com/repos/Maurits-pixe/PALACO-INDUSTRIE/actions/runs/36248461153/logs",
+            "workflow_id": 367537635
+          },
+          {
+            "id": 36248461129,
+            "name": "Draft registry contract checks",
+            "status": "completed",
+            "conclusion": "success",
+            "run_number": 2,
+            "jobs_url": "https://api.github.com/repos/Maurits-pixe/PALACO-INDUSTRIE/actions/runs/36248461129/jobs",
+            "logs_url": "https://api.github.com/repos/Maurits-pixe/PALACO-INDUSTRIE/actions/runs/36248461129/logs",
+            "workflow_id": 367737608
+          }
+        ]
+      }
+    },
+    {
+      "repository": "Maurits-pixe/PALACO-Citadel",
+      "commit": "5b5f8a78afc9fdc1883ce6dd9cdf32756e5025d4",
+      "workflow_observation": {
+        "workflow_runs": [
+          {
+            "id": 36248466091,
+            "name": "Draft registry contract checks",
+            "status": "completed",
+            "conclusion": "success",
+            "run_number": 2,
+            "jobs_url": "https://api.github.com/repos/Maurits-pixe/PALACO-Citadel/actions/runs/36248466091/jobs",
+            "logs_url": "https://api.github.com/repos/Maurits-pixe/PALACO-Citadel/actions/runs/36248466091/logs",
+            "workflow_id": 367737684
+          }
+        ]
+      }
+    }
+  ],
+  "production_release_enabled": false,
+  "threat_model": "OPEN"
+}

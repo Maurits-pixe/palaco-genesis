@@ -1,44 +1,70 @@
 [workspace]
-members = []
 resolver = "2"
-
+members = [
+    "crates/palaco-citadel-contracts",
+    "crates/palaco-foundation",
+    "crates/palaco-eventbus",
+    "crates/palaco-harbor",
+    "crates/palaco-quay",
+    "crates/palaco-citadel",
+    "crates/palaco-federation",
+    "crates/palaco-intelligence",
+    "crates/palaco-evolution",
+    "crates/palaco-constitution",
+    "crates/palaco-types",
+    "crates/palaco-errors",
+    "crates/palaco-events",
+    "crates/palaco-evidence",
+    "crates/palaco-oracle",
+    "crates/palaco-trias",
+    "crates/palaco-knowledge",
+    "crates/palaco-runtime",
+    "crates/palaco-audit",
+    "crates/palaco-observatory",
+    "runtime/palaco-kernel",
+    "crates/palaco-rio-core",
+    "crates/palaco-monetary-contracts",
+]
 [workspace.package]
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 edition = "2021"
 authors = ["PALACO Core Team"]
 license = "MIT OR Apache-2.0"
-
+repository = "https://github.com/Maurits-pixe/palaco-genesis"
+rust-version = "1.81"
 [workspace.dependencies]
-tokio = { version = "1.38", features = ["full"] }
-thiserror = "2.0"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
 tracing = "0.1"
-criterion = "0.5"
-cargo-tarpaulin = "0.31"
-
-[workspace.metadata.cargo-deny]
-config = ".cargo-deny.toml"
-
+uuid = { version = "1", features = ["serde", "v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+sha2 = "0.10"
+palaco-constitution = { path = "crates/palaco-constitution" }
+palaco-types = { path = "crates/palaco-types" }
+palaco-errors = { path = "crates/palaco-errors" }
+palaco-events = { path = "crates/palaco-events" }
+palaco-evidence = { path = "crates/palaco-evidence" }
+palaco-oracle = { path = "crates/palaco-oracle" }
+palaco-trias = { path = "crates/palaco-trias" }
+palaco-knowledge = { path = "crates/palaco-knowledge" }
+palaco-citadel = { path = "crates/palaco-citadel" }
+palaco-runtime = { path = "crates/palaco-runtime" }
+palaco-audit = { path = "crates/palaco-audit" }
+palaco-observatory = { path = "crates/palaco-observatory" }
+palaco-rio-core = { path = "crates/palaco-rio-core" }
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
-
 [workspace.lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
 todo = "deny"
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
 
-[package]
-name = "palaco-genesis"
-version = "0.1.0"
-edition = "2021"
-publish = false
 
-[dependencies]
-
-[dev-dependencies]
-criterion = { workspace = true }
-
-[[bench]]
-name = "smoke"
-harness = false

@@ -1,0 +1,147 @@
+{
+  "title": "CanonicalRecordEnvelope v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_id",
+    "record_type",
+    "schema_version",
+    "citadel_id",
+    "world_id",
+    "sequence",
+    "previous_digest",
+    "payload_digest",
+    "provenance_refs",
+    "evidence_refs",
+    "authorization_ref",
+    "epistemic_state",
+    "created_at_display",
+    "trusted_time_evidence",
+    "actor_ref",
+    "signature",
+    "manifest_digest",
+    "payload",
+    "record_digest"
+  ],
+  "properties": {
+    "record_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_:./-]{1,128}$"
+    },
+    "record_type": {
+      "enum": [
+        "QuestionRecord",
+        "EvidenceObject",
+        "EpistemicAssessment",
+        "DecisionThreshold",
+        "DecisionRecord",
+        "AuthorizationRecord",
+        "ConsequenceRecord",
+        "ReassessmentRecord",
+        "RevocationEvent",
+        "ProofLifecycleEvent"
+      ]
+    },
+    "schema_version": {
+      "const": "0.1"
+    },
+    "citadel_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_:./-]{1,128}$"
+    },
+    "world_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_:./-]{1,128}$"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "previous_digest": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "payload_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "provenance_refs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_:./-]{1,128}$"
+      }
+    },
+    "evidence_refs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_:./-]{1,128}$"
+      }
+    },
+    "authorization_ref": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_:./-]{1,128}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "epistemic_state": {
+      "enum": [
+        "UNKNOWN",
+        "SUPPORTED",
+        "CONTESTED",
+        "INSUFFICIENT",
+        "REFUTED"
+      ]
+    },
+    "created_at_display": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trusted_time_evidence": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_:./-]{1,128}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "actor_ref": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_:./-]{1,128}$"
+    },
+    "signature": {
+      "type": "null"
+    },
+    "manifest_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "payload": {
+      "type": "object"
+    },
+    "record_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
