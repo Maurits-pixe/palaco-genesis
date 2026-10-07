@@ -19,7 +19,7 @@ The next GO must extend these only after contract questions are answered.
 ## Contract questions
 
 1. **ETCG:** Is a transition a new event/envelope, and how are allowed edges, prior state, effective time and provenance replayed without overwriting history?
-2. **KESG:** What makes an evidence bundle sufficient for a claim, and how are source lineage, copied sources, revoked evidence and contradictions represented?
+2. **KESG:** What makes an evidence bundle sufficient for a claim, and how are source lineage, source-independence assessment, copied sources, revoked evidence and contradictions represented?
 3. **KAG:** Which purpose, scope, consequence and temporal dimensions are critical, and how does a critical failure veto adequacy without becoming authorization?
 4. **Linnaeus/HORTUS:** How are identity, determination, classification, relation, snapshot, drift and `InDoubt` represented while keeping capability and authority separate?
 5. **Conflict/revalidation:** Which conflict types are first-class, how does identity conflict block unsafe classification, and how is a new assessment linked to the prior record?
