@@ -57,6 +57,8 @@ These sketches require stable identifiers, serialization rules, validation, appe
 
 HRAEG and the seven-ambassador model remain unimplemented because no constitutional authority source was identified. Source-independence assessment is metadata about evidence lineage, not a confidence shortcut.
 
+ The Linnaeus/HORTUS model remains a draft knowledge boundary and this note does not create constitutional authority.
+
 ## Candidate negative tests
 
 Future Rust tests should cover missing provenance, partial evidence, stale context, copied-source chains, identity conflicts, preserved conflict history, adequacy without authorization, CI without runtime permission and exact VORM9EVIN9 status labels. These tests are not present or passing as a result of this documentation-only change.
