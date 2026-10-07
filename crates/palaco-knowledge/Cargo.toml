@@ -11,4 +11,5 @@ description = "Versioned knowledge contracts for PALACO."
 workspace = true
 
 [dependencies]
+palaco-constitution = { workspace = true }
 palaco-evidence = { workspace = true }

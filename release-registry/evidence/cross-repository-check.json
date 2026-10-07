@@ -1,0 +1,145 @@
+{
+  "schema_version": "PALACO-CROSS-REPO-CHECK-0.1",
+  "checked_at": "2026-09-26 14:11:13 UTC",
+  "evidence_level": "CHECKED",
+  "claim": "All five pinned draft commits contain the same contract blob; this is byte identity, not reviewer approval or production readiness.",
+  "byte_identical": true,
+  "production_release_enabled": false,
+  "entries": [
+    {
+      "repository": "Maurits-pixe/PALACO",
+      "pull_request": "https://github.com/Maurits-pixe/PALACO/pull/32",
+      "draft": true,
+      "checked_commit": "96cb46ba7d1cb1445023ea76604073c3482c1e64",
+      "contract_blob_sha": "d0820f5e46a94411265dcd85c37341c09f0467a2",
+      "workflow_runs": [
+        {
+          "id": 36247590835,
+          "name": "Draft registry contract checks",
+          "status": "completed",
+          "conclusion": "success",
+          "run_number": 1,
+          "jobs_url": "https://api.github.com/repos/Maurits-pixe/PALACO/actions/runs/36247590835/jobs",
+          "logs_url": "https://api.github.com/repos/Maurits-pixe/PALACO/actions/runs/36247590835/logs",
+          "workflow_id": 367737429
+        }
+      ]
+    },
+    {
+      "repository": "Maurits-pixe/palaco-genesis",
+      "pull_request": "https://github.com/Maurits-pixe/palaco-genesis/pull/101",
+      "draft": true,
+      "checked_commit": "757c30add6cb7191643a2e0859996767403d9a86",
+      "contract_blob_sha": "d0820f5e46a94411265dcd85c37341c09f0467a2",
+      "workflow_runs": [
+        {
+          "id": 36247594802,
+          "name": "PALACO CI",
+          "status": "in_progress",
+          "conclusion": null,
+          "run_number": 52,
+          "jobs_url": "https://api.github.com/repos/Maurits-pixe/palaco-genesis/actions/runs/36247594802/jobs",
+          "logs_url": "https://api.github.com/repos/Maurits-pixe/palaco-genesis/actions/runs/36247594802/logs",
+          "workflow_id": 353985386
+        },
+        {
+          "id": 36247594825,
+          "name": "PALACO CI/CD",
+          "status": "in_progress",
+          "conclusion": null,
+          "run_number": 79,
+          "jobs_url": "https://api.github.com/repos/Maurits-pixe/palaco-genesis/actions/runs/36247594825/jobs",
+          "logs_url": "https://api.github.com/repos/Maurits-pixe/palaco-genesis/actions/runs/36247594825/logs",
+          "workflow_id": 353912392
+        },
+        {
+          "id": 36247594881,
+          "name": "Draft registry contract checks",
+          "status": "completed",
+          "conclusion": "success",
+          "run_number": 1,
+          "jobs_url": "https://api.github.com/repos/Maurits-pixe/palaco-genesis/actions/runs/36247594881/jobs",
+          "logs_url": "https://api.github.com/repos/Maurits-pixe/palaco-genesis/actions/runs/36247594881/logs",
+          "workflow_id": 367737474
+        }
+      ]
+    },
+    {
+      "repository": "Maurits-pixe/PALACO-BOOK-1",
+      "pull_request": "https://github.com/Maurits-pixe/PALACO-BOOK-1/pull/6",
+      "draft": true,
+      "checked_commit": "5ba74ef14bf5640dcf0cdaa05bc155ab1cb7610d",
+      "contract_blob_sha": "d0820f5e46a94411265dcd85c37341c09f0467a2",
+      "workflow_runs": [
+        {
+          "id": 36247600893,
+          "name": "Draft registry contract checks",
+          "status": "completed",
+          "conclusion": "success",
+          "run_number": 1,
+          "jobs_url": "https://api.github.com/repos/Maurits-pixe/PALACO-BOOK-1/actions/runs/36247600893/jobs",
+          "logs_url": "https://api.github.com/repos/Maurits-pixe/PALACO-BOOK-1/actions/runs/36247600893/logs",
+          "workflow_id": 367737518
+        },
+        {
+          "id": 36247600792,
+          "name": "CI",
+          "status": "in_progress",
+          "conclusion": null,
+          "run_number": 176,
+          "jobs_url": "https://api.github.com/repos/Maurits-pixe/PALACO-BOOK-1/actions/runs/36247600792/jobs",
+          "logs_url": "https://api.github.com/repos/Maurits-pixe/PALACO-BOOK-1/actions/runs/36247600792/logs",
+          "workflow_id": 365849484
+        }
+      ]
+    },
+    {
+      "repository": "Maurits-pixe/PALACO-INDUSTRIE",
+      "pull_request": "https://github.com/Maurits-pixe/PALACO-INDUSTRIE/pull/31",
+      "draft": true,
+      "checked_commit": "b84cd3773562b4a6c68932de4562661182a1c7a4",
+      "contract_blob_sha": "d0820f5e46a94411265dcd85c37341c09f0467a2",
+      "workflow_runs": [
+        {
+          "id": 36247604528,
+          "name": "Authentication regression checks",
+          "status": "completed",
+          "conclusion": "success",
+          "run_number": 8,
+          "jobs_url": "https://api.github.com/repos/Maurits-pixe/PALACO-INDUSTRIE/actions/runs/36247604528/jobs",
+          "logs_url": "https://api.github.com/repos/Maurits-pixe/PALACO-INDUSTRIE/actions/runs/36247604528/logs",
+          "workflow_id": 367537635
+        },
+        {
+          "id": 36247604584,
+          "name": "Draft registry contract checks",
+          "status": "completed",
+          "conclusion": "success",
+          "run_number": 1,
+          "jobs_url": "https://api.github.com/repos/Maurits-pixe/PALACO-INDUSTRIE/actions/runs/36247604584/jobs",
+          "logs_url": "https://api.github.com/repos/Maurits-pixe/PALACO-INDUSTRIE/actions/runs/36247604584/logs",
+          "workflow_id": 367737608
+        }
+      ]
+    },
+    {
+      "repository": "Maurits-pixe/PALACO-Citadel",
+      "pull_request": "https://github.com/Maurits-pixe/PALACO-Citadel/pull/11",
+      "draft": true,
+      "checked_commit": "e05d4c40679379666039fa4be1f5109acbf6c9c7",
+      "contract_blob_sha": "d0820f5e46a94411265dcd85c37341c09f0467a2",
+      "workflow_runs": [
+        {
+          "id": 36247608493,
+          "name": "Draft registry contract checks",
+          "status": "in_progress",
+          "conclusion": null,
+          "run_number": 1,
+          "jobs_url": "https://api.github.com/repos/Maurits-pixe/PALACO-Citadel/actions/runs/36247608493/jobs",
+          "logs_url": "https://api.github.com/repos/Maurits-pixe/PALACO-Citadel/actions/runs/36247608493/logs",
+          "workflow_id": 367737684
+        }
+      ]
+    }
+  ]
+}

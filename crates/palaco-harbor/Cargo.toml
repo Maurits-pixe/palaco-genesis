@@ -1,0 +1,8 @@
+[package]
+name = "palaco-harbor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+palaco-eventbus = { path = "../palaco-eventbus" }

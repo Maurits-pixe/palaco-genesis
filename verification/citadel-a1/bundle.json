@@ -1,0 +1,98 @@
+{
+  "manifest": {
+    "schema_version": "0.1",
+    "citadel_id": "EVA-LA-001",
+    "world_id": "WORLD-EVA-001",
+    "purpose": "Long-Term Constitutional Memory",
+    "edition": "Foundation / canonical baseline",
+    "presentation": [
+      "Foundation",
+      "Black Edition"
+    ],
+    "lifecycle": "DRAFT",
+    "canonical_encoding": "PALACO-JSON-A1",
+    "cryptographic_profile": "SHA256-DOMAIN-A1",
+    "manifest_digest": "eead3c419c98cebf76c95b9a44fc0a198ce0c1dfcc9f92b98e59c2f1c66e66e7"
+  },
+  "records": [
+    {
+      "record_id": "eva-la-001:record:1",
+      "record_type": "QuestionRecord",
+      "schema_version": "0.1",
+      "citadel_id": "EVA-LA-001",
+      "world_id": "WORLD-EVA-001",
+      "sequence": 1,
+      "previous_digest": null,
+      "payload_digest": "5d6088513d4864f4cda12cea0293a36719ef490b71d835fd05446e87da227c69",
+      "provenance_refs": [],
+      "evidence_refs": [],
+      "authorization_ref": null,
+      "epistemic_state": "UNKNOWN",
+      "created_at_display": "2026-09-26T09:00:00Z",
+      "trusted_time_evidence": null,
+      "actor_ref": "actor:fixture-unverified",
+      "signature": null,
+      "manifest_digest": "eead3c419c98cebf76c95b9a44fc0a198ce0c1dfcc9f92b98e59c2f1c66e66e7",
+      "payload": {
+        "question": "Kan EVA deze waarneming onderbouwen?",
+        "language": "nl"
+      },
+      "record_digest": "60d5fdc92dbc4aba28ad685a907bf2fe4484a46c9312d005ff72ffa97300e1e1"
+    },
+    {
+      "record_id": "eva-la-001:record:2",
+      "record_type": "EvidenceObject",
+      "schema_version": "0.1",
+      "citadel_id": "EVA-LA-001",
+      "world_id": "WORLD-EVA-001",
+      "sequence": 2,
+      "previous_digest": "60d5fdc92dbc4aba28ad685a907bf2fe4484a46c9312d005ff72ffa97300e1e1",
+      "payload_digest": "91ceeb8ac320458404ae6156ac08889102d26701ebb31f2732b019eca15b52f6",
+      "provenance_refs": [
+        "eva-la-001:record:1"
+      ],
+      "evidence_refs": [],
+      "authorization_ref": null,
+      "epistemic_state": "UNKNOWN",
+      "created_at_display": "2026-09-26T09:00:00Z",
+      "trusted_time_evidence": null,
+      "actor_ref": "actor:fixture-unverified",
+      "signature": null,
+      "manifest_digest": "eead3c419c98cebf76c95b9a44fc0a198ce0c1dfcc9f92b98e59c2f1c66e66e7",
+      "payload": {
+        "observation": "Café — 水 — 🏰\nLine 2",
+        "sample_count": 3,
+        "independent_verification": false
+      },
+      "record_digest": "63ff88942c56717a1e5967dcb8e36378d8d414b084ad43e8a2d634ae04c22b23"
+    },
+    {
+      "record_id": "eva-la-001:record:3",
+      "record_type": "EpistemicAssessment",
+      "schema_version": "0.1",
+      "citadel_id": "EVA-LA-001",
+      "world_id": "WORLD-EVA-001",
+      "sequence": 3,
+      "previous_digest": "63ff88942c56717a1e5967dcb8e36378d8d414b084ad43e8a2d634ae04c22b23",
+      "payload_digest": "2a80fa4b9e03c9f81d36dd1c2506e0aaa0a37b67bc14ebad5465c99e56641187",
+      "provenance_refs": [
+        "eva-la-001:record:2"
+      ],
+      "evidence_refs": [
+        "eva-la-001:record:2"
+      ],
+      "authorization_ref": null,
+      "epistemic_state": "INSUFFICIENT",
+      "created_at_display": "2026-09-26T09:00:00Z",
+      "trusted_time_evidence": null,
+      "actor_ref": "actor:fixture-unverified",
+      "signature": null,
+      "manifest_digest": "eead3c419c98cebf76c95b9a44fc0a198ce0c1dfcc9f92b98e59c2f1c66e66e7",
+      "payload": {
+        "assessment": "Fixture only; no authority",
+        "confidence_label": "insufficient"
+      },
+      "record_digest": "d68236c4889b07210e8687149bf81b85458228fe1cb40debeca70d63e2aec512"
+    }
+  ]
+}

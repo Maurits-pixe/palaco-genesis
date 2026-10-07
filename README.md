@@ -1,24 +1,27 @@
 # palaco-genesis
 
-PALACO Genesis is a Rust monorepo workspace for the PALACO platform.
+PALACO Genesis is the Rust workspace baseline for the PALACO platform.
 
 ## Repository layout
 
-## Repository Structure
-- `content/` — PALACO knowledge assets
-- `languages/` — code organized by programming language
-- `docs/REPOSITORY_INFRASTRUCTURE.md` — repository structure and conventions
-- `.github/workflows/ci.yml` — core validation workflow
-- `.github/workflows/benchmark.yml` — benchmark-target build workflow
-- `.github/workflows/security.yml` — dependency security audit workflow
-- `.github/workflows/coverage.yml` — coverage generation workflow
-- `Cargo.toml` — Rust workspace configuration
-- `docs/palaco-core.md` — Core architecture and engineering standards
+## Repository bootstrap roadmap
+
+De specificatie voor de GitHub repository-bootstrap is vastgelegd in
+[`docs/pri-045-github-repository-bootstrap.md`](docs/pri-045-github-repository-bootstrap.md).
 
 ```text
 .
 ├── .github/workflows/        # CI workflows
 ├── crates/                   # Rust workspace crates
+│   ├── palaco-foundation/    # Temporal validity and evidence foundation
+│   ├── palaco-eventbus/      # Event transport boundary
+│   ├── palaco-harbor/        # Intake and ingress layer
+│   ├── palaco-quay/          # Coordination boundary
+│   ├── palaco-citadel/       # Execution boundary layer
+│   ├── palaco-federation/    # Federated domain contracts
+│   ├── palaco-intelligence/  # Intelligence domain contracts
+│   ├── palaco-evolution/     # Evolution domain contracts
+│   ├── palaco-constitution/  # Constitutional identity/authority/provenance rules
 │   ├── palaco-types/         # Foundational shared types
 │   ├── palaco-errors/        # Shared error contracts
 │   ├── palaco-events/        # Domain event contracts
@@ -26,45 +29,56 @@ PALACO Genesis is a Rust monorepo workspace for the PALACO platform.
 │   ├── palaco-oracle/        # Analysis and advisory layer
 │   ├── palaco-trias/         # Governance and authority layer
 │   ├── palaco-knowledge/     # Versioned knowledge contracts
-│   ├── palaco-citadel/       # Execution boundary layer
-│   ├── palaco-runtime/       # Runtime orchestration layer
+│   ├── palaco-runtime/       # Runtime orchestration contracts
 │   ├── palaco-audit/         # Audit trail layer
-│   └── palaco-observatory/   # Observability and reporting layer
+│   ├── palaco-observatory/   # Observability and reporting layer
+│   └── palaco-rio-core/      # RIO interaction and orchestration contracts
+├── runtime/
+│   └── palaco-kernel/        # Runtime kernel crate
+├── specs/                    # Canonical PALACO specifications
+├── engine/                   # ENGINE COMPLEET assembly boundaries
+├── services/                 # Service assembly placeholders
+├── apps/                     # Surface application placeholders
+├── database/                 # Database assembly placeholders
+├── verification/             # Verification assembly placeholders
 ├── docs/
-│   ├── architecture/         # Architecture and workspace references
-│   ├── books/                # PALACO publication hierarchy
-│   ├── foundation/           # Baseline and foundational documents
-│   └── reference/            # Repository and contributor references
-├── Cargo.toml                # Workspace manifest
-└── rust-toolchain.toml       # Rust toolchain pinning
+│   ├── architecture/
+│   ├── books/
+│   ├── foundation/
+│   └── reference/
+├── Cargo.toml
+└── rust-toolchain.toml
 ```
 
 ## Layering order
 
-The workspace is organized from foundational crates to execution-facing crates:
+The workspace is organized from foundational crates to execution-facing crates, with the runtime kernel and RIO core layered above the shared constitutional and runtime contracts:
 
-1. `palaco-types`
-2. `palaco-errors`
-3. `palaco-events`
-4. `palaco-evidence`
-5. `palaco-oracle`
-6. `palaco-trias`
-7. `palaco-knowledge`
-8. `palaco-citadel`
-9. `palaco-runtime`
-10. `palaco-audit`
-11. `palaco-observatory`
+1. `palaco-foundation`
+2. `palaco-constitution`
+3. `palaco-types`
+4. `palaco-errors`
+5. `palaco-events`
+6. `palaco-evidence`
+7. `palaco-oracle`
+8. `palaco-trias`
+9. `palaco-knowledge`
+10. `palaco-citadel`
+11. `palaco-runtime`
+12. `palaco-audit`
+13. `palaco-observatory`
+14. `palaco-rio-core`
+15. `palaco-kernel`
+
+## Canonical assembly
+
+- `/specs` holds canonical specifications for ENGINE COMPLEET, RIO, MEMORY, IDENTITY, PROVENANCE, AUTHORITY, TRIAS, and PVB-011.
+- `/engine`, `/services`, `/apps`, `/database`, and `/verification` reserve the repository assembly that will consume the Rust constitutional core over time.
 
 ## Validation
 
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --all-features
+cargo test --workspace
 ```
-
-## Documentation
-
-- `docs/foundation/engineering-baseline-v1.md`
-- `docs/architecture/core-workspace-notes.md`
-- `docs/reference/repository-structure.md`

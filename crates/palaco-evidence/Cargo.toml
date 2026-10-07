@@ -12,3 +12,9 @@ workspace = true
 
 [dependencies]
 palaco-events = { workspace = true }
+palaco-foundation = { path = "../palaco-foundation" }
+
+[dev-dependencies]
+chrono.workspace = true
+palaco-types = { workspace = true }
+uuid.workspace = true

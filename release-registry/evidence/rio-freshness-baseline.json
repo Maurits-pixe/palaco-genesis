@@ -1,0 +1,25 @@
+{
+  "schema_version": "PALACO-REGISTRY-0.1",
+  "source_version": "fd53f6c2b71531fc01d17aae00b6e34a36106ddec5d16caf59f19bc189f02624",
+  "generated_at": null,
+  "verified_at": null,
+  "valid_for_seconds": null,
+  "revoked_at": null,
+  "status": "UNKNOWN",
+  "source_manifest": [
+    {
+      "path": "PALACO-Citadel documentation",
+      "revision": "4a726054761cfb85a29a2e2548694e6ed2195096"
+    },
+    {
+      "path": "A2 release policy",
+      "revision": "ad62d25b555177dfb33b102793b082aae1f684c1"
+    },
+    {
+      "path": "https://citadel.mauritsvang1.chatgpt.site/#la",
+      "revision": null,
+      "reason": "Mutable alias in the installed RIO knowledge source"
+    }
+  ],
+  "note": "Original generation, verification and validity were not recorded; null is intentional. Registry capture time is not source verification time."
+}

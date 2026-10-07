@@ -1,0 +1,86 @@
+[
+  {
+    "file": "palaco-390.png",
+    "site": "PALACO",
+    "captured_at": "2026-09-26T14:01:31.837Z",
+    "height": 844,
+    "locale": "nl",
+    "width": 390,
+    "pixel_dimensions": [
+      375,
+      811
+    ],
+    "sha256": "ec5983c4d6b86cad80e3f7ba67699eb5056accc6a2f72dae1d2302af194ac703",
+    "scope": "Local frozen-source reproduction, not proof of remote response or authorization"
+  },
+  {
+    "file": "palaco-1440.png",
+    "site": "PALACO",
+    "captured_at": "2026-09-26T14:02:18.521Z",
+    "height": 960,
+    "locale": "nl",
+    "width": 1440,
+    "pixel_dimensions": [
+      1425,
+      950
+    ],
+    "sha256": "46571d7f80eb405fcd24f49947bd308d4090a3e3c2b5c1b9997f2881a283ce21",
+    "scope": "Local frozen-source reproduction, not proof of remote response or authorization"
+  },
+  {
+    "file": "rio-1440.png",
+    "site": "RIO",
+    "captured_at": "2026-09-26T14:02:32.223Z",
+    "height": 960,
+    "locale": "nl",
+    "width": 1440,
+    "pixel_dimensions": [
+      1440,
+      960
+    ],
+    "sha256": "ad5fe6621c8da4499d6a35e5b91c122561f866024bd6e1b378ae7906b9c65957",
+    "scope": "Local frozen-source reproduction, not proof of remote response or authorization"
+  },
+  {
+    "file": "rio-390.png",
+    "site": "RIO",
+    "captured_at": "2026-09-26T14:03:38.591Z",
+    "height": 844,
+    "locale": "nl",
+    "width": 390,
+    "pixel_dimensions": [
+      390,
+      843
+    ],
+    "sha256": "3d22d8dcdacfb74a024f6b384dc00d83a7466dccc16f2dd4e416e504722e1721",
+    "scope": "Local frozen-source reproduction, not proof of remote response or authorization"
+  },
+  {
+    "file": "citadel-390.png",
+    "site": "Citadel",
+    "captured_at": "2026-09-26T14:04:35.863Z",
+    "height": 844,
+    "locale": "nl",
+    "width": 390,
+    "pixel_dimensions": [
+      375,
+      811
+    ],
+    "sha256": "3b7f08e896a23e680c2cdee93a7340e93cc2a3cd0d25e8f0ebe2dfe4be863f7a",
+    "scope": "Local frozen-source reproduction, not proof of remote response or authorization"
+  },
+  {
+    "file": "citadel-1440.png",
+    "site": "Citadel",
+    "captured_at": "2026-09-26T14:06:05.798Z",
+    "height": 960,
+    "locale": "nl",
+    "width": 1440,
+    "pixel_dimensions": [
+      1425,
+      950
+    ],
+    "sha256": "f526d77d51da0ce76037ab7f8bac57352694f4c375b936b6689e5fc8c7025ce1",
+    "scope": "Local frozen-source reproduction, not proof of remote response or authorization"
+  }
+]
