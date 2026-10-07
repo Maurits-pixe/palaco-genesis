@@ -2,7 +2,7 @@
 
 **Status:** DRAFT fixtures / not executed / non-canonical
 
-Genesis can later bind these cases to deterministic Rust contract tests, but this GO adds no public types or test implementation. The expected safe-stop outcomes must be checked against declared contracts, append-only records and replay evidence.
+Genesis can later bind these cases to deterministic Rust contract tests, but this GO adds no public types or test implementation and the fixture index does not create constitutional authority. The expected safe-stop outcomes must be checked against declared contracts, append-only records and replay evidence.
 
 The set covers ETCG, KESG, KAG, source independence, conflict/revalidation, HRAEG boundaries, CI versus runtime authorization, RIO/ELIXER separation and exact VORM9EVIN9 status fidelity.
 
