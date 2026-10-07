@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1017">
+  <meta name="description" content="Conceptuele preview van RIO, de menselijke interactielaag van PALACO.">
+  <title>RIO — ruimte voor een goed gesprek</title>
+  <link rel="stylesheet" href="../preview.css">
+</head>
+<body class="rio-page">
+  <main class="rio-layout">
+    <aside class="rio-sidebar" aria-label="RIO-zijbalk">
+      <a class="brand" href="#"><span class="brand-mark">R</span> RIO</a>
+      <a class="button" href="#gesprek">＋ Nieuw gesprek</a>
+      <p class="side-label">Jouw ruimte</p>
+      <a class="side-link active" href="#gesprek">✧ &nbsp; Een nieuw begin <span>···</span></a>
+      <a class="side-link" href="#bewaren">◷ &nbsp; Bewaarde inzichten</a>
+      <a class="side-link" href="#over">⚙ &nbsp; Voorkeuren</a>
+      <div class="profile"><span class="avatar">MV</span><span>M. van G. <span class="muted">· Persoonlijk</span></span></div>
+    </aside>
+    <section class="chat-panel" id="gesprek">
+      <header class="chat-top"><h2>RIO <span class="muted">/ gesprek</span></h2><span class="tiny"><span class="dot"></span> CONCEPT</span></header>
+      <div class="chat-main">
+        <div class="chat-intro"><span class="brand-mark">R</span><h1>Waar beginnen we?</h1><p>Een rustige plek om vragen te verkennen en gedachten te ordenen.</p></div>
+        <div class="message user"><p>Ik wil mijn projectidee wat scherper krijgen.</p></div>
+        <div class="message"><span class="avatar">R</span><div><strong>RIO</strong><p>Natuurlijk. Wat wil je met het project veranderen, en voor wie? We kunnen beginnen bij het resultaat dat je voor ogen hebt.</p></div></div>
+        <div class="prompt-row"><div class="prompt">Help me mijn idee helder te formuleren ↗</div><div class="prompt">Vat deze notities samen ↗</div><div class="prompt">Waar moet ik rekening mee houden? ↗</div></div>
+        <form class="composer" aria-label="Demo gesprek" onsubmit="event.preventDefault(); const input=this.querySelector('input'); if(input.value.trim()){ const message=document.createElement('div'); message.className='message user'; const text=document.createElement('p'); text.textContent=input.value.trim(); message.append(text); this.before(message); input.value=''; }">
+          <input aria-label="Bericht voor RIO" placeholder="Schrijf je gedachte of vraag..." autocomplete="off">
+          <button type="submit" aria-label="Bericht toevoegen">↑</button>
+        </form>
+        <p class="privacy">Deze demo bewaart of verstuurt geen berichten. RIO verleent geen bevoegdheid.</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
