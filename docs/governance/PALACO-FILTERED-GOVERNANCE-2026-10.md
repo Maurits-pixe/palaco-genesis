@@ -30,7 +30,7 @@ evidence -> determination -> historical classification
 
 A Rust enum variant, passing test, CI check or evidence object cannot silently become runtime authority. A transition must preserve the previous record and include its trigger, evidence, rationale, effective time and provenance. Revalidation can change the current assessment without deleting the historical assessment.
 
-The review filter also preserves: no derived authority; no silent state/time/history rewrite; exact `VORM9EVING`; RIO as the river and distinct from ELIXER; uncertainty and provenance in the knowledge layer; and QUAY as history/provenance storage. These constraints are applied because the user explicitly required them; they are not represented here as a new ratified constitutional type.
+The review filter also preserves: no derived authority; no silent state/time/history rewrite; exact `VORM9EVIN9`; RIO as the river and distinct from ELIXER; uncertainty and provenance in the knowledge layer; and QUAY as history/provenance storage. These constraints are applied because the user explicitly required them; they are not represented here as a new ratified constitutional type.
 
 ## Draft boundary
 
