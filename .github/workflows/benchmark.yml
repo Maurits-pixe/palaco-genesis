@@ -1,0 +1,22 @@
+name: Benchmark
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo bench --all --no-run
+      - run: cargo bench --all
+      - uses: actions/upload-artifact@v3
+        with:
+          name: benchmarks
+          path: target/criterion/
