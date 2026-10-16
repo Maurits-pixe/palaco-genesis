@@ -1,12 +1,13 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue'
-import { commandLength, commitCommand, issueTicket, listCommands, MAX_COMMAND_LENGTH, mergeCommands, ticketUsable, timestamp } from './api.js'
+import { commandLength, commitCommand, issueTicket, listCommands, MAX_COMMAND_LENGTH, mergeCommands, revokeTicket, ticketUsable, timestamp } from './api.js'
 import { createRealtime } from './realtime.js'
 
 const token = ref('')
 const command = ref('')
 const ttlMs = ref(10000)
 const ticket = ref(null)
+const revocationUncertain = ref(false)
 const commands = ref([])
 const hasLoaded = ref(false)
 const busy = ref('')
@@ -27,13 +28,16 @@ const realtimeLabels = {
 const now = ref(Date.now())
 const clock = setInterval(() => { now.value = Date.now() }, 100)
 onUnmounted(() => { clearInterval(clock); realtime.disconnect() })
-const canCommit = computed(() => ticketUsable(ticket.value, command.value, now.value))
+const canCommit = computed(() => !revocationUncertain.value && ticketUsable(ticket.value, command.value, now.value))
 const remaining = computed(() => ticket.value ? Math.max(0, Math.ceil((timestamp(ticket.value.expires_at) - now.value) / 1000)) : 0)
 
-watch([command, ttlMs], () => { ticket.value = null }, { flush: 'sync' })
+watch([command, ttlMs], () => {
+  if (!revocationUncertain.value) ticket.value = null
+}, { flush: 'sync' })
 watch(token, () => {
   realtime.disconnect()
   ticket.value = null
+  revocationUncertain.value = false
   commands.value = []
   hasLoaded.value = false
   command.value = ''
@@ -48,14 +52,24 @@ async function perform(action) {
   message.value = ''
   try {
     if (action === 'ticket') {
+      if (revocationUncertain.value) return
       ticket.value = null
       ticket.value = await issueTicket(command.value, Number(ttlMs.value), token.value)
       now.value = Date.now()
       message.value = 'Ticket ontvangen. Bevestig het commando in een aparte stap.'
+    } else if (action === 'revoke') {
+      // Bij een onzekere uitkomst blijft alleen opnieuw intrekken toegestaan.
+      revocationUncertain.value = true
+      await revokeTicket(ticket.value, token.value)
+      ticket.value = null
+      revocationUncertain.value = false
+      message.value = "Ticket door de server ingetrokken. Eerder vastgelegde commando's blijven behouden."
     } else if (action === 'commit') {
+      if (!canCommit.value) return
       const currentTicket = ticket.value
       // Een onzekere netwerkuitkomst mag nooit een automatische tweede inzending veroorzaken.
       ticket.value = null
+      revocationUncertain.value = false
       const committed = await commitCommand(currentTicket, command.value, token.value)
       commands.value = mergeCommands(commands.value, committed)
       message.value = 'Commando vastgelegd in het logboek; er is niets uitgevoerd.'
@@ -115,7 +129,7 @@ function date(value) {
           <p id="command-limit" class="muted">{{ commandLength(command) }} / {{ MAX_COMMAND_LENGTH }} UTF-16-tekeneenheden (een emoji telt meestal als twee).</p>
           <label for="ttl">Geldigheidsduur (milliseconden)</label>
           <input id="ttl" v-model="ttlMs" type="number" min="1" max="60000" step="1" required :disabled="!!busy" />
-          <button :disabled="!!busy || !token.trim() || !command.trim() || commandLength(command) > MAX_COMMAND_LENGTH">Ticket aanvragen</button>
+          <button :disabled="!!busy || revocationUncertain || !token.trim() || !command.trim() || commandLength(command) > MAX_COMMAND_LENGTH">Ticket aanvragen</button>
         </form>
         <h2>2. Apart bevestigen</h2>
         <div v-if="ticket" class="result">
@@ -123,10 +137,13 @@ function date(value) {
           <p>Geldig vanaf: {{ date(ticket.not_before) }}</p>
           <p>Verloopt: {{ date(ticket.expires_at) }}</p>
           <p>{{ remaining ? `Nog circa ${remaining} seconden.` : 'Verlopen. Vraag een nieuw ticket aan.' }}</p>
-          <p v-if="remaining && !canCommit">Nog niet geldig. Wacht op de begintijd.</p>
+          <p v-if="remaining && !canCommit && !revocationUncertain">Niet geldig voor de huidige invoer of begintijd.</p>
         </div>
         <p v-else class="muted">Nog geen ticket. Tekst of duur wijzigen maakt het lokale ticket ongeldig.</p>
         <button :disabled="!!busy || !canCommit || !token.trim()" @click="perform('commit')">Commando vastleggen</button>
+        <button class="secondary" :disabled="!!busy || !ticket || !token.trim()" @click="perform('revoke')">Ticket intrekken</button>
+        <p v-if="revocationUncertain" role="alert" class="error">Intrekking nog niet bevestigd. Vastleggen en nieuwe tickets zijn geblokkeerd. Probeer dit ticket opnieuw in te trekken.</p>
+        <p class="muted">Intrekken wijzigt het ticket op de server. Een sessie wissen of invoer wijzigen trekt geen toestemming in.</p>
         <p class="muted">Na iedere inzendpoging vervalt het lokale ticket. Geen automatische herhaling.</p>
       </section>
       <section aria-labelledby="journal-title" :aria-busy="busy === 'list'">

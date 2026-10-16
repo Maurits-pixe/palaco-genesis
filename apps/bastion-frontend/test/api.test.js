@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { commandLength, commitCommand, issueTicket, listCommands, MAX_COMMAND_LENGTH, mergeCommands, request, ticketUsable } from '../src/api.js'
+import { commandLength, commitCommand, issueTicket, listCommands, MAX_COMMAND_LENGTH, mergeCommands, request, revokeTicket, ticketUsable } from '../src/api.js'
 import config from '../vite.config.js'
 
 const inputToken = 'test-only-user-input'
@@ -86,6 +86,64 @@ test('submission is a distinct request carrying ticket ID and command', async ()
     assert.deepEqual(JSON.parse(options.body), { ticket_id: data.id, command: data.command })
     return json(result, 201)
   }), result)
+})
+
+test('revocation sends an authenticated DELETE without a request body', async () => {
+  let calls = 0
+  await revokeTicket(ticket(), inputToken, async (url, options) => {
+    calls++
+    assert.equal(url, '/v1/tickets/ticket-1')
+    assert.equal(options.method, 'DELETE')
+    assert.equal(options.headers.Authorization, ['Bearer', inputToken].join(' '))
+    assert.equal(options.body, undefined)
+    assert.equal(options.headers['Content-Type'], undefined)
+    assert.equal(options.redirect, 'error')
+    assert.equal(options.cache, 'no-store')
+    assert.equal(options.credentials, 'omit')
+    return json({ revoked: true })
+  })
+  assert.equal(calls, 1)
+})
+
+test('revocation rejects invalid IDs and tokens before any request', async () => {
+  const never = () => assert.fail('must not fetch')
+  for (const value of [null, {}, { id: '' }, { id: '../commands' }, { id: 'a?x=1' }, { id: 'a'.repeat(201) }]) {
+    await assert.rejects(revokeTicket(value, inputToken, never), /ticket/)
+  }
+  await assert.rejects(revokeTicket(ticket(), '', never), /token/)
+})
+
+test('expired tickets can still be revoked without a client-clock decision', async () => {
+  await revokeTicket({ ...ticket(), expires_at: 0 }, inputToken, async () => json({ revoked: true }))
+})
+
+test('revocation requires explicit server confirmation and correct status', async () => {
+  for (const value of [null, {}, { revoked: false }, { revoked: 'true' }]) {
+    await assert.rejects(revokeTicket(ticket(), inputToken, async () => json(value)), /niet bevestigd/)
+  }
+  for (const status of [201, 204, 302, 401, 403, 404, 503]) {
+    await assert.rejects(revokeTicket(ticket(), inputToken, async () =>
+      status === 204 ? new Response(null, { status }) : json({ revoked: true }, status)))
+  }
+})
+
+test('revocation failures are sanitized and never retried automatically', async () => {
+  for (const fetcher of [
+    async () => { throw new Error(inputToken) },
+    async () => new Response('private backend detail', { status: 503 }),
+    async () => new Response('invalid JSON'),
+  ]) {
+    let calls = 0
+    await assert.rejects(revokeTicket(ticket(), inputToken, async (...args) => {
+      calls++
+      return fetcher(...args)
+    }), (error) => {
+      assert.ok(!error.message.includes(inputToken))
+      assert.ok(!error.message.includes('private backend detail'))
+      return true
+    })
+    assert.equal(calls, 1)
+  }
 })
 
 test('stale, premature, changed and absent tickets reject without submitting', async () => {

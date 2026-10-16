@@ -70,6 +70,13 @@ daarom geen onafhankelijke tweede toestemming of multi-user governance.
 | `GET /v1/commands` | Lees maximaal de laatste 100 commandorecords |
 | `DELETE /v1/tickets/{id}` | Trek een ticket in |
 
+De BASTION-interface gebruikt deze DELETE-route via **Ticket intrekken**.
+Alleen een antwoord met status 200 en `revoked: true` bevestigt de intrekking.
+Een netwerkfout bewijst niet dat het ticket is ingetrokken of nog actief is:
+de interface blokkeert lokaal verder gebruik en bewaart het ID voor een
+handmatige nieuwe intrekpoging. De server blijft beslissend. Intrekking
+verwijdert geen eerder gecommit commandorecord en vervangt geen rollback.
+
 Een ticket krijgt een willekeurige ID en een servervenster van maximaal
 60 seconden. Tickets bevatten geen door de client te wijzigen gezagsclaims.
 `BEGIN IMMEDIATE` verkrijgt de SQLite-schrijfgrens voordat de tijd opnieuw

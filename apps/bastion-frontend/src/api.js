@@ -120,3 +120,15 @@ export async function listCommands(token, fetcher) {
   }
   return result.commands.slice(0, 100).map(({ id, command, committed_at }) => ({ id, command, committed_at }))
 }
+
+export async function revokeTicket(ticket, token, fetcher) {
+  if (!validId(ticket?.id)) {
+    throw new ApiError('Geen geldig ticket om in te trekken.')
+  }
+  const result = await request(`/v1/tickets/${ticket.id}`, {
+    token, method: 'DELETE', fetcher,
+  })
+  if (result?.revoked !== true) {
+    throw new ApiError('Intrekking niet bevestigd door de service.')
+  }
+}

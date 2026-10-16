@@ -76,6 +76,12 @@ Voer het bijbehorende servicetoken in de betreffende UI in; de UI bewaart het
 niet in browseropslag. AETHER versleutelt een tekstrecord en levert een ID
 waarmee je het kunt teruglezen. BASTION geeft eerst een kortlevend ticket uit;
 pas de afzonderlijke commitactie schrijft het commando in het logboek.
+Met **Ticket intrekken** kun je het huidige ticket server-side ongeldig maken.
+De interface bevestigt dit alleen na een geldig serverantwoord. Bij een
+onzekere netwerkuitkomst blijft het ticket zichtbaar voor een nieuwe
+intrekpoging; vastleggen en nieuwe tickets aanvragen zijn dan lokaal geblokkeerd.
+Een sessie wissen of invoer wijzigen is geen server-side intrekking.
+Intrekken maakt eerder vastgelegde commando's niet ongedaan.
 De BASTION-interface kan met hetzelfde token verbinden voor realtime-events;
 vernieuw het logboek na een verbindingsonderbreking.
 
