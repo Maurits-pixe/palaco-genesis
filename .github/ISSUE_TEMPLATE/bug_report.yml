@@ -1,0 +1,44 @@
+name: Bug melden
+description: Meld reproduceerbaar onjuist gedrag in de bestaande implementatie.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Meld beveiligingsproblemen niet publiek. Lees eerst de [meldrichtlijnen](https://github.com/Maurits-pixe/palaco-genesis#een-kwetsbaarheid-melden).
+        Gebruik fictieve gegevens; voeg geen tokens, sleutels of persoonsgegevens toe.
+        NEO, AETHER en BASTION zijn nog placeholders.
+  - type: input
+    id: revision
+    attributes:
+      label: Versie of commit
+      description: Welke commit of release gebruik je?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproductiestappen
+      description: Geef minimale stappen en relevante commando's met fictieve data.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Verwacht gedrag
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Werkelijk gedrag
+      description: Voeg alleen gecontroleerde, niet-gevoelige foutmeldingen toe.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Omgeving
+      description: Besturingssysteem, Rust-toolchain en eventueel Node.js- en Bash-versie.
+    validations:
+      required: true

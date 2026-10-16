@@ -114,11 +114,45 @@ voer bovenstaande controles uit voordat je een pull request indient.
 Bewaar gedeelde Rust-domeinlogica in `crates/`; plaats applicatieassemblage in
 `apps/` en `services/`.
 
+### Bijdragen en review
+
+1. Bespreek grotere wijzigingen eerst in een issue. Gebruik de bug- en
+   featureformulieren; meld beveiligingsproblemen niet publiek.
+2. Werk op een eigen branch of fork. Houd wijzigingen en bijbehorende tests
+   bij elkaar en wijzig geen ongerelateerde onderdelen.
+3. Voer de validatie hierboven uit. Gebruik daarnaast
+   `cargo build --workspace --locked` voor een build met de vastgelegde dependencies.
+4. Controleer je diff op secrets, persoonsgegevens en gegenereerde bestanden.
+   `.gitignore` verwijdert geen eerder getrackte bestanden of Git-geschiedenis.
+5. Beschrijf in je pull request wat verandert, welke controles zijn uitgevoerd
+   en welke beperkingen blijven bestaan. Een maintainer beoordeelt de wijziging;
+   bijdragen worden niet automatisch samengevoegd.
+
+Houd communicatie respectvol en technisch onderbouwd. Maak duidelijk onderscheid
+tussen ontwerp, referentie-implementatie en bewezen productiegedrag.
+
 ## 🔒 Veiligheid & D-013
 
 Het [D-013-ontwerpcontract](docs/D-013-PROTOCOL.md) vereist server-side
 tijdsvalidatie en atomaire mutaties. De huidige Rust-contracten zijn geen bewijs
 dat de toekomstige BASTION-service dit protocol al afdwingt.
+
+### Een kwetsbaarheid melden
+
+Deze alpha biedt geen productiebeveiligingsgarantie of afgesproken responstijd.
+Gebruik geen echte sleutels, financiële gegevens of andere gevoelige data in
+demonstraties.
+
+Meld mogelijke kwetsbaarheden **niet** in publieke issues of pull requests.
+Gebruik op GitHub de tab **Security → Report a vulnerability** als private
+vulnerability reporting is ingeschakeld. Ontbreekt die optie, vraag dan via een
+issue uitsluitend om een privé-meldkanaal, zonder technische details, logs,
+exploitcode of gevoelige gegevens. Wacht op dat kanaal voordat je details deelt.
+
+Een privémelding bevat bij voorkeur de betrokken commit, impact, minimale
+reproductiestappen met fictieve gegevens en een mogelijke oplossing. Bij
+gelekte credentials: trek ze onmiddellijk in of roteer ze; alleen het bestand
+verwijderen is niet voldoende.
 
 ## 📄 Licentie en publicatie
 
@@ -131,3 +165,42 @@ implementatiestatus. Voeg desgewenst topics `rust`, `cybersecurity`, `vue`,
 `nodejs`, `encryption`, `monorepo` en `d-013` toe en pin de repository op je profiel.
 Publiceer `v1.0.0 - Genesis` pas nadat de beschreven applicaties en
 veiligheidsclaims aantoonbaar werken.
+
+### Publicatiechecklist voor de maintainer
+
+Dit is een voorbereiding, geen bewijs dat de onderstaande GitHub-instellingen
+al zijn ingeschakeld.
+
+- [ ] Controleer rechten en herkomst van alle code en documenten. Los vóór
+  publicatie de licentiepresentatie op: de root bevat nu alleen de MIT-tekst,
+  terwijl Rust-packages `MIT OR Apache-2.0` declareren. Bevestig met de
+  rechthebbenden de bedoelde licenties en voeg zo nodig de bijbehorende teksten
+  toe; verander bestaande licenties niet stilzwijgend.
+- [ ] Controleer de volledige te publiceren Git-geschiedenis, branches, tags,
+  artifacts en voorbeelddata op secrets, persoonsgegevens en materiaal dat
+  niet openbaar mag worden. Roteer gevonden credentials vóór publicatie.
+- [ ] Controleer GitHub Actions op de exacte releasecommit en voer alle
+  relevante tests uit. Een lokale geslaagde build bewijst niet dat CI groen is.
+- [ ] Activeer private vulnerability reporting en, waar beschikbaar,
+  dependency alerts, secret scanning en push protection in de
+  beveiligingsinstellingen van GitHub.
+- [ ] Stel een ruleset in voor de standaardbranch: pull-requestreview,
+  geslaagde vereiste statuschecks en blokkeren van force-pushes/verwijdering.
+  Selecteer checknamen uit echte workflowruns; de twee Rust-workflows hebben
+  verschillende validatiejobs.
+- [ ] Controleer repositorynaam, beschrijving, topics en standaardbranch.
+  Wijzig de zichtbaarheid alleen na expliciete goedkeuring en bovenstaande
+  controles; deze wijziging maakt de repository niet openbaar.
+- [ ] Kies een prereleaseversie die overeenkomt met de packagemetadata
+  (momenteel `0.1.0-alpha.1`). Controleer bestaande tags en releases voordat
+  een nieuwe, onveranderlijke tag op de beoordeelde commit wordt gemaakt.
+- [ ] Maak eerst een conceptrelease met samenvatting, exacte commit,
+  uitgevoerde controles, bekende beperkingen en upgrade-instructies.
+  Markeer een alpha als **prerelease**, niet als stabiele `v1.0.0`.
+- [ ] Laat een maintainer het concept beoordelen en publiceer het daarna
+  handmatig. Publiceer geen binaries of packages die niet afzonderlijk
+  zijn gebouwd, getest en gecontroleerd.
+
+NEO, AETHER en BASTION blijven bij deze voorbereiding placeholders.
+Een eventuele alpha-release betreft de aanwezige Rust-workspace en
+ontwerpdocumentatie, niet een werkend cryptografisch commandoplatform.
