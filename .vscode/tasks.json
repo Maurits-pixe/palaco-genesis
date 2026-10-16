@@ -1,0 +1,64 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "PALACO: build",
+      "type": "process",
+      "command": "cargo",
+      "args": ["build", "--workspace", "--locked"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": ["$rustc"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "PALACO: format check",
+      "type": "process",
+      "command": "cargo",
+      "args": ["fmt", "--all", "--", "--check"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "PALACO: clippy",
+      "type": "process",
+      "command": "cargo",
+      "args": ["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "PALACO: test",
+      "type": "process",
+      "command": "cargo",
+      "args": ["test", "--workspace"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": ["$rustc"],
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "PALACO: validate",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "PALACO: format check",
+        "PALACO: clippy",
+        "PALACO: test",
+        "PALACO: build"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}

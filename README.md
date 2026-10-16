@@ -109,6 +109,39 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
+### Werken in Visual Studio Code
+
+Open de **rootmap** van je lokale clone via **File → Open Folder** (of `code .`
+vanuit die map). Installeer Rust met rustup en zorg dat `cargo` in je PATH staat;
+de bestaande `rust-toolchain.toml` selecteert stable, rustfmt en Clippy.
+Herstart VS Code na het installeren van de toolchain indien nodig.
+
+De workspace beveelt **rust-analyzer** en **GitHub Pull Requests** aan via
+Extensions → `@recommended`. Installatie vereist je eigen bevestiging.
+Rust-bestanden gebruiken rust-analyzer voor opmaak bij opslaan en Clippy voor
+editorcontroles. Gegenereerde mappen worden uitgesloten van zoeken en watching.
+
+Gebruik **Terminal → Run Task**:
+
+| Taak | Doel |
+| --- | --- |
+| `PALACO: build` | Workspace bouwen met het lockbestand; standaard buildtaak |
+| `PALACO: format check` | Opmaak controleren zonder bestanden te wijzigen |
+| `PALACO: clippy` | Alle targets linten; warnings zijn fouten |
+| `PALACO: test` | Workspace-tests; standaard testtaak |
+| `PALACO: validate` | Format, Clippy, tests en build achtereenvolgens uitvoeren |
+
+De taken werken vanuit de geopende rootmap op Windows, macOS en Linux en
+vereisen geen Bash. Ze worden niet automatisch bij het openen uitgevoerd.
+Vertrouw de workspace alleen nadat je de repository hebt gecontroleerd.
+Er is geen start-/debugconfiguratie voor de nog ontbrekende NEO-, AETHER- en
+BASTION-applicaties.
+
+Voor GitHub-review of optioneel GitHub Copilot meld je jezelf in VS Code aan
+met een GitHub-account met de benodigde toegang. Een Microsoft-aanmelding voor
+Settings Sync koppelt deze cloudsessie niet aan je editor. Deze configuratie
+meldt niemand aan en bevat geen accounts, tokens of lokale absolute paden.
+
 Bijdragen: houd wijzigingen gericht, voeg tests toe voor gewijzigd gedrag en
 voer bovenstaande controles uit voordat je een pull request indient.
 Bewaar gedeelde Rust-domeinlogica in `crates/`; plaats applicatieassemblage in
