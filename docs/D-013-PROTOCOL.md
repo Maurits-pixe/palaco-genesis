@@ -1,7 +1,8 @@
 # D-013 — Server-side tijdsgebonden mutaties
 
-**Status: ontwerpcontract voor de toekomstige BASTION-service.**
-Er is nog geen BASTION-implementatie of D-013-conformiteitstest in deze repository.
+**Status: contract met lokale alpha-referentie in `services/bastion-core/`.**
+Deze implementatie is een commandologboek met één gedeelde operatoridentiteit,
+geen algemeen autorisatie-, shell- of gedistribueerd uitvoeringsplatform.
 
 ## Contract
 
@@ -53,5 +54,29 @@ revocatieraces atomaire registryvolgorde, niet enkel wandkloktijd.
 - Dubbele en gelijktijdige aanvragen met hetzelfde ticket.
 - Rollback bij opslagfouten, zonder gedeeltelijke mutatie of succes-event.
 
-Deze tests moeten bij de echte service worden toegevoegd voordat
-D-013-conformiteit wordt geclaimd.
+De servicetests controleren deze lokale grenzen en foutpaden. Ze bewijzen geen
+gecertificeerde tijd of volledige ERA-conformiteit.
+
+## Lokale API
+
+Alle `/v1/*`-routes vereisen het server-side ingestelde `BASTION_TOKEN` als
+Bearer-token. De bezitter kan tickets uitgeven én gebruiken; tickets zijn
+daarom geen onafhankelijke tweede toestemming of multi-user governance.
+
+| Verzoek | Betekenis |
+| --- | --- |
+| `POST /v1/tickets` met `command`, `ttl_ms` | Maak een server-side ticket voor exact deze commandotekst |
+| `POST /v1/commands` met `ticket_id`, `command` | Controleer en verbruik het ticket transactioneel |
+| `GET /v1/commands` | Lees maximaal de laatste 100 commandorecords |
+| `DELETE /v1/tickets/{id}` | Trek een ticket in |
+
+Een ticket krijgt een willekeurige ID en een servervenster van maximaal
+60 seconden. Tickets bevatten geen door de client te wijzigen gezagsclaims.
+`BEGIN IMMEDIATE` verkrijgt de SQLite-schrijfgrens voordat de tijd opnieuw
+wordt gelezen; controle, verbruik, commandorecord en auditrecord horen bij
+dezelfde transactie. Replay of hergebruik produceert geen tweede record.
+Een Socket.io-event `command:committed` volgt uitsluitend na commit.
+
+Dit logboek voert **nooit** commando's als proces of shellopdracht uit.
+De lokale klok blijft een operationele aanname; kloksynchronisatie en
+onzekerheidsbewijs voor echte gedistribueerde uitvoering zijn niet geleverd.

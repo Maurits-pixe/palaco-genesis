@@ -1,0 +1,25 @@
+{
+  "name": "bastion-core",
+  "version": "0.1.0-alpha.1",
+  "description": "Local-alpha BASTION transactional command journal; shared administrator authentication, not multiuser",
+  "main": "server.js",
+  "scripts": {
+    "test": "node --test",
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "socket.io": "4.8.4"
+  },
+  "devDependencies": {
+    "socket.io-client": "4.8.4"
+  },
+  "private": true
+}

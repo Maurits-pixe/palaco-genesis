@@ -1,0 +1,91 @@
+<script setup>
+import { ref, watch } from 'vue'
+import { createRecord, MAX_PLAINTEXT_BYTES, plaintextBytes, readRecord } from './api.js'
+
+const token = ref('')
+const plaintext = ref('')
+const recordId = ref('')
+const result = ref(null)
+const busy = ref('')
+const message = ref('')
+const error = ref('')
+
+watch(token, () => {
+  result.value = null
+  plaintext.value = ''
+  recordId.value = ''
+  message.value = ''
+  error.value = ''
+}, { flush: 'sync' })
+
+async function perform(action) {
+  if (busy.value) return
+  busy.value = action
+  result.value = null
+  error.value = ''
+  message.value = ''
+  try {
+    if (action === 'create') {
+      const record = await createRecord(plaintext.value, token.value)
+      recordId.value = record.id
+      plaintext.value = ''
+      message.value = 'Record opgeslagen. Bewaar het record-ID om het later terug te lezen.'
+    } else {
+      result.value = await readRecord(recordId.value.trim(), token.value)
+      message.value = 'Record opgehaald.'
+    }
+  } catch (failure) {
+    error.value = failure.message
+  } finally {
+    busy.value = ''
+  }
+}
+
+function clearSession() {
+  token.value = ''
+  plaintext.value = ''
+  recordId.value = ''
+  result.value = null
+  message.value = ''
+  error.value = ''
+}
+</script>
+
+<template>
+  <main>
+    <header><p class="eyebrow">PALACO / LOKALE ALPHA</p><h1>AETHER</h1><p>Je records, bewust opgeslagen.</p></header>
+    <aside class="notice">De lokale backend versleutelt records bij opslag. Deze interface verstuurt en toont leesbare tekst.
+      Lokaal HTTP biedt geen transportversleuteling. Gebruik geen gevoelige productiegegevens.</aside>
+    <section aria-labelledby="access-title">
+      <h2 id="access-title">Toegang</h2>
+      <label for="token">Toegangstoken</label>
+      <input id="token" v-model="token" type="password" autocomplete="off" spellcheck="false" :disabled="!!busy" aria-describedby="token-help" />
+      <p id="token-help" class="muted">Alleen in componentgeheugen; niet in opslag of een URL. Vernieuwen wist de sessie.</p>
+      <button class="secondary" :disabled="!!busy" @click="clearSession">Wis sessie en tekst</button>
+    </section>
+    <div role="status" aria-live="polite"><p v-if="busy" class="notice">Even wachten…</p><p v-if="message" class="notice">{{ message }}</p></div>
+    <p v-if="error" role="alert" class="error">{{ error }}</p>
+    <div class="grid">
+      <section aria-labelledby="create-title" :aria-busy="busy === 'create'">
+        <h2 id="create-title">Record opslaan</h2>
+        <form @submit.prevent="perform('create')">
+          <label for="plaintext">Leesbare tekst</label>
+          <textarea id="plaintext" v-model="plaintext" rows="7" required :maxlength="MAX_PLAINTEXT_BYTES" :disabled="!!busy" aria-describedby="plaintext-limit" />
+          <p id="plaintext-limit" class="muted">{{ plaintextBytes(plaintext) }} / {{ MAX_PLAINTEXT_BYTES }} UTF-8-bytes</p>
+          <button :disabled="!!busy || !token.trim() || !plaintext.trim() || plaintextBytes(plaintext) > MAX_PLAINTEXT_BYTES">Versleuteld opslaan</button>
+        </form>
+      </section>
+      <section aria-labelledby="read-title" :aria-busy="busy === 'read'">
+        <h2 id="read-title">Record teruglezen</h2>
+        <form @submit.prevent="perform('read')">
+          <label for="record-id">Record-ID</label>
+          <input id="record-id" v-model="recordId" required maxlength="200" :disabled="!!busy" autocomplete="off" spellcheck="false" />
+          <button :disabled="!!busy || !token.trim() || !recordId.trim()">Record ophalen</button>
+        </form>
+        <div v-if="result" class="result"><h3>Leesbare inhoud</h3><pre>{{ result.plaintext }}</pre></div>
+      </section>
+    </div>
+    <footer>API: 127.0.0.1:8787 · Start met <code>npm run dev</code> op 127.0.0.1:5174.
+      De ontwikkelproxy is niet opgenomen in de statische build.</footer>
+  </main>
+</template>

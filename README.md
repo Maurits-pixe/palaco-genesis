@@ -2,20 +2,22 @@
 
 **Een ecosysteem voor cryptografie en commandovoering, gebouwd op PALACO Genesis.**
 
-Deze monorepo bevat de bestaande Rust-workspace van PALACO Genesis en reserveert
-de integratiegrenzen voor NEO, AETHER en BASTION.
-**Deze drie applicaties zijn nog niet geïmplementeerd in deze repository.**
-Encryptie, moduleverificatie en D-013-conformiteit zijn ontwerpdoelen, geen
-productiegaranties. De repository bevindt zich in een alpha-fase.
+Deze monorepo bevat de bestaande Rust-workspace van PALACO Genesis en een
+**lokale alpha** van NEO, AETHER en BASTION met drie Vue-interfaces.
+De services draaien uitsluitend op loopback en gebruiken expliciet ingestelde
+credentials. Dit is geen productieplatform, gecertificeerd klokmechanisme of
+volledig multi-user autorisatiesysteem.
 
 ## 🏗️ Architectuur
 
-- **👁️ NEO:** geplande Vue-launcher die modules controleert via
-  `/.well-known/palaco-app.json` en expliciet vertrouwde origins.
-- **🔐 AETHER:** geplande Rust-service met `ring` voor AES-256-GCM en
-  `rusqlite` voor opslag. Deze dependencies zijn nog niet toegevoegd.
-- **🛡️ BASTION:** gepland Node.js/Socket.io-commandocentrum met server-side
-  autorisatie en transactionele D-013-mutaties.
+- **👁️ NEO:** Vue-launcher die modulemanifests controleert via
+  `/.well-known/palaco-app.json` en alleen vooraf geconfigureerde UI-links opent.
+  Dit bewijst geen cryptografische code-integriteit.
+- **🔐 AETHER:** Rust-service met `ring` voor AES-256-GCM en `rusqlite`
+  voor versleutelde records; een Vue-interface kan records opslaan en ophalen.
+- **🛡️ BASTION:** Node.js/Socket.io-commandologboek met SQLite,
+  server-side toestemmingstickets en transactionele tijdscontroles.
+  Commando's zijn uitsluitend tekstrecords: er wordt **geen shellcode uitgevoerd**.
 
 Zie [architectuur](docs/ARCHITECTURE.md),
 [D-013](docs/D-013-PROTOCOL.md) en de bestaande
@@ -34,36 +36,76 @@ cargo build --workspace
 cargo test --workspace
 ```
 
-### Geplande applicaties
+### Lokale NEO / AETHER / BASTION
 
-De launchmappen bevatten nu alleen placeholders. Voeg eerst de echte projecten
-toe en installeer hun dependencies per map. De Rust-service moet een uitvoerbaar
-Cargo-project zijn; elk Node/frontend-project moet een `dev`-script aanbieden.
-Gebruik een ondersteunde Node.js-LTS-versie en Bash 4.3+ voor het startscript.
+Vereisten: Rust stable via rustup, Node.js **22.13+** (ondersteunde LTS),
+npm en Bash **4.3+**. Node's ingebouwde SQLite-API kan een experimental warning
+geven. Installeer de Node-dependencies vanuit de repositoryroot:
 
 ```bash
+for project in services/bastion-core apps/neo-launcher apps/aether-frontend apps/bastion-frontend; do
+  npm ci --prefix "$project"
+done
+```
+
+Stel voor lokaal testen afzonderlijke willekeurige tokens en een encryptiesleutel
+in. Tokens moeten 32–4096 afdrukbare ASCII-tekens zonder spaties bevatten.
+Onderstaand voorbeeld genereert waarden in je shell, niet in Git:
+
+```bash
+export AETHER_TOKEN="$(node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))")"
+export BASTION_TOKEN="$(node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))")"
+export AETHER_KEY_HEX="$(node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))")"
 ./scripts/start-all.sh
 ```
 
-Het script controleert vooraf alle manifests en stopt nu dus met een duidelijke
-melding, zonder gedeeltelijk services te starten. Als een gestart proces stopt,
-worden ook de overige processen en hun subprocessen beëindigd.
+**Bewaar `AETHER_KEY_HEX` veilig buiten Git voor hergebruik**: bestaande records
+kunnen na een herstart alleen met dezelfde sleutel worden ontsleuteld.
+Genereer niet telkens een nieuwe sleutel voor een bestaande database.
+De `.env.example`-bestanden beschrijven de serviceconfiguratie, maar worden
+niet automatisch geladen. Exporteer de waarden in de shell die de services start.
 
-Ngrok is optioneel voor lokale HTTPS-tests zodra de applicaties bestaan.
-Configureer dan expliciet vertrouwde HTTPS-origins in NEO en de API-origins in de
-frontends. Publiceer geen services met echte gegevens zonder authenticatie.
+| Onderdeel | Lokaal adres |
+| --- | --- |
+| NEO | http://127.0.0.1:5173 |
+| AETHER UI / API | http://127.0.0.1:5174 / http://127.0.0.1:8787 |
+| BASTION UI / API | http://127.0.0.1:5175 / http://127.0.0.1:8788 |
+
+Open NEO en controleer de twee modules voordat je hun interfaces opent.
+Voer het bijbehorende servicetoken in de betreffende UI in; de UI bewaart het
+niet in browseropslag. AETHER versleutelt een tekstrecord en levert een ID
+waarmee je het kunt teruglezen. BASTION geeft eerst een kortlevend ticket uit;
+pas de afzonderlijke commitactie schrijft het commando in het logboek.
+De BASTION-interface kan met hetzelfde token verbinden voor realtime-events;
+vernieuw het logboek na een verbindingsonderbreking.
+
+Het startscript controleert manifests, Node-versie, credentials en geïnstalleerde
+Node-dependencies vóór het starten en gebruikt restrictieve bestandsrechten.
+De eerste AETHER-start compileert de service. Bij stoppen van een proces worden
+de andere procesgroepen ook beëindigd. Ctrl+C stopt de lokale stack.
+
+Je kunt elk project ook afzonderlijk starten met `npm run dev` in zijn map,
+of `cargo run --locked` in `services/aether-engine/`. Gebruik bij los starten
+een restrictieve umask, bijvoorbeeld `umask 077`. De API's hebben publieke
+`/health`- en manifestendpoints; `/v1/*` vereist Bearer-authenticatie.
+
+De Vite-proxies verbinden de interfaces met vaste lokale backendadressen.
+Wijzigingen aan poorten vereisen ook aanpassingen aan die proxies en NEO's
+trustconfiguratie. **Publiceer deze ontwikkelservers niet via Ngrok of een
+publieke host**: TLS-terminatie, deploymenthardening en multi-user
+identiteit/rollen vallen buiten deze alpha.
 Commit nooit tokens, privésleutels, lokale databases of `.env`-bestanden.
 
 ## 📂 Structuur
 
 ```text
 apps/
-  neo-launcher/       # Gepland: Vue-launcher
-  aether-frontend/    # Gepland: crypto-UI
-  bastion-frontend/   # Gepland: command-UI
+  neo-launcher/       # Vue-launcher en manifestcontrole
+  aether-frontend/    # Vue crypto-UI
+  bastion-frontend/   # Vue commandologboek
 services/
-  aether-engine/     # Gepland: uitvoerbare Rust-service
-  bastion-core/      # Gepland: Node.js-service
+  aether-engine/     # Zelfstandig Cargo-project met eigen lockbestand
+  bastion-core/      # Node.js/Socket.io met ingebouwde SQLite
 scripts/start-all.sh
 docs/ARCHITECTURE.md
 docs/D-013-PROTOCOL.md
@@ -109,6 +151,22 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
+De rootworkspace omvat niet de zelfstandige AETHER-service. Valideer deze en
+de vier Node-projecten afzonderlijk:
+
+```bash
+cargo fmt --manifest-path services/aether-engine/Cargo.toml --all -- --check
+cargo clippy --manifest-path services/aether-engine/Cargo.toml --locked --all-targets -- -D warnings
+cargo test --manifest-path services/aether-engine/Cargo.toml --locked
+cargo build --manifest-path services/aether-engine/Cargo.toml --locked
+for project in services/bastion-core apps/neo-launcher apps/aether-frontend apps/bastion-frontend; do
+  npm test --prefix "$project"
+  npm run build --prefix "$project" --if-present
+done
+```
+
+De bestaande PALACO CI-workflow controleert ook deze service en Node-projecten.
+
 ### Werken in Visual Studio Code
 
 Open de **rootmap** van je lokale clone via **File → Open Folder** (of `code .`
@@ -116,7 +174,7 @@ vanuit die map). Installeer Rust met rustup en zorg dat `cargo` in je PATH staat
 de bestaande `rust-toolchain.toml` selecteert stable, rustfmt en Clippy.
 Herstart VS Code na het installeren van de toolchain indien nodig.
 
-De workspace beveelt **rust-analyzer** en **GitHub Pull Requests** aan via
+De workspace beveelt **rust-analyzer**, **Vue (Official)** en **GitHub Pull Requests** aan via
 Extensions → `@recommended`. Installatie vereist je eigen bevestiging.
 Rust-bestanden gebruiken rust-analyzer voor opmaak bij opslaan en Clippy voor
 editorcontroles. Gegenereerde mappen worden uitgesloten van zoeken en watching.
@@ -134,8 +192,9 @@ Gebruik **Terminal → Run Task**:
 De taken werken vanuit de geopende rootmap op Windows, macOS en Linux en
 vereisen geen Bash. Ze worden niet automatisch bij het openen uitgevoerd.
 Vertrouw de workspace alleen nadat je de repository hebt gecontroleerd.
-Er is geen start-/debugconfiguratie voor de nog ontbrekende NEO-, AETHER- en
-BASTION-applicaties.
+De gedeelde `PALACO:*`-taken blijven gericht op de bestaande Rust-domeinworkspace.
+Start de nieuwe modules in een terminal volgens de instructies hierboven;
+het gezamenlijke startscript vereist Bash (op Windows bijvoorbeeld via WSL).
 
 Voor GitHub-review of optioneel GitHub Copilot meld je jezelf in VS Code aan
 met een GitHub-account met de benodigde toegang. Een Microsoft-aanmelding voor
@@ -166,9 +225,12 @@ tussen ontwerp, referentie-implementatie en bewezen productiegedrag.
 
 ## 🔒 Veiligheid & D-013
 
-Het [D-013-ontwerpcontract](docs/D-013-PROTOCOL.md) vereist server-side
-tijdsvalidatie en atomaire mutaties. De huidige Rust-contracten zijn geen bewijs
-dat de toekomstige BASTION-service dit protocol al afdwingt.
+Het [D-013-contract](docs/D-013-PROTOCOL.md) wordt in BASTION lokaal toegepast
+met server-side tijdsvalidatie, eenmalige tickets en atomaire SQLite-mutaties.
+Dit gebruikt de definitieve controle in de transactie als beslismoment, niet
+de fysieke commit-tijd. Er is geen gecertificeerde klok of distributiegarantie.
+Alle bezitters van hetzelfde servicetoken delen dezelfde bevoegdheid; geef
+deze alpha geen gevoelige productiegegevens.
 
 ### Een kwetsbaarheid melden
 
@@ -234,6 +296,6 @@ al zijn ingeschakeld.
   handmatig. Publiceer geen binaries of packages die niet afzonderlijk
   zijn gebouwd, getest en gecontroleerd.
 
-NEO, AETHER en BASTION blijven bij deze voorbereiding placeholders.
-Een eventuele alpha-release betreft de aanwezige Rust-workspace en
-ontwerpdocumentatie, niet een werkend cryptografisch commandoplatform.
+Een eventuele alpha-release betreft de aanwezige Rust-workspace en de lokale
+NEO/AETHER/BASTION-referentie-implementaties. Er wordt geen productiegeschiktheid,
+volledige ERA-conformiteit of geverifieerde code-integriteit geclaimd.

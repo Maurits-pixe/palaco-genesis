@@ -7,7 +7,7 @@ body:
       value: |
         Meld beveiligingsproblemen niet publiek. Lees eerst de [meldrichtlijnen](https://github.com/Maurits-pixe/palaco-genesis#een-kwetsbaarheid-melden).
         Gebruik fictieve gegevens; voeg geen tokens, sleutels of persoonsgegevens toe.
-        NEO, AETHER en BASTION zijn nog placeholders.
+        NEO, AETHER en BASTION zijn lokale alpha-applicaties, niet productiegecertificeerd.
   - type: input
     id: revision
     attributes:

@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Beschrijf het probleem zonder gevoelige gegevens.
-        Maak onderscheid tussen de bestaande Rust-workspace en de geplande NEO/AETHER/BASTION-applicaties.
+        Maak onderscheid tussen de Rust-domeinworkspace en de lokale NEO/AETHER/BASTION-alpha.
   - type: textarea
     id: problem
     attributes:
