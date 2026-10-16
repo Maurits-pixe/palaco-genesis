@@ -77,6 +77,13 @@ wordt gelezen; controle, verbruik, commandorecord en auditrecord horen bij
 dezelfde transactie. Replay of hergebruik produceert geen tweede record.
 Een Socket.io-event `command:committed` volgt uitsluitend na commit.
 
+Een schrijftransactie bewaart daarnaast de laatst geaccepteerde servertijd.
+De bedrijfswijzigingen staan binnen een savepoint, zodat weigering of rollback
+de geldige tijdwaarneming niet wist. Ook na een herstart wordt een teruglopende
+klok geweigerd. Mislukt het duurzaam opslaan van deze tijdgrens, dan worden
+verdere mutaties geblokkeerd en meldt `/health` onbeschikbaarheid. Herstel
+opslag en controleer de klok voordat je de service opnieuw start.
+
 Dit logboek voert **nooit** commando's als proces of shellopdracht uit.
 De lokale klok blijft een operationele aanname; kloksynchronisatie en
 onzekerheidsbewijs voor echte gedistribueerde uitvoering zijn niet geleverd.

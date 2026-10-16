@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { commandBytes, commitCommand, issueTicket, listCommands, MAX_COMMAND_BYTES, mergeCommands, request, ticketUsable } from '../src/api.js'
+import { commandLength, commitCommand, issueTicket, listCommands, MAX_COMMAND_LENGTH, mergeCommands, request, ticketUsable } from '../src/api.js'
 import config from '../vite.config.js'
 
 const inputToken = 'test-only-user-input'
@@ -38,11 +38,14 @@ test('invalid TTL and blank command never reach the service', async () => {
   }
 })
 
-test('command limit is exactly 1024 UTF-8 bytes', async () => {
-  assert.equal(MAX_COMMAND_BYTES, 1024)
-  assert.equal(commandBytes('😀'), 4)
-  await issueTicket('é'.repeat(512), 1000, inputToken, async () => json(ticket(), 201))
-  for (const command of ['x'.repeat(1025), 'é'.repeat(513), '😀'.repeat(257)]) {
+test('command limit matches backend JavaScript length of 1024 UTF-16 code units', async () => {
+  assert.equal(MAX_COMMAND_LENGTH, 1024)
+  assert.equal(commandLength('😀'), 2)
+  for (const command of ['x'.repeat(1024), 'é'.repeat(1024), '😀'.repeat(512)]) {
+    await issueTicket(command, 1000, inputToken, async () => json(ticket(), 201))
+    assert.equal(mergeCommands([], { ...entry(), command })[0].command, command)
+  }
+  for (const command of ['x'.repeat(1025), 'é'.repeat(1025), '😀'.repeat(513)]) {
     await assert.rejects(issueTicket(command, 1000, inputToken, () => assert.fail('must not fetch')), /1024/)
     await assert.rejects(commitCommand({ ...ticket(), command }, command, inputToken, () => assert.fail('must not submit')), /1024/)
   }
@@ -103,6 +106,14 @@ test('list validates each command and excludes unrelated response fields', async
   }), [item])
   for (const result of [{}, { commands: [null] }, { commands: [{ ...item, committed_at: null }] }]) {
     await assert.rejects(listCommands(inputToken, async () => json(result)))
+  }
+})
+
+test('journal accepts 600 multibyte é characters and rejects over 1024 JavaScript units', async () => {
+  const multibyte = { ...entry(), command: 'é'.repeat(600) }
+  assert.deepEqual(await listCommands(inputToken, async () => json({ commands: [multibyte] })), [multibyte])
+  for (const command of ['é'.repeat(1025), '😀'.repeat(513)]) {
+    await assert.rejects(listCommands(inputToken, async () => json({ commands: [{ ...entry(), command }] })))
   }
 })
 

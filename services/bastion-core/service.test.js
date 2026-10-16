@@ -25,7 +25,8 @@ async function fixture(t, options = {}) {
   let now = 1000;
   let fault = () => {};
   const config = { token, port, dbPath };
-  const app = createBastion(config, { clock: () => now, fault: stage => fault(stage), ...options });
+  const createApp = () => createBastion(config, { clock: () => now, fault: stage => fault(stage), ...options });
+  let app = createApp();
   await app.listen();
   const db = new DatabaseSync(dbPath);
   t.after(async () => {
@@ -33,7 +34,7 @@ async function fixture(t, options = {}) {
     await app.close();
     rmSync(dir, { recursive: true, force: true });
   });
-  const base = `http://127.0.0.1:${app.port}`;
+  let base = `http://127.0.0.1:${app.port}`;
   const request = async (path, { method = 'GET', data, auth = token, raw, headers = {} } = {}) => {
     const response = await fetch(base + path, {
       method,
@@ -70,6 +71,18 @@ async function fixture(t, options = {}) {
     app, db, config, base, request, ticket, commit, socket,
     time: value => { now = value; },
     fault: value => { fault = value; },
+    restart: async () => {
+      await app.close();
+      // A new origin avoids reusing the fetch pool's just-closed keepalive socket.
+      const probe = createServer();
+      probe.listen(0, '127.0.0.1');
+      await once(probe, 'listening');
+      config.port = probe.address().port;
+      await new Promise(resolve => probe.close(resolve));
+      app = createApp();
+      await app.listen();
+      base = `http://127.0.0.1:${app.port}`;
+    },
   };
 }
 
@@ -167,6 +180,46 @@ test('real server starts from exported environment and SIGTERM closes sockets an
   } finally {
     db.close();
   }
+});
+
+test('npm run dev exits nonzero promptly when the configured port is occupied', async t => {
+  const occupied = createServer();
+  occupied.listen(0, '127.0.0.1');
+  await once(occupied, 'listening');
+  const child = spawn('npm', ['run', 'dev'], {
+    cwd: fileURLToPath(new URL('.', import.meta.url)),
+    env: {
+      ...process.env,
+      BASTION_TOKEN: token,
+      BASTION_PORT: String(occupied.address().port),
+      BASTION_DB: ':memory:',
+    },
+    detached: process.platform !== 'win32',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const exited = once(child, 'exit');
+  let output = '';
+  child.stdout.on('data', data => { output += data; });
+  child.stderr.on('data', data => { output += data; });
+  t.after(async () => {
+    try {
+      if (process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL');
+      else if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    } catch (error) {
+      if (error.code !== 'ESRCH') throw error;
+    }
+    await exited;
+    await new Promise(resolve => occupied.close(resolve));
+  });
+  const timeout = AbortSignal.timeout(5000);
+  const [code, signal] = await Promise.race([
+    exited,
+    new Promise((_, reject) => timeout.addEventListener('abort', () => reject(new Error('npm dev lingered after startup failure')), { once: true })),
+  ]);
+  assert.notEqual(code, 0);
+  assert.equal(signal, null);
+  assert.match(output, /BASTION startup failed/);
+  assert.equal(output.includes(token), false);
 });
 
 test('public discovery, HTTP auth, and loopback-only origins', async t => {
@@ -303,6 +356,90 @@ test('durable replay protection and clock high-water survive a new service insta
   now = 1050;
   assert.equal((await send(data)).status, 403);
   assert.deepEqual((await (await send()).json()).commands, [saved.data]);
+});
+
+test('denied expiry watermark survives shutdown/restart with a backward wall clock', async t => {
+  const f = await fixture(t);
+  const ticket = await f.ticket();
+  f.time(ticket.expires_at);
+  assert.equal((await f.commit(ticket.id)).status, 403);
+  assert.equal(f.db.prepare('SELECT last_time FROM clock_state WHERE id = ?').get(1).last_time, 1100);
+  assert.equal(f.db.prepare('SELECT consumed FROM tickets WHERE id = ?').get(ticket.id).consumed, 0);
+  f.time(1050);
+  await f.restart();
+  assert.equal((await f.commit(ticket.id)).status, 503);
+  f.time(1100);
+  assert.equal((await f.commit(ticket.id)).status, 403);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM commands').get().n, 0);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM audit').get().n, 0);
+});
+
+test('mutation rollback preserves watermark across restart, without command, consumption, audit or event', async t => {
+  const f = await fixture(t);
+  const ticket = await f.ticket();
+  const { connection, error } = await f.socket();
+  assert.ifError(error);
+  const events = [];
+  connection.on('command:committed', event => events.push(event));
+  f.time(1050);
+  f.fault(stage => { if (stage === 'before-commit') throw new Error('private write fault'); });
+  assert.equal((await f.commit(ticket.id)).status, 503);
+  assert.equal(f.db.prepare('SELECT last_time FROM clock_state WHERE id = ?').get(1).last_time, 1050);
+  assert.equal(f.db.prepare('SELECT consumed FROM tickets WHERE id = ?').get(ticket.id).consumed, 0);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM commands').get().n, 0);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM audit').get().n, 0);
+  await delay(30);
+  assert.equal(events.length, 0);
+  f.fault(() => {});
+  f.time(1049);
+  await f.restart();
+  assert.equal((await f.commit(ticket.id)).status, 503);
+  f.time(1050);
+  assert.equal((await f.commit(ticket.id)).status, 201);
+});
+
+test('failure to durably commit the time watermark fails closed and disables mutations', async t => {
+  const f = await fixture(t);
+  const ticket = await f.ticket();
+  const { connection, error } = await f.socket();
+  assert.ifError(error);
+  const events = [];
+  connection.on('command:committed', event => events.push(event));
+  f.time(1050);
+  f.fault(stage => {
+    if (stage === 'before-commit' || stage === 'before-watermark-commit') throw new Error('private disk fault');
+  });
+  assert.equal((await f.commit(ticket.id)).status, 503);
+  assert.equal(f.db.prepare('SELECT consumed FROM tickets WHERE id = ?').get(ticket.id).consumed, 0);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM commands').get().n, 0);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM audit').get().n, 0);
+  f.fault(() => {});
+  f.time(1060);
+  assert.equal((await f.commit(ticket.id)).status, 503);
+  assert.equal((await f.request('/health', { auth: null })).status, 503);
+  await delay(30);
+  assert.equal(events.length, 0);
+});
+
+test('real SQLite audit failure rolls back mutation but preserves observed time durably', async t => {
+  const f = await fixture(t);
+  const ticket = await f.ticket();
+  f.db.exec(`CREATE TRIGGER reject_audit BEFORE INSERT ON audit
+    BEGIN SELECT RAISE(ABORT, 'private audit fault'); END;`);
+  f.time(1050);
+  const result = await f.commit(ticket.id);
+  assert.equal(result.status, 503);
+  assert.deepEqual(result.data, { error: 'Service unavailable' });
+  assert.equal(f.db.prepare('SELECT last_time FROM clock_state WHERE id = ?').get(1).last_time, 1050);
+  assert.equal(f.db.prepare('SELECT consumed FROM tickets WHERE id = ?').get(ticket.id).consumed, 0);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM commands').get().n, 0);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM audit').get().n, 0);
+  f.db.exec('DROP TRIGGER reject_audit');
+  f.time(1049);
+  await f.restart();
+  assert.equal((await f.commit(ticket.id)).status, 503);
+  f.time(1050);
+  assert.equal((await f.commit(ticket.id)).status, 201);
 });
 
 test('definitive check is not a physical commit deadline guarantee', async t => {

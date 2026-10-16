@@ -11,8 +11,8 @@ const errors = {
 
 class ApiError extends Error {}
 
-export const MAX_COMMAND_BYTES = 1024
-export const commandBytes = (value) => new TextEncoder().encode(value).byteLength
+export const MAX_COMMAND_LENGTH = 1024
+export const commandLength = (value) => value.length
 
 function validId(id) {
   return typeof id === 'string' && /^[a-zA-Z0-9_-]{1,200}$/.test(id)
@@ -69,7 +69,7 @@ export async function issueTicket(command, ttlMs, token, fetcher) {
       !Number.isInteger(ttlMs) || ttlMs < 1 || ttlMs > 60_000) {
     throw new ApiError('Vul een commando en een gehele geldigheidsduur van 1 t/m 60000 ms in.')
   }
-  if (commandBytes(command) > MAX_COMMAND_BYTES) throw new ApiError('Een commando mag maximaal 1024 UTF-8-bytes bevatten.')
+  if (commandLength(command) > MAX_COMMAND_LENGTH) throw new ApiError('Een commando mag maximaal 1024 UTF-16-tekeneenheden bevatten.')
   const result = await request('/v1/tickets', {
     token, method: 'POST', body: { command, ttl_ms: ttlMs }, fetcher,
   })
@@ -83,7 +83,7 @@ export async function issueTicket(command, ttlMs, token, fetcher) {
 
 function validCommand(value) {
   return value && validId(value.id) && typeof value.command === 'string' &&
-    commandBytes(value.command) <= MAX_COMMAND_BYTES &&
+    commandLength(value.command) <= MAX_COMMAND_LENGTH &&
     Number.isFinite(timestamp(value.committed_at))
 }
 
@@ -103,7 +103,7 @@ export async function commitCommand(ticket, command, token, fetcher) {
   if (!validId(ticket?.id) || !ticketUsable(ticket, command)) {
     throw new ApiError('Ticket niet geldig voor dit commando. Vraag een nieuw ticket aan.')
   }
-  if (commandBytes(command) > MAX_COMMAND_BYTES) throw new ApiError('Een commando mag maximaal 1024 UTF-8-bytes bevatten.')
+  if (commandLength(command) > MAX_COMMAND_LENGTH) throw new ApiError('Een commando mag maximaal 1024 UTF-16-tekeneenheden bevatten.')
   const result = await request('/v1/commands', {
     token, method: 'POST', body: { ticket_id: ticket.id, command }, fetcher,
   })

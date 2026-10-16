@@ -139,6 +139,7 @@ export function createBastion(config, { clock = Date.now, fault = () => {} } = {
     throw error;
   }
   let lastTime = db.prepare('SELECT last_time FROM clock_state WHERE id = ?').get(1)?.last_time ?? 0;
+  let storageUnavailable = false;
   function trustedNow() {
     const now = clock();
     const persisted = db.prepare('SELECT last_time FROM clock_state WHERE id = ?').get(1)?.last_time ?? 0;
@@ -147,20 +148,48 @@ export function createBastion(config, { clock = Date.now, fault = () => {} } = {
       throw new Failure(503, 'Server time unavailable');
     }
     lastTime = now;
-    db.prepare('INSERT INTO clock_state (id, last_time) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET last_time = excluded.last_time')
-      .run(1, now);
     return now;
   }
   function transaction(work) {
+    if (storageUnavailable) throw new Failure(503, 'Service unavailable');
     db.exec('BEGIN IMMEDIATE');
+    let observed = false;
+    let committed = false;
     try {
       fault('after-begin');
-      const result = work(trustedNow());
-      fault('before-commit');
-      db.exec('COMMIT');
-      return result;
+      const now = trustedNow();
+      observed = true;
+      db.prepare('INSERT INTO clock_state (id, last_time) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET last_time = excluded.last_time')
+        .run(1, now);
+      // Authorization denial and mutation rollback must not erase a trusted time
+      // observation: otherwise a backward clock after restart can revive tickets.
+      db.exec('SAVEPOINT mutation');
+      try {
+        const result = work(now);
+        fault('before-commit');
+        db.exec('COMMIT');
+        committed = true;
+        return result;
+      } catch (error) {
+        db.exec('ROLLBACK TO mutation');
+        db.exec('RELEASE mutation');
+        fault('before-watermark-commit');
+        db.exec('COMMIT');
+        committed = true;
+        throw error;
+      }
     } catch (error) {
-      db.exec('ROLLBACK');
+      if (!committed) {
+        try {
+          db.exec('ROLLBACK');
+        } catch {
+          storageUnavailable = true;
+        }
+        // Failed watermark durability is not an authorization denial. Stop
+        // further mutations until storage and trusted wall time are repaired.
+        if (observed) storageUnavailable = true;
+      }
+      if (storageUnavailable) throw new Failure(503, 'Service unavailable');
       throw error;
     }
   }
@@ -184,7 +213,9 @@ export function createBastion(config, { clock = Date.now, fault = () => {} } = {
         return;
       }
       const path = new URL(req.url, 'http://127.0.0.1').pathname;
-      if (req.method === 'GET' && path === '/health') return reply(res, 200, { status: 'ok' });
+      if (req.method === 'GET' && path === '/health') {
+        return reply(res, storageUnavailable ? 503 : 200, { status: storageUnavailable ? 'unavailable' : 'ok' });
+      }
       if (req.method === 'GET' && path === '/.well-known/palaco-app.json') {
         return reply(res, 200, { id: 'bastion', name: 'BASTION', protocol: 'palaco-app/v1' });
       }

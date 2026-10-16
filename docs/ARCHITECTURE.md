@@ -78,7 +78,8 @@ tekens (32 bytes). Sleutelverlies maakt bestaande records onleesbaar;
 deze alpha biedt geen recovery of rotatiemigratie.
 
 Zie [D-013](D-013-PROTOCOL.md#lokale-api) voor de BASTION-routes.
-Commandotekst is maximaal 1024 tekens; JSON-bodies maximaal 8 KiB.
+Commandotekst is maximaal 1024 UTF-16-code-eenheden (`String.length` in
+JavaScript); JSON-bodies maximaal 8 KiB.
 Socket.io gebruikt `auth.token` bij het verbinden en publiceert
 `command:committed` met het vastgelegde commandorecord. Een gemist event is
 geen bewijs van een mislukte commit: lees het logboek opnieuw. Er is geen

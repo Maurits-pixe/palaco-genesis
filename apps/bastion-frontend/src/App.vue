@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue'
-import { commandBytes, commitCommand, issueTicket, listCommands, MAX_COMMAND_BYTES, mergeCommands, ticketUsable, timestamp } from './api.js'
+import { commandLength, commitCommand, issueTicket, listCommands, MAX_COMMAND_LENGTH, mergeCommands, ticketUsable, timestamp } from './api.js'
 import { createRealtime } from './realtime.js'
 
 const token = ref('')
@@ -111,11 +111,11 @@ function date(value) {
         <h2 id="ticket-title">1. Ticket aanvragen</h2>
         <form @submit.prevent="perform('ticket')">
           <label for="command">Commando als tekst</label>
-          <textarea id="command" v-model="command" rows="4" :maxlength="MAX_COMMAND_BYTES" required :disabled="!!busy" aria-describedby="command-limit" />
-          <p id="command-limit" class="muted">{{ commandBytes(command) }} / {{ MAX_COMMAND_BYTES }} UTF-8-bytes</p>
+          <textarea id="command" v-model="command" rows="4" :maxlength="MAX_COMMAND_LENGTH" required :disabled="!!busy" aria-describedby="command-limit" />
+          <p id="command-limit" class="muted">{{ commandLength(command) }} / {{ MAX_COMMAND_LENGTH }} UTF-16-tekeneenheden (een emoji telt meestal als twee).</p>
           <label for="ttl">Geldigheidsduur (milliseconden)</label>
           <input id="ttl" v-model="ttlMs" type="number" min="1" max="60000" step="1" required :disabled="!!busy" />
-          <button :disabled="!!busy || !token.trim() || !command.trim() || commandBytes(command) > MAX_COMMAND_BYTES">Ticket aanvragen</button>
+          <button :disabled="!!busy || !token.trim() || !command.trim() || commandLength(command) > MAX_COMMAND_LENGTH">Ticket aanvragen</button>
         </form>
         <h2>2. Apart bevestigen</h2>
         <div v-if="ticket" class="result">

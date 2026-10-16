@@ -57,6 +57,21 @@ test('events are validated before merge callback; untrusted fields are discarded
     socket.handlers['command:committed'](value)
   }
   assert.equal(f.entries.length, 1)
+  const unicode = { ...record, id: 'unicode', command: '😀'.repeat(512) }
+  socket.handlers['command:committed'](unicode)
+  assert.deepEqual(f.entries[1], unicode)
+})
+
+test('realtime accepts 600 multibyte é characters and rejects over 1024 JavaScript units', () => {
+  const f = fixture()
+  f.realtime.connect('user-entered-test-token')
+  const emit = f.sockets[0].handlers['command:committed']
+  const multibyte = { ...record, command: 'é'.repeat(600) }
+  emit(multibyte)
+  assert.deepEqual(f.entries, [multibyte])
+  emit({ ...record, command: 'é'.repeat(1025) })
+  emit({ ...record, command: '😀'.repeat(513) })
+  assert.deepEqual(f.entries, [multibyte])
 })
 
 test('token replacement clears cached entries and old credentials, ignoring late events', () => {
