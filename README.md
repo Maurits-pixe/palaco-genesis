@@ -82,6 +82,16 @@ onzekere netwerkuitkomst blijft het ticket zichtbaar voor een nieuwe
 intrekpoging; vastleggen en nieuwe tickets aanvragen zijn dan lokaal geblokkeerd.
 Een sessie wissen of invoer wijzigen is geen server-side intrekking.
 Intrekken maakt eerder vastgelegde commando's niet ongedaan.
+Gebruik **Status controleren** met het ticket-ID als een inzending geen
+duidelijk antwoord gaf. De interface onthoudt het laatst ingezonden ID in het
+sessiegeheugen; je kunt ook handmatig een ID invoeren. De server rapporteert
+of het ticket wacht, actief, verlopen, ingetrokken of al gecommit is en levert
+bij een commit het bijbehorende record, ook buiten de laatste 100 logboekregels.
+Dit historische resultaat staat apart en verdringt geen recente logboekregels.
+Een statuscontrole dient nooit opnieuw een commando in. Een actieve status is
+slechts een momentopname, geen nieuwe toestemming. Alleen een bevestigde
+terminale status van hetzelfde ticket kan een onzekere intrekking lokaal
+afsluiten. Sessie wissen of herladen verwijdert de lokaal bewaarde ID's.
 De BASTION-interface kan met hetzelfde token verbinden voor realtime-events;
 vernieuw het logboek na een verbindingsonderbreking.
 

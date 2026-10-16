@@ -82,7 +82,9 @@ Commandotekst is maximaal 1024 UTF-16-code-eenheden (`String.length` in
 JavaScript); JSON-bodies maximaal 8 KiB.
 Socket.io gebruikt `auth.token` bij het verbinden en publiceert
 `command:committed` met het vastgelegde commandorecord. Een gemist event is
-geen bewijs van een mislukte commit: lees het logboek opnieuw. Er is geen
+geen bewijs van een mislukte commit: lees het logboek opnieuw of controleer
+het oorspronkelijke ticket via `GET /v1/tickets/{id}`. Die route kan het
+gecommitte record ook buiten de laatste 100 regels terugvinden. Er is geen
 gegarandeerde duurzame eventlevering.
 
 ## Lokale orchestration

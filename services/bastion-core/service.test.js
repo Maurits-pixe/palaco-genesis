@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
+import { randomBytes } from 'node:crypto';
 import { mkdtempSync, rmSync, statSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -10,9 +11,205 @@ import { DatabaseSync } from 'node:sqlite';
 import { Worker } from 'node:worker_threads';
 import { io as client } from 'socket.io-client';
 import { createBastion, configFromEnv } from './service.js';
+import { getTicketStatus } from '../../apps/bastion-frontend/src/api.js';
 
 const token = 'test-only-shared-operator-secret';
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+test('live client helper reconciles committed and subsequently revoked tickets over HTTP', async t => {
+  const runtimeToken = randomBytes(32).toString('hex');
+  const probe = createServer();
+  probe.listen(0, '127.0.0.1');
+  await once(probe, 'listening');
+  const port = probe.address().port;
+  await new Promise(resolve => probe.close(resolve));
+  const app = createBastion({ token: runtimeToken, port, dbPath: ':memory:' });
+  t.after(() => app.close());
+  await app.listen();
+  const base = `http://127.0.0.1:${app.port}`;
+  const fetcher = (path, options) => fetch(base + path, options);
+  const post = async (path, data) => {
+    const response = await fetcher(path, {
+      method: 'POST',
+      headers: { authorization: ['Bearer', runtimeToken].join(' '), 'content-type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    assert.equal(response.status, 201);
+    return response.json();
+  };
+  const command = 'live helper integration journal record';
+  const issued = await post('/v1/tickets', { command, ttl_ms: 60000 });
+  const record = await post('/v1/commands', { ticket_id: issued.id, command });
+  const committed = await getTicketStatus(issued.id, runtimeToken, fetcher);
+  assert.equal(committed.status, 'committed');
+  assert.equal(committed.revoked, false);
+  assert.deepEqual(committed.record, record);
+  assert.ok(committed.checked_at >= record.committed_at);
+  const revoked = await fetcher(`/v1/tickets/${issued.id}`, {
+    method: 'DELETE', headers: { authorization: ['Bearer', runtimeToken].join(' ') },
+  });
+  assert.equal(revoked.status, 200);
+  const historical = await getTicketStatus(issued.id, runtimeToken, fetcher);
+  assert.equal(historical.status, 'committed');
+  assert.equal(historical.revoked, true);
+  assert.deepEqual(historical.record, record);
+  let calls = 0;
+  await assert.rejects(getTicketStatus(issued.id, 'invalid-token', async (...args) => {
+    calls++;
+    const response = await fetcher(...args);
+    assert.equal(response.status, 401);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    return response;
+  }), failure => {
+    assert.equal(failure.message.includes(runtimeToken), false);
+    assert.match(failure.message, /Toegang geweigerd/);
+    return true;
+  });
+  assert.equal(calls, 1);
+});
+
+test('ticket lookup uses authoritative half-open boundaries and status precedence', async t => {
+  const f = await fixture(t);
+  const issued = await f.ticket();
+  const path = `/v1/tickets/${issued.id}`;
+  f.db.prepare('UPDATE tickets SET not_before = ? WHERE id = ?').run(1010, issued.id);
+  const check = async (now, status, revoked = false, record = null) => {
+    f.time(now);
+    const result = await f.request(path);
+    assert.equal(result.status, 200);
+    assert.deepEqual(result.data, {
+      ...issued, not_before: 1010, command: 'journal only', checked_at: now, status, revoked, record,
+    });
+    assert.equal(result.headers.get('cache-control'), 'no-store');
+  };
+  await check(1000, 'pending');
+  await check(1010, 'active');
+  await check(1099, 'active');
+  await check(1100, 'expired');
+  await f.request(path, { method: 'DELETE' });
+  await check(1100, 'revoked', true);
+
+  const used = await f.ticket();
+  const record = (await f.commit(used.id)).data;
+  f.time(1300);
+  assert.deepEqual((await f.request(`/v1/tickets/${used.id}`)).data, {
+    ...used, command: 'journal only', checked_at: 1300, status: 'committed', revoked: false, record,
+  });
+  await f.request(`/v1/tickets/${used.id}`, { method: 'DELETE' });
+  assert.deepEqual((await f.request(`/v1/tickets/${used.id}`)).data, {
+    ...used, command: 'journal only', checked_at: 1300, status: 'committed', revoked: true, record,
+  });
+});
+
+test('ticket lookup authenticates, hides missing and out-of-scope tickets, and leaks no metadata', async t => {
+  const f = await fixture(t);
+  const issued = await f.ticket();
+  const path = `/v1/tickets/${issued.id}`;
+  for (const auth of [null, 'wrong']) assert.equal((await f.request(path, { auth })).status, 401);
+  const missing = await f.request('/v1/tickets/missing');
+  assert.equal(missing.status, 404);
+  for (const field of ['issuer', 'subject', 'action', 'resource']) {
+    const original = f.db.prepare(`SELECT ${field} FROM tickets WHERE id = ?`).get(issued.id)[field];
+    f.db.prepare(`UPDATE tickets SET ${field} = ? WHERE id = ?`).run('outside-scope', issued.id);
+    assert.deepEqual((await f.request(path)).data, missing.data);
+    assert.equal((await f.request(path)).status, 404);
+    f.db.prepare(`UPDATE tickets SET ${field} = ? WHERE id = ?`).run(original, issued.id);
+  }
+  assert.deepEqual(Object.keys((await f.request(path)).data).sort(),
+    ['id', 'command', 'not_before', 'expires_at', 'checked_at', 'status', 'revoked', 'record'].sort());
+});
+
+test('lookup does not mutate tickets, commands or audit, emit events, or affect replay rules', async t => {
+  const f = await fixture(t);
+  const { connection } = await f.socket();
+  const events = [];
+  connection.on('command:committed', value => events.push(value));
+  const issued = await f.ticket();
+  const path = `/v1/tickets/${issued.id}`;
+  const before = f.db.prepare('SELECT * FROM tickets').all();
+  await f.request(path);
+  await f.request(path);
+  assert.deepEqual(f.db.prepare('SELECT * FROM tickets').all(), before);
+  assert.equal(f.db.prepare('SELECT count(*) AS n FROM audit').get().n, 0);
+  assert.equal(f.db.prepare('SELECT count(*) AS n FROM commands').get().n, 0);
+  await delay(30);
+  assert.equal(events.length, 0);
+  assert.equal((await f.commit(issued.id)).status, 201);
+  const audit = f.db.prepare('SELECT * FROM audit').all();
+  await f.request(path);
+  await f.request(path);
+  assert.equal((await f.commit(issued.id)).status, 403);
+  await delay(30);
+  assert.equal(events.length, 1);
+  assert.deepEqual(f.db.prepare('SELECT * FROM audit').all(), audit);
+});
+
+test('committed lookup survives restart and is independent of the last 100 journal entries', async t => {
+  const f = await fixture(t);
+  const first = await f.ticket();
+  const record = (await f.commit(first.id)).data;
+  for (let i = 0; i < 101; i++) {
+    const issued = await f.ticket(`record ${i}`);
+    assert.equal((await f.commit(issued.id, `record ${i}`)).status, 201);
+  }
+  assert.equal((await f.request('/v1/commands')).data.commands.some(value => value.id === record.id), false);
+  await f.restart();
+  const outcome = await f.request(`/v1/tickets/${first.id}`);
+  assert.equal(outcome.status, 200);
+  assert.equal(outcome.data.status, 'committed');
+  assert.deepEqual(outcome.data.record, record);
+  assert.equal((await f.commit(first.id)).status, 403);
+});
+
+test('lookup fails closed for consumed tickets without their committed record', async t => {
+  const f = await fixture(t);
+  const issued = await f.ticket();
+  f.db.prepare('UPDATE tickets SET consumed = 1 WHERE id = ?').run(issued.id);
+  const result = await f.request(`/v1/tickets/${issued.id}`);
+  assert.equal(result.status, 503);
+  assert.deepEqual(result.data, { error: 'Service unavailable' });
+});
+
+test('lookup rejects inconsistent record binding and corrupt ticket windows', async t => {
+  const f = await fixture(t);
+  const issued = await f.ticket();
+  await f.commit(issued.id);
+  f.db.prepare('UPDATE commands SET command = ? WHERE ticket_id = ?').run('mismatch', issued.id);
+  assert.equal((await f.request(`/v1/tickets/${issued.id}`)).status, 503);
+  const other = await f.ticket();
+  f.db.prepare('UPDATE tickets SET expires_at = not_before WHERE id = ?').run(other.id);
+  assert.equal((await f.request(`/v1/tickets/${other.id}`)).status, 503);
+});
+
+test('lookup persists observed time even on 404 and fails closed after restart/backward time', async t => {
+  const f = await fixture(t);
+  const issued = await f.ticket();
+  f.time(1200);
+  assert.equal((await f.request('/v1/tickets/missing')).status, 404);
+  assert.equal(f.db.prepare('SELECT last_time FROM clock_state').get().last_time, 1200);
+  await f.restart();
+  f.time(1199);
+  assert.equal((await f.request(`/v1/tickets/${issued.id}`)).status, 503);
+  f.time(NaN);
+  assert.equal((await f.request(`/v1/tickets/${issued.id}`)).status, 503);
+  f.time(1200);
+  assert.equal((await f.request(`/v1/tickets/${issued.id}`)).data.status, 'expired');
+});
+
+test('lookup reads time under serialization and handles storage failures without fabricated outcomes', async t => {
+  const f = await fixture(t);
+  const issued = await f.ticket();
+  f.fault(stage => { if (stage === 'after-begin') f.time(1100); });
+  assert.equal((await f.request(`/v1/tickets/${issued.id}`)).data.status, 'expired');
+  f.fault(stage => { if (stage === 'before-commit') throw new Error('private storage detail'); });
+  const failed = await f.request(`/v1/tickets/${issued.id}`);
+  assert.equal(failed.status, 503);
+  assert.deepEqual(failed.data, { error: 'Service unavailable' });
+  assert.equal(f.db.prepare('SELECT count(*) AS n FROM audit').get().n, 0);
+  f.fault(() => {});
+  f.db.exec('DROP TABLE commands');
+  assert.equal((await f.request(`/v1/tickets/${issued.id}`)).status, 503);
+});
 
 async function fixture(t, options = {}) {
   const dir = mkdtempSync(join(process.cwd(), '.bastion-test-'));

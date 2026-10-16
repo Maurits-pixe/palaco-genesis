@@ -132,3 +132,50 @@ export async function revokeTicket(ticket, token, fetcher) {
     throw new ApiError('Intrekking niet bevestigd door de service.')
   }
 }
+
+function exactObject(value, keys) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) &&
+    Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key))
+}
+
+export function validateTicketStatus(value, ticketId) {
+  const keys = ['id', 'command', 'not_before', 'expires_at', 'checked_at', 'status', 'revoked', 'record']
+  if (!exactObject(value, keys) || !validId(ticketId) || ticketId.length > 128 ||
+      value.id !== ticketId || typeof value.command !== 'string' || !value.command.trim() ||
+      commandLength(value.command) > MAX_COMMAND_LENGTH || typeof value.revoked !== 'boolean' ||
+      ![value.not_before, value.expires_at, value.checked_at].every(time => Number.isSafeInteger(time) && time >= 0) ||
+      value.expires_at <= value.not_before || value.expires_at - value.not_before > 60_000) return null
+  const record = value.record
+  if (record !== null && (!exactObject(record, ['id', 'command', 'committed_at']) ||
+      !validId(record.id) || record.id.length > 128 || record.command !== value.command ||
+      !Number.isSafeInteger(record.committed_at) || record.committed_at < value.not_before ||
+      record.committed_at >= value.expires_at || record.committed_at > value.checked_at)) return null
+  const expected = record !== null ? 'committed' : value.revoked ? 'revoked' :
+    value.checked_at >= value.expires_at ? 'expired' : value.checked_at < value.not_before ? 'pending' : 'active'
+  return value.status === expected ? value : null
+}
+
+export async function getTicketStatus(ticketId, token, fetcher) {
+  if (!validId(ticketId) || ticketId.length > 128) throw new ApiError('Vul een geldig ticket-ID in.')
+  const result = await request(`/v1/tickets/${ticketId}`, { token, fetcher })
+  const validated = validateTicketStatus(result, ticketId)
+  if (!validated) throw new ApiError('Onverwacht ticketstatusantwoord van de service.')
+  return validated
+}
+
+// A snapshot can retire existing authority, never create or restore it.
+export function reconcileTicketStatus(ticket, revocationUncertain, commands, outcome) {
+  const valid = validateTicketStatus(outcome, outcome?.id)
+  if (!valid) return { ticket, revocationUncertain, commands }
+  const terminal = ['revoked', 'expired', 'committed'].includes(valid.status)
+  const sameTicket = ticket?.id === valid.id && ticket.command === valid.command
+  return {
+    ticket: sameTicket && terminal ? null : ticket,
+    revocationUncertain: sameTicket && terminal ? false : revocationUncertain,
+    commands,
+  }
+}
+
+export function beginSubmission(ticket) {
+  return { ticket: null, lastSubmissionId: ticket.id }
+}

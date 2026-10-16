@@ -272,6 +272,35 @@ export function createBastion(config, { clock = Date.now, fault = () => {} } = {
         return reply(res, 200, { commands });
       }
       const match = /^\/v1\/tickets\/([^/]{1,128})$/.exec(path);
+      if (req.method === 'GET' && match) {
+        const outcome = transaction(now => {
+          const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(match[1]);
+          if (!ticket || ticket.issuer !== ISSUER || ticket.subject !== operator ||
+              ticket.action !== ACTION || ticket.resource !== RESOURCE) {
+            throw new Failure(404, 'Ticket not found');
+          }
+          const record = db.prepare('SELECT id, command, committed_at FROM commands WHERE ticket_id = ?')
+            .get(ticket.id) ?? null;
+          if (!validCommand(ticket.command) || !Number.isSafeInteger(ticket.not_before) ||
+              !Number.isSafeInteger(ticket.expires_at) || ticket.not_before < 0 ||
+              ticket.expires_at <= ticket.not_before || ticket.expires_at - ticket.not_before > 60000 ||
+              ![0, 1].includes(ticket.revoked) || ![0, 1].includes(ticket.consumed) ||
+              Boolean(ticket.consumed) !== Boolean(record) ||
+              (record && (record.command !== ticket.command || !Number.isSafeInteger(record.committed_at) ||
+                record.committed_at < ticket.not_before || record.committed_at >= ticket.expires_at ||
+                record.committed_at > now))) {
+            throw new Failure(503, 'Service unavailable');
+          }
+          const status = ticket.consumed ? 'committed' : ticket.revoked ? 'revoked' :
+            now >= ticket.expires_at ? 'expired' : now < ticket.not_before ? 'pending' : 'active';
+          return {
+            id: ticket.id, command: ticket.command, not_before: ticket.not_before,
+            expires_at: ticket.expires_at, checked_at: now, status,
+            revoked: Boolean(ticket.revoked), record,
+          };
+        });
+        return reply(res, 200, outcome);
+      }
       if (req.method === 'DELETE' && match) {
         transaction(now => {
           const result = db.prepare('UPDATE tickets SET revoked = ? WHERE id = ?').run(1, match[1]);

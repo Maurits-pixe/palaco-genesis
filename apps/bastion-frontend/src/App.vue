@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue'
-import { commandLength, commitCommand, issueTicket, listCommands, MAX_COMMAND_LENGTH, mergeCommands, revokeTicket, ticketUsable, timestamp } from './api.js'
+import { beginSubmission, commandLength, commitCommand, getTicketStatus, issueTicket, listCommands, MAX_COMMAND_LENGTH, mergeCommands, reconcileTicketStatus, revokeTicket, ticketUsable, timestamp } from './api.js'
 import { createRealtime } from './realtime.js'
 
 const token = ref('')
@@ -13,6 +13,10 @@ const hasLoaded = ref(false)
 const busy = ref('')
 const message = ref('')
 const error = ref('')
+const lookupId = ref('')
+const outcome = ref(null)
+const lastSubmissionId = ref('')
+let session = 0
 const realtimeStatus = ref('disconnected')
 const realtime = createRealtime({
   onEntry: (entry) => { commands.value = mergeCommands(commands.value, entry) },
@@ -34,7 +38,9 @@ const remaining = computed(() => ticket.value ? Math.max(0, Math.ceil((timestamp
 watch([command, ttlMs], () => {
   if (!revocationUncertain.value) ticket.value = null
 }, { flush: 'sync' })
-watch(token, () => {
+function resetSession() {
+  session++
+  busy.value = ''
   realtime.disconnect()
   ticket.value = null
   revocationUncertain.value = false
@@ -43,10 +49,15 @@ watch(token, () => {
   command.value = ''
   message.value = ''
   error.value = ''
-}, { flush: 'sync' })
+  lookupId.value = ''
+  outcome.value = null
+  lastSubmissionId.value = ''
+}
+watch(token, resetSession, { flush: 'sync' })
 
 async function perform(action) {
   if (busy.value) return
+  const started = session
   busy.value = action
   error.value = ''
   message.value = ''
@@ -54,13 +65,16 @@ async function perform(action) {
     if (action === 'ticket') {
       if (revocationUncertain.value) return
       ticket.value = null
-      ticket.value = await issueTicket(command.value, Number(ttlMs.value), token.value)
+      const issued = await issueTicket(command.value, Number(ttlMs.value), token.value)
+      if (started !== session) return
+      ticket.value = issued
       now.value = Date.now()
       message.value = 'Ticket ontvangen. Bevestig het commando in een aparte stap.'
     } else if (action === 'revoke') {
-      // Bij een onzekere uitkomst blijft alleen opnieuw intrekken toegestaan.
+      // Een onzekere intrekking blokkeert nieuwe toestemming tot bevestiging.
       revocationUncertain.value = true
       await revokeTicket(ticket.value, token.value)
+      if (started !== session) return
       ticket.value = null
       revocationUncertain.value = false
       message.value = "Ticket door de server ingetrokken. Eerder vastgelegde commando's blijven behouden."
@@ -68,36 +82,45 @@ async function perform(action) {
       if (!canCommit.value) return
       const currentTicket = ticket.value
       // Een onzekere netwerkuitkomst mag nooit een automatische tweede inzending veroorzaken.
-      ticket.value = null
+      const submission = beginSubmission(currentTicket)
+      ticket.value = submission.ticket
+      lastSubmissionId.value = submission.lastSubmissionId
+      lookupId.value = submission.lastSubmissionId
+      outcome.value = null
       revocationUncertain.value = false
       const committed = await commitCommand(currentTicket, command.value, token.value)
+      if (started !== session) return
       commands.value = mergeCommands(commands.value, committed)
       message.value = 'Commando vastgelegd in het logboek; er is niets uitgevoerd.'
+    } else if (action === 'status') {
+      outcome.value = null
+      const checked = await getTicketStatus(lookupId.value, token.value)
+      if (started !== session) return
+      outcome.value = checked
+      const reconciled = reconcileTicketStatus(ticket.value, revocationUncertain.value, commands.value, checked)
+      ticket.value = reconciled.ticket
+      revocationUncertain.value = reconciled.revocationUncertain
+      message.value = 'Ticketstatus opgehaald. Dit is een momentopname, geen nieuwe toestemming.'
     } else {
       commands.value = []
       hasLoaded.value = false
       const loaded = await listCommands(token.value)
+      if (started !== session) return
       // Behoud ook events die tijdens het ophalen zijn ontvangen.
       commands.value = [...commands.value].reverse().reduce(mergeCommands, loaded)
       hasLoaded.value = true
       message.value = 'Logboek bijgewerkt.'
     }
   } catch (failure) {
-    error.value = failure.message
+    if (started === session) error.value = failure.message
   } finally {
-    busy.value = ''
+    if (started === session) busy.value = ''
   }
 }
 
 function clearSession() {
-  realtime.disconnect()
-  token.value = ''
-  command.value = ''
-  ticket.value = null
-  commands.value = []
-  hasLoaded.value = false
-  message.value = ''
-  error.value = ''
+  if (token.value) token.value = ''
+  else resetSession()
 }
 
 function date(value) {
@@ -119,7 +142,7 @@ function date(value) {
       <button class="secondary" :disabled="!!busy" @click="clearSession">Wis sessie</button>
     </section>
     <div role="status" aria-live="polite"><p v-if="busy" class="notice">Even wachten…</p><p v-if="message" class="notice">{{ message }}</p></div>
-    <p v-if="error" role="alert" class="error">{{ error }} Bij een onzekere inzending: vernieuw eerst het logboek voordat je opnieuw indient.</p>
+    <p v-if="error" role="alert" class="error">{{ error }} Bij een onzekere inzending: controleer handmatig het ticket-ID. Dien niet automatisch opnieuw in.</p>
     <div class="grid">
       <section aria-labelledby="ticket-title" :aria-busy="!!busy">
         <h2 id="ticket-title">1. Ticket aanvragen</h2>
@@ -142,9 +165,30 @@ function date(value) {
         <p v-else class="muted">Nog geen ticket. Tekst of duur wijzigen maakt het lokale ticket ongeldig.</p>
         <button :disabled="!!busy || !canCommit || !token.trim()" @click="perform('commit')">Commando vastleggen</button>
         <button class="secondary" :disabled="!!busy || !ticket || !token.trim()" @click="perform('revoke')">Ticket intrekken</button>
-        <p v-if="revocationUncertain" role="alert" class="error">Intrekking nog niet bevestigd. Vastleggen en nieuwe tickets zijn geblokkeerd. Probeer dit ticket opnieuw in te trekken.</p>
+        <p v-if="revocationUncertain" role="alert" class="error">Intrekking nog niet bevestigd. Vastleggen en nieuwe tickets zijn geblokkeerd. Trek dit ticket opnieuw in of controleer de status van hetzelfde ticket.</p>
         <p class="muted">Intrekken wijzigt het ticket op de server. Een sessie wissen of invoer wijzigen trekt geen toestemming in.</p>
         <p class="muted">Na iedere inzendpoging vervalt het lokale ticket. Geen automatische herhaling.</p>
+      </section>
+      <section aria-labelledby="status-title" :aria-busy="busy === 'status'">
+        <h2 id="status-title">Ticketuitkomst controleren</h2>
+        <div v-if="lastSubmissionId">
+          <label for="last-submission">Laatste ingezonden ticket-ID (selecteer en kopieer)</label>
+          <input id="last-submission" :value="lastSubmissionId" readonly @focus="$event.target.select()" />
+        </div>
+        <form @submit.prevent="perform('status')">
+          <label for="lookup-id">Ticket-ID</label>
+          <input id="lookup-id" v-model="lookupId" maxlength="128" required :disabled="!!busy" autocomplete="off" spellcheck="false" />
+          <button :disabled="!!busy || !token.trim() || !lookupId">Status controleren</button>
+        </form>
+        <div v-if="outcome" class="result">
+          <p>Ticket: <code>{{ outcome.id }}</code></p>
+          <p>Status: {{ outcome.status }} · ingetrokken: {{ outcome.revoked ? 'ja' : 'nee' }}</p>
+          <p>Gecontroleerd: {{ date(outcome.checked_at) }}</p>
+          <p>Geldig vanaf: {{ date(outcome.not_before) }} · verloopt: {{ date(outcome.expires_at) }}</p>
+          <pre>{{ outcome.command }}</pre>
+          <p v-if="outcome.record">Vastgelegd: {{ date(outcome.record.committed_at) }} · {{ outcome.record.id }}</p>
+        </div>
+        <p class="muted">Alleen een momentopname. Active of pending herstelt geen lokaal ticket. Geen uitvoering, nieuwe toestemming of automatische herinzending.</p>
       </section>
       <section aria-labelledby="journal-title" :aria-busy="busy === 'list'">
         <h2 id="journal-title">Commandologboek</h2>

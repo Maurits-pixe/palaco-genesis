@@ -68,6 +68,7 @@ daarom geen onafhankelijke tweede toestemming of multi-user governance.
 | `POST /v1/tickets` met `command`, `ttl_ms` | Maak een server-side ticket voor exact deze commandotekst |
 | `POST /v1/commands` met `ticket_id`, `command` | Controleer en verbruik het ticket transactioneel |
 | `GET /v1/commands` | Lees maximaal de laatste 100 commandorecords |
+| `GET /v1/tickets/{id}` | Lees ticketstatus en eventueel het reeds gecommitte record |
 | `DELETE /v1/tickets/{id}` | Trek een ticket in |
 
 De BASTION-interface gebruikt deze DELETE-route via **Ticket intrekken**.
@@ -76,6 +77,42 @@ Een netwerkfout bewijst niet dat het ticket is ingetrokken of nog actief is:
 de interface blokkeert lokaal verder gebruik en bewaart het ID voor een
 handmatige nieuwe intrekpoging. De server blijft beslissend. Intrekking
 verwijdert geen eerder gecommit commandorecord en vervangt geen rollback.
+
+### Statuscontrole na een onzekere uitkomst
+
+De statusroute vereist dezelfde Bearer-authenticatie en controleert de
+server-side identiteit/scope van het ticket. Onbekende of niet-passende tickets
+geven 404; een onbetrouwbare klok of onbeschikbare opslag geeft 503, geen
+optimistische status. De controle leest tijd en opslag binnen de bestaande
+geserialiseerde transactie en bewaart de tijdgrens. Ze schrijft geen commando
+en zendt geen succes-event uit.
+
+Het antwoord bevat `id`, `command`, `not_before`, `expires_at`, `checked_at`,
+`status`, `revoked` en `record`. Alle tijdstippen zijn gehele epochmilliseconden.
+De status wordt in deze volgorde bepaald:
+
+1. `committed`: het ticket is verbruikt; `record` bevat `id`, `command` en
+   `committed_at`. Een latere intrekking verandert het historische resultaat
+   niet; `revoked` kan dan ook `true` zijn.
+2. `revoked`: ingetrokken zonder commit; `record` is `null`.
+3. `expired`: `checked_at >= expires_at`; `record` is `null`.
+4. `pending`: `checked_at < not_before`; `record` is `null`.
+5. `active`: binnen het halfopen tijdvenster; `record` is `null`.
+
+Een verbruikt ticket zonder bijbehorend commandorecord wordt niet als succes
+gepresenteerd. Het gecommitte record wordt rechtstreeks via het ticket gezocht,
+niet alleen in de laatste 100 logboekregels. Deze controle werkt dus ook na
+een serviceherstart zolang dezelfde database en operatorconfiguratie behouden
+blijven.
+
+De UI bewaart het laatst ingezonden ID uitsluitend in geheugen en biedt een
+handmatige ID-opvraag. Ze valideert het antwoord voordat het wordt getoond.
+Een historisch gecommit record verschijnt in het statusresultaat, niet als
+nieuwe logboekregel; recente regels worden door opvragen niet verdrongen.
+Alleen een terminale status (`committed`, `revoked`, `expired`) van hetzelfde
+ticket kan een onzekere lokale intrekking afsluiten. `active`, `pending`,
+404 en netwerkfouten geven geen nieuwe toestemming. Er volgt nooit een
+automatische commit of retry.
 
 Een ticket krijgt een willekeurige ID en een servervenster van maximaal
 60 seconden. Tickets bevatten geen door de client te wijzigen gezagsclaims.
