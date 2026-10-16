@@ -281,12 +281,13 @@ impl WalletRegistry {
         Ok(())
     }
 
-    pub fn profile_history(&self, wallet_id: &str) -> impl Iterator<Item = WalletProfile> + '_ {
+    pub fn profile_history<'a>(&'a self, wallet_id: &'a str) -> impl Iterator<Item = WalletProfile> + 'a {
         self.profile_history.iter().filter_map(move |(id, profile)| (id == wallet_id).then_some(*profile))
     }
 }
 
 /// Controlled sandbox seed: creates a balanced ledger transaction; it never mutates a balance directly.
+#[allow(clippy::too_many_arguments)]
 pub fn sandbox_seed(
     ledger: &mut SandboxLedger,
     currencies: &CurrencyRegistry,
@@ -321,7 +322,7 @@ mod registry_tests {
     fn active_registry() -> CurrencyRegistry {
         let mut registry = CurrencyRegistry::default();
         assert!(registry.register(CurrencyDefinition::sandbox_master_coin()).is_ok());
-        assert!(registry.activate("MC", "auth", "prov").is_ok());;
+        assert!(registry.activate("MC", "auth", "prov").is_ok());
         registry
     }
 
@@ -335,7 +336,7 @@ mod registry_tests {
     #[test]
     fn unauthorized_activation_fails_closed() {
         let mut registry = CurrencyRegistry::default();
-        registry.register(CurrencyDefinition::sandbox_master_coin());;
+        assert!(registry.register(CurrencyDefinition::sandbox_master_coin()).is_ok());
         assert_eq!(registry.activate("MC", "", "prov"), Err("missing authorization"));
         assert_eq!(registry.get("MC").map(|c| c.compliance_status), Some(ComplianceStatus::Draft));
     }
@@ -360,13 +361,13 @@ mod registry_tests {
     #[test]
     fn mc_and_mc7_remain_separate_accounts() {
         let mut currencies = CurrencyRegistry::default();
-        currencies.register(CurrencyDefinition::sandbox_master_coin());;
-        currencies.register(CurrencyDefinition::sandbox_mission_coin7());;
-        currencies.activate("MC", "auth-mc", "prov-mc");;
-        currencies.activate("MC7", "auth-mc7", "prov-mc7");;
+        assert!(currencies.register(CurrencyDefinition::sandbox_master_coin()).is_ok());
+        assert!(currencies.register(CurrencyDefinition::sandbox_mission_coin7()).is_ok());
+        assert!(currencies.activate("MC", "auth-mc", "prov-mc").is_ok());
+        assert!(currencies.activate("MC7", "auth-mc7", "prov-mc7").is_ok());
 
         let mut wallets = WalletRegistry::default();
-        wallets.create_wallet(Wallet { wallet_id: "w1".into(), owner_id: "c1".into(), profile: WalletProfile::Blanco, account_ids: Vec::new() });;
+        assert!(wallets.create_wallet(Wallet { wallet_id: "w1".into(), owner_id: "c1".into(), profile: WalletProfile::Blanco, account_ids: Vec::new() }).is_ok());
         assert!(wallets.add_account(WalletAccount { account_id: "a-mc".into(), wallet_id: "w1".into(), owner_id: "c1".into(), currency_id: "MC".into() }, &currencies).is_ok());
         assert!(wallets.add_account(WalletAccount { account_id: "a-mc7".into(), wallet_id: "w1".into(), owner_id: "c1".into(), currency_id: "MC7".into() }, &currencies).is_ok());
         assert_eq!(wallets.accounts.len(), 2);
@@ -683,7 +684,7 @@ pub fn sandbox_trace_reward_flow(
         currency_id: "MC".into(),
         amount: 25,
         rule_ref: "rule-loyalty-1".into(),
-        authorization_ref: "auth-reward",
+        authorization_ref: "auth-reward".into(),
         provenance_ref: "prov-reward".into(),
     };
     reward.validate(currencies)?;
@@ -723,8 +724,8 @@ pub fn sandbox_trace_reward_flow(
     let reversal = Reversal {
         reversal_id: "reversal-1".into(),
         original_transaction_id: "seed-seed-reward-1".into(),
-        authorization_ref: "auth-reversal",
-        provenance_ref: "prov-reversal",
+        authorization_ref: "auth-reversal".into(),
+        provenance_ref: "prov-reversal".into(),
     };
     reversal.validate()?;
     journal.record(
@@ -764,9 +765,9 @@ mod journal_tests {
         assert!(sandbox_trace_reward_flow(&mut currencies, &mut wallets, &mut ledger, &mut journal).is_ok());
 
         let entries: Vec<_> = journal.entries().collect();
-        assert_eq!(entries.len(), 6);
-        assert_eq!(entries.iter().map(|e| e.sequence).collect::<Vec<_>>(), vec![1, 2, 3, 4, 5, 6]);
-        assert_eq!(journal.trace_currency("MC").count(), 4);
+        assert_eq!(entries.len(), 7);
+        assert_eq!(entries.iter().map(|e| e.sequence).collect::<Vec<_>>(), vec![1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(journal.trace_currency("MC").count(), 5);
         assert_eq!(journal.trace_wallet("wallet-1").count(), 2);
         assert_eq!(journal.trace_account("account-1").count(), 2);
         assert_eq!(journal.trace_reward("reward-1").count(), 1);
