@@ -1,54 +1,80 @@
-# palaco-genesis
+# 🏛️ PALACO-CITADEL
 
-PALACO Genesis is the Rust workspace baseline for the PALACO platform.
+**Een ecosysteem voor cryptografie en commandovoering, gebouwd op PALACO Genesis.**
 
-## Repository layout
+Deze monorepo bevat de bestaande Rust-workspace van PALACO Genesis en reserveert
+de integratiegrenzen voor NEO, AETHER en BASTION.
+**Deze drie applicaties zijn nog niet geïmplementeerd in deze repository.**
+Encryptie, moduleverificatie en D-013-conformiteit zijn ontwerpdoelen, geen
+productiegaranties. De repository bevindt zich in een alpha-fase.
 
-## Repository bootstrap roadmap
+## 🏗️ Architectuur
 
-De specificatie voor de GitHub repository-bootstrap is vastgelegd in
-[`docs/pri-045-github-repository-bootstrap.md`](docs/pri-045-github-repository-bootstrap.md).
+- **👁️ NEO:** geplande Vue-launcher die modules controleert via
+  `/.well-known/palaco-app.json` en expliciet vertrouwde origins.
+- **🔐 AETHER:** geplande Rust-service met `ring` voor AES-256-GCM en
+  `rusqlite` voor opslag. Deze dependencies zijn nog niet toegevoegd.
+- **🛡️ BASTION:** gepland Node.js/Socket.io-commandocentrum met server-side
+  autorisatie en transactionele D-013-mutaties.
+
+Zie [architectuur](docs/ARCHITECTURE.md),
+[D-013](docs/D-013-PROTOCOL.md) en de bestaande
+[repository-bootstraproadmap](docs/pri-045-github-repository-bootstrap.md).
+
+## 🚀 Quick Start
+
+### Bestaande Rust-workspace
+
+Installeer Rust via rustup; `rust-toolchain.toml` bepaalt de toolchain.
+
+```bash
+git clone https://github.com/Maurits-pixe/palaco-genesis.git
+cd palaco-genesis
+cargo build --workspace
+cargo test --workspace
+```
+
+### Geplande applicaties
+
+De launchmappen bevatten nu alleen placeholders. Voeg eerst de echte projecten
+toe en installeer hun dependencies per map. De Rust-service moet een uitvoerbaar
+Cargo-project zijn; elk Node/frontend-project moet een `dev`-script aanbieden.
+Gebruik een ondersteunde Node.js-LTS-versie en Bash 4.3+ voor het startscript.
+
+```bash
+./scripts/start-all.sh
+```
+
+Het script controleert vooraf alle manifests en stopt nu dus met een duidelijke
+melding, zonder gedeeltelijk services te starten. Als een gestart proces stopt,
+worden ook de overige processen en hun subprocessen beëindigd.
+
+Ngrok is optioneel voor lokale HTTPS-tests zodra de applicaties bestaan.
+Configureer dan expliciet vertrouwde HTTPS-origins in NEO en de API-origins in de
+frontends. Publiceer geen services met echte gegevens zonder authenticatie.
+Commit nooit tokens, privésleutels, lokale databases of `.env`-bestanden.
+
+## 📂 Structuur
 
 ```text
-.
-├── .github/workflows/        # CI workflows
-├── crates/                   # Rust workspace crates
-│   ├── palaco-foundation/    # Temporal validity and evidence foundation
-│   ├── palaco-eventbus/      # Event transport boundary
-│   ├── palaco-harbor/        # Intake and ingress layer
-│   ├── palaco-quay/          # Coordination boundary
-│   ├── palaco-citadel/       # Execution boundary layer
-│   ├── palaco-federation/    # Federated domain contracts
-│   ├── palaco-intelligence/  # Intelligence domain contracts
-│   ├── palaco-evolution/     # Evolution domain contracts
-│   ├── palaco-constitution/  # Constitutional identity/authority/provenance rules
-│   ├── palaco-types/         # Foundational shared types
-│   ├── palaco-errors/        # Shared error contracts
-│   ├── palaco-events/        # Domain event contracts
-│   ├── palaco-evidence/      # Evidence chain contracts
-│   ├── palaco-oracle/        # Analysis and advisory layer
-│   ├── palaco-trias/         # Governance and authority layer
-│   ├── palaco-knowledge/     # Versioned knowledge contracts
-│   ├── palaco-runtime/       # Runtime orchestration contracts
-│   ├── palaco-audit/         # Audit trail layer
-│   ├── palaco-observatory/   # Observability and reporting layer
-│   └── palaco-rio-core/      # RIO interaction and orchestration contracts
-├── runtime/
-│   └── palaco-kernel/        # Runtime kernel crate
-├── specs/                    # Canonical PALACO specifications
-├── engine/                   # ENGINE COMPLEET assembly boundaries
-├── services/                 # Service assembly placeholders
-├── apps/                     # Surface application placeholders
-├── database/                 # Database assembly placeholders
-├── verification/             # Verification assembly placeholders
-├── docs/
-│   ├── architecture/
-│   ├── books/
-│   ├── foundation/
-│   └── reference/
-├── Cargo.toml
-└── rust-toolchain.toml
+apps/
+  neo-launcher/       # Gepland: Vue-launcher
+  aether-frontend/    # Gepland: crypto-UI
+  bastion-frontend/   # Gepland: command-UI
+services/
+  aether-engine/     # Gepland: uitvoerbare Rust-service
+  bastion-core/      # Gepland: Node.js-service
+scripts/start-all.sh
+docs/ARCHITECTURE.md
+docs/D-013-PROTOCOL.md
+crates/              # Bestaande Rust-workspacecrates
+runtime/             # Bestaande palaco-kernel
+specs/               # Canonieke PALACO-specificaties
 ```
+
+De bestaande `engine/`, `database/`, `verification/`, apps en servicegrenzen
+blijven behouden. Zie ook de
+[bestaande workspace-indeling](docs/reference/repository-structure.md).
 
 ## Layering order
 
@@ -82,3 +108,26 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
+
+Bijdragen: houd wijzigingen gericht, voeg tests toe voor gewijzigd gedrag en
+voer bovenstaande controles uit voordat je een pull request indient.
+Bewaar gedeelde Rust-domeinlogica in `crates/`; plaats applicatieassemblage in
+`apps/` en `services/`.
+
+## 🔒 Veiligheid & D-013
+
+Het [D-013-ontwerpcontract](docs/D-013-PROTOCOL.md) vereist server-side
+tijdsvalidatie en atomaire mutaties. De huidige Rust-contracten zijn geen bewijs
+dat de toekomstige BASTION-service dit protocol al afdwingt.
+
+## 📄 Licentie en publicatie
+
+Zie [LICENSE](LICENSE) voor de MIT-licentie. Bestaande Rust-packagemetadata
+declareert `MIT OR Apache-2.0` en is ongewijzigd.
+
+Publicatie-instellingen worden niet door deze bestanden gewijzigd. Controleer
+voor een publieke release de repositoryzichtbaarheid, licenties, secrets en
+implementatiestatus. Voeg desgewenst topics `rust`, `cybersecurity`, `vue`,
+`nodejs`, `encryption`, `monorepo` en `d-013` toe en pin de repository op je profiel.
+Publiceer `v1.0.0 - Genesis` pas nadat de beschreven applicaties en
+veiligheidsclaims aantoonbaar werken.
