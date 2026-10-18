@@ -81,7 +81,15 @@ bewaking of garantie dat de frontend bereikbaar is. Een nieuwe controle
 vervangt de vorige goedkeuring; NEO vraagt hiervoor geen servicetokens.
 Voer het bijbehorende servicetoken in de betreffende UI in; de UI bewaart het
 niet in browseropslag. AETHER versleutelt een tekstrecord en levert een ID
-waarmee je het kunt teruglezen. BASTION geeft eerst een kortlevend ticket uit;
+waarmee je het kunt teruglezen. Met **Wis sessie en tekst** kun je ook tijdens
+een lopend AETHER-verzoek direct token, tekst en resultaten uit de interface
+wissen. Vertraagde antwoorden uit die sessie worden niet opnieuw getoond.
+Dit stopt alleen het lokale wachten: een al verstuurd opslagverzoek kan
+server-side toch zijn uitgevoerd, zonder dat je het record-ID hebt ontvangen.
+Wissen verwijdert geen opgeslagen records. Dien een onzekere opslag niet
+automatisch opnieuw in; een nieuwe inzending kan een tweede record maken.
+
+BASTION geeft eerst een kortlevend ticket uit;
 pas de afzonderlijke commitactie schrijft het commando in het logboek.
 Met **Ticket intrekken** kun je het huidige ticket server-side ongeldig maken.
 De interface bevestigt dit alleen na een geldig serverantwoord. Bij een

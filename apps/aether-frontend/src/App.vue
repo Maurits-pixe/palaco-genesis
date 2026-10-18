@@ -1,54 +1,8 @@
 <script setup>
-import { ref, watch } from 'vue'
-import { createRecord, MAX_PLAINTEXT_BYTES, plaintextBytes, readRecord } from './api.js'
+import { MAX_PLAINTEXT_BYTES, plaintextBytes } from './api.js'
+import { useRecordSession } from './session.js'
 
-const token = ref('')
-const plaintext = ref('')
-const recordId = ref('')
-const result = ref(null)
-const busy = ref('')
-const message = ref('')
-const error = ref('')
-
-watch(token, () => {
-  result.value = null
-  plaintext.value = ''
-  recordId.value = ''
-  message.value = ''
-  error.value = ''
-}, { flush: 'sync' })
-
-async function perform(action) {
-  if (busy.value) return
-  busy.value = action
-  result.value = null
-  error.value = ''
-  message.value = ''
-  try {
-    if (action === 'create') {
-      const record = await createRecord(plaintext.value, token.value)
-      recordId.value = record.id
-      plaintext.value = ''
-      message.value = 'Record opgeslagen. Bewaar het record-ID om het later terug te lezen.'
-    } else {
-      result.value = await readRecord(recordId.value.trim(), token.value)
-      message.value = 'Record opgehaald.'
-    }
-  } catch (failure) {
-    error.value = failure.message
-  } finally {
-    busy.value = ''
-  }
-}
-
-function clearSession() {
-  token.value = ''
-  plaintext.value = ''
-  recordId.value = ''
-  result.value = null
-  message.value = ''
-  error.value = ''
-}
+const { token, plaintext, recordId, result, busy, message, error, perform, clearSession } = useRecordSession()
 </script>
 
 <template>
@@ -59,9 +13,11 @@ function clearSession() {
     <section aria-labelledby="access-title">
       <h2 id="access-title">Toegang</h2>
       <label for="token">Toegangstoken</label>
-      <input id="token" v-model="token" type="password" autocomplete="off" spellcheck="false" :disabled="!!busy" aria-describedby="token-help" />
+      <input id="token" v-model="token" type="password" autocomplete="off" spellcheck="false" aria-describedby="token-help" />
       <p id="token-help" class="muted">Alleen in componentgeheugen; niet in opslag of een URL. Vernieuwen wist de sessie.</p>
-      <button class="secondary" :disabled="!!busy" @click="clearSession">Wis sessie en tekst</button>
+      <button class="secondary" @click="clearSession">Wis sessie en tekst</button>
+      <p class="muted">Annuleren of de sessie wissen stopt alleen het lokale wachten. Een al verstuurd opslagverzoek
+        kan het record al hebben opgeslagen. Probeer niet automatisch opnieuw.</p>
     </section>
     <div role="status" aria-live="polite"><p v-if="busy" class="notice">Even wachten…</p><p v-if="message" class="notice">{{ message }}</p></div>
     <p v-if="error" role="alert" class="error">{{ error }}</p>
