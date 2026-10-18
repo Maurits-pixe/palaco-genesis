@@ -1,6 +1,7 @@
 export const PROTOCOL = 'palaco-app/v1'
 export const MAX_AGE_MS = 60_000
-const MAX_MANIFEST_BYTES = 4096
+const MAX_JSON_BYTES = 4096
+const MAX_TIMEOUT_MS = 5000
 const LOCAL_HTTP_ORIGINS = new Set([
   'http://127.0.0.1:5174',
   'http://127.0.0.1:5175',
@@ -12,6 +13,7 @@ export const TRUSTED_MODULES = Object.freeze([
     name: 'AETHER',
     origin: 'http://127.0.0.1:5174',
     manifestPath: '/verify/aether/.well-known/palaco-app.json',
+    healthPath: '/verify/aether/health',
     description: 'Versleutelde records opslaan en teruglezen.',
   }),
   Object.freeze({
@@ -19,6 +21,7 @@ export const TRUSTED_MODULES = Object.freeze([
     name: 'BASTION',
     origin: 'http://127.0.0.1:5175',
     manifestPath: '/verify/bastion/.well-known/palaco-app.json',
+    healthPath: '/verify/bastion/health',
     description: 'Tijdelijke tickets en een commandologboek.',
   }),
 ])
@@ -47,25 +50,49 @@ export function validateManifest(manifest, module) {
   return true
 }
 
-async function boundedJson(response) {
-  if (!response.body || Number(response.headers.get('content-length')) > MAX_MANIFEST_BYTES) {
-    throw new Error('Ongeldig manifest.')
+function abortable(promise, signal) {
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason)
+    if (signal.aborted) {
+      reject(signal.reason)
+    } else {
+      signal.addEventListener('abort', abort, { once: true })
+    }
+    Promise.resolve(promise).then(resolve, reject).finally(() => {
+      signal.removeEventListener('abort', abort)
+    })
+  })
+}
+
+function cancelBody(body) {
+  body?.cancel().catch(() => {})
+}
+
+async function boundedJson(response, signal) {
+  if (!response.body || Number(response.headers.get('content-length')) > MAX_JSON_BYTES) {
+    cancelBody(response.body)
+    throw new Error('Ongeldig JSON-antwoord.')
   }
   const reader = response.body.getReader()
   const chunks = []
   let size = 0
+  const cancel = () => { reader.cancel().catch(() => {}) }
+  signal.addEventListener('abort', cancel, { once: true })
   try {
     while (true) {
-      const { done, value } = await reader.read()
+      signal.throwIfAborted()
+      const { done, value } = await abortable(reader.read(), signal)
+      signal.throwIfAborted()
       if (done) break
       size += value.byteLength
-      if (size > MAX_MANIFEST_BYTES) throw new Error('Manifest is te groot.')
+      if (size > MAX_JSON_BYTES) throw new Error('JSON-antwoord is te groot.')
       chunks.push(value)
     }
   } catch (error) {
-    await reader.cancel().catch(() => {})
+    cancel()
     throw error
   } finally {
+    signal.removeEventListener('abort', cancel)
     reader.releaseLock()
   }
   const bytes = new Uint8Array(size)
@@ -82,21 +109,38 @@ export async function verifyModule(module, fetcher = fetch, timeoutMs = 5000) {
     throw new Error('Moduleconfiguratie is niet toegestaan.')
   }
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const response = await fetcher(module.manifestPath, {
+  const budget = Number.isFinite(timeoutMs) && timeoutMs > 0
+    ? Math.min(timeoutMs, MAX_TIMEOUT_MS) : MAX_TIMEOUT_MS
+  const timer = setTimeout(() => controller.abort(), budget)
+  async function fetchJson(path) {
+    controller.signal.throwIfAborted()
+    const request = Promise.resolve(fetcher(path, {
       redirect: 'error',
       cache: 'no-store',
       credentials: 'omit',
       signal: controller.signal,
       headers: { Accept: 'application/json' },
-    })
-    if (!response.ok || response.redirected ||
-        !response.headers.get('content-type')?.includes('application/json')) {
-      throw new Error('Ongeldig manifestantwoord.')
+    }))
+    request.then((response) => {
+      if (controller.signal.aborted) cancelBody(response.body)
+    }, () => {})
+    const response = await abortable(request, controller.signal)
+    if (response.status !== 200 || response.redirected ||
+        response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json') {
+      cancelBody(response.body)
+      throw new Error('Ongeldig JSON-antwoord.')
     }
-    validateManifest(await boundedJson(response), module)
-    return { status: 'verified', verifiedAt: Date.now() }
+    return boundedJson(response, controller.signal)
+  }
+  try {
+    validateManifest(await fetchJson(module.manifestPath), module)
+    const health = await fetchJson(module.healthPath)
+    if (!health || typeof health !== 'object' || Array.isArray(health) ||
+        Object.keys(health).length !== 1 || health.status !== 'ok') {
+      throw new Error('Ongeldig health-antwoord.')
+    }
+    controller.signal.throwIfAborted()
+    return { status: 'verified', moduleId: module.id, health: 'ok', verifiedAt: Date.now() }
   } catch {
     throw new Error('Verificatie mislukt. Controleer of de lokale service actief is en probeer opnieuw.')
   } finally {
@@ -107,6 +151,8 @@ export async function verifyModule(module, fetcher = fetch, timeoutMs = 5000) {
 export function launchUrl(module, verification, now = Date.now()) {
   const age = now - verification?.verifiedAt
   return trustedModule(module) && isAllowedOrigin(module.origin) &&
-    verification?.status === 'verified' && age >= 0 && age < MAX_AGE_MS
+    verification?.status === 'verified' && verification.moduleId === module.id &&
+    verification.health === 'ok' && Number.isFinite(verification.verifiedAt) &&
+    age >= 0 && age < MAX_AGE_MS
     ? module.origin : null
 }

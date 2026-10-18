@@ -11,7 +11,8 @@ volledig multi-user autorisatiesysteem.
 ## 🏗️ Architectuur
 
 - **👁️ NEO:** Vue-launcher die modulemanifests controleert via
-  `/.well-known/palaco-app.json` en alleen vooraf geconfigureerde UI-links opent.
+  `/.well-known/palaco-app.json`, servicebeschikbaarheid via `/health` controleert
+  en alleen vooraf geconfigureerde UI-links opent.
   Dit bewijst geen cryptografische code-integriteit.
 - **🔐 AETHER:** Rust-service met `ring` voor AES-256-GCM en `rusqlite`
   voor versleutelde records; een Vue-interface kan records opslaan en ophalen.
@@ -72,6 +73,12 @@ niet automatisch geladen. Exporteer de waarden in de shell die de services start
 | BASTION UI / API | http://127.0.0.1:5175 / http://127.0.0.1:8788 |
 
 Open NEO en controleer de twee modules voordat je hun interfaces opent.
+NEO activeert een link alleen na een passend manifest én een gezond
+`/health`-antwoord van dezelfde geconfigureerde backend. Bij onbeschikbaarheid,
+een ongeldig antwoord of een timeout blijft de link uitgeschakeld. De controle
+is maximaal 60 seconden bruikbaar en is een momentopname, geen doorlopende
+bewaking of garantie dat de frontend bereikbaar is. Een nieuwe controle
+vervangt de vorige goedkeuring; NEO vraagt hiervoor geen servicetokens.
 Voer het bijbehorende servicetoken in de betreffende UI in; de UI bewaart het
 niet in browseropslag. AETHER versleutelt een tekstrecord en levert een ID
 waarmee je het kunt teruglezen. BASTION geeft eerst een kortlevend ticket uit;

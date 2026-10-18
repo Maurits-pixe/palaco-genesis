@@ -27,9 +27,9 @@ function follow(event, module) {
 
 function status(module) {
   const state = states.value[module.id]
-  if (state.status === 'verifying') return 'Manifest controleren…'
+  if (state.status === 'verifying') return 'Identiteit en backendstatus controleren…'
   if (state.status === 'error') return state.message
-  if (launchUrl(module, state, now.value)) return 'Manifest komt overeen · geldig gedurende 60 seconden.'
+  if (launchUrl(module, state, now.value)) return 'Identiteit klopt en backend antwoordde ok · momentopname geldig gedurende 60 seconden.'
   return state.status === 'verified' ? 'Verificatie verlopen. Controleer opnieuw.' : 'Nog niet gecontroleerd.'
 }
 </script>
@@ -39,7 +39,8 @@ function status(module) {
     <header><p class="eyebrow">PALACO / LOKALE ALPHA</p><h1>NEO</h1><p>Een rustig startpunt voor je lokale modules.</p></header>
     <aside class="notice">
       <strong>Wat wordt gecontroleerd?</strong>
-      Alleen de module-identiteit, naam en het protocol in het manifest.
+      De module-identiteit, naam en het protocol in het manifest, plus een publiek backendantwoord met status ok.
+      Dit is een momentopname, geen garantie op voortdurende beschikbaarheid.
       Dit is geen cryptografische code-integriteitscontrole en geen autorisatie.
       Startadressen staan vast; manifesten kunnen ze niet wijzigen.
     </aside>
@@ -51,7 +52,7 @@ function status(module) {
         <p class="address">{{ module.origin }}</p>
         <p class="status" role="status">{{ status(module) }}</p>
         <div class="actions">
-          <button :disabled="states[module.id].status === 'verifying'" @click="verify(module)">Verifieer manifest</button>
+          <button :disabled="states[module.id].status === 'verifying'" @click="verify(module)">Controleer identiteit en backendstatus</button>
           <a v-if="launchUrl(module, states[module.id], now)" :href="launchUrl(module, states[module.id], now)" rel="noreferrer" @click="follow($event, module)">Open {{ module.name }} →</a>
           <span v-else class="disabled" role="link" aria-disabled="true">Open {{ module.name }} →</span>
         </div>

@@ -38,9 +38,23 @@ NEO controleert `/.well-known/palaco-app.json` via vaste Vite-proxyroutes
 lokale API's. Het manifest bevat `id` (`aether` of `bastion`), `name` en
 `protocol` (`palaco-app/v1`). Verwachte identiteit/protocol en de twee UI-origins
 staan in de launcherconfiguratie; een manifest kan geen nieuwe launch-URL
-introduceren. De lanceerlink blijft uitgeschakeld tot de controle slaagt.
-Fouten, redirects, timeouts en verkeerde manifestwaarden leiden tot weigering.
-Een nieuwe controle schakelt eerdere goedkeuring uit.
+introduceren. Na het manifest controleert NEO `/health` via dezelfde vaste
+moduleproxy. Alleen HTTP 200 met exact het JSON-object `{"status":"ok"}`
+bevestigt beschikbaarheid; ook een HTTP 503 met een schijnbaar gezond object
+wordt geweigerd.
+
+Beide antwoorden zijn begrensd tot 4096 bytes en delen één deadline van
+5 seconden, inclusief het lezen van de bodies. Fouten, redirects, verkeerde
+identiteit, ongezonde of ongeldige healthantwoorden en timeouts houden de
+lanceerlink uitgeschakeld. De verificatiestatus bindt de gecontroleerde
+module-identiteit aan het gezonde resultaat; een oude manifest-only status
+volstaat niet.
+
+Een nieuwe controle schakelt eerdere goedkeuring uit. Een geslaagde controle
+is maximaal 60 seconden bruikbaar. Dit is een momentopname van de API, geen
+achtergrondmonitor, bereikbaarheidstest van de Vue-interface of garantie dat
+de service na controle gezond blijft. De publieke controle vraagt geen token
+en autoriseert geen mutatie.
 
 HTTP is uitsluitend voor expliciete loopback-ontwikkeling toegestaan;
 andere origins vereisen HTTPS. Dit is geen dynamische URL-proxy of modulemarkt.
