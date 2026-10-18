@@ -211,12 +211,33 @@ Gebruik **Terminal → Run Task**:
 | `PALACO: clippy` | Alle targets linten; warnings zijn fouten |
 | `PALACO: test` | Workspace-tests; standaard testtaak |
 | `PALACO: validate` | Format, Clippy, tests en build achtereenvolgens uitvoeren |
+| `PALACO: install Node dependencies` | Expliciet `npm ci` uitvoeren in de vier Node-projecten |
+| `AETHER: validate` | De zelfstandige Rust-service formatteringscontrole, Clippy, tests en build laten doorlopen |
+| `NEO: validate` | Launcher-tests en productiebuild |
+| `AETHER UI: validate` | Crypto-interface-tests en productiebuild |
+| `BASTION UI: validate` | Commando-interface-tests en productiebuild |
+| `BASTION: validate` | Node-commandoservicetests |
+| `PALACO: validate full stack` | Rootworkspace en vervolgens alle vijf modules sequentieel controleren |
 
 De taken werken vanuit de geopende rootmap op Windows, macOS en Linux en
 vereisen geen Bash. Ze worden niet automatisch bij het openen uitgevoerd.
 Vertrouw de workspace alleen nadat je de repository hebt gecontroleerd.
-De gedeelde `PALACO:*`-taken blijven gericht op de bestaande Rust-domeinworkspace.
-Start de nieuwe modules in een terminal volgens de instructies hierboven;
+De bestaande standaard build-/testtaken en `PALACO: validate` blijven gericht
+op de Rust-domeinworkspace; ze controleren de zelfstandige AETHER-service niet.
+Kies voor de hele applicatiestack expliciet `PALACO: validate full stack`.
+
+Voer na een verse clone eerst `PALACO: install Node dependencies` uit.
+Deze taak gebruikt de vier bestaande lockbestanden en kan aanwezige
+`node_modules` vervangen; inspecteer ook de dependencies en installatiescripts
+voordat je installeert. De validatietaken installeren niets automatisch en
+starten geen servers. Bij een mislukte stap stopt de sequentiële keten.
+Voor ieder Node-project bestaan ook afzonderlijke `install`- en `test`-taken;
+de drie UI-projecten hebben een `build`-taak. AETHER heeft afzonderlijke
+`format check`, `clippy`, `test` en `build`-taken. npm-processen gebruiken op
+Windows expliciet `npm.cmd`; Cargo en Node.js moeten in je PATH staan.
+Een geslaagde validatie is geen live integratie- of browsertest.
+
+Start de modules in een terminal volgens de instructies hierboven;
 het gezamenlijke startscript vereist Bash (op Windows bijvoorbeeld via WSL).
 
 Voor GitHub-review of optioneel GitHub Copilot meld je jezelf in VS Code aan

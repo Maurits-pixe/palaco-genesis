@@ -59,6 +59,248 @@
         "PALACO: build"
       ],
       "problemMatcher": []
+    },
+    {
+      "label": "AETHER: format check",
+      "type": "process",
+      "command": "cargo",
+      "args": ["fmt", "--all", "--", "--check"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/aether-engine"
+      },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "AETHER: clippy",
+      "type": "process",
+      "command": "cargo",
+      "args": ["clippy", "--locked", "--all-targets", "--", "-D", "warnings"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/aether-engine"
+      },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "AETHER: test",
+      "type": "process",
+      "command": "cargo",
+      "args": ["test", "--locked"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/aether-engine"
+      },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "AETHER: build",
+      "type": "process",
+      "command": "cargo",
+      "args": ["build", "--locked"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/aether-engine"
+      },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "AETHER: validate",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "AETHER: format check",
+        "AETHER: clippy",
+        "AETHER: test",
+        "AETHER: build"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "NEO: install",
+      "type": "process",
+      "command": "npm",
+      "windows": {
+        "command": "npm.cmd"
+      },
+      "args": ["ci"],
+      "options": {
+        "cwd": "${workspaceFolder}/apps/neo-launcher"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "NEO: test",
+      "type": "process",
+      "command": "npm",
+      "windows": {
+        "command": "npm.cmd"
+      },
+      "args": ["test"],
+      "options": {
+        "cwd": "${workspaceFolder}/apps/neo-launcher"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "NEO: build",
+      "type": "process",
+      "command": "npm",
+      "windows": {
+        "command": "npm.cmd"
+      },
+      "args": ["run", "build"],
+      "options": {
+        "cwd": "${workspaceFolder}/apps/neo-launcher"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "NEO: validate",
+      "dependsOrder": "sequence",
+      "dependsOn": ["NEO: test", "NEO: build"],
+      "problemMatcher": []
+    },
+    {
+      "label": "AETHER UI: install",
+      "type": "process",
+      "command": "npm",
+      "windows": {
+        "command": "npm.cmd"
+      },
+      "args": ["ci"],
+      "options": {
+        "cwd": "${workspaceFolder}/apps/aether-frontend"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "AETHER UI: test",
+      "type": "process",
+      "command": "npm",
+      "windows": {
+        "command": "npm.cmd"
+      },
+      "args": ["test"],
+      "options": {
+        "cwd": "${workspaceFolder}/apps/aether-frontend"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "AETHER UI: build",
+      "type": "process",
+      "command": "npm",
+      "windows": {
+        "command": "npm.cmd"
+      },
+      "args": ["run", "build"],
+      "options": {
+        "cwd": "${workspaceFolder}/apps/aether-frontend"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "AETHER UI: validate",
+      "dependsOrder": "sequence",
+      "dependsOn": ["AETHER UI: test", "AETHER UI: build"],
+      "problemMatcher": []
+    },
+    {
+      "label": "BASTION UI: install",
+      "type": "process",
+      "command": "npm",
+      "windows": {
+        "command": "npm.cmd"
+      },
+      "args": ["ci"],
+      "options": {
+        "cwd": "${workspaceFolder}/apps/bastion-frontend"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "BASTION UI: test",
+      "type": "process",
+      "command": "npm",
+      "windows": {
+        "command": "npm.cmd"
+      },
+      "args": ["test"],
+      "options": {
+        "cwd": "${workspaceFolder}/apps/bastion-frontend"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "BASTION UI: build",
+      "type": "process",
+      "command": "npm",
+      "windows": {
+        "command": "npm.cmd"
+      },
+      "args": ["run", "build"],
+      "options": {
+        "cwd": "${workspaceFolder}/apps/bastion-frontend"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "BASTION UI: validate",
+      "dependsOrder": "sequence",
+      "dependsOn": ["BASTION UI: test", "BASTION UI: build"],
+      "problemMatcher": []
+    },
+    {
+      "label": "BASTION: install",
+      "type": "process",
+      "command": "npm",
+      "windows": {
+        "command": "npm.cmd"
+      },
+      "args": ["ci"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/bastion-core"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "BASTION: test",
+      "type": "process",
+      "command": "npm",
+      "windows": {
+        "command": "npm.cmd"
+      },
+      "args": ["test"],
+      "options": {
+        "cwd": "${workspaceFolder}/services/bastion-core"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "BASTION: validate",
+      "dependsOrder": "sequence",
+      "dependsOn": ["BASTION: test"],
+      "problemMatcher": []
+    },
+    {
+      "label": "PALACO: install Node dependencies",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "NEO: install",
+        "AETHER UI: install",
+        "BASTION UI: install",
+        "BASTION: install"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "PALACO: validate full stack",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "PALACO: validate",
+        "AETHER: validate",
+        "NEO: validate",
+        "AETHER UI: validate",
+        "BASTION UI: validate",
+        "BASTION: validate"
+      ],
+      "problemMatcher": []
     }
   ]
 }
