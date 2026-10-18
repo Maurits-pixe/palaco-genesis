@@ -88,6 +88,14 @@ Dit stopt alleen het lokale wachten: een al verstuurd opslagverzoek kan
 server-side toch zijn uitgevoerd, zonder dat je het record-ID hebt ontvangen.
 Wissen verwijdert geen opgeslagen records. Dien een onzekere opslag niet
 automatisch opnieuw in; een nieuwe inzending kan een tweede record maken.
+De AETHER-interface accepteert succesvolle antwoorden alleen als
+`application/json` met een passend recordformaat. Het lezen stopt bij meer
+dan 128 KiB antwoorddata, ook zonder betrouwbare `Content-Length`; de
+uitgelezen tekst mag maximaal 16 KiB UTF-8 bevatten. De antwoordlimiet biedt
+ruimte voor JSON-escaping van die tekst. De standaardtimeout van 8 seconden
+geldt voor het volledige ophalen en lezen van het antwoord, niet alleen
+voor het ontvangen van de headers. Een afgewezen antwoord bewijst niet dat
+een opslagverzoek server-side is teruggedraaid.
 
 BASTION geeft eerst een kortlevend ticket uit;
 pas de afzonderlijke commitactie schrijft het commando in het logboek.
