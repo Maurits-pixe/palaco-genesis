@@ -1,22 +1,8 @@
 <script setup>
-import { onUnmounted, ref } from 'vue'
-import { launchUrl, TRUSTED_MODULES, verifyModule } from './verification.js'
+import { launchUrl, TRUSTED_MODULES } from './verification.js'
+import { useModuleVerification } from './useModuleVerification.js'
 
-const states = ref(Object.fromEntries(TRUSTED_MODULES.map(({ id }) => [id, { status: 'idle' }])))
-const now = ref(Date.now())
-const clock = setInterval(() => { now.value = Date.now() }, 500)
-onUnmounted(() => clearInterval(clock))
-
-async function verify(module) {
-  if (states.value[module.id].status === 'verifying') return
-  states.value[module.id] = { status: 'verifying' }
-  try {
-    states.value[module.id] = await verifyModule(module)
-    now.value = Date.now()
-  } catch (error) {
-    states.value[module.id] = { status: 'error', message: error.message }
-  }
-}
+const { states, now, isVerifying, launchableCount, verify, verifyAll } = useModuleVerification()
 
 function follow(event, module) {
   if (!launchUrl(module, states.value[module.id], Date.now())) {
@@ -44,6 +30,10 @@ function status(module) {
       Dit is geen cryptografische code-integriteitscontrole en geen autorisatie.
       Startadressen staan vast; manifesten kunnen ze niet wijzigen.
     </aside>
+    <div class="actions">
+      <button :disabled="isVerifying" @click="verifyAll">Controleer alle modules</button>
+      <p role="status" aria-live="polite" aria-atomic="true">{{ launchableCount }} van {{ TRUSTED_MODULES.length }} modules momenteel te openen.</p>
+    </div>
     <section class="grid" aria-label="Lokale modules">
       <article v-for="module in TRUSTED_MODULES" :key="module.id" :aria-busy="states[module.id].status === 'verifying'">
         <p class="eyebrow">MODULE / {{ module.id }}</p>

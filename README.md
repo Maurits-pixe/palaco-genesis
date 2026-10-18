@@ -73,6 +73,13 @@ niet automatisch geladen. Exporteer de waarden in de shell die de services start
 | BASTION UI / API | http://127.0.0.1:5175 / http://127.0.0.1:8788 |
 
 Open NEO en controleer de twee modules voordat je hun interfaces opent.
+Met **Controleer alle modules** start je beide controles tegelijk; de
+afzonderlijke controleknoppen blijven beschikbaar. Een fout bij één module
+blokkeert de geslaagde controle van de andere niet. Tijdens een lopende
+controle is de gezamenlijke knop uitgeschakeld om dubbele verzoeken te
+voorkomen. Het overzicht telt alleen modules met een momenteel bruikbare
+startlink; verlopen controles tellen niet mee. NEO controleert niet
+automatisch opnieuw en opent geen interfaces zonder jouw klik.
 NEO activeert een link alleen na een passend manifest én een gezond
 `/health`-antwoord van dezelfde geconfigureerde backend. Bij onbeschikbaarheid,
 een ongeldig antwoord of een timeout blijft de link uitgeschakeld. De controle
