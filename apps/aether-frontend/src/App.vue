@@ -2,7 +2,7 @@
 import { MAX_PLAINTEXT_BYTES, plaintextBytes } from './api.js'
 import { useRecordSession } from './session.js'
 
-const { token, plaintext, recordId, result, busy, message, error, perform, clearSession } = useRecordSession()
+const { token, plaintext, recordId, lastCreatedId, result, busy, message, error, perform, readLastCreated, clearSession } = useRecordSession()
 </script>
 
 <template>
@@ -33,6 +33,15 @@ const { token, plaintext, recordId, result, busy, message, error, perform, clear
       </section>
       <section aria-labelledby="read-title" :aria-busy="busy === 'read'">
         <h2 id="read-title">Record teruglezen</h2>
+        <div v-if="lastCreatedId">
+          <label for="last-created-id">Laatst bevestigd opgeslagen record-ID</label>
+          <input id="last-created-id" :value="lastCreatedId" readonly autocomplete="off" spellcheck="false" aria-describedby="last-created-help" />
+          <p id="last-created-help" class="muted">Alleen in sessiegeheugen; geen volledige recordhistorie.
+            Na een onzekere of mislukte opslag blijft het vorige bevestigde ID staan.
+            Een ontbrekend antwoord op een opslagverzoek kan hiermee niet worden gereconstrueerd.
+            Tokenwijziging, sessiewissen of herladen wist dit ID.</p>
+          <button type="button" :disabled="!!busy || !token.trim()" @click="readLastCreated">Lees laatst opgeslagen record</button>
+        </div>
         <form @submit.prevent="perform('read')">
           <label for="record-id">Record-ID</label>
           <input id="record-id" v-model="recordId" required maxlength="200" :disabled="!!busy" autocomplete="off" spellcheck="false" />

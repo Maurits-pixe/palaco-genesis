@@ -94,7 +94,15 @@ bewaking of garantie dat de frontend bereikbaar is. Een nieuwe controle
 vervangt de vorige goedkeuring; NEO vraagt hiervoor geen servicetokens.
 Voer het bijbehorende servicetoken in de betreffende UI in; de UI bewaart het
 niet in browseropslag. AETHER versleutelt een tekstrecord en levert een ID
-waarmee je het kunt teruglezen. Met **Wis sessie en tekst** kun je ook tijdens
+waarmee je het kunt teruglezen. Het laatst **bevestigd opgeslagen** record-ID
+blijft apart zichtbaar wanneer je een ander ID invoert. Met **Lees laatst
+opgeslagen record** lees je dat bevestigde record handmatig terug, zonder
+opnieuw iets op te slaan. Dit is geen volledige historie: na een onzekere
+opslag blijft eventueel het vorige bevestigde ID staan. Een ontbrekend
+serverantwoord kan hiermee niet worden gereconstrueerd.
+Het bewaarde ID staat alleen in sessiegeheugen en verdwijnt bij
+tokenwijziging, sessiewissen of herladen.
+Met **Wis sessie en tekst** kun je ook tijdens
 een lopend AETHER-verzoek direct token, tekst en resultaten uit de interface
 wissen. Vertraagde antwoorden uit die sessie worden niet opnieuw getoond.
 Dit stopt alleen het lokale wachten: een al verstuurd opslagverzoek kan

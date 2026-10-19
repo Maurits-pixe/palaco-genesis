@@ -5,6 +5,7 @@ export function useRecordSession({ create = createRecord, read = readRecord } = 
   const token = ref('')
   const plaintext = ref('')
   const recordId = ref('')
+  const lastCreatedId = ref('')
   const result = ref(null)
   const busy = ref('')
   const message = ref('')
@@ -18,6 +19,7 @@ export function useRecordSession({ create = createRecord, read = readRecord } = 
     busy.value = ''
     plaintext.value = ''
     recordId.value = ''
+    lastCreatedId.value = ''
     result.value = null
     message.value = ''
     error.value = ''
@@ -53,6 +55,7 @@ export function useRecordSession({ create = createRecord, read = readRecord } = 
         const record = await create(plaintext.value, token.value, undefined, controller.signal)
         if (!isCurrent()) return
         recordId.value = record.id
+        lastCreatedId.value = record.id
         plaintext.value = ''
         message.value = 'Record opgeslagen. Bewaar het record-ID om het later terug te lezen.'
       } else {
@@ -71,5 +74,11 @@ export function useRecordSession({ create = createRecord, read = readRecord } = 
     }
   }
 
-  return { token, plaintext, recordId, result, busy, message, error, perform, clearSession, dispose }
+  function readLastCreated() {
+    if (disposed || busy.value || !token.value.trim() || !lastCreatedId.value) return
+    recordId.value = lastCreatedId.value
+    return perform('read')
+  }
+
+  return { token, plaintext, recordId, lastCreatedId, result, busy, message, error, perform, readLastCreated, clearSession, dispose }
 }
