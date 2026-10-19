@@ -1,36 +1,58 @@
-import { conversationId, loadMessages, sendMessage } from "../rio-api.js";
+import {
+  conversationId as getConversationId,
+  loadMessages,
+  newConversation,
+  sendMessage,
+  senderId,
+  shareConversation,
+} from "../rio-api.js";
 
 const transcript = document.querySelector("[data-transcript]");
 const composer = document.querySelector("[data-composer]");
 const input = composer.querySelector("input");
 const feedback = document.querySelector("[data-feedback]");
-const conversation = conversationId();
+const submitButton = composer.querySelector("button[type=submit]");
+const messageSenderId = senderId();
+let conversation = getConversationId();
 let pending = null;
 let initialized = false;
+let refreshing = false;
 
 function renderMessage(record) {
+  if (transcript.querySelector(`[data-message-id="${record.id}"]`)) return;
+  const ownMessage = record.senderId === messageSenderId;
   const message = document.createElement("div");
   message.dataset.messageId = record.id;
-  message.className = "message user";
+  message.className = ownMessage ? "message user" : "message received";
   const paragraph = document.createElement("p");
   paragraph.textContent = record.content;
   message.append(paragraph);
+
+  if (!ownMessage) {
+    const content = document.createElement("div");
+    const label = document.createElement("strong");
+    label.textContent = "Andere browser · niet geverifieerd";
+    content.append(label, paragraph);
+    message.replaceChildren(content);
+  }
   transcript.append(message);
 }
 
 async function refreshMessages() {
+  if (refreshing) return;
+  refreshing = true;
   try {
     const messages = await loadMessages(conversation);
-    transcript.replaceChildren();
     messages.forEach(renderMessage);
     feedback.textContent = messages.length
       ? `${messages.length} lokaal geaccepteerd bericht${messages.length === 1 ? "" : "en"}.`
-      : "Verbonden met de lokale berichtendienst. Je berichten worden alleen tijdelijk in het geheugen bewaard.";
+      : "Verbonden met de lokale berichtendienst. Berichten worden tijdelijk in het geheugen bewaard.";
   } catch (error) {
     feedback.textContent = error.message;
   } finally {
     initialized = true;
-    composer.querySelector("button[type=submit]").disabled = false;
+    refreshing = false;
+    submitButton.disabled = false;
   }
 }
 
@@ -45,19 +67,11 @@ composer.addEventListener("submit", async (event) => {
 
   pending ??= { id: crypto.randomUUID(), content: text };
   composer.dataset.sending = "true";
-  composer.querySelector("button[type=submit]").disabled = true;
+  submitButton.disabled = true;
   feedback.textContent = "Bericht wordt naar de lokale RIO-dienst gestuurd…";
   try {
-    const accepted = await sendMessage(conversation, pending.id, pending.content);
-    if (!transcript.querySelector(`[data-message-id="${accepted.id}"]`)) {
-      const rendered = document.createElement("div");
-      rendered.dataset.messageId = accepted.id;
-      rendered.className = "message user";
-      const paragraph = document.createElement("p");
-      paragraph.textContent = accepted.content;
-      rendered.append(paragraph);
-      transcript.append(rendered);
-    }
+    const accepted = await sendMessage(conversation, pending.id, messageSenderId, pending.content);
+    renderMessage(accepted);
     pending = null;
     input.value = "";
     feedback.textContent = "Bericht is door de lokale dienst geaccepteerd. Opslag is alleen tijdelijk in het geheugen.";
@@ -65,18 +79,22 @@ composer.addEventListener("submit", async (event) => {
     feedback.textContent = `${error.message} Opnieuw verzenden met dezelfde tekst gebruikt dezelfde verzoek-ID.`;
   } finally {
     composer.dataset.sending = "false";
-    composer.querySelector("button[type=submit]").disabled = false;
+    submitButton.disabled = false;
     input.focus();
   }
 });
 
 document.querySelector("[data-reset]").addEventListener("click", () => {
-  try {
-    sessionStorage.removeItem("rio-preview-conversation-id");
-  } catch {
-    // The in-memory fallback is replaced by reloading the page.
-  }
-  window.location.reload();
+  conversation = newConversation();
+  transcript.replaceChildren();
+  pending = null;
+  input.value = "";
+  feedback.textContent = "Nieuw lokaal gesprek gestart.";
+  refreshMessages();
+});
+
+document.querySelector("[data-share]").addEventListener("click", async () => {
+  feedback.textContent = await shareConversation(conversation);
 });
 
 document.querySelectorAll("[data-prompt]").forEach((button) => {
@@ -87,5 +105,8 @@ document.querySelectorAll("[data-prompt]").forEach((button) => {
   });
 });
 
-composer.querySelector("button[type=submit]").disabled = true;
+submitButton.disabled = true;
 refreshMessages();
+window.setInterval(() => {
+  if (!document.hidden) refreshMessages();
+}, 2500);

@@ -101,9 +101,11 @@ function validateMessage(body) {
     !UUID_PATTERN.test(body.conversationId) ||
     typeof body.messageId !== "string" ||
     !UUID_PATTERN.test(body.messageId) ||
+    typeof body.senderId !== "string" ||
+    !UUID_PATTERN.test(body.senderId) ||
     typeof body.content !== "string"
   ) {
-    throw new HttpError(400, "conversationId, messageId, and content are required.");
+    throw new HttpError(400, "conversationId, messageId, senderId, and content are required.");
   }
 
   const content = body.content.trim();
@@ -113,7 +115,7 @@ function validateMessage(body) {
   if (content.length > MAX_MESSAGE_LENGTH) {
     throw new HttpError(413, `Messages cannot exceed ${MAX_MESSAGE_LENGTH} characters.`);
   }
-  return { conversationId: body.conversationId, messageId: body.messageId, content };
+  return { conversationId: body.conversationId, messageId: body.messageId, senderId: body.senderId, content };
 }
 
 function apiPath(pathname) {
@@ -201,11 +203,11 @@ export function createServer({ appsDirectory = DEFAULT_APPS_DIRECTORY } = {}) {
           throw new HttpError(415, "Content-Type must be application/json.");
         }
 
-        const { conversationId, messageId, content } = validateMessage(await readJson(request));
+        const { conversationId, messageId, senderId, content } = validateMessage(await readJson(request));
         const key = `${conversationId}:${messageId}`;
         const existing = messageIndex.get(key);
         if (existing) {
-          if (existing.content !== content) {
+          if (existing.content !== content || existing.senderId !== senderId) {
             throw new HttpError(409, "messageId was already used for different content.");
           }
           sendJson(response, 200, { message: existing, duplicate: true });
@@ -226,6 +228,7 @@ export function createServer({ appsDirectory = DEFAULT_APPS_DIRECTORY } = {}) {
         const message = {
           id: messageId,
           conversationId,
+          senderId,
           role: "human",
           content,
           acceptedAt: new Date().toISOString(),

@@ -1,5 +1,9 @@
 const STORAGE_KEY = "rio-preview-conversation-id";
+const SENDER_KEY = "rio-preview-sender-id";
+const CONVERSATION_PARAM = "conversation";
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 let fallbackConversationId;
+let fallbackSenderId;
 
 function newId() {
   if (!globalThis.crypto?.randomUUID) {
@@ -9,6 +13,16 @@ function newId() {
 }
 
 export function conversationId() {
+  const sharedId = new URL(window.location.href).searchParams.get(CONVERSATION_PARAM);
+  if (sharedId && UUID_PATTERN.test(sharedId)) {
+    try {
+      sessionStorage.setItem(STORAGE_KEY, sharedId);
+    } catch {
+      fallbackConversationId = sharedId;
+    }
+    return sharedId;
+  }
+
   try {
     let id = sessionStorage.getItem(STORAGE_KEY);
     if (!id) {
@@ -19,6 +33,45 @@ export function conversationId() {
   } catch {
     fallbackConversationId ??= newId();
     return fallbackConversationId;
+  }
+}
+
+export function newConversation() {
+  const id = newId();
+  try {
+    sessionStorage.setItem(STORAGE_KEY, id);
+  } catch {
+    fallbackConversationId = id;
+  }
+  const url = new URL(window.location.href);
+  url.searchParams.delete(CONVERSATION_PARAM);
+  window.history.replaceState(null, "", url);
+  return id;
+}
+
+export function senderId() {
+  try {
+    let id = sessionStorage.getItem(SENDER_KEY);
+    if (!id) {
+      id = newId();
+      sessionStorage.setItem(SENDER_KEY, id);
+    }
+    return id;
+  } catch {
+    fallbackSenderId ??= newId();
+    return fallbackSenderId;
+  }
+}
+
+export async function shareConversation(id) {
+  const url = new URL(window.location.href);
+  url.searchParams.set(CONVERSATION_PARAM, id);
+  window.history.replaceState(null, "", url);
+  try {
+    await navigator.clipboard.writeText(url.href);
+    return "Gesprekslink gekopieerd. Iedereen met deze link kan dit lokale gesprek lezen; deelnemers zijn niet geauthenticeerd.";
+  } catch {
+    return `Deel alleen met iemand die je vertrouwt. Gesprekslink: ${url.href}`;
   }
 }
 
@@ -53,11 +106,11 @@ export async function loadMessages(id) {
   return result.messages;
 }
 
-export async function sendMessage(id, messageId, content) {
+export async function sendMessage(id, messageId, senderId, content) {
   const result = await request("/api/messages", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ conversationId: id, messageId, content }),
+    body: JSON.stringify({ conversationId: id, messageId, senderId, content }),
   });
   return result.message;
 }

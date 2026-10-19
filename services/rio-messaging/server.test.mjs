@@ -21,11 +21,11 @@ after(async () => {
   });
 });
 
-function postMessage(conversationId, messageId, content, origin = baseUrl) {
+function postMessage(conversationId, messageId, senderId, content, origin = baseUrl) {
   return fetch(`${baseUrl}/api/messages`, {
     method: "POST",
     headers: { origin, "content-type": "application/json" },
-    body: JSON.stringify({ conversationId, messageId, content }),
+    body: JSON.stringify({ conversationId, messageId, senderId, content }),
   });
 }
 
@@ -37,41 +37,57 @@ test("serves the previews and accepts bounded same-origin messages idempotently"
 
   const conversationId = randomUUID();
   const messageId = randomUUID();
-  const accepted = await postMessage(conversationId, messageId, "  Hallo RIO  ");
+  const senderId = randomUUID();
+  const accepted = await postMessage(conversationId, messageId, senderId, "  Hallo RIO  ");
   assert.equal(accepted.status, 201);
   const body = await accepted.json();
   assert.equal(body.message.content, "Hallo RIO");
   assert.equal(body.message.role, "human");
+  assert.equal(body.message.senderId, senderId);
   assert.equal(body.duplicate, false);
 
-  const duplicate = await postMessage(conversationId, messageId, "Hallo RIO");
+  const duplicate = await postMessage(conversationId, messageId, senderId, "Hallo RIO");
   assert.equal(duplicate.status, 200);
   assert.equal((await duplicate.json()).duplicate, true);
 
-  const changedDuplicate = await postMessage(conversationId, messageId, "Andere tekst");
+  const changedDuplicate = await postMessage(conversationId, messageId, senderId, "Andere tekst");
   assert.equal(changedDuplicate.status, 409);
+  const changedSender = await postMessage(conversationId, messageId, randomUUID(), "Hallo RIO");
+  assert.equal(changedSender.status, 409);
+
+  const secondSenderId = randomUUID();
+  const secondMessage = await postMessage(conversationId, randomUUID(), secondSenderId, "Bericht van een tweede browser");
+  assert.equal(secondMessage.status, 201);
 
   const history = await fetch(
     `${baseUrl}/api/messages?conversationId=${conversationId}`,
   );
   assert.equal(history.status, 200);
-  assert.equal((await history.json()).messages.length, 1);
+  const messages = (await history.json()).messages;
+  assert.equal(messages.length, 2);
+  assert.equal(messages[1].senderId, secondSenderId);
 });
 
 test("rejects invalid content, cross-origin requests, and traversal", async () => {
   const conversationId = randomUUID();
-  assert.equal((await postMessage(conversationId, randomUUID(), "   ")).status, 400);
-  assert.equal((await postMessage(conversationId, randomUUID(), "x".repeat(2001))).status, 413);
-  assert.equal((await postMessage(conversationId, randomUUID(), "Nee", "https://example.com")).status, 403);
+  assert.equal((await postMessage(conversationId, randomUUID(), randomUUID(), "   ")).status, 400);
+  assert.equal((await postMessage(conversationId, randomUUID(), randomUUID(), "x".repeat(2001))).status, 413);
+  assert.equal((await postMessage(conversationId, randomUUID(), randomUUID(), "Nee", "https://example.com")).status, 403);
 
   const noOriginRead = await fetch(`${baseUrl}/api/messages?conversationId=${conversationId}`);
   assert.equal(noOriginRead.status, 200);
   const noOriginWrite = await fetch(`${baseUrl}/api/messages`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ conversationId, messageId: randomUUID(), content: "Nee" }),
+    body: JSON.stringify({ conversationId, messageId: randomUUID(), senderId: randomUUID(), content: "Nee" }),
   });
   assert.equal(noOriginWrite.status, 403);
+  const missingSender = await fetch(`${baseUrl}/api/messages`, {
+    method: "POST",
+    headers: { origin: baseUrl, "content-type": "application/json" },
+    body: JSON.stringify({ conversationId, messageId: randomUUID(), content: "Geen afzender" }),
+  });
+  assert.equal(missingSender.status, 400);
   const wrongContentType = await fetch(`${baseUrl}/api/messages`, {
     method: "POST",
     headers: { origin: baseUrl, "content-type": "text/plain" },
