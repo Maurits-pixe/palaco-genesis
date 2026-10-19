@@ -81,7 +81,7 @@ test('ticket validity checks not-before, expiry and exact command', () => {
 
 test('submission is a distinct request carrying ticket ID and command', async () => {
   const data = ticket()
-  const result = entry()
+  const result = { ...entry(), committed_at: Date.now() }
   assert.deepEqual(await commitCommand(data, data.command, inputToken, async (url, options) => {
     assert.equal(url, '/v1/commands')
     assert.equal(options.method, 'POST')
@@ -185,7 +185,7 @@ test('malformed tickets and commit responses reject', async () => {
     {}, { ...issued, id: '../bad' }, { ...issued, not_before: null },
     { ...issued, expires_at: 'bad' }, { ...issued, expires_at: issued.not_before },
   ]) await assert.rejects(issueTicket(data.command, 1000, inputToken, async () => json(result, 201)))
-  await assert.rejects(commitCommand(data, data.command, inputToken, async () => json({ ...entry(), command: 'different' }, 201)))
+  await assert.rejects(commitCommand(data, data.command, inputToken, async () => json({ ...entry(), committed_at: Date.now(), command: 'different' }, 201)))
 })
 
 test('API failures never reflect backend bodies or token details; no automatic retry', async () => {

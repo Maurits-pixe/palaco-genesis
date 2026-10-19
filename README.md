@@ -127,6 +127,12 @@ Het geldigheidsvenster moet exact de aangevraagde duur hebben.
 Afwijkende antwoorden worden niet als lokaal ticket bewaard; er volgt
 geen automatische nieuwe aanvraag. Dit vervangt de server-side
 geldigheidscontrole niet en veronderstelt geen gelijklopende clientklok.
+Bij een commitbevestiging controleert de interface ook de exacte
+commandotekst, het record-ID en de numerieke vastleggingstijd:
+`not_before <= committed_at < expires_at` van het ingezonden ticket.
+Een geldig antwoord mag na ticketverloop aankomen; het ontvangsttijdstip
+is niet de server-side beslissingstijd. Een afwijkend antwoord betekent
+geen rollback: controleer de ticketstatus en dien niet automatisch opnieuw in.
 Met **Ticket intrekken** kun je het huidige ticket server-side ongeldig maken.
 De interface bevestigt dit alleen na een geldig serverantwoord. Bij een
 onzekere netwerkuitkomst blijft het ticket zichtbaar voor een nieuwe

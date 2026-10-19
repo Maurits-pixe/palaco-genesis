@@ -181,10 +181,17 @@ export async function commitCommand(ticket, command, token, fetcher, signal) {
     throw new ApiError('Ticket niet geldig voor dit commando. Vraag een nieuw ticket aan.')
   }
   if (commandLength(command) > MAX_COMMAND_LENGTH) throw new ApiError('Een commando mag maximaal 1024 UTF-16-tekeneenheden bevatten.')
+  const ticketId = ticket.id
+  const notBefore = timestamp(ticket.not_before)
+  const expiresAt = timestamp(ticket.expires_at)
+  const exactCommand = command
   const result = await request('/v1/commands', {
-    token, method: 'POST', body: { ticket_id: ticket.id, command }, fetcher, signal,
+    token, method: 'POST', body: { ticket_id: ticketId, command: exactCommand }, fetcher, signal,
   })
-  if (!validCommand(result) || result.command !== command) {
+  if (!validCommand(result) || result.id.length > 128 || result.command !== exactCommand ||
+      !Number.isSafeInteger(result.committed_at) || result.committed_at < 0 ||
+      !Number.isFinite(new Date(result.committed_at).getTime()) ||
+      result.committed_at < notBefore || result.committed_at >= expiresAt) {
     throw new ApiError('Onverwacht commandoantwoord van de service.')
   }
   return { id: result.id, command: result.command, committed_at: result.committed_at }
