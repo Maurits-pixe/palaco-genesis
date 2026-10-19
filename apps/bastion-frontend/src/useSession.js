@@ -41,6 +41,7 @@ export function useSession({
   let session = 0
   let disposed = false
   let pending = null
+  let feedbackAction = ''
   let connection = null
   let connectionGeneration = 0
   let journalGeneration = 0
@@ -117,6 +118,7 @@ export function useSession({
     ttlMs.value = 10000
     message.value = ''
     error.value = ''
+    feedbackAction = ''
     lookupId.value = ''
     outcome.value = null
     lastSubmissionId.value = ''
@@ -126,6 +128,22 @@ export function useSession({
   function clearSession() {
     if (token.value) token.value = ''
     else resetSession()
+  }
+
+  function clearOutcome() {
+    if (disposed || (busy.value && busy.value !== 'status')) return
+    const previous = busy.value === 'status' ? pending : null
+    if (previous) {
+      pending = null
+      busy.value = ''
+    }
+    outcome.value = null
+    if (feedbackAction === 'status') {
+      message.value = ''
+      error.value = ''
+      feedbackAction = ''
+    }
+    previous?.abort()
   }
 
   eventTarget?.addEventListener('pagehide', clearSession)
@@ -161,6 +179,7 @@ export function useSession({
       journalRefreshFailed.value = false
     }
     busy.value = action
+    feedbackAction = action
     error.value = ''
     message.value = ''
     try {
@@ -232,6 +251,6 @@ export function useSession({
   return {
     token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, lastJournalRefreshAt, busy,
     message, error, lookupId, outcome, lastSubmissionId, realtimeStatus, now,
-    canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearSession,
+    canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearSession, clearOutcome,
   }
 }

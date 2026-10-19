@@ -185,6 +185,15 @@ Een statuscontrole dient nooit opnieuw een commando in. Een actieve status is
 slechts een momentopname, geen nieuwe toestemming. Alleen een bevestigde
 terminale status van hetzelfde ticket kan een onzekere intrekking lokaal
 afsluiten. Sessie wissen of herladen verwijdert de lokaal bewaarde ID's.
+Met **Wis ticketuitkomst** verwijder je alleen het lokale statusresultaat en
+de bijbehorende statusmelding. Een lopend statusverzoek wordt lokaal
+geannuleerd; late antwoorden wijzigen daarna geen resultaat of ticketstaat.
+Token, ingevoerde en laatst ingezonden ticket-ID's, commando, tickets,
+eventuele blokkering bij onzekere intrekking, logboek en realtimeverbinding
+blijven behouden. Een al verwerkte statusreconciliatie wordt niet teruggedraaid.
+Tijdens andere verzoeken is deze knop uitgeschakeld. Dit trekt geen ticket in,
+herstelt geen toestemming en start geen nieuwe controle; vraag de status
+handmatig opnieuw op om een uitkomst weer te bekijken.
 **Wis sessie** blijft ook tijdens een lopend BASTION-verzoek beschikbaar:
 token, commando, tickets, statusresultaten en logboek verdwijnen direct uit
 de interface. De realtimeverbinding wordt verbroken en lopende HTTP-verzoeken

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { effectScope } from 'vue'
+import { effectScope, isRef } from 'vue'
 import { useSession } from '../src/useSession.js'
 import { createRealtime } from '../src/realtime.js'
 
@@ -109,6 +109,275 @@ function pageTransition(type, persisted) {
   Object.defineProperty(event, 'persisted', { value: persisted })
   return event
 }
+
+function retainedOutcomeState(state) {
+  return structuredClone(Object.fromEntries(Object.entries(state)
+    .filter(([key, value]) => isRef(value) && !['outcome', 'message', 'error', 'busy'].includes(key))
+    .map(([key, value]) => [key, JSON.parse(JSON.stringify(value.value))])))
+}
+
+test('clearing an idle outcome retains the entire session, live connection and uncertainty, and is idempotent', async t => {
+  const { state, calls, sockets, clock } = fixture(t)
+  state.realtime.connect(state.token.value)
+  sockets[0].handlers.connect()
+  prepare(state, 'revoke')
+  const operation = state.perform('status')
+  calls[0].resolve(snapshot())
+  await operation
+  const before = retainedOutcomeState(state)
+  assert.notEqual(state.message.value, '')
+  state.clearOutcome()
+  state.clearOutcome()
+  assert.equal(state.outcome.value, null)
+  assert.equal(state.message.value, '')
+  assert.equal(state.error.value, '')
+  assert.equal(state.busy.value, '')
+  assert.deepEqual(retainedOutcomeState(state), before)
+  assert.equal(state.revocationUncertain.value, true)
+  assert.equal(state.canCommit.value, false)
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].signal.aborted, false)
+  assert.equal(sockets.length, 1)
+  assert.equal(sockets[0].disconnects, 0)
+  assert.deepEqual(clock.cleared, [])
+  sockets[0].handlers['command:committed'](record('still-connected'))
+  assert.equal(state.commands.value[0].id, 'still-connected')
+})
+
+test('clearing a completed terminal reconciliation only hides it, never restores authority', async t => {
+  const { state, calls } = fixture(t)
+  prepare(state, 'revoke')
+  const operation = state.perform('status')
+  calls[0].resolve(snapshot({ status: 'committed', record: record('historical') }))
+  await operation
+  assert.equal(state.ticket.value, null)
+  assert.equal(state.revocationUncertain.value, false)
+  const before = retainedOutcomeState(state)
+  state.clearOutcome()
+  assert.deepEqual(retainedOutcomeState(state), before)
+  assert.equal(state.outcome.value, null)
+  assert.equal(state.canCommit.value, false)
+  assert.deepEqual(state.commands.value, [record()])
+})
+
+test('clearing failed status feedback retains IDs, ticket and blocked revocation without retry', async t => {
+  const { state, calls } = fixture(t)
+  prepare(state, 'revoke')
+  const operation = state.perform('status')
+  calls[0].reject(new Error('status failure'))
+  await operation
+  assert.equal(state.error.value, 'status failure')
+  const before = retainedOutcomeState(state)
+  state.clearOutcome()
+  state.clearOutcome()
+  assert.equal(state.error.value, '')
+  assert.equal(state.message.value, '')
+  assert.deepEqual(retainedOutcomeState(state), before)
+  assert.equal(calls.length, 1)
+})
+
+for (const action of ['ticket', 'commit', 'revoke', 'list']) {
+  for (const settlement of ['resolve', 'reject']) {
+    test(`idle outcome clear preserves ${action} ${settlement} feedback and all other state`, async t => {
+      const { state, calls } = fixture(t)
+      prepare(state, action)
+      const operation = state.perform(action)
+      if (settlement === 'resolve') calls[0].resolve(results[action])
+      else calls[0].reject(new Error(`${action} failure`))
+      await operation
+      state.outcome.value = snapshot()
+      const before = retainedOutcomeState(state)
+      const feedback = [state.message.value, state.error.value]
+      assert.ok(feedback.some(Boolean))
+      state.clearOutcome()
+      state.clearOutcome()
+      assert.equal(state.outcome.value, null)
+      assert.deepEqual([state.message.value, state.error.value], feedback)
+      assert.deepEqual(retainedOutcomeState(state), before)
+      assert.equal(calls.length, 1)
+    })
+
+    test(`outcome clear is a complete no-op during busy ${action}, later ${settlement} still settles normally`, async t => {
+      const { state, calls } = fixture(t)
+      prepare(state, action)
+      const operation = state.perform(action)
+      state.outcome.value = snapshot()
+      state.message.value = 'keep busy feedback'
+      state.error.value = 'keep busy error'
+      const before = retainedOutcomeState(state)
+      state.clearOutcome()
+      assert.equal(state.busy.value, action)
+      assert.deepEqual(state.outcome.value, snapshot())
+      assert.equal(state.message.value, 'keep busy feedback')
+      assert.equal(state.error.value, 'keep busy error')
+      assert.deepEqual(retainedOutcomeState(state), before)
+      assert.equal(calls[0].signal.aborted, false)
+      assert.equal(calls.length, 1)
+      if (settlement === 'resolve') calls[0].resolve(results[action])
+      else calls[0].reject(new Error(`${action} failure`))
+      await operation
+      assert.equal(state.busy.value, '')
+      if (settlement === 'reject') assert.equal(state.error.value, `${action} failure`)
+      else if (action === 'ticket') assert.deepEqual(state.ticket.value, held())
+      else if (action === 'commit') assert.equal(state.ticket.value, null)
+      else if (action === 'revoke') assert.equal(state.revocationUncertain.value, false)
+      else assert.equal(state.journalRefreshFailed.value, false)
+    })
+  }
+}
+
+for (const settlement of ['resolve', 'reject']) {
+  test(`clearing pending status preserves uncertain authority against late terminal ${settlement}`, async t => {
+    const { state, calls, sockets } = fixture(t)
+    state.realtime.connect(state.token.value)
+    sockets[0].handlers.connect()
+    prepare(state, 'revoke')
+    const operation = state.perform('status')
+    const before = retainedOutcomeState(state)
+    let atAbort
+    calls[0].signal.addEventListener('abort', () => {
+      atAbort = { busy: state.busy.value, outcome: state.outcome.value }
+    })
+    state.clearOutcome()
+    assert.deepEqual(atAbort, { busy: '', outcome: null })
+    assert.equal(calls[0].signal.aborted, true)
+    assert.equal(state.busy.value, '')
+    state.clearOutcome()
+    if (settlement === 'resolve') calls[0].resolve(snapshot({ status: 'committed', record: record() }))
+    else calls[0].reject(new Error('late status failure'))
+    await operation
+    assert.deepEqual(retainedOutcomeState(state), before)
+    assert.deepEqual(state.ticket.value, held())
+    assert.equal(state.revocationUncertain.value, true)
+    assert.equal(state.canCommit.value, false)
+    assert.equal(state.outcome.value, null)
+    assert.equal(state.message.value, '')
+    assert.equal(state.error.value, '')
+    assert.equal(calls.length, 1)
+    assert.equal(sockets[0].disconnects, 0)
+    sockets[0].handlers['command:committed'](record('after-clear'))
+    assert.equal(state.commands.value[0].id, 'after-clear')
+  })
+
+  for (const action of Object.keys(actions)) {
+    for (const newerCompleted of [false, true]) {
+      test(`cleared status late ${settlement} cannot affect newer ${action}, completed=${newerCompleted}`, async t => {
+        const { state, calls } = fixture(t)
+        prepare(state, 'status')
+        const old = state.perform('status')
+        state.clearOutcome()
+        assert.equal(calls[0].signal.aborted, true)
+        if (action === 'status' || action === 'revoke') state.revocationUncertain.value = true
+        state.lookupId.value = action === 'status' ? 'different-ticket' : held().id
+        const newer = state.perform(action)
+        assert.equal(calls.length, 2)
+        const nextResult = action === 'status' ? snapshot({ id: 'different-ticket' }) : results[action]
+        if (newerCompleted) {
+          calls[1].resolve(nextResult)
+          await newer
+        }
+        const before = retainedOutcomeState(state)
+        const other = [state.busy.value, state.message.value, state.error.value, state.outcome.value]
+        if (settlement === 'resolve') calls[0].resolve(snapshot({ status: 'committed', record: record('stale') }))
+        else calls[0].reject(new Error('stale error must not replace feedback'))
+        await old
+        assert.deepEqual(retainedOutcomeState(state), before)
+        assert.deepEqual([state.busy.value, state.message.value, state.error.value, state.outcome.value], other)
+        assert.equal(calls[1].signal.aborted, false)
+        if (!newerCompleted) {
+          assert.equal(state.busy.value, action)
+          calls[1].resolve(nextResult)
+          await newer
+          assert.equal(state.busy.value, '')
+          assert.equal(state.error.value, '')
+        }
+        if (action === 'status') {
+          assert.deepEqual(state.outcome.value, nextResult)
+          assert.deepEqual(state.ticket.value, held())
+          assert.equal(state.revocationUncertain.value, true)
+        }
+        assert.equal(calls.length, 2)
+      })
+    }
+  }
+}
+
+test('status abort callbacks can start a newer request without its identity or feedback being cleared', async t => {
+  const { state, calls } = fixture(t)
+  prepare(state, 'status')
+  const old = state.perform('status')
+  let newer
+  calls[0].signal.addEventListener('abort', () => {
+    newer = state.perform('list')
+    state.message.value = 'new list feedback'
+  })
+  state.clearOutcome()
+  assert.equal(state.busy.value, 'list')
+  assert.equal(calls.length, 2)
+  calls[0].reject(new Error('abort'))
+  await old
+  assert.equal(state.busy.value, 'list')
+  assert.equal(state.message.value, 'new list feedback')
+  assert.equal(state.error.value, '')
+  calls[1].resolve([record('fresh')])
+  await newer
+  assert.deepEqual(state.commands.value, [record('fresh')])
+})
+
+test('outcome clear is inert after disposal, including manually changed refs', async t => {
+  const { state, scope, calls } = fixture(t)
+  prepare(state, 'status')
+  const operation = state.perform('status')
+  scope.stop()
+  assertEmpty(state)
+  prepare(state, 'revoke')
+  state.busy.value = 'status'
+  const before = retainedOutcomeState(state)
+  state.clearOutcome()
+  assert.deepEqual(retainedOutcomeState(state), before)
+  assert.deepEqual(state.outcome.value, snapshot())
+  assert.equal(state.busy.value, 'status')
+  assert.equal(state.message.value, 'previous message')
+  assert.equal(state.error.value, 'previous error')
+  calls[0].resolve(snapshot({ status: 'committed', record: record() }))
+  await operation
+  assert.deepEqual(retainedOutcomeState(state), before)
+  assert.deepEqual(state.outcome.value, snapshot())
+  assert.equal(state.busy.value, 'status')
+})
+
+for (const reset of ['clearSession', 'token', 'pagehide']) {
+  test(`outcome clear does not weaken subsequent full-session reset via ${reset}`, async t => {
+    const { state, eventTarget, sockets, calls } = fixture(t)
+    state.realtime.connect(state.token.value)
+    prepare(state, 'revoke')
+    const operation = state.perform('status')
+    state.clearOutcome()
+    if (reset === 'clearSession') state.clearSession()
+    else if (reset === 'token') state.token.value = 'replacement-token'
+    else eventTarget.dispatchEvent(pageTransition('pagehide', true))
+    assertEmpty(state, reset === 'token' ? 'replacement-token' : '')
+    assertDisconnected(sockets[0])
+    calls[0].resolve(snapshot({ status: 'committed', record: record() }))
+    await operation
+    assertEmpty(state, reset === 'token' ? 'replacement-token' : '')
+  })
+}
+
+test('outcome clear UI is an explicit local-only button with status-only busy eligibility and honest help', () => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  assert.match(app, /clearSession, clearOutcome,\s*\} = useSession\(\)/)
+  const button = app.match(/<button[^>]*@click="clearOutcome"[^>]*>Wis ticketuitkomst<\/button>/)?.[0]
+  assert.ok(button)
+  assert.match(button, /type="button"/)
+  assert.match(button, /:disabled="\(!!busy && busy !== 'status'\) \|\| \(!outcome && busy !== 'status'\)"/)
+  assert.match(button, /aria-describedby="clear-outcome-help"/)
+  assert.match(app, /id="clear-outcome-help"[^>]*>Wist alleen lokaal/)
+  assert.match(app, /Ticket-ID's blijven behouden\. Geen intrekking, terugdraaien of herstel van toestemming\./)
+  assert.match(app, /Controleer de status opnieuw met een expliciete actie; geen automatische verzoeken\./)
+  assert.ok(app.indexOf('@click="clearOutcome"') > app.indexOf('<div v-if="outcome"'))
+  assert.ok(app.indexOf('@click="clearOutcome"') < app.indexOf('aria-labelledby="journal-title"'))
+})
 
 for (const persisted of [false, true]) {
   test(`pagehide persisted=${persisted} clears loaded state; pageshow requires explicit token and actions`, async t => {

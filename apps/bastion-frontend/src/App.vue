@@ -5,7 +5,7 @@ import { realtimeLabels, useSession } from './useSession.js'
 const {
   token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, lastJournalRefreshAt, busy,
   message, error, lookupId, outcome, lastSubmissionId, realtimeStatus,
-  canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearSession,
+  canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearSession, clearOutcome,
 } = useSession()
 
 function date(value) {
@@ -85,6 +85,10 @@ function receiptIso(value) {
           <pre>{{ outcome.command }}</pre>
           <p v-if="outcome.record">Vastgelegd: {{ date(outcome.record.committed_at) }} · {{ outcome.record.id }}</p>
         </div>
+        <button type="button" class="secondary" :disabled="(!!busy && busy !== 'status') || (!outcome && busy !== 'status')" aria-describedby="clear-outcome-help" @click="clearOutcome">Wis ticketuitkomst</button>
+        <p id="clear-outcome-help" class="muted">Wist alleen lokaal de getoonde uitkomst en statusmeldingen; breekt een lopende statuscontrole lokaal af.
+          Ticket-ID's blijven behouden. Geen intrekking, terugdraaien of herstel van toestemming.
+          Controleer de status opnieuw met een expliciete actie; geen automatische verzoeken.</p>
         <p class="muted">Alleen een momentopname. Active of pending herstelt geen lokaal ticket. Geen uitvoering, nieuwe toestemming of automatische herinzending.</p>
       </section>
       <section aria-labelledby="journal-title" :aria-busy="busy === 'list'">
