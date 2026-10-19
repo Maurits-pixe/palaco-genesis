@@ -5,7 +5,7 @@ import { realtimeLabels, useSession } from './useSession.js'
 const {
   token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, busy,
   message, error, lookupId, outcome, lastSubmissionId, realtimeStatus,
-  canCommit, remaining, realtime, perform, clearSession,
+  canCommit, remaining, realtime, perform, checkCurrentTicket, clearSession,
 } = useSession()
 
 function date(value) {
@@ -53,6 +53,7 @@ function date(value) {
         <p v-else class="muted">Nog geen ticket. Tekst of duur wijzigen maakt het lokale ticket ongeldig.</p>
         <button :disabled="!!busy || !canCommit || !token.trim()" @click="perform('commit')">Commando vastleggen</button>
         <button class="secondary" :disabled="!!busy || !ticket || !token.trim()" @click="perform('revoke')">Ticket intrekken</button>
+        <button class="secondary" :disabled="!!busy || !ticket || !token.trim()" @click="checkCurrentTicket">Controleer huidig ticket</button>
         <p v-if="revocationUncertain" role="alert" class="error">Intrekking nog niet bevestigd. Vastleggen en nieuwe tickets zijn geblokkeerd. Trek dit ticket opnieuw in of controleer de status van hetzelfde ticket.</p>
         <p class="muted">Intrekken wijzigt het ticket op de server. Een sessie wissen of invoer wijzigen trekt geen toestemming in.</p>
         <p class="muted">Na iedere inzendpoging vervalt het lokale ticket. Geen automatische herhaling.</p>

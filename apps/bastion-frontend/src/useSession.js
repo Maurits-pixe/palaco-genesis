@@ -116,6 +116,12 @@ export function useSession({
     scheduler.clearInterval(clock)
   })
 
+  function checkCurrentTicket() {
+    if (disposed || busy.value || !ticket.value || !token.value.trim()) return
+    lookupId.value = ticket.value.id
+    return perform('status')
+  }
+
   async function perform(action) {
     if (disposed || busy.value) return
     const started = session
@@ -188,6 +194,6 @@ export function useSession({
   return {
     token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, busy,
     message, error, lookupId, outcome, lastSubmissionId, realtimeStatus, now,
-    canCommit, remaining, realtime, perform, clearSession,
+    canCommit, remaining, realtime, perform, checkCurrentTicket, clearSession,
   }
 }

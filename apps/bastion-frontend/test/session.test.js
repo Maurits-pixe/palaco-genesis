@@ -310,6 +310,150 @@ test('status never restores authority or journal history and only retires the sa
   assert.equal(state.lastSubmissionId.value, 'retained-id')
 })
 
+test('current-ticket shortcut does not change lookup or call the API while busy', async t => {
+  const { state, calls } = fixture(t)
+  prepare(state, 'revoke')
+  state.lookupId.value = 'unrelated-ticket'
+  const revoking = state.perform('revoke')
+  await state.checkCurrentTicket()
+  assert.equal(state.lookupId.value, 'unrelated-ticket')
+  assert.equal(state.busy.value, 'revoke')
+  assert.equal(calls.length, 1)
+  calls[0].reject(new Error('confirmation lost'))
+  await revoking
+})
+
+for (const guard of ['no ticket', 'empty token', 'blank token', 'disposed']) {
+  test(`current-ticket shortcut: ${guard} does not change lookup or call the API`, async t => {
+    const { state, calls, scope } = fixture(t)
+    if (guard === 'disposed') scope.stop()
+    if (guard === 'empty token') state.token.value = ''
+    if (guard === 'blank token') state.token.value = ' \t\n '
+    prepare(state, 'revoke')
+    if (guard === 'no ticket') state.ticket.value = null
+    state.lookupId.value = 'unrelated-ticket'
+    await state.checkCurrentTicket()
+    assert.equal(state.lookupId.value, 'unrelated-ticket')
+    assert.equal(state.busy.value, '')
+    assert.equal(state.message.value, 'previous message')
+    assert.equal(state.error.value, 'previous error')
+    assert.deepEqual(calls, [])
+  })
+}
+
+for (const value of [
+  snapshot(),
+  snapshot({ checked_at: 999, status: 'pending' }),
+  snapshot({ status: 'revoked', revoked: true }),
+  snapshot({ checked_at: 1100, status: 'expired' }),
+  snapshot({ status: 'committed', record: record('historical') }),
+  snapshot({ id: 'other-ticket', status: 'revoked', revoked: true }),
+  snapshot({ command: 'different', status: 'revoked', revoked: true }),
+  snapshot({ status: 'committed' }),
+]) {
+  test(`current-ticket shortcut reconciles ${value.status} (${value.id}, ${value.command}, record: ${!!value.record}) without mutations`, async t => {
+    const { state, calls, clock } = fixture(t)
+    prepare(state, 'revoke')
+    state.lookupId.value = 'unrelated-ticket'
+    const nonterminal = ['active', 'pending'].includes(value.status)
+    clock.time = nonterminal ? 1050 : 1200
+    clock.tick()
+    assert.equal(state.remaining.value, nonterminal ? 1 : 0)
+    const checking = state.checkCurrentTicket()
+    assert.equal(state.lookupId.value, held().id)
+    assert.equal(state.busy.value, 'status')
+    assert.equal(state.outcome.value, null)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].action, 'status')
+    assert.equal(calls[0].args[0], held().id)
+    assert.equal(calls[0].args[1], state.token.value)
+    assert.equal(calls[0].signal.aborted, false)
+    calls[0].resolve(value)
+    await checking
+    const retires = value.id === held().id && value.command === held().command &&
+      ['revoked', 'expired', 'committed'].includes(value.status) &&
+      (value.status !== 'committed' || value.record !== null)
+    assert.deepEqual(state.ticket.value, retires ? null : held())
+    assert.equal(state.revocationUncertain.value, !retires)
+    assert.equal(state.canCommit.value, false)
+    assert.deepEqual(state.commands.value, [record()])
+    assert.deepEqual(state.outcome.value, value)
+    assert.equal(state.lastSubmissionId.value, 'retained-id')
+    assert.equal(state.busy.value, '')
+    assert.equal(state.error.value, '')
+    assert.equal(calls.length, 1)
+    assert.match(state.message.value, /geen nieuwe toestemming/)
+  })
+}
+
+test('failed current-ticket shortcut leaves held ticket blocked without retry or mutation', async t => {
+  const { state, calls } = fixture(t)
+  prepare(state, 'revoke')
+  const checking = state.checkCurrentTicket()
+  calls[0].reject(new Error('status unavailable'))
+  await checking
+  assert.deepEqual(state.ticket.value, held())
+  assert.equal(state.revocationUncertain.value, true)
+  assert.equal(state.canCommit.value, false)
+  assert.equal(state.outcome.value, null)
+  assert.equal(state.error.value, 'status unavailable')
+  assert.equal(state.busy.value, '')
+  await state.perform('commit')
+  await state.perform('ticket')
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].action, 'status')
+  assert.deepEqual(state.commands.value, [record()])
+})
+
+for (const reset of ['clear', 'token', 'dispose']) {
+  for (const settlement of ['resolve', 'reject']) {
+    test(`current-ticket shortcut: ${reset} aborts and ignores stale ${settlement}`, async t => {
+      const { state, calls, scope } = fixture(t)
+      prepare(state, 'revoke')
+      const checking = state.checkCurrentTicket()
+      if (reset === 'clear') state.clearSession()
+      else if (reset === 'token') state.token.value = 'replacement-token'
+      else scope.stop()
+      const token = reset === 'token' ? 'replacement-token' : ''
+      assertEmpty(state, token)
+      assert.equal(calls[0].signal.aborted, true)
+      let replacement
+      if (reset !== 'dispose') {
+        state.token.value = 'new-session-token'
+        prepare(state, 'revoke')
+        state.ticket.value = { ...held(), id: 'new-ticket' }
+        replacement = state.checkCurrentTicket()
+      }
+      if (settlement === 'resolve') calls[0].resolve(snapshot({ status: 'revoked', revoked: true }))
+      else calls[0].reject(new Error('stale failure'))
+      await checking
+      if (replacement) {
+        assert.equal(state.busy.value, 'status')
+        assert.equal(state.lookupId.value, 'new-ticket')
+        assert.equal(state.ticket.value.id, 'new-ticket')
+        assert.equal(state.revocationUncertain.value, true)
+        assert.equal(state.error.value, '')
+        assert.equal(state.outcome.value, null)
+        assert.equal(calls[1].signal.aborted, false)
+        calls[1].resolve(snapshot({ id: 'new-ticket' }))
+        await replacement
+        assert.equal(state.busy.value, '')
+        assert.equal(state.ticket.value.id, 'new-ticket')
+      } else assertEmpty(state)
+      assert.ok(calls.every(call => call.action === 'status'))
+      assert.equal(calls.length, replacement ? 2 : 1)
+    })
+  }
+}
+
+test('current-ticket button delegates to the composable without gating on expiry or uncertainty; manual lookup remains', () => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  assert.match(app, /checkCurrentTicket, clearSession,[\s\S]*} = useSession\(\)/)
+  assert.match(app, /Ticket intrekken<\/button>\s*<button class="secondary" :disabled="!!busy \|\| !ticket \|\| !token.trim\(\)" @click="checkCurrentTicket">Controleer huidig ticket<\/button>/)
+  assert.match(app, /<form @submit.prevent="perform\('status'\)">/)
+  assert.match(app, /<input id="lookup-id" v-model="lookupId"/)
+})
+
 test('command or TTL changes retire local authority; mismatched and premature tickets cannot commit', async t => {
   const { state, calls, clock } = fixture(t)
   prepare(state, 'commit')

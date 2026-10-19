@@ -116,6 +116,11 @@ Met **Ticket intrekken** kun je het huidige ticket server-side ongeldig maken.
 De interface bevestigt dit alleen na een geldig serverantwoord. Bij een
 onzekere netwerkuitkomst blijft het ticket zichtbaar voor een nieuwe
 intrekpoging; vastleggen en nieuwe tickets aanvragen zijn dan lokaal geblokkeerd.
+Met **Controleer huidig ticket** vul je het ID van het lokaal bewaarde
+ticket in en vraag je direct de status op, ook bij een onzekere intrekking
+of een verlopen ticket. Dit is uitsluitend een handmatige leesactie:
+een actieve of wachtende status heft de blokkering niet op en vraagt geen
+nieuwe toestemming aan.
 Een sessie wissen of invoer wijzigen is geen server-side intrekking.
 Intrekken maakt eerder vastgelegde commando's niet ongedaan.
 Gebruik **Status controleren** met het ticket-ID als een inzending geen
