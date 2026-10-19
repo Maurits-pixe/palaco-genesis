@@ -13,6 +13,7 @@ export function useSession({
   api = defaultApi,
   realtimeFactory = createRealtime,
   scheduler = { now: () => Date.now(), setInterval, clearInterval },
+  eventTarget = globalThis.window,
 } = {}) {
   const token = ref('')
   const command = ref('')
@@ -127,7 +128,9 @@ export function useSession({
     else resetSession()
   }
 
+  eventTarget?.addEventListener('pagehide', clearSession)
   onScopeDispose(() => {
+    eventTarget?.removeEventListener('pagehide', clearSession)
     disposed = true
     resetSession()
     token.value = ''

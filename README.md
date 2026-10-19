@@ -189,6 +189,14 @@ Kopieer het ticket-ID vóór het wissen als je een onzekere uitkomst later
 handmatig wilt controleren. Wissen verwijdert ook de lokale blokkering
 bij een onzekere intrekking, maar bewijst niet dat het ticket is ingetrokken.
 Dien een onzekere inzending niet automatisch opnieuw in.
+Bij `pagehide` voert BASTION dezelfde lokale sessiewissing uit, ook wanneer
+de browser de pagina in de terug-/vooruitcache bewaart. Dit verbreekt realtime
+en wist ook lokaal bewaarde ticket-ID's; bewaar zo nodig vooraf het ID voor
+een latere handmatige statuscontrole. Terugnavigeren herstelt geen toestemming
+of verbinding: voer het token opnieuw in en start acties zelf. Alleen een
+ander tabblad openen wist niets. De browser garandeert `pagehide` niet bij
+bijvoorbeeld een procescrash. Dit is geen veilige geheugenwissing, server-side
+ticketintrekking of terugdraaiing van een al verstuurde mutatie.
 De BASTION-interface kan met hetzelfde token verbinden voor realtime-events;
 vernieuw het logboek na een verbindingsonderbreking.
 Tijdens **Logboek vernieuwen** blijven eerder geladen records zichtbaar.

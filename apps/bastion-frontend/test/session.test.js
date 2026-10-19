@@ -18,10 +18,11 @@ const deferred = () => {
   return { promise, resolve, reject }
 }
 
-function fixture(t) {
+function fixture(t, eventTarget = new EventTarget()) {
   const scope = effectScope()
   const calls = []
   const sockets = []
+  const realtimeCallbacks = []
   const clock = { time: 1050, tick: null, cleared: [], interval: null }
   const api = Object.fromEntries(Object.entries(actions).map(([action, name]) => [name, (...args) => {
     const call = { action, args, signal: args.at(-1), ...deferred() }
@@ -30,30 +31,34 @@ function fixture(t) {
   }]))
   const state = scope.run(() => useSession({
     api,
+    eventTarget,
     scheduler: {
       now: () => clock.time,
       setInterval(callback, interval) { clock.tick = callback; clock.interval = interval; return 42 },
       clearInterval(id) { clock.cleared.push(id) },
     },
-    realtimeFactory: callbacks => createRealtime({
-      ...callbacks,
-      createSocket(options) {
-        const socket = {
-          auth: options.auth, io: { opts: { ...options } }, handlers: {},
-          connects: 0, disconnects: 0, removed: false,
-          on(name, callback) { this.handlers[name] = callback },
-          connect() { this.connects++ },
-          disconnect() { this.disconnects++ },
-          removeAllListeners() { this.removed = true },
+    realtimeFactory: callbacks => {
+      realtimeCallbacks.push(callbacks)
+      return createRealtime({
+        ...callbacks,
+        createSocket(options) {
+          const socket = {
+            auth: options.auth, io: { opts: { ...options } }, handlers: {},
+            connects: 0, disconnects: 0, removed: false,
+            on(name, callback) { this.handlers[name] = callback },
+            connect() { this.connects++ },
+            disconnect() { this.disconnects++ },
+            removeAllListeners() { this.removed = true },
+          }
+          sockets.push(socket)
+          return socket
         }
-        sockets.push(socket)
-        return socket
-      },
-    }),
+      })
+    },
   }))
   t.after(() => scope.stop())
   state.token.value = 'test-session-token'
-  return { state, scope, calls, sockets, clock }
+  return { state, scope, calls, sockets, clock, eventTarget, realtimeCallbacks }
 }
 
 function prepare(state, action) {
@@ -98,6 +103,183 @@ function assertDisconnected(socket) {
   assert.equal(socket.disconnects, 1)
   assert.equal(socket.removed, true)
 }
+
+function pageTransition(type, persisted) {
+  const event = new Event(type)
+  Object.defineProperty(event, 'persisted', { value: persisted })
+  return event
+}
+
+for (const persisted of [false, true]) {
+  test(`pagehide persisted=${persisted} clears loaded state; pageshow requires explicit token and actions`, async t => {
+    const { state, eventTarget, calls, sockets, clock } = fixture(t)
+    state.realtime.connect(state.token.value)
+    prepare(state, 'revoke')
+    eventTarget.dispatchEvent(pageTransition('pagehide', persisted))
+    assertEmpty(state)
+    assertDisconnected(sockets[0])
+    assert.deepEqual(clock.cleared, [])
+    eventTarget.dispatchEvent(pageTransition('pageshow', persisted))
+    assertEmpty(state)
+    assert.equal(calls.length, 0)
+    assert.equal(sockets.length, 1)
+    state.token.value = 'restored-session-token'
+    assert.equal(calls.length, 0)
+    assert.equal(sockets.length, 1)
+    state.realtime.connect(state.token.value)
+    assert.deepEqual(sockets[1].auth, { token: 'restored-session-token' })
+    for (const action of Object.keys(actions)) {
+      prepare(state, action)
+      const operation = state.perform(action)
+      assert.equal(calls.at(-1).action, action)
+      assert.ok(calls.at(-1).args.includes('restored-session-token'))
+      calls.at(-1).resolve(results[action])
+      await operation
+      assert.equal(state.error.value, '')
+      assert.equal(state.busy.value, '')
+    }
+    // The empty-token path must also clear local state, without disposing the session.
+    state.token.value = ''
+    prepare(state, 'revoke')
+    eventTarget.dispatchEvent(pageTransition('pagehide', persisted))
+    assertEmpty(state)
+  })
+
+  for (const action of Object.keys(actions)) {
+    for (const settlement of ['resolve', 'reject']) {
+      for (const reauthenticate of [false, true]) {
+        test(`pagehide persisted=${persisted}: ${action} stale ${settlement}, reauthenticate=${reauthenticate}`, async t => {
+          const { state, eventTarget, calls, sockets, realtimeCallbacks } = fixture(t)
+          state.realtime.connect(state.token.value)
+          const socket = sockets[0]
+          prepare(state, action)
+          const old = state.perform(action)
+          eventTarget.dispatchEvent(pageTransition('pagehide', persisted))
+          assertEmpty(state)
+          assert.equal(calls[0].signal.aborted, true)
+          assertDisconnected(socket)
+          eventTarget.dispatchEvent(pageTransition('pageshow', persisted))
+          assert.equal(calls.length, 1)
+          assert.equal(sockets.length, 1)
+          let replacement
+          if (reauthenticate) {
+            state.token.value = 'replacement-token'
+            state.command.value = 'new session'
+            state.realtime.connect(state.token.value)
+            sockets[1].handlers.connect()
+            sockets[1].handlers['command:committed'](record('new-session-record'))
+            replacement = state.perform('ticket')
+          }
+          socket.handlers['command:committed'](record('late'))
+          socket.handlers.connect()
+          socket.handlers.disconnect()
+          socket.handlers.connect_error()
+          realtimeCallbacks[0].onEntry(record('late-direct-callback'))
+          realtimeCallbacks[0].onStatus('error')
+          realtimeCallbacks[0].onReset()
+          if (settlement === 'resolve') calls[0].resolve(results[action])
+          else calls[0].reject(new Error('stale private failure'))
+          await old
+          if (!reauthenticate) {
+            assertEmpty(state)
+            return
+          }
+          assert.equal(state.token.value, 'replacement-token')
+          assert.equal(state.command.value, 'new session')
+          assert.equal(state.busy.value, 'ticket')
+          assert.equal(state.realtimeStatus.value, 'connected')
+          assert.deepEqual(state.commands.value, [record('new-session-record')])
+          assert.equal(state.ticket.value, null)
+          assert.equal(state.outcome.value, null)
+          assert.equal(state.lastSubmissionId.value, '')
+          assert.equal(state.lookupId.value, '')
+          assert.equal(state.revocationUncertain.value, false)
+          assert.equal(state.search.value, '')
+          assert.equal(state.hasLoaded.value, false)
+          assert.equal(state.journalRefreshFailed.value, false)
+          assert.equal(state.lastJournalRefreshAt.value, null)
+          assert.equal(state.error.value, '')
+          assert.equal(state.message.value, '')
+          assert.equal(calls[1].signal.aborted, false)
+          calls[1].resolve({ ...held(), id: 'new-ticket', command: 'new session' })
+          await replacement
+          assert.equal(state.ticket.value.id, 'new-ticket')
+          assert.equal(state.busy.value, '')
+        })
+      }
+    }
+  }
+}
+
+test('scope disposal removes the exact pagehide listener before aborting; later events leave refs alone', async t => {
+  class TrackedTarget extends EventTarget {
+    added = []
+    removed = []
+    addEventListener(...args) { this.added.push(args); super.addEventListener(...args) }
+    removeEventListener(...args) { this.removed.push(args); super.removeEventListener(...args) }
+  }
+  const eventTarget = new TrackedTarget()
+  const { state, scope, calls } = fixture(t, eventTarget)
+  assert.equal(eventTarget.added.length, 1)
+  assert.equal(eventTarget.added[0][0], 'pagehide')
+  prepare(state, 'ticket')
+  const operation = state.perform('ticket')
+  calls[0].signal.addEventListener('abort', () => {
+    assert.deepEqual(eventTarget.removed, eventTarget.added)
+  })
+  scope.stop()
+  assert.deepEqual(eventTarget.removed, eventTarget.added)
+  assertEmpty(state)
+  state.command.value = 'after disposal'
+  state.token.value = 'after-disposal-token'
+  for (const persisted of [false, true]) {
+    eventTarget.dispatchEvent(pageTransition('pagehide', persisted))
+    assert.equal(state.command.value, 'after disposal')
+    assert.equal(state.token.value, 'after-disposal-token')
+  }
+  calls[0].resolve(held())
+  await operation
+  assert.equal(state.command.value, 'after disposal')
+})
+
+test('visibilitychange does not clear, disconnect or abort an active session', async t => {
+  const { state, eventTarget, calls, sockets } = fixture(t)
+  state.realtime.connect(state.token.value)
+  prepare(state, 'list')
+  const operation = state.perform('list')
+  eventTarget.dispatchEvent(new Event('visibilitychange'))
+  assert.equal(state.token.value, 'test-session-token')
+  assert.equal(state.search.value, 'journal')
+  assert.equal(state.lastJournalRefreshAt.value, 1000)
+  assert.equal(state.busy.value, 'list')
+  assert.equal(calls[0].signal.aborted, false)
+  assert.equal(sockets[0].disconnects, 0)
+  calls[0].resolve([record()])
+  await operation
+  assert.equal(state.hasLoaded.value, true)
+})
+
+test('default browser event target is safe without window during SSR', t => {
+  assert.equal(globalThis.window, undefined)
+  const scope = effectScope()
+  t.after(() => scope.stop())
+  const state = scope.run(() => useSession({
+    scheduler: { now: () => 1050, setInterval: () => 42, clearInterval() {} },
+  }))
+  prepare(state, 'ticket')
+  state.clearSession()
+  assertEmpty(state)
+})
+
+test('session help describes browser lifecycle limits and explicit restoration without security guarantees', () => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  assert.match(app, /pagehide \(ook bij terug\/vooruit-cache\)/)
+  assert.match(app, /Voer na terugkeer het token opnieuw in/)
+  assert.match(app, /geen automatische verzoeken of herverbinding/)
+  assert.match(app, /browser levert pagehide niet gegarandeerd/)
+  assert.match(app, /geen veilige geheugenwissing/)
+  assert.match(app, /geen intrekking van servertickets of terugdraaien/)
+})
 
 for (const action of Object.keys(actions)) {
   for (const settlement of ['resolve', 'reject']) {

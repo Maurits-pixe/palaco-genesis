@@ -27,7 +27,10 @@ function receiptIso(value) {
       <h2 id="access-title">Toegang</h2>
       <label for="token">Toegangstoken</label>
       <input id="token" v-model="token" type="password" autocomplete="off" spellcheck="false" :disabled="!!busy" aria-describedby="token-help" />
-      <p id="token-help" class="muted">Alleen in componentgeheugen; niet in opslag of een URL. Vernieuwen wist de sessie.</p>
+      <p id="token-help" class="muted">Alleen in componentgeheugen; niet in opslag of een URL.
+        Bij pagehide (ook bij terug/vooruit-cache) wissen we de lokale sessie. Voer na terugkeer het token opnieuw in
+        en kies zelf een actie; geen automatische verzoeken of herverbinding.
+        De browser levert pagehide niet gegarandeerd; dit garandeert geen veilige geheugenwissing.</p>
       <button class="secondary" @click="clearSession">Wis sessie</button>
       <p class="muted">Wissen en afbreken zijn alleen lokaal: geen intrekking van servertickets of terugdraaien.
         Een al verzonden wijziging kan nog worden voltooid. Wissen verwijdert ook lokale ID's:
