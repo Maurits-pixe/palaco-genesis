@@ -8,7 +8,9 @@ const snapshot = (changes = {}) => ({
   checked_at: 1000, revoked: false, status: 'active', record: null, ...changes,
 })
 const record = { id: 'record-1', command: 'journal only', committed_at: 1010 }
-const response = (value, status = 200) => new Response(JSON.stringify(value), { status })
+const response = (value, status = 200) => new Response(JSON.stringify(value), {
+  status, headers: { 'Content-Type': 'application/json' },
+})
 
 test('manual status lookup makes exactly one authenticated GET and accepts all consistent states', async () => {
   for (const value of [
@@ -63,7 +65,7 @@ test('status response rejects malformed schemas, commands, times and windows', a
     await assert.rejects(getTicketStatus('ticket-1', token, async () => {
       calls++
       return response(value)
-    }), /ticketstatusantwoord/)
+    }), value === null || Array.isArray(value) ? /Onverwacht antwoord/ : /ticketstatusantwoord/)
     assert.equal(calls, 1)
   }
 })
@@ -91,9 +93,13 @@ test('lookup sanitizes HTTP, network, JSON and wrong-success failures without re
   for (const fetcher of [
     ...[400, 401, 403, 404, 409, 410, 429, 500, 503].map(status => async () => response({ error: token }, status)),
     async () => { throw new Error(token) },
-    async () => new Response(token),
+    async () => new Response(token, { headers: { 'Content-Type': 'application/json' } }),
     async () => response(snapshot(), 201),
-    async () => ({ ok: true, status: 200, redirected: true, json: async () => snapshot() }),
+    async () => {
+      const result = response(snapshot())
+      Object.defineProperty(result, 'redirected', { value: true })
+      return result
+    },
   ]) {
     let calls = 0
     await assert.rejects(getTicketStatus('ticket-1', token, async (...args) => {

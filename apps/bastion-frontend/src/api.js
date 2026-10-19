@@ -12,7 +12,69 @@ const errors = {
 class ApiError extends Error {}
 
 export const MAX_COMMAND_LENGTH = 1024
+export const MAX_RESPONSE_BYTES = 1024 * 1024
 export const commandLength = (value) => value.length
+
+function cancel(target) {
+  try {
+    Promise.resolve(target?.cancel()).catch(() => {})
+  } catch {
+    // Cancellation is best effort, including for locked or errored bodies.
+  }
+}
+
+function abortable(pending, signal, onLateValue) {
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      signal.removeEventListener('abort', abort)
+      reject(signal.reason)
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    if (signal.aborted) abort()
+    Promise.resolve(pending).then(value => {
+      signal.removeEventListener('abort', abort)
+      if (signal.aborted) {
+        onLateValue?.(value)
+        reject(signal.reason)
+      } else {
+        resolve(value)
+      }
+    }, error => {
+      signal.removeEventListener('abort', abort)
+      reject(error)
+    })
+  })
+}
+
+async function readJson(response, signal) {
+  const reader = response.body.getReader()
+  let complete = false
+  try {
+    const decoder = new TextDecoder('utf-8', { fatal: true })
+    let bytes = 0
+    let text = ''
+    while (true) {
+      const { done, value } = await abortable(reader.read(), signal)
+      signal.throwIfAborted()
+      if (done) {
+        complete = true
+        break
+      }
+      bytes += value.byteLength
+      if (bytes > MAX_RESPONSE_BYTES) throw new ApiError('Onverwacht antwoord van de service.')
+      text += decoder.decode(value, { stream: true })
+    }
+    text += decoder.decode()
+    const result = JSON.parse(text)
+    if (result === null || typeof result !== 'object' || Array.isArray(result)) {
+      throw new ApiError('Onverwacht antwoord van de service.')
+    }
+    return result
+  } finally {
+    if (!complete) cancel(reader)
+    reader.releaseLock()
+  }
+}
 
 function validId(id) {
   return typeof id === 'string' && /^[a-zA-Z0-9_-]{1,200}$/.test(id)
@@ -37,8 +99,9 @@ export async function request(path, { token, method = 'GET', body, fetcher = fet
   }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
+  let response
   try {
-    const response = await fetcher(path, {
+    response = await abortable(fetcher(path, {
       method,
       headers: {
         Authorization: ['Bearer', token].join(' '),
@@ -50,13 +113,20 @@ export async function request(path, { token, method = 'GET', body, fetcher = fet
       redirect: 'error',
       cache: 'no-store',
       credentials: 'omit',
-    })
+    }), controller.signal, late => cancel(late?.body))
+    controller.signal.throwIfAborted()
     if (!response.ok) throw new ApiError(errors[response.status] || 'De service kan dit verzoek niet verwerken.')
     if (response.redirected || response.status !== (method === 'POST' ? 201 : 200)) {
       throw new ApiError('Onverwacht antwoord van de service.')
     }
-    return await response.json()
+    if (!/^application\/json(?:\s*;.*)?$/i.test(response.headers.get('content-type')?.trim() || '') || !response.body) {
+      throw new ApiError('Onverwacht antwoord van de service.')
+    }
+    const result = await readJson(response, controller.signal)
+    controller.signal.throwIfAborted()
+    return result
   } catch (error) {
+    if (response?.body && !response.body.locked) cancel(response.body)
     if (error instanceof ApiError) throw error
     throw new ApiError('Geen geldig antwoord. Controleer de lokale service en probeer opnieuw.')
   } finally {

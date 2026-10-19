@@ -118,7 +118,8 @@ test('expired tickets can still be revoked without a client-clock decision', asy
 })
 
 test('revocation requires explicit server confirmation and correct status', async () => {
-  for (const value of [null, {}, { revoked: false }, { revoked: 'true' }]) {
+  await assert.rejects(revokeTicket(ticket(), inputToken, async () => json(null)), /Onverwacht antwoord/)
+  for (const value of [{}, { revoked: false }, { revoked: 'true' }]) {
     await assert.rejects(revokeTicket(ticket(), inputToken, async () => json(value)), /niet bevestigd/)
   }
   for (const status of [201, 204, 302, 401, 403, 404, 503]) {
@@ -131,7 +132,7 @@ test('revocation failures are sanitized and never retried automatically', async 
   for (const fetcher of [
     async () => { throw new Error(inputToken) },
     async () => new Response('private backend detail', { status: 503 }),
-    async () => new Response('invalid JSON'),
+    async () => new Response('invalid JSON', { headers: { 'Content-Type': 'application/json' } }),
   ]) {
     let calls = 0
     await assert.rejects(revokeTicket(ticket(), inputToken, async (...args) => {
@@ -198,7 +199,9 @@ test('API failures never reflect backend bodies or token details; no automatic r
     assert.equal(calls, 1)
   }
   await assert.rejects(listCommands(inputToken, async () => { throw new Error(inputToken) }), /Geen geldig antwoord/)
-  await assert.rejects(listCommands(inputToken, async () => new Response('{')), /Geen geldig antwoord/)
+  await assert.rejects(listCommands(inputToken, async () => new Response('{', {
+    headers: { 'Content-Type': 'application/json' },
+  })), /Geen geldig antwoord/)
   await assert.rejects(listCommands(inputToken, async () => new Response(null, { status: 302 })))
 })
 

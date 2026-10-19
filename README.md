@@ -124,6 +124,15 @@ terminale status van hetzelfde ticket kan een onzekere intrekking lokaal
 afsluiten. Sessie wissen of herladen verwijdert de lokaal bewaarde ID's.
 De BASTION-interface kan met hetzelfde token verbinden voor realtime-events;
 vernieuw het logboek na een verbindingsonderbreking.
+Voor HTTP-antwoorden accepteert de BASTION-interface alleen JSON-objecten
+met `application/json` en maximaal 1 MiB antwoorddata, onafhankelijk van
+`Content-Length`. Dat biedt ruimte voor 100 logboekrecords met maximaal
+1024 UTF-16-tekeneenheden per commando, ook met JSON-escaping.
+De standaardtimeout van 8 seconden omvat zowel het ophalen als het lezen
+van het antwoord. Deze HTTP-limiet geldt niet voor Socket.IO-events.
+Een timeout of afgewezen antwoord draait een server-side mutatie niet
+terug; controleer bij een onzekere inzending de ticketstatus en dien niet
+automatisch opnieuw in.
 
 Het startscript controleert manifests, Node-versie, credentials en geïnstalleerde
 Node-dependencies vóór het starten en gebruikt restrictieve bestandsrechten.
