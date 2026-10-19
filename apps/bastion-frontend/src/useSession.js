@@ -27,6 +27,7 @@ export function useSession({
       entry.command.toLowerCase().includes(query) || entry.id.toLowerCase().includes(query))
   })
   const hasLoaded = ref(false)
+  const journalRefreshFailed = ref(false)
   const busy = ref('')
   const message = ref('')
   const error = ref('')
@@ -40,14 +41,23 @@ export function useSession({
   let pending = null
   let connection = null
   let connectionGeneration = 0
+  let journalGeneration = 0
+  let journalRequest = null
+
+  function resetJournal() {
+    journalGeneration++
+    if (journalRequest) journalRequest.entries = []
+    commands.value = []
+    hasLoaded.value = false
+    journalRefreshFailed.value = false
+  }
 
   function disconnect() {
     connectionGeneration++
     const previous = connection
     connection = null
     previous?.disconnect()
-    commands.value = []
-    hasLoaded.value = false
+    resetJournal()
     realtimeStatus.value = 'disconnected'
   }
 
@@ -60,11 +70,17 @@ export function useSession({
       const current = () => !disposed && generation === connectionGeneration
       connection = realtimeFactory({
         onEntry: entry => {
-          if (current()) commands.value = defaultApi.mergeCommands(commands.value, entry)
+          if (!current()) return
+          const normalized = defaultApi.normalizeCommand(entry)
+          if (!normalized) return
+          commands.value = defaultApi.mergeCommands(commands.value, normalized)
+          if (journalRequest?.generation === journalGeneration) {
+            journalRequest.entries = defaultApi.mergeCommands(journalRequest.entries, normalized)
+          }
         },
         onStatus: status => { if (current()) realtimeStatus.value = status },
         onReset: () => {
-          if (current()) { commands.value = []; hasLoaded.value = false }
+          if (current()) resetJournal()
         },
       })
       connection.connect(value)
@@ -134,6 +150,11 @@ export function useSession({
     const controller = new AbortController()
     pending = controller
     const current = () => !disposed && started === session && pending === controller
+    const refresh = action === 'list' ? { generation: journalGeneration, entries: [] } : null
+    if (refresh) {
+      journalRequest = refresh
+      journalRefreshFailed.value = false
+    }
     busy.value = action
     error.value = ''
     message.value = ''
@@ -178,18 +199,21 @@ export function useSession({
         revocationUncertain.value = reconciled.revocationUncertain
         message.value = 'Ticketstatus opgehaald. Dit is een momentopname, geen nieuwe toestemming.'
       } else {
-        commands.value = []
-        hasLoaded.value = false
         const loaded = await api.listCommands(token.value, undefined, controller.signal)
-        if (!current()) return
-        // Behoud ook events die tijdens het ophalen zijn ontvangen.
-        commands.value = [...commands.value].reverse().reduce(defaultApi.mergeCommands, loaded)
+        if (!current() || refresh.generation !== journalGeneration) return
+        // Alleen events uit deze verversing aanvullen, nooit de oude snapshot.
+        commands.value = [...refresh.entries].reverse().reduce(defaultApi.mergeCommands, loaded)
         hasLoaded.value = true
+        journalRefreshFailed.value = false
         message.value = 'Logboek bijgewerkt.'
       }
     } catch (failure) {
-      if (current()) error.value = failure.message
+      if (current() && (!refresh || refresh.generation === journalGeneration)) {
+        error.value = failure.message
+        if (refresh) journalRefreshFailed.value = true
+      }
     } finally {
+      if (refresh && journalRequest === refresh) journalRequest = null
       if (current()) {
         pending = null
         busy.value = ''
@@ -198,7 +222,7 @@ export function useSession({
   }
 
   return {
-    token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, busy,
+    token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, busy,
     message, error, lookupId, outcome, lastSubmissionId, realtimeStatus, now,
     canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearSession,
   }

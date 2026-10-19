@@ -66,6 +66,7 @@ function prepare(state, action) {
   state.commands.value = [record()]
   state.search.value = 'journal'
   state.hasLoaded.value = true
+  state.journalRefreshFailed.value = true
   state.message.value = 'previous message'
   state.error.value = 'previous error'
   if (action === 'revoke') state.revocationUncertain.value = true
@@ -81,6 +82,7 @@ function assertEmpty(state, token = '') {
   assert.deepEqual(state.commands.value, [])
   assert.deepEqual(state.filteredCommands.value, [])
   assert.equal(state.hasLoaded.value, false)
+  assert.equal(state.journalRefreshFailed.value, false)
   assert.equal(state.outcome.value, null)
   assert.equal(state.realtimeStatus.value, 'disconnected')
   assert.equal(state.canCommit.value, false)
@@ -137,6 +139,7 @@ for (const action of Object.keys(actions)) {
         assert.equal(state.revocationUncertain.value, false)
         assert.equal(state.error.value, '')
         assert.equal(state.message.value, '')
+        assert.equal(state.journalRefreshFailed.value, false)
         assert.equal(calls[1].signal.aborted, false)
         calls[1].resolve({ ...held(), id: 'new-ticket', command: 'new session' })
         await replacement
@@ -754,7 +757,8 @@ test('search reacts to list/realtime merges and eviction while retaining the que
   assert.equal(state.filteredCommands.value.some(entry => entry.id === 'new'), false)
   assert.equal(state.search.value, '  MATCH  ')
   const refreshing = state.perform('list')
-  assert.deepEqual(state.filteredCommands.value, [])
+  assert.ok(state.filteredCommands.value.length > 0)
+  assert.equal(state.commands.value.length, 100)
   calls[1].resolve([{ ...record('replacement'), command: 'match replacement' }])
   await refreshing
   assert.deepEqual(state.filteredCommands.value.map(entry => entry.id), ['replacement'])
@@ -794,11 +798,189 @@ test('journal UI wires local search, accessible controls, counts, distinct empty
   }
   assert.match(app, /<button type="button"[^>]*@click="search = ''">Wis zoekopdracht<\/button>/)
   assert.match(app, /<p role="status" aria-live="polite">{{ filteredCommands.length }} van {{ commands.length }} geladen records<\/p>/)
-  assert.match(app, /v-if="!commands.length"[^>]*>{{ hasLoaded \? 'Het logboek is leeg.' : 'Nog geen records geladen.' }}/)
+  assert.match(app, /v-if="!commands.length"[^>]*>{{ journalRefreshFailed \? 'Geen records beschikbaar na mislukte verversing.' : hasLoaded \? 'Het logboek is leeg.' : 'Nog geen records geladen.' }}/)
   assert.match(app, /v-else-if="!filteredCommands.length"[^>]*>Geen geladen records gevonden/)
   assert.match(app, /v-for="entry in filteredCommands" :key="entry.id"><pre>{{ entry.command }}<\/pre>/)
   assert.doesNotMatch(app, /v-html|localStorage|sessionStorage|URLSearchParams/)
   assert.match(app, /maximaal 100 lokaal geladen records/)
   assert.match(app, /Niet in de hele database of ticket-ID's/)
   assert.match(app, /alleen in sessiegeheugen/)
+})
+
+test('refresh retains loaded rows and search on failure; unrelated successes cannot clear its warning', async t => {
+  const { state, calls } = fixture(t)
+  prepare(state, 'list')
+  const rows = state.commands.value
+  const refreshing = state.perform('list')
+  assert.strictEqual(state.commands.value, rows)
+  assert.equal(state.hasLoaded.value, true)
+  assert.equal(state.journalRefreshFailed.value, false)
+  assert.deepEqual(state.filteredCommands.value, [record()])
+  calls[0].reject(new Error('refresh unavailable'))
+  await refreshing
+  assert.strictEqual(state.commands.value, rows)
+  assert.equal(state.hasLoaded.value, true)
+  assert.equal(state.journalRefreshFailed.value, true)
+  assert.equal(state.search.value, 'journal')
+  assert.equal(calls.length, 1)
+  for (const action of ['status', 'ticket']) {
+    const operation = state.perform(action)
+    assert.equal(state.journalRefreshFailed.value, true)
+    calls.at(-1).resolve(results[action])
+    await operation
+    assert.equal(state.error.value, '')
+    assert.equal(state.journalRefreshFailed.value, true)
+    assert.strictEqual(state.commands.value, rows)
+  }
+  const retry = state.perform('list')
+  assert.equal(state.journalRefreshFailed.value, false)
+  assert.strictEqual(state.commands.value, rows)
+  calls.at(-1).resolve([])
+  await retry
+  assert.deepEqual(state.commands.value, [])
+  assert.equal(state.hasLoaded.value, true)
+  assert.equal(state.journalRefreshFailed.value, false)
+  assert.equal(state.search.value, 'journal')
+})
+
+test('initial list failure is not a successfully loaded empty journal', async t => {
+  const { state, calls } = fixture(t)
+  const loading = state.perform('list')
+  calls[0].reject(new Error('initial load unavailable'))
+  await loading
+  assert.deepEqual(state.commands.value, [])
+  assert.equal(state.hasLoaded.value, false)
+  assert.equal(state.journalRefreshFailed.value, true)
+  assert.equal(state.error.value, 'initial load unavailable')
+  assert.equal(state.busy.value, '')
+  assert.equal(calls.length, 1)
+})
+
+for (const loaded of [[], [record('snapshot')]]) {
+  test(`successful snapshot of ${loaded.length} rows replaces old rows, never reintroducing retained history`, async t => {
+    const { state, calls } = fixture(t)
+    prepare(state, 'list')
+    const loading = state.perform('list')
+    assert.deepEqual(state.commands.value, [record()])
+    calls[0].resolve(loaded)
+    await loading
+    assert.deepEqual(state.commands.value, loaded)
+    assert.equal(state.hasLoaded.value, true)
+    assert.equal(state.journalRefreshFailed.value, false)
+    assert.equal(state.search.value, 'journal')
+  })
+}
+
+for (const settlement of ['resolve', 'reject']) {
+  test(`realtime during refresh ${settlement} stays validated, deduplicated, newest-first and capped at 100`, async t => {
+    const { state, calls, sockets } = fixture(t)
+    state.realtime.connect(state.token.value)
+    const socket = sockets[0]
+    prepare(state, 'list')
+    const loading = state.perform('list')
+    assert.deepEqual(state.commands.value, [record()])
+    for (let i = 0; i < 150; i++) {
+      socket.handlers['command:committed']({ ...record(`event-${i}`), command: `match ${i}` })
+    }
+    socket.handlers['command:committed']({ ...record('event-100'), command: 'replacement' })
+    for (let i = 0; i < 110; i++) {
+      socket.handlers['command:committed']({ ...record(`invalid-${i}`), committed_at: 'not a timestamp' })
+    }
+    const expectedIds = ['event-100', ...Array.from({ length: 100 }, (_, i) => `event-${149 - i}`).filter(id => id !== 'event-100')]
+    assert.equal(state.commands.value.length, 100)
+    assert.deepEqual(state.commands.value.map(entry => entry.id), expectedIds)
+    state.search.value = 'MATCH'
+    assert.equal(state.filteredCommands.value.length, 99)
+    if (settlement === 'resolve') {
+      calls[0].resolve([record('event-100'), record('snapshot'), record('record-1')])
+    } else calls[0].reject(new Error('refresh failed'))
+    await loading
+    assert.equal(state.commands.value.length, 100)
+    assert.deepEqual(state.commands.value.map(entry => entry.id), expectedIds)
+    assert.equal(state.commands.value[0].command, 'replacement')
+    assert.equal(state.filteredCommands.value.length, 99)
+    assert.equal(state.search.value, 'MATCH')
+    assert.equal(state.hasLoaded.value, true)
+    assert.equal(state.journalRefreshFailed.value, settlement === 'reject')
+    assert.equal(calls.length, 1)
+  })
+}
+
+test('failed initial list keeps realtime arrivals without claiming a loaded snapshot', async t => {
+  const { state, calls, sockets } = fixture(t)
+  state.realtime.connect(state.token.value)
+  const loading = state.perform('list')
+  sockets[0].handlers['command:committed'](record('during'))
+  calls[0].reject(new Error('unavailable'))
+  await loading
+  assert.deepEqual(state.commands.value, [record('during')])
+  assert.equal(state.hasLoaded.value, false)
+  assert.equal(state.journalRefreshFailed.value, true)
+})
+
+for (const reset of ['manual disconnect', 'socket disconnect', 'socket error', 'reconnect']) {
+  for (const settlement of ['resolve', 'reject']) {
+    test(`${reset} isolates pending list ${settlement} from pre-reset snapshot and buffered events`, async t => {
+      const { state, calls, sockets } = fixture(t)
+      state.realtime.connect(state.token.value)
+      const socket = sockets[0]
+      prepare(state, 'list')
+      const loading = state.perform('list')
+      socket.handlers['command:committed'](record('before-reset'))
+      if (reset === 'manual disconnect') state.realtime.disconnect()
+      else if (reset === 'socket disconnect') socket.handlers.disconnect()
+      else if (reset === 'socket error') socket.handlers.connect_error()
+      else state.realtime.connect(state.token.value)
+      assert.deepEqual(state.commands.value, [])
+      assert.equal(state.hasLoaded.value, false)
+      assert.equal(state.journalRefreshFailed.value, false)
+      socket.handlers['command:committed'](record('stale-socket'))
+      assert.deepEqual(state.commands.value, [])
+      if (reset === 'reconnect') {
+        sockets[1].handlers['command:committed'](record('after-reset'))
+      }
+      if (settlement === 'resolve') calls[0].resolve([record('old-snapshot')])
+      else calls[0].reject(new Error('pre-reset failure'))
+      await loading
+      assert.deepEqual(state.commands.value, reset === 'reconnect' ? [record('after-reset')] : [])
+      assert.equal(state.hasLoaded.value, false)
+      assert.equal(state.journalRefreshFailed.value, false)
+      assert.equal(state.error.value, '')
+      assert.equal(state.message.value, '')
+      assert.equal(state.busy.value, '')
+      assert.equal(state.search.value, 'journal')
+      const fresh = state.perform('list')
+      calls[1].resolve([record('fresh-snapshot')])
+      await fresh
+      assert.deepEqual(state.commands.value, [record('fresh-snapshot')])
+      assert.equal(state.hasLoaded.value, true)
+    })
+  }
+}
+
+test('journal warning clears on session and realtime resets', async t => {
+  for (const reset of ['clear', 'token', 'dispose', 'disconnect', 'reconnect', 'socket reset']) {
+    const { state, calls, scope, sockets } = fixture(t)
+    state.realtime.connect(state.token.value)
+    const loading = state.perform('list')
+    calls[0].reject(new Error('failed'))
+    await loading
+    assert.equal(state.journalRefreshFailed.value, true)
+    if (reset === 'clear') state.clearSession()
+    else if (reset === 'token') state.token.value = 'replacement-token'
+    else if (reset === 'dispose') scope.stop()
+    else if (reset === 'disconnect') state.realtime.disconnect()
+    else if (reset === 'reconnect') state.realtime.connect(state.token.value)
+    else sockets[0].handlers.disconnect()
+    assert.equal(state.journalRefreshFailed.value, false, reset)
+    assert.deepEqual(state.commands.value, [], reset)
+    assert.equal(state.hasLoaded.value, false, reset)
+  }
+})
+
+test('journal UI announces refresh progress and failure independently of generic action messages', () => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  assert.match(app, /v-if="busy === 'list'" role="status" aria-live="polite">Logboek vernieuwen… Bestaande records blijven zichtbaar\./)
+  assert.match(app, /v-if="journalRefreshFailed" role="alert"[^>]*>Logboek vernieuwen mislukt\. Getoonde gegevens kunnen verouderd zijn\./)
+  assert.match(app, /Er worden geen automatische nieuwe pogingen gedaan\./)
 })

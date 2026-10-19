@@ -150,6 +150,14 @@ bij een onzekere intrekking, maar bewijst niet dat het ticket is ingetrokken.
 Dien een onzekere inzending niet automatisch opnieuw in.
 De BASTION-interface kan met hetzelfde token verbinden voor realtime-events;
 vernieuw het logboek na een verbindingsonderbreking.
+Tijdens **Logboek vernieuwen** blijven eerder geladen records zichtbaar.
+Bij een mislukte verversing toont de interface een waarschuwing dat de
+zichtbare gegevens mogelijk verouderd zijn; er volgt geen automatische
+herhaling. Een geslaagde verversing vervangt de oude lijst door de nieuwe
+serversnapshot, aangevuld met realtime-records die tijdens die verversing
+binnenkwamen. Oude records buiten die snapshot worden niet teruggezet.
+Sessiewissen en het resetten van de realtimeverbinding blijven de lokale
+logboekgegevens wissen.
 Met **Zoek in geladen logboek** filter je lokaal op commandotekst of
 record-ID, zonder onderscheid tussen hoofdletters en kleine letters.
 De zoektekst is letterlijk, geen reguliere expressie; spaties aan begin

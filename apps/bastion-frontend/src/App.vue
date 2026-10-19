@@ -3,7 +3,7 @@ import { commandLength, MAX_COMMAND_LENGTH, timestamp } from './api.js'
 import { realtimeLabels, useSession } from './useSession.js'
 
 const {
-  token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, busy,
+  token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, busy,
   message, error, lookupId, outcome, lastSubmissionId, realtimeStatus,
   canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearSession,
 } = useSession()
@@ -89,13 +89,15 @@ function date(value) {
           <button class="secondary" :disabled="!!busy || (realtimeStatus !== 'connecting' && realtimeStatus !== 'connected')" @click="realtime.disconnect()">Verbinding verbreken</button>
         </div>
         <button :disabled="!!busy || !token.trim()" @click="perform('list')">Logboek vernieuwen</button>
+        <p v-if="busy === 'list'" role="status" aria-live="polite">Logboek vernieuwen… Bestaande records blijven zichtbaar.</p>
+        <p v-if="journalRefreshFailed" role="alert" class="error">Logboek vernieuwen mislukt. Getoonde gegevens kunnen verouderd zijn. Er worden geen automatische nieuwe pogingen gedaan.</p>
         <label for="journal-search">Zoek in geladen logboek</label>
         <input id="journal-search" v-model="search" type="search" autocomplete="off" spellcheck="false" maxlength="1024" aria-describedby="journal-search-help" />
         <p id="journal-search-help" class="muted">Zoekt letterlijk, zonder hoofdletterverschil, in commandotekst of record-ID van maximaal 100 lokaal geladen records.
           Niet in de hele database of ticket-ID's. De zoekopdracht blijft alleen in sessiegeheugen.</p>
         <button type="button" class="secondary" :disabled="!search" @click="search = ''">Wis zoekopdracht</button>
         <p role="status" aria-live="polite">{{ filteredCommands.length }} van {{ commands.length }} geladen records</p>
-        <p v-if="!commands.length" class="muted">{{ hasLoaded ? 'Het logboek is leeg.' : 'Nog geen records geladen.' }}</p>
+        <p v-if="!commands.length" class="muted">{{ journalRefreshFailed ? 'Geen records beschikbaar na mislukte verversing.' : hasLoaded ? 'Het logboek is leeg.' : 'Nog geen records geladen.' }}</p>
         <p v-else-if="!filteredCommands.length" class="muted">Geen geladen records gevonden voor deze zoekopdracht.</p>
         <ol class="journal">
           <li v-for="entry in filteredCommands" :key="entry.id"><pre>{{ entry.command }}</pre><small>{{ date(entry.committed_at) }} · {{ entry.id }}</small></li>
