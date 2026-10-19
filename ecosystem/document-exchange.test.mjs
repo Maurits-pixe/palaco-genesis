@@ -32,6 +32,9 @@ test('unsupported sources, traversal, unstable revisions and coercion are reject
 });
 test('invalid UTF8 and total packet capacity close access',async()=>{
   await assert.rejects(decodeDocument(new Uint8Array([0xff])));
+  const canonical=await encodeDocument(ref,doc);
+  await assert.rejects(decodeDocument(new Uint8Array([0xef,0xbb,0xbf,...canonical])));
+  await assert.rejects(decodeDocument('\ufeff'+new TextDecoder().decode(canonical)));
   await assert.rejects(decodeDocument(new Uint8Array(MAX_BYTES+1)));
   await assert.rejects(decodeDocument(' '));await assert.rejects(decodeDocument({}));
   // JSON escaping has its own byte cost even when the content itself fits.

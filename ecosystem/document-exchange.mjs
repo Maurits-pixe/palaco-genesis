@@ -9,7 +9,7 @@ export const REPOSITORIES = Object.freeze([
 ]);
 const statuses = ['draft', 'historisch', 'specificatie'];
 const encoder = new TextEncoder();
-const decoder = new TextDecoder('utf-8', {fatal:true});
+const decoder = new TextDecoder('utf-8', {fatal:true,ignoreBOM:true});
 const fail = () => { throw new Error('DOCUMENT_EXCHANGE_REJECTED'); };
 const exact = (value, keys) => value !== null && typeof value === 'object' && !Array.isArray(value)
   && Object.getPrototypeOf(value) === Object.prototype

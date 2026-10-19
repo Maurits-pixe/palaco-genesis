@@ -2,7 +2,7 @@
   "schema": "PALACO_DOCUMENT_EXCHANGE_V1",
   "repository": "Maurits-pixe/palaco-genesis",
   "state": "DRAFT_CANDIDATE",
-  "codec_sha256": "2f90c0bc9ac2d8d6cfb75c643ad8d8333cad87bc192c3154d00d81d0b9a48972",
+  "codec_sha256": "57694ee41ba4dab8b5da7518ba781df1ecf1b2fe2fdb0bff0ea793edda86a1fa",
   "shared_login": false,
   "production_release_enabled": false
 }
