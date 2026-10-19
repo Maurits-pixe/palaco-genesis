@@ -33,6 +33,17 @@ export function useRecordSession({ create = createRecord, read = readRecord } = 
     token.value = ''
   }
 
+  function clearReadResult() {
+    if (disposed || busy.value === 'create') return
+    const previous = activeRequest
+    activeRequest = null
+    busy.value = ''
+    result.value = null
+    message.value = ''
+    error.value = ''
+    previous?.abort()
+  }
+
   function dispose() {
     disposed = true
     stopWatching()
@@ -80,5 +91,5 @@ export function useRecordSession({ create = createRecord, read = readRecord } = 
     return perform('read')
   }
 
-  return { token, plaintext, recordId, lastCreatedId, result, busy, message, error, perform, readLastCreated, clearSession, dispose }
+  return { token, plaintext, recordId, lastCreatedId, result, busy, message, error, perform, readLastCreated, clearReadResult, clearSession, dispose }
 }

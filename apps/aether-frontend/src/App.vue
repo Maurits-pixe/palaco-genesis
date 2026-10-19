@@ -2,7 +2,7 @@
 import { MAX_PLAINTEXT_BYTES, plaintextBytes } from './api.js'
 import { useRecordSession } from './session.js'
 
-const { token, plaintext, recordId, lastCreatedId, result, busy, message, error, perform, readLastCreated, clearSession } = useRecordSession()
+const { token, plaintext, recordId, lastCreatedId, result, busy, message, error, perform, readLastCreated, clearReadResult, clearSession } = useRecordSession()
 </script>
 
 <template>
@@ -47,6 +47,10 @@ const { token, plaintext, recordId, lastCreatedId, result, busy, message, error,
           <input id="record-id" v-model="recordId" required maxlength="200" :disabled="!!busy" autocomplete="off" spellcheck="false" />
           <button :disabled="!!busy || !token.trim() || !recordId.trim()">Record ophalen</button>
         </form>
+        <button type="button" class="secondary" :disabled="busy === 'create' || (!result && busy !== 'read')" aria-describedby="clear-read-help" @click="clearReadResult">Wis gelezen inhoud</button>
+        <p id="clear-read-help" class="muted">Wist alleen het lokale leesresultaat en stopt lokaal wachten op een leesverzoek.
+          Verwijdert niets uit de database en garandeert geen veilige geheugenwissing.
+          Haal het record opnieuw op om de inhoud weer te bekijken. Token, record-ID's en niet-opgeslagen tekst blijven behouden.</p>
         <div v-if="result" class="result"><h3>Leesbare inhoud</h3><pre>{{ result.plaintext }}</pre></div>
       </section>
     </div>

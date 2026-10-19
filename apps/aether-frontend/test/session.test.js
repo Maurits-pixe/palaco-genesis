@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { effectScope } from 'vue'
 import { useRecordSession } from '../src/session.js'
 
@@ -31,6 +32,147 @@ function state(session) {
 }
 
 const empty = { token: '', plaintext: '', recordId: '', lastCreatedId: '', result: null, busy: '', message: '', error: '' }
+
+test('clearing a loaded read retains credentials, both IDs and unsaved input; refetch and full clear work', async (t) => {
+  const { session, calls } = setup(t)
+  const created = session.perform('create')
+  calls[0].resolve({ id: 'confirmed' })
+  await created
+  session.recordId.value = '  edited-id  '
+  session.plaintext.value = '  unsaved private text  '
+  const loaded = session.perform('read')
+  calls[1].resolve({ id: 'edited-id', plaintext: 'loaded text' })
+  await loaded
+  const before = state(session)
+  session.clearReadResult()
+  const cleared = { ...before, result: null, message: '', error: '' }
+  assert.deepEqual(state(session), cleared)
+  session.clearReadResult()
+  assert.deepEqual(state(session), cleared)
+  assert.equal(calls.length, 2)
+  assert.equal(calls[1].signal.aborted, false)
+
+  const refetch = session.perform('read')
+  assert.equal(calls[2].input, 'edited-id')
+  assert.equal(calls[2].token, before.token)
+  calls[2].resolve({ id: 'edited-id', plaintext: 'fresh text' })
+  await refetch
+  assert.equal(session.result.value.plaintext, 'fresh text')
+  assert.equal(session.plaintext.value, before.plaintext)
+  session.clearSession()
+  assert.deepEqual(state(session), empty)
+})
+
+test('idle clear removes read errors, is idempotent and sends no requests', async (t) => {
+  const { session, calls } = setup(t)
+  const pending = session.perform('read')
+  calls[0].reject(new Error('read failed'))
+  await pending
+  assert.equal(session.error.value, 'read failed')
+  const before = state(session)
+  for (let count = 0; count < 3; count++) {
+    session.clearReadResult()
+    assert.deepEqual(state(session), { ...before, message: '', error: '' })
+    assert.equal(calls.length, 1)
+  }
+})
+
+for (const outcome of ['success', 'failure']) {
+  for (const next of ['idle', 'read', 'create']) {
+    test(`read-result clear aborts pending read and ignores late ${outcome} while ${next}`, async (t) => {
+      const { session, calls } = setup(t)
+      session.lastCreatedId.value = 'confirmed'
+      const stale = session.perform('read')
+      session.message.value = 'old read message'
+      session.error.value = 'old read error'
+      session.result.value = { plaintext: 'old read content' }
+      const before = state(session)
+      let atAbort
+      calls[0].signal.addEventListener('abort', () => { atAbort = state(session) }, { once: true })
+      session.clearReadResult()
+      const cleared = { ...before, busy: '', result: null, message: '', error: '' }
+      assert.deepEqual(atAbort, cleared)
+      assert.deepEqual(state(session), cleared)
+      assert.equal(calls[0].signal.aborted, true)
+      assert.equal(calls.length, 1)
+
+      const current = next === 'idle' ? undefined : session.perform(next)
+      const waiting = state(session)
+      if (outcome === 'success') calls[0].resolve({ id: 'stale-id', plaintext: 'stale content' })
+      else calls[0].reject(new Error('stale failure'))
+      await stale
+      assert.deepEqual(state(session), waiting)
+      if (current) {
+        assert.equal(session.busy.value, next)
+        assert.equal(calls[1].signal.aborted, false)
+        calls[1].resolve({ id: 'current-id', plaintext: 'current text' })
+        await current
+        assert.equal(session.busy.value, '')
+        if (next === 'read') assert.equal(session.result.value.plaintext, 'current text')
+        else {
+          assert.equal(session.lastCreatedId.value, 'current-id')
+          assert.equal(session.plaintext.value, '')
+        }
+      }
+    })
+  }
+}
+
+test('read-result clear invalidates the old identity before synchronous abort callbacks start a new request', async (t) => {
+  const { session, calls } = setup(t)
+  const stale = session.perform('read')
+  let current
+  calls[0].signal.addEventListener('abort', () => {
+    current = session.perform('create')
+    calls[0].reject(new Error('aborted read'))
+  }, { once: true })
+  session.clearReadResult()
+  await stale
+  assert.equal(session.busy.value, 'create')
+  assert.equal(calls[1].signal.aborted, false)
+  calls[1].resolve({ id: 'created-after-abort' })
+  await current
+  assert.equal(session.lastCreatedId.value, 'created-after-abort')
+})
+
+for (const guard of ['create', 'disposed']) {
+  test(`read-result clear is a complete no-op during ${guard}`, async (t) => {
+    const { session, calls } = setup(t)
+    const pending = session.perform('create')
+    if (guard === 'disposed') session.dispose()
+    session.result.value = { plaintext: 'unchanged content' }
+    session.message.value = 'unchanged message'
+    session.error.value = 'unchanged error'
+    session.lastCreatedId.value = 'unchanged-id'
+    const before = state(session)
+    const aborted = calls[0].signal.aborted
+    let aborts = 0
+    calls[0].signal.addEventListener('abort', () => { aborts++ })
+    session.clearReadResult()
+    assert.deepEqual(state(session), before)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].signal.aborted, aborted)
+    assert.equal(aborts, 0)
+    calls[0].resolve({ id: 'created-id' })
+    await pending
+    if (guard === 'disposed') assert.deepEqual(state(session), before)
+    else {
+      assert.equal(session.lastCreatedId.value, 'created-id')
+      assert.equal(session.plaintext.value, '')
+      assert.match(session.message.value, /Record opgeslagen/)
+    }
+  })
+}
+
+test('read-result clear UI is local, explicitly typed, and enabled only for a result or pending read', async () => {
+  const source = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
+  assert.match(source, /const \{[^}]*clearReadResult[^}]*\} = useRecordSession\(\)/)
+  assert.match(source, /<button type="button"[^>]*:disabled="busy === 'create' \|\| \(!result && busy !== 'read'\)"[^>]*aria-describedby="clear-read-help"[^>]*@click="clearReadResult">Wis gelezen inhoud<\/button>/)
+  assert.match(source, /id="clear-read-help"[^>]*>Wist alleen het lokale leesresultaat/)
+  assert.match(source, /Verwijdert niets uit de database en garandeert geen veilige geheugenwissing/)
+  assert.match(source, /Haal het record opnieuw op om de inhoud weer te bekijken/)
+  assert.match(source, /<div v-if="result" class="result"><h3>Leesbare inhoud<\/h3><pre>\{\{ result\.plaintext \}\}<\/pre><\/div>/)
+})
 
 for (const action of ['read', 'create']) {
   test(`clearing a pending ${action} wipes immediately and ignores late success`, async (t) => {

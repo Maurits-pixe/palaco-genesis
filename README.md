@@ -102,6 +102,13 @@ opslag blijft eventueel het vorige bevestigde ID staan. Een ontbrekend
 serverantwoord kan hiermee niet worden gereconstrueerd.
 Het bewaarde ID staat alleen in sessiegeheugen en verdwijnt bij
 tokenwijziging, sessiewissen of herladen.
+Met **Wis gelezen inhoud** verwijder je alleen het leesresultaat en de
+bijbehorende melding; token, record-ID's en nog niet opgeslagen invoertekst
+blijven behouden. Een lopend leesverzoek wordt lokaal geannuleerd en zijn
+vertraagde antwoord wordt genegeerd. Tijdens opslaan is deze knop
+uitgeschakeld. Om de inhoud opnieuw te zien moet je het record weer ophalen.
+Dit verwijdert geen serverrecords en garandeert geen veilige overschrijving
+van browsergeheugen.
 Met **Wis sessie en tekst** kun je ook tijdens
 een lopend AETHER-verzoek direct token, tekst en resultaten uit de interface
 wissen. Vertraagde antwoorden uit die sessie worden niet opnieuw getoond.
