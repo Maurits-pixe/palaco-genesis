@@ -13,4 +13,4 @@ Open the hosted previews:
 
 GitHub Pages publishes this directory through [the preview workflow](../.github/workflows/previews.yml) after changes reach `main` or `master`. The repository's Pages source must be set to **GitHub Actions** under Settings → Pages. To preview before deployment, serve this directory with a local static web server.
 
-Shared styling lives in [`preview.css`](preview.css). These static previews use illustrative content only; they do not connect to PALACO services, persist messages, or establish identity, authority, or live status.
+For local RIO message sending, run the [RIO message service](../services/rio-messaging/README.md) and use its preview URLs. The hosted Pages previews are visual-only. Shared styling lives in [`preview.css`](preview.css); no preview establishes identity, authority, or live status.

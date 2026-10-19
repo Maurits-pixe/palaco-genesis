@@ -1,3 +1,5 @@
+import { conversationId, loadMessages, sendMessage } from "../rio-api.js";
+
 const tabs = [...document.querySelectorAll('[role="tab"]')];
 const panels = tabs.map((tab) => document.getElementById(tab.getAttribute("aria-controls")));
 
@@ -27,28 +29,61 @@ const transcript = document.querySelector("[data-transcript]");
 const composer = document.querySelector("[data-composer]");
 const input = composer.querySelector("input");
 const feedback = document.querySelector("[data-feedback]");
+const conversation = conversationId();
+let pending = null;
+let initialized = false;
 
-composer.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const text = input.value.trim();
-  if (!text) return;
-
+function renderMessage(record) {
   const message = document.createElement("div");
   message.className = "mobile-message";
-  message.textContent = text;
+  message.dataset.messageId = record.id;
+  message.textContent = record.content;
   transcript.append(message);
+}
 
-  const reply = document.createElement("div");
-  reply.className = "mobile-reply";
-  const mark = document.createElement("span");
-  mark.className = "brand-mark";
-  mark.textContent = "R";
-  const response = document.createElement("span");
-  response.textContent = "Dit is een vaste demo-reactie; deze preview gebruikt geen AI of externe dienst.";
-  reply.append(mark, response);
-  transcript.append(reply);
+async function refreshMessages() {
+  try {
+    const messages = await loadMessages(conversation);
+    transcript.replaceChildren();
+    messages.forEach(renderMessage);
+    feedback.textContent = messages.length
+      ? `${messages.length} lokaal geaccepteerd bericht${messages.length === 1 ? "" : "en"}.`
+      : "Verbonden met de lokale berichtendienst. Berichten worden tijdelijk in het geheugen bewaard.";
+  } catch (error) {
+    feedback.textContent = error.message;
+  } finally {
+    initialized = true;
+    composer.querySelector("button[type=submit]").disabled = false;
+  }
+}
 
-  input.value = "";
-  feedback.textContent = "Demo-bericht toegevoegd. Er is niets verstuurd of opgeslagen.";
-  input.focus();
+input.addEventListener("input", () => {
+  if (pending && input.value.trim() !== pending.content) pending = null;
 });
+
+composer.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const text = input.value.trim();
+  if (!text || !initialized || composer.dataset.sending === "true") return;
+
+  pending ??= { id: crypto.randomUUID(), content: text };
+  composer.dataset.sending = "true";
+  composer.querySelector("button[type=submit]").disabled = true;
+  feedback.textContent = "Bericht wordt naar de lokale RIO-dienst gestuurd…";
+  try {
+    const accepted = await sendMessage(conversation, pending.id, pending.content);
+    if (!transcript.querySelector(`[data-message-id="${accepted.id}"]`)) renderMessage(accepted);
+    pending = null;
+    input.value = "";
+    feedback.textContent = "Bericht is door de lokale dienst geaccepteerd. Opslag is alleen tijdelijk in het geheugen.";
+  } catch (error) {
+    feedback.textContent = `${error.message} Opnieuw verzenden met dezelfde tekst gebruikt dezelfde verzoek-ID.`;
+  } finally {
+    composer.dataset.sending = "false";
+    composer.querySelector("button[type=submit]").disabled = false;
+    input.focus();
+  }
+});
+
+composer.querySelector("button[type=submit]").disabled = true;
+refreshMessages();

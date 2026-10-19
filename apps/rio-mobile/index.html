@@ -20,12 +20,9 @@
       <div id="screen-start" class="mobile-screen" role="tabpanel" aria-labelledby="tab-start">
         <h1 id="mobile-title">Goedemorgen.</h1>
         <p>Neem even de tijd. Wat wil je vandaag helder krijgen?</p>
-        <div class="mobile-transcript" data-transcript aria-live="polite" aria-relevant="additions">
-          <div class="mobile-message">Ik wil mijn week wat overzichtelijker maken.</div>
-          <div class="mobile-reply"><span class="brand-mark">R</span><span>Laten we samen beginnen. Wat zijn de drie dingen die deze week voor jou het belangrijkst zijn?</span></div>
-        </div>
+        <div class="mobile-transcript" data-transcript aria-live="polite" aria-relevant="additions"></div>
         <form class="mobile-compose" data-composer aria-label="Lokaal demo-gesprek">
-          <input aria-label="Bericht voor RIO" placeholder="Deel wat er in je opkomt…" autocomplete="off">
+          <input aria-label="Bericht voor RIO" placeholder="Deel wat er in je opkomt…" autocomplete="off" maxlength="2000">
           <button type="submit" aria-label="Bericht toevoegen">↑</button>
         </form>
         <p class="privacy" data-feedback role="status">Lokale demo: berichten worden niet verstuurd of bewaard.</p>
@@ -47,6 +44,6 @@
       <button id="tab-profile" type="button" role="tab" aria-selected="false" aria-controls="screen-profile" tabindex="-1"><span class="tab-icon">◯</span>PROFIEL</button>
     </nav>
   </main>
-  <script src="demo.js" defer></script>
+  <script type="module" src="demo.js"></script>
 </body>
 </html>
