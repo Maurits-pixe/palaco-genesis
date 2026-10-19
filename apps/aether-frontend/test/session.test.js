@@ -10,7 +10,7 @@ function deferred() {
   return { promise, resolve, reject }
 }
 
-function setup(t) {
+function setup(t, eventTarget = new EventTarget()) {
   const calls = []
   const send = (action) => (input, token, fetcher, signal) => {
     const pending = deferred()
@@ -18,12 +18,12 @@ function setup(t) {
     return pending.promise
   }
   const scope = effectScope()
-  const session = scope.run(() => useRecordSession({ create: send('create'), read: send('read') }))
+  const session = scope.run(() => useRecordSession({ create: send('create'), read: send('read'), eventTarget }))
   t.after(() => scope.stop())
   session.token.value = 'test-only-input'
   session.plaintext.value = 'private text'
   session.recordId.value = 'record-1'
-  return { session, calls, scope }
+  return { session, calls, scope, eventTarget }
 }
 
 function state(session) {
@@ -32,6 +32,143 @@ function state(session) {
 }
 
 const empty = { token: '', plaintext: '', recordId: '', lastCreatedId: '', result: null, busy: '', message: '', error: '' }
+
+function pageTransition(type, persisted) {
+  const event = new Event(type)
+  Object.defineProperty(event, 'persisted', { value: persisted })
+  return event
+}
+
+for (const persisted of [false, true]) {
+  test(`pagehide persisted=${persisted} clears loaded state without automatically restoring it`, async (t) => {
+    const { session, calls, eventTarget } = setup(t)
+    session.lastCreatedId.value = 'confirmed'
+    const pending = session.perform('read')
+    calls[0].resolve({ id: 'record-1', plaintext: 'loaded text' })
+    await pending
+    session.error.value = 'old feedback'
+    eventTarget.dispatchEvent(pageTransition('pagehide', persisted))
+    assert.deepEqual(state(session), empty)
+    eventTarget.dispatchEvent(pageTransition('pageshow', persisted))
+    assert.deepEqual(state(session), empty)
+    assert.equal(calls.length, 1)
+    session.token.value = 'fresh-token'
+    session.recordId.value = 'fresh-id'
+    const current = session.perform('read')
+    assert.equal(calls[1].token, 'fresh-token')
+    calls[1].resolve({ id: 'fresh-id', plaintext: 'fresh text' })
+    await current
+    assert.equal(session.result.value.plaintext, 'fresh text')
+  })
+
+  for (const action of ['read', 'create']) {
+    for (const outcome of ['success', 'failure']) {
+      for (const next of ['idle', 'read', 'create']) {
+        test(`pagehide persisted=${persisted} aborts ${action}, ignores stale ${outcome} while ${next}`, async (t) => {
+          const { session, calls, eventTarget } = setup(t)
+          session.lastCreatedId.value = 'confirmed'
+          const stale = session.perform(action)
+          session.result.value = { plaintext: 'old content' }
+          session.message.value = 'old feedback'
+          session.error.value = 'old error'
+          eventTarget.dispatchEvent(pageTransition('pagehide', persisted))
+          assert.deepEqual(state(session), empty)
+          assert.equal(calls[0].signal.aborted, true)
+          eventTarget.dispatchEvent(pageTransition('pageshow', persisted))
+          assert.deepEqual(state(session), empty)
+          assert.equal(calls.length, 1)
+
+          let current
+          if (next !== 'idle') {
+            session.token.value = 'fresh-token'
+            session.recordId.value = 'fresh-id'
+            session.plaintext.value = 'fresh text'
+            current = session.perform(next)
+            assert.equal(calls[1].token, 'fresh-token')
+            assert.equal(calls[1].input, next === 'read' ? 'fresh-id' : 'fresh text')
+          }
+          const before = state(session)
+          if (outcome === 'success') calls[0].resolve({ id: 'stale-id', plaintext: 'stale text' })
+          else calls[0].reject(new Error('stale error'))
+          await stale
+          assert.deepEqual(state(session), before)
+          assert.equal(calls.length, next === 'idle' ? 1 : 2)
+          if (current) {
+            assert.equal(calls[1].signal.aborted, false)
+            calls[1].resolve({ id: 'fresh-id', plaintext: 'fresh text' })
+            await current
+            assert.equal(session.busy.value, '')
+            assert.equal(session.error.value, '')
+            if (next === 'read') assert.equal(session.result.value.plaintext, 'fresh text')
+            else assert.equal(session.lastCreatedId.value, 'fresh-id')
+          }
+        })
+      }
+    }
+  }
+}
+
+for (const cleanup of ['dispose', 'scope']) {
+  test(`${cleanup} removes the exact pagehide listener before aborting and leaves disposed refs alone`, async (t) => {
+    const added = []
+    const removed = []
+    class LifecycleTarget extends EventTarget {
+      addEventListener(...args) {
+        added.push(args)
+        super.addEventListener(...args)
+      }
+      removeEventListener(...args) {
+        removed.push(args)
+        super.removeEventListener(...args)
+      }
+    }
+    const { session, calls, scope, eventTarget } = setup(t, new LifecycleTarget())
+    const pending = session.perform('read')
+    assert.equal(added.length, 1)
+    assert.equal(added[0][0], 'pagehide')
+    calls[0].signal.addEventListener('abort', () => {
+      assert.equal(removed.length, 1)
+      assert.deepEqual(removed[0], added[0])
+    }, { once: true })
+    if (cleanup === 'scope') scope.stop()
+    else session.dispose()
+    assert.equal(removed.length, 1)
+    assert.deepEqual(removed[0], added[0])
+    assert.equal(calls[0].signal.aborted, true)
+    assert.deepEqual(state(session), empty)
+    for (const key of Object.keys(empty)) {
+      session[key].value = key === 'result' ? { plaintext: 'sentinel' } : 'sentinel'
+    }
+    const before = state(session)
+    for (const persisted of [false, true]) {
+      eventTarget.dispatchEvent(pageTransition('pagehide', persisted))
+      assert.deepEqual(state(session), before)
+    }
+    calls[0].resolve({ id: 'stale-id', plaintext: 'stale text' })
+    await pending
+    assert.deepEqual(state(session), before)
+  })
+}
+
+test('ordinary hide and visibility changes leave loaded state intact', async (t) => {
+  const { session, calls, eventTarget } = setup(t)
+  const pending = session.perform('read')
+  calls[0].resolve({ id: 'record-1', plaintext: 'loaded text' })
+  await pending
+  const before = state(session)
+  eventTarget.dispatchEvent(new Event('hide'))
+  eventTarget.dispatchEvent(new Event('visibilitychange'))
+  assert.deepEqual(state(session), before)
+  assert.equal(calls.length, 1)
+})
+
+test('default lifecycle dependency is safe without a browser window', () => {
+  assert.equal(globalThis.window, undefined)
+  const session = useRecordSession()
+  session.token.value = 'node-input'
+  session.dispose()
+  assert.deepEqual(state(session), empty)
+})
 
 test('changing the loaded result ID clears only read state synchronously without refetching', async (t) => {
   const { session, calls } = setup(t)

@@ -122,6 +122,13 @@ Dit stopt alleen het lokale wachten: een al verstuurd opslagverzoek kan
 server-side toch zijn uitgevoerd, zonder dat je het record-ID hebt ontvangen.
 Wissen verwijdert geen opgeslagen records. Dien een onzekere opslag niet
 automatisch opnieuw in; een nieuwe inzending kan een tweede record maken.
+Wanneer de browser bij het verlaten van de AETHER-pagina `pagehide` meldt,
+wordt dezelfde volledige sessiewissing uitgevoerd, ook bij opname in de
+terug-/vooruitcache. Na terugnavigeren moet je het token opnieuw invoeren en
+zelf een actie starten; er worden geen verzoeken automatisch herhaald.
+Alleen van tabblad wisselen wist de sessie niet. Browsers melden `pagehide`
+niet gegarandeerd bij bijvoorbeeld een procescrash: dit is geen garantie
+op veilige geheugenwissing of server-side annulering van een opslagverzoek.
 De AETHER-interface accepteert succesvolle antwoorden alleen als
 `application/json` met een passend recordformaat. Het lezen stopt bij meer
 dan 128 KiB antwoorddata, ook zonder betrouwbare `Content-Length`; de

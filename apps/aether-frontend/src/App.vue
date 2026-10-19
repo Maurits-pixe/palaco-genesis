@@ -14,7 +14,10 @@ const { token, plaintext, recordId, lastCreatedId, result, busy, message, error,
       <h2 id="access-title">Toegang</h2>
       <label for="token">Toegangstoken</label>
       <input id="token" v-model="token" type="password" autocomplete="off" spellcheck="false" aria-describedby="token-help" />
-      <p id="token-help" class="muted">Alleen in componentgeheugen; niet in opslag of een URL. Vernieuwen wist de sessie.</p>
+      <p id="token-help" class="muted">Alleen in componentgeheugen; niet in opslag of een URL. Vernieuwen wist de sessie.
+        Bij pagehide (ook bij terug/vooruit-cache) wissen we de lokale sessie. Na terugkeer voer je het token opnieuw in
+        en start je zelf een verzoek. Alleen een tabblad verbergen wist niets.
+        De browser levert pagehide niet gegarandeerd; dit garandeert geen veilige geheugenwissing.</p>
       <button class="secondary" @click="clearSession">Wis sessie en tekst</button>
       <p class="muted">Annuleren of de sessie wissen stopt alleen het lokale wachten. Een al verstuurd opslagverzoek
         kan het record al hebben opgeslagen. Probeer niet automatisch opnieuw.</p>

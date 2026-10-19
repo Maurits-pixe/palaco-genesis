@@ -1,7 +1,7 @@
 import { getCurrentScope, onScopeDispose, ref, watch } from 'vue'
 import { createRecord, readRecord } from './api.js'
 
-export function useRecordSession({ create = createRecord, read = readRecord } = {}) {
+export function useRecordSession({ create = createRecord, read = readRecord, eventTarget = globalThis.window } = {}) {
   const token = ref('')
   const plaintext = ref('')
   const recordId = ref('')
@@ -52,12 +52,14 @@ export function useRecordSession({ create = createRecord, read = readRecord } = 
   }
 
   function dispose() {
+    eventTarget?.removeEventListener('pagehide', clearSession)
     disposed = true
     stopWatchingToken()
     stopWatchingId()
     clearSession()
   }
 
+  eventTarget?.addEventListener('pagehide', clearSession)
   if (getCurrentScope()) onScopeDispose(dispose)
 
   async function perform(action) {
