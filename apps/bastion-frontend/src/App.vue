@@ -74,7 +74,9 @@ function receiptIso(value) {
         </div>
         <form @submit.prevent="perform('status')">
           <label for="lookup-id">Ticket-ID</label>
-          <input id="lookup-id" v-model="lookupId" maxlength="128" required :disabled="!!busy" autocomplete="off" spellcheck="false" />
+          <input id="lookup-id" v-model="lookupId" maxlength="128" required :disabled="!!busy" autocomplete="off" spellcheck="false" aria-describedby="lookup-id-help" />
+          <p id="lookup-id-help" class="muted">Een ander ID wist alleen de lokale status en breekt een lopende statuscontrole lokaal af.
+            Geen herstel van toestemming of intrekking op de server; geen automatisch verzoek. Gebruik het exacte ID, zonder omringende spaties.</p>
           <button :disabled="!!busy || !token.trim() || !lookupId">Status controleren</button>
         </form>
         <div v-if="outcome" class="result">

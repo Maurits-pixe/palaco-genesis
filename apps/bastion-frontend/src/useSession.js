@@ -146,10 +146,18 @@ export function useSession({
     previous?.abort()
   }
 
+  const stopLookupWatch = watch(lookupId, (value, previous) => {
+    if (!disposed && value !== previous &&
+      (outcome.value || busy.value === 'status' || feedbackAction === 'status')) {
+      clearOutcome()
+    }
+  }, { flush: 'sync' })
+
   eventTarget?.addEventListener('pagehide', clearSession)
   onScopeDispose(() => {
     eventTarget?.removeEventListener('pagehide', clearSession)
     disposed = true
+    stopLookupWatch()
     resetSession()
     token.value = ''
     scheduler.clearInterval(clock)

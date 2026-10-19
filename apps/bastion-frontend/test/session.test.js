@@ -364,6 +364,262 @@ for (const reset of ['clearSession', 'token', 'pagehide']) {
   })
 }
 
+for (const status of ['active', 'committed']) {
+  test(`editing a loaded ${status} lookup clears only its local read context; same exact ID is inert`, async t => {
+    const { state, calls, sockets } = fixture(t)
+    state.realtime.connect(state.token.value)
+    sockets[0].handlers.connect()
+    prepare(state, 'revoke')
+    const operation = state.perform('status')
+    calls[0].resolve(snapshot({ status, record: status === 'committed' ? record('historical') : null }))
+    await operation
+    const before = retainedOutcomeState(state)
+    const feedback = state.message.value
+    const result = state.outcome.value
+    state.lookupId.value = held().id
+    assert.equal(state.outcome.value, result)
+    assert.equal(state.message.value, feedback)
+    assert.deepEqual(retainedOutcomeState(state), before)
+
+    // Whitespace is an exact ID edit, not a normalized equivalent.
+    state.lookupId.value = ` ${held().id} `
+    before.lookupId = ` ${held().id} `
+    assert.equal(state.lookupId.value, ` ${held().id} `)
+    assert.equal(state.outcome.value, null)
+    assert.equal(state.message.value, '')
+    assert.equal(state.error.value, '')
+    assert.deepEqual(retainedOutcomeState(state), before)
+    assert.equal(state.revocationUncertain.value, status === 'active')
+    assert.equal(state.canCommit.value, false)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].signal.aborted, false)
+    assert.equal(sockets[0].disconnects, 0)
+    sockets[0].handlers['command:committed'](record('after-edit'))
+    assert.equal(state.commands.value[0].id, 'after-edit')
+  })
+}
+
+test('editing after status failure clears its feedback without retrying or changing authority', async t => {
+  const { state, calls } = fixture(t)
+  prepare(state, 'revoke')
+  const operation = state.perform('status')
+  calls[0].reject(new Error('status failure'))
+  await operation
+  const before = retainedOutcomeState(state)
+  state.lookupId.value = held().id
+  assert.equal(state.error.value, 'status failure')
+  state.lookupId.value = 'another-id'
+  before.lookupId = 'another-id'
+  assert.equal(state.outcome.value, null)
+  assert.equal(state.error.value, '')
+  assert.equal(state.message.value, '')
+  assert.deepEqual(retainedOutcomeState(state), before)
+  assert.equal(calls.length, 1)
+})
+
+for (const settlement of ['resolve', 'reject']) {
+  test(`lookup edit aborts pending status before late terminal ${settlement}, preserving uncertainty`, async t => {
+    const { state, calls } = fixture(t)
+    prepare(state, 'revoke')
+    const operation = state.perform('status')
+    state.lookupId.value = held().id
+    assert.equal(calls[0].signal.aborted, false)
+    assert.equal(state.busy.value, 'status')
+    let atAbort
+    calls[0].signal.addEventListener('abort', () => {
+      atAbort = [state.busy.value, state.outcome.value, state.message.value, state.error.value]
+    })
+    const before = retainedOutcomeState(state)
+    state.lookupId.value = ''
+    before.lookupId = ''
+    assert.deepEqual(atAbort, ['', null, '', ''])
+    assert.equal(calls[0].signal.aborted, true)
+    if (settlement === 'resolve') calls[0].resolve(snapshot({ status: 'committed', record: record('stale') }))
+    else calls[0].reject(new Error('stale status error'))
+    await operation
+    assert.deepEqual(retainedOutcomeState(state), before)
+    assert.equal(state.outcome.value, null)
+    assert.equal(state.error.value, '')
+    assert.equal(state.message.value, '')
+    assert.equal(state.revocationUncertain.value, true)
+    assert.deepEqual(state.ticket.value, held())
+    assert.equal(state.canCommit.value, false)
+    assert.equal(calls.length, 1)
+  })
+
+  for (const action of ['status', 'ticket', 'commit']) {
+    for (const newerCompleted of [false, true]) {
+      test(`edited lookup late ${settlement} cannot affect next ${action}, completed=${newerCompleted}`, async t => {
+        const { state, calls } = fixture(t)
+        prepare(state, 'status')
+        const old = state.perform('status')
+        state.lookupId.value = 'different-ticket'
+        assert.equal(calls[0].signal.aborted, true)
+        assert.equal(calls.length, 1)
+        if (action === 'status') state.revocationUncertain.value = true
+        const newer = state.perform(action)
+        assert.equal(calls.length, 2)
+        const result = action === 'status' ? snapshot({ id: 'different-ticket' }) : results[action]
+        if (newerCompleted) {
+          calls[1].resolve(result)
+          await newer
+        }
+        const before = retainedOutcomeState(state)
+        const readContext = [state.busy.value, state.message.value, state.error.value, state.outcome.value]
+        if (settlement === 'resolve') calls[0].resolve(snapshot({ status: 'committed', record: record('stale') }))
+        else calls[0].reject(new Error('stale status error'))
+        await old
+        assert.deepEqual(retainedOutcomeState(state), before)
+        assert.deepEqual([state.busy.value, state.message.value, state.error.value, state.outcome.value], readContext)
+        assert.equal(calls[1].signal.aborted, false)
+        if (!newerCompleted) {
+          assert.equal(state.busy.value, action)
+          calls[1].resolve(result)
+          await newer
+        }
+        assert.equal(state.busy.value, '')
+        assert.equal(state.error.value, '')
+        if (action === 'commit') {
+          assert.equal(state.lookupId.value, held().id)
+          assert.equal(state.lastSubmissionId.value, held().id)
+          assert.equal(state.ticket.value, null)
+          assert.match(state.message.value, /Commando vastgelegd/)
+          assert.deepEqual(state.commands.value, [record()])
+        } else if (action === 'status') {
+          assert.deepEqual(state.outcome.value, result)
+          assert.equal(state.revocationUncertain.value, true)
+        } else assert.deepEqual(state.ticket.value, held())
+        assert.equal(calls.length, 2)
+      })
+    }
+  }
+}
+
+test('lookup abort callbacks can start a fresh request without losing its identity or feedback', async t => {
+  const { state, calls } = fixture(t)
+  prepare(state, 'status')
+  const old = state.perform('status')
+  let newer
+  calls[0].signal.addEventListener('abort', () => {
+    newer = state.perform('status')
+    state.message.value = 'fresh status feedback'
+  })
+  state.lookupId.value = 'fresh-id'
+  assert.equal(calls.length, 2)
+  assert.equal(calls[1].args[0], 'fresh-id')
+  calls[0].resolve(snapshot({ status: 'committed', record: record('stale') }))
+  await old
+  assert.equal(state.busy.value, 'status')
+  assert.equal(state.message.value, 'fresh status feedback')
+  assert.equal(calls[1].signal.aborted, false)
+  calls[1].resolve(snapshot({ id: 'fresh-id' }))
+  await newer
+  assert.equal(state.outcome.value.id, 'fresh-id')
+})
+
+for (const action of ['ticket', 'commit', 'revoke', 'list']) {
+  test(`lookup edit respects busy ${action} guard and preserves non-status feedback afterward`, async t => {
+    const { state, calls } = fixture(t)
+    prepare(state, action)
+    state.lookupId.value = 'different-before-action'
+    state.outcome.value = snapshot()
+    const operation = state.perform(action)
+    state.outcome.value = snapshot()
+    state.message.value = 'busy feedback'
+    state.error.value = 'busy error'
+    state.lookupId.value = 'different-during-action'
+    assert.equal(state.busy.value, action)
+    assert.deepEqual(state.outcome.value, snapshot())
+    assert.equal(state.message.value, 'busy feedback')
+    assert.equal(state.error.value, 'busy error')
+    assert.equal(calls[0].signal.aborted, false)
+    calls[0].resolve(results[action])
+    await operation
+    const feedback = [state.message.value, state.error.value]
+    state.lookupId.value = 'different-after-action'
+    assert.equal(state.outcome.value, null)
+    assert.deepEqual([state.message.value, state.error.value], feedback)
+    state.lookupId.value = 'no-read-context'
+    assert.deepEqual([state.message.value, state.error.value], feedback)
+    assert.equal(calls.length, 1)
+  })
+}
+
+for (const shortcut of ['checkCurrentTicket', 'checkLastSubmission']) {
+  test(`${shortcut} replaces loaded read context with exactly one explicit request`, async t => {
+    const { state, calls } = fixture(t)
+    prepare(state, 'status')
+    state.lookupId.value = 'unrelated-id'
+    const old = state.perform('status')
+    calls[0].resolve(snapshot({ id: 'unrelated-id' }))
+    await old
+    const operation = state[shortcut]()
+    assert.equal(calls.length, 2)
+    assert.equal(calls[1].action, 'status')
+    assert.equal(calls[1].args[0], shortcut === 'checkCurrentTicket' ? held().id : 'retained-id')
+    assert.equal(state.outcome.value, null)
+    assert.equal(state.busy.value, 'status')
+    assert.equal(calls[1].signal.aborted, false)
+    calls[1].resolve(snapshot({ id: calls[1].args[0] }))
+    await operation
+    assert.equal(state.outcome.value.id, calls[1].args[0])
+    assert.equal(calls.length, 2)
+  })
+}
+
+for (const settlement of ['resolve', 'reject']) {
+  test(`commit lookup assignment preserves its request and ${settlement} feedback after a loaded read`, async t => {
+    const { state, calls } = fixture(t)
+    prepare(state, 'status')
+    state.lookupId.value = 'historical-ticket'
+    const checking = state.perform('status')
+    calls[0].resolve(snapshot({ id: 'historical-ticket' }))
+    await checking
+    const committing = state.perform('commit')
+    assert.equal(calls.length, 2)
+    assert.equal(state.lookupId.value, held().id)
+    assert.equal(state.lastSubmissionId.value, held().id)
+    assert.equal(state.busy.value, 'commit')
+    assert.equal(calls[1].signal.aborted, false)
+    assert.equal(state.outcome.value, null)
+    if (settlement === 'resolve') calls[1].resolve(record())
+    else calls[1].reject(new Error('commit response lost'))
+    await committing
+    const feedback = [state.message.value, state.error.value]
+    assert.ok(feedback.some(Boolean))
+    state.lookupId.value = 'another-manual-id'
+    assert.deepEqual([state.message.value, state.error.value], feedback)
+    assert.equal(state.ticket.value, null)
+    assert.equal(calls.length, 2)
+  })
+}
+
+test('lookup editing after scope cleanup cannot clear manually seeded read context', t => {
+  const { state, scope, calls } = fixture(t)
+  scope.stop()
+  assertEmpty(state)
+  prepare(state, 'revoke')
+  state.busy.value = 'status'
+  const before = retainedOutcomeState(state)
+  state.lookupId.value = 'after-disposal'
+  before.lookupId = 'after-disposal'
+  assert.deepEqual(retainedOutcomeState(state), before)
+  assert.deepEqual(state.outcome.value, snapshot())
+  assert.equal(state.busy.value, 'status')
+  assert.equal(state.message.value, 'previous message')
+  assert.equal(state.error.value, 'previous error')
+  assert.equal(calls.length, 0)
+})
+
+test('lookup help describes exact IDs, local-only clearing and explicit requests with accessible association', () => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  assert.match(app, /<input id="lookup-id"[^>]*aria-describedby="lookup-id-help"/)
+  assert.match(app, /id="lookup-id-help"[^>]*>Een ander ID wist alleen de lokale status/)
+  assert.match(app, /Geen herstel van toestemming of intrekking op de server; geen automatisch verzoek\./)
+  assert.match(app, /Gebruik het exacte ID, zonder omringende spaties\./)
+  assert.match(app, /Ticket: <code>\{\{ outcome.id \}\}<\/code>/)
+})
+
 test('outcome clear UI is an explicit local-only button with status-only busy eligibility and honest help', () => {
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
   assert.match(app, /clearSession, clearOutcome,\s*\} = useSession\(\)/)
@@ -955,6 +1211,8 @@ for (const guard of ['busy', 'missing ID', 'empty token', 'blank token', 'dispos
     let inFlight
     if (guard === 'busy') inFlight = state.perform('list')
     state.lookupId.value = 'manual-id-to-preserve'
+    // Seed after the edit to isolate shortcut guards from lookup invalidation.
+    state.outcome.value = snapshot()
     const before = calls.length
     await state.checkLastSubmission()
     assert.equal(state.lookupId.value, 'manual-id-to-preserve')

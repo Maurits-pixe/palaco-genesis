@@ -194,6 +194,13 @@ blijven behouden. Een al verwerkte statusreconciliatie wordt niet teruggedraaid.
 Tijdens andere verzoeken is deze knop uitgeschakeld. Dit trekt geen ticket in,
 herstelt geen toestemming en start geen nieuwe controle; vraag de status
 handmatig opnieuw op om een uitkomst weer te bekijken.
+Als je het ticket-ID voor een statuscontrole wijzigt, wordt de oude lokale
+uitkomst met bijbehorende statusmelding gewist. Een lopende statuscontrole
+voor het vorige ID wordt lokaal geannuleerd; late antwoorden wijzigen geen
+ticketstaat. Er volgt geen automatische controle. Tickets, een eventuele
+onzekerheidsblokkering en reeds verwerkte reconciliatie blijven ongemoeid.
+Het statusresultaat toont altijd zijn eigen ontvangen ticket-ID. ID's worden
+exact verwerkt: omringende spaties blijven ongeldige invoer.
 **Wis sessie** blijft ook tijdens een lopend BASTION-verzoek beschikbaar:
 token, commando, tickets, statusresultaten en logboek verdwijnen direct uit
 de interface. De realtimeverbinding wordt verbroken en lopende HTTP-verzoeken
