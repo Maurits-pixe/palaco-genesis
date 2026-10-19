@@ -2,7 +2,7 @@
 import { launchUrl, TRUSTED_MODULES } from './verification.js'
 import { useModuleVerification } from './useModuleVerification.js'
 
-const { states, now, isVerifying, launchableCount, verify, verifyAll } = useModuleVerification()
+const { states, now, isVerifying, launchableCount, verify, verifyAll, reset } = useModuleVerification()
 
 function follow(event, module) {
   if (!launchUrl(module, states.value[module.id], Date.now())) {
@@ -32,8 +32,10 @@ function status(module) {
     </aside>
     <div class="actions">
       <button :disabled="isVerifying" @click="verifyAll">Controleer alle modules</button>
+      <button @click="reset">Wis controles</button>
       <p role="status" aria-live="polite" aria-atomic="true">{{ launchableCount }} van {{ TRUSTED_MODULES.length }} modules momenteel te openen.</p>
     </div>
+    <p>Wissen verwijdert alleen lokale controles: het stopt geen services, trekt geen tickets in en sluit geen reeds geopende tabbladen.</p>
     <section class="grid" aria-label="Lokale modules">
       <article v-for="module in TRUSTED_MODULES" :key="module.id" :aria-busy="states[module.id].status === 'verifying'">
         <p class="eyebrow">MODULE / {{ module.id }}</p>

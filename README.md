@@ -80,6 +80,12 @@ controle is de gezamenlijke knop uitgeschakeld om dubbele verzoeken te
 voorkomen. Het overzicht telt alleen modules met een momenteel bruikbare
 startlink; verlopen controles tellen niet mee. NEO controleert niet
 automatisch opnieuw en opent geen interfaces zonder jouw klik.
+Met **Wis controles** verwijder je alle lokale controleresultaten en
+startgoedkeuringen, ook tijdens een lopende controle. Lopende verzoeken
+worden lokaal geannuleerd; vertraagde antwoorden activeren geen links
+opnieuw. Je kunt daarna direct een nieuwe controle starten.
+Wissen stopt geen services, sluit geen reeds geopende tabbladen en trekt
+geen server-side tickets of toestemming in.
 NEO activeert een link alleen na een passend manifest én een gezond
 `/health`-antwoord van dezelfde geconfigureerde backend. Bij onbeschikbaarheid,
 een ongeldig antwoord of een timeout blijft de link uitgeschakeld. De controle

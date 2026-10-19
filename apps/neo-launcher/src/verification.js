@@ -52,20 +52,29 @@ export function validateManifest(manifest, module) {
 
 function abortable(promise, signal) {
   return new Promise((resolve, reject) => {
-    const abort = () => reject(signal.reason)
-    if (signal.aborted) {
+    const cleanup = () => signal.removeEventListener('abort', abort)
+    const abort = () => {
+      cleanup()
       reject(signal.reason)
+    }
+    if (signal.aborted) {
+      abort()
     } else {
       signal.addEventListener('abort', abort, { once: true })
     }
-    Promise.resolve(promise).then(resolve, reject).finally(() => {
-      signal.removeEventListener('abort', abort)
-    })
+    Promise.resolve(promise).then(
+      (value) => { cleanup(); resolve(value) },
+      (error) => { cleanup(); reject(error) },
+    )
   })
 }
 
 function cancelBody(body) {
-  body?.cancel().catch(() => {})
+  try {
+    Promise.resolve(body?.cancel()).catch(() => {})
+  } catch {
+    // Cancellation is best effort; it must never block local invalidation.
+  }
 }
 
 async function boundedJson(response, signal) {
@@ -76,7 +85,12 @@ async function boundedJson(response, signal) {
   const reader = response.body.getReader()
   const chunks = []
   let size = 0
-  const cancel = () => { reader.cancel().catch(() => {}) }
+  let cancelled = false
+  const cancel = () => {
+    if (cancelled) return
+    cancelled = true
+    cancelBody(reader)
+  }
   signal.addEventListener('abort', cancel, { once: true })
   try {
     while (true) {
@@ -104,11 +118,14 @@ async function boundedJson(response, signal) {
   return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
 }
 
-export async function verifyModule(module, fetcher = fetch, timeoutMs = 5000) {
+export async function verifyModule(module, fetcher = fetch, timeoutMs = 5000, signal) {
   if (!trustedModule(module) || !isAllowedOrigin(module.origin)) {
     throw new Error('Moduleconfiguratie is niet toegestaan.')
   }
   const controller = new AbortController()
+  const abort = () => controller.abort(signal.reason)
+  if (signal?.aborted) abort()
+  else signal?.addEventListener('abort', abort, { once: true })
   const budget = Number.isFinite(timeoutMs) && timeoutMs > 0
     ? Math.min(timeoutMs, MAX_TIMEOUT_MS) : MAX_TIMEOUT_MS
   const timer = setTimeout(() => controller.abort(), budget)
@@ -123,8 +140,12 @@ export async function verifyModule(module, fetcher = fetch, timeoutMs = 5000) {
     }))
     request.then((response) => {
       if (controller.signal.aborted) cancelBody(response.body)
-    }, () => {})
+    }).catch(() => {})
     const response = await abortable(request, controller.signal)
+    if (controller.signal.aborted) {
+      cancelBody(response.body)
+      controller.signal.throwIfAborted()
+    }
     if (response.status !== 200 || response.redirected ||
         response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json') {
       cancelBody(response.body)
@@ -145,6 +166,7 @@ export async function verifyModule(module, fetcher = fetch, timeoutMs = 5000) {
     throw new Error('Verificatie mislukt. Controleer of de lokale service actief is en probeer opnieuw.')
   } finally {
     clearTimeout(timer)
+    signal?.removeEventListener('abort', abort)
   }
 }
 

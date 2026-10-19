@@ -9,6 +9,7 @@ export function useModuleVerification({
 } = {}) {
   const states = ref(Object.fromEntries(TRUSTED_MODULES.map(({ id }) => [id, { status: 'idle' }])))
   const now = ref(getNow())
+  const attempts = new Map()
   let disposed = false
   const clock = schedule(() => {
     if (!disposed) now.value = getNow()
@@ -16,6 +17,7 @@ export function useModuleVerification({
   onScopeDispose(() => {
     disposed = true
     unschedule(clock)
+    abortAttempts()
   })
 
   const isVerifying = computed(() =>
@@ -23,33 +25,55 @@ export function useModuleVerification({
   const launchableCount = computed(() =>
     TRUSTED_MODULES.filter((module) => launchUrl(module, states.value[module.id], now.value)).length)
 
-  async function run(module) {
+  function abortAttempts() {
+    const controllers = [...attempts.values()]
+    attempts.clear()
+    for (const controller of controllers) controller.abort()
+  }
+
+  function reset() {
+    if (disposed) return
+    states.value = Object.fromEntries(TRUSTED_MODULES.map(({ id }) => [id, { status: 'idle' }]))
+    abortAttempts()
+  }
+
+  function begin(module) {
+    const controller = new AbortController()
+    attempts.set(module.id, controller)
+    states.value[module.id] = { status: 'verifying' }
+    return controller
+  }
+
+  async function run(module, controller) {
+    const isCurrent = () => !disposed && attempts.get(module.id) === controller
     try {
-      const result = await verifier(module)
-      if (!disposed) {
+      if (!isCurrent()) return
+      const result = await verifier(module, undefined, undefined, controller.signal)
+      if (isCurrent()) {
         states.value[module.id] = result
         now.value = getNow()
       }
     } catch (error) {
-      if (!disposed) {
+      if (isCurrent()) {
         states.value[module.id] = { status: 'error', message: error?.message || 'Verificatie mislukt.' }
       }
+    } finally {
+      if (isCurrent()) attempts.delete(module.id)
     }
   }
 
   async function verify(module) {
     if (disposed || !TRUSTED_MODULES.includes(module) ||
         states.value[module.id].status === 'verifying') return
-    states.value[module.id] = { status: 'verifying' }
-    await run(module)
+    await run(module, begin(module))
   }
 
   async function verifyAll() {
     if (disposed || isVerifying.value) return
     // Invalidate every old approval before starting any verification request.
-    for (const { id } of TRUSTED_MODULES) states.value[id] = { status: 'verifying' }
-    await Promise.all(TRUSTED_MODULES.map(run))
+    const controllers = TRUSTED_MODULES.map(begin)
+    await Promise.all(TRUSTED_MODULES.map((module, index) => run(module, controllers[index])))
   }
 
-  return { states, now, isVerifying, launchableCount, verify, verifyAll }
+  return { states, now, isVerifying, launchableCount, verify, verifyAll, reset }
 }

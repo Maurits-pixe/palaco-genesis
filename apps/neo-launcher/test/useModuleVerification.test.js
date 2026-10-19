@@ -16,13 +16,15 @@ function setup(t, verifier) {
   const timer = {}
   const cleared = []
   const calls = []
+  const signals = []
   const pending = []
   const scope = effectScope()
   const model = scope.run(() => useModuleVerification({
-    verifier: (module) => {
+    verifier: (module, _fetcher, _timeout, signal) => {
       calls.push(module)
-      if (verifier) return verifier(module, model)
-      return new Promise((resolve, reject) => pending.push({ module, resolve, reject }))
+      signals.push(signal)
+      if (verifier) return verifier(module, model, signal)
+      return new Promise((resolve, reject) => pending.push({ module, signal, resolve, reject }))
     },
     getNow: () => time,
     schedule: (callback, delay) => {
@@ -34,7 +36,7 @@ function setup(t, verifier) {
   }))
   t.after(() => scope.stop())
   return {
-    model, calls, pending, scope, timer, cleared,
+    model, calls, signals, pending, scope, timer, cleared,
     setTime: (value) => { time = value },
     tick: () => tick(),
   }
@@ -176,9 +178,10 @@ test('clock summary uses the exact launch gate without extending verification ti
 })
 
 test('scope disposal clears the timer and ignores late successes, failures, and new requests', async (t) => {
-  const { model, calls, pending, scope, timer, cleared, setTime, tick } = setup(t)
+  const { model, calls, signals, pending, scope, timer, cleared, setTime, tick } = setup(t)
   const batch = model.verifyAll()
   scope.stop()
+  assert.ok(signals.every((signal) => signal.aborted))
   assert.deepEqual(cleared, [timer])
   const before = structuredClone(JSON.parse(JSON.stringify(model.states.value)))
   setTime(200_000)
@@ -186,17 +189,122 @@ test('scope disposal clears the timer and ignores late successes, failures, and 
   pending[0].resolve(evidence(aether, 200_000))
   pending[1].reject(new Error('Late failure'))
   await batch
-  await Promise.all([model.verifyAll(), model.verify(aether)])
+  await Promise.all([model.verifyAll(), model.verify(aether), model.reset()])
   assert.deepEqual(model.states.value, before)
   assert.equal(model.now.value, 100_000)
   assert.equal(calls.length, 2)
   assert.deepEqual(cleared, [timer])
 })
 
+test('reset removes completed approvals, count, and launch links and is repeatable', async (t) => {
+  const { model, pending, calls } = setup(t)
+  const batch = model.verifyAll()
+  for (const request of pending) request.resolve(evidence(request.module, 100_000))
+  await batch
+  assert.equal(model.launchableCount.value, 2)
+  for (let i = 0; i < 3; i++) {
+    model.reset()
+    assert.deepEqual(Object.values(model.states.value), [{ status: 'idle' }, { status: 'idle' }])
+    assert.equal(model.isVerifying.value, false)
+    assert.equal(model.launchableCount.value, 0)
+    for (const module of TRUSTED_MODULES) {
+      assert.equal(launchUrl(module, model.states.value[module.id], model.now.value), null)
+    }
+  }
+  assert.equal(calls.length, 2)
+})
+
+test('reset aborts a pending batch and permits fresh individuals despite an ignoring-abort verifier', async (t) => {
+  const { model, pending, setTime, calls } = setup(t)
+  const oldBatch = model.verifyAll()
+  model.reset()
+  assert.ok(pending.every(({ signal }) => signal.aborted))
+  assert.equal(model.isVerifying.value, false)
+  assert.equal(model.launchableCount.value, 0)
+  const first = model.verify(aether)
+  const second = model.verify(bastion)
+  assert.equal(calls.length, 4)
+  assert.ok(pending.slice(2).every(({ signal }) => !signal.aborted))
+  setTime(200_000)
+  pending[0].resolve(evidence(aether, 200_000))
+  pending[1].reject(new Error('Old batch error'))
+  await oldBatch
+  assert.deepEqual(Object.values(model.states.value), [{ status: 'verifying' }, { status: 'verifying' }])
+  assert.equal(model.isVerifying.value, true)
+  assert.equal(model.launchableCount.value, 0)
+  assert.equal(model.now.value, 100_000)
+  await Promise.all([model.verify(aether), model.verifyAll()])
+  assert.equal(calls.length, 4)
+  pending[2].resolve(evidence(aether, 200_000))
+  pending[3].resolve(evidence(bastion, 200_000))
+  await Promise.all([first, second])
+  assert.equal(model.launchableCount.value, 2)
+  assert.equal(model.now.value, 200_000)
+  assert.equal(model.isVerifying.value, false)
+})
+
+test('reset pending individuals permits a fresh batch; late old results cannot overwrite new approvals or clock', async (t) => {
+  const { model, pending, setTime } = setup(t)
+  const oldFirst = model.verify(aether)
+  const oldSecond = model.verify(bastion)
+  model.reset()
+  model.reset()
+  assert.ok(pending.every(({ signal }) => signal.aborted))
+  const batch = model.verifyAll()
+  setTime(150_000)
+  for (const request of pending.slice(2)) request.resolve(evidence(request.module, 150_000))
+  await batch
+  const before = JSON.parse(JSON.stringify(model.states.value))
+  setTime(200_000)
+  pending[0].reject(new Error('Old individual error'))
+  pending[1].resolve(evidence(bastion, 200_000))
+  await Promise.all([oldFirst, oldSecond])
+  assert.deepEqual(model.states.value, before)
+  assert.equal(model.now.value, 150_000)
+  assert.equal(model.launchableCount.value, 2)
+  assert.equal(model.isVerifying.value, false)
+})
+
+test('old finally cannot remove a newer attempt from subsequent reset or disposal cancellation', async (t) => {
+  for (const dispose of [false, true]) {
+    const { model, pending, scope } = setup(t)
+    const old = model.verify(aether)
+    model.reset()
+    const fresh = model.verify(aether)
+    pending[0].resolve(evidence(aether, 100_000))
+    await old
+    assert.equal(model.states.value.aether.status, 'verifying')
+    if (dispose) scope.stop()
+    else model.reset()
+    assert.equal(pending[1].signal.aborted, true)
+    pending[1].resolve(evidence(aether, 100_000))
+    await fresh
+    assert.equal(model.launchableCount.value, 0)
+    if (!dispose) assert.equal(model.states.value.aether.status, 'idle')
+  }
+})
+
+test('late results after repeated resets without new attempts leave all states idle', async (t) => {
+  const { model, pending, setTime } = setup(t)
+  const old = model.verifyAll()
+  model.reset()
+  model.reset()
+  setTime(300_000)
+  pending[0].resolve(evidence(aether, 300_000))
+  pending[1].reject(new Error('Late error'))
+  await old
+  assert.deepEqual(Object.values(model.states.value), [{ status: 'idle' }, { status: 'idle' }])
+  assert.equal(model.now.value, 100_000)
+  assert.equal(model.launchableCount.value, 0)
+  assert.equal(model.isVerifying.value, false)
+})
+
 test('UI wires manual batch, independent controls, live count, and click-time launch gate', async () => {
   const app = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
   assert.match(app, /useModuleVerification\(\)/)
   assert.match(app, /<button :disabled="isVerifying" @click="verifyAll">Controleer alle modules<\/button>/)
+  assert.match(app, /<button @click="reset">Wis controles<\/button>/)
+  assert.match(app, /Wissen verwijdert alleen lokale controles: het stopt geen services, trekt geen tickets in en sluit geen reeds geopende tabbladen/)
   assert.match(app, /role="status" aria-live="polite" aria-atomic="true">\{\{ launchableCount \}\} van \{\{ TRUSTED_MODULES.length \}\} modules momenteel te openen/)
   assert.match(app, /:disabled="states\[module.id\].status === 'verifying'" @click="verify\(module\)"/)
   assert.match(app, /if \(!launchUrl\(module, states.value\[module.id\], Date.now\(\)\)\) \{\s*event.preventDefault\(\)/)
