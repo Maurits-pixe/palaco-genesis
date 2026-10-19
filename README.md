@@ -125,7 +125,12 @@ Een sessie wissen of invoer wijzigen is geen server-side intrekking.
 Intrekken maakt eerder vastgelegde commando's niet ongedaan.
 Gebruik **Status controleren** met het ticket-ID als een inzending geen
 duidelijk antwoord gaf. De interface onthoudt het laatst ingezonden ID in het
-sessiegeheugen; je kunt ook handmatig een ID invoeren. De server rapporteert
+sessiegeheugen; je kunt ook handmatig een ID invoeren.
+Met **Controleer laatste inzending** vraag je direct de status van dat
+bewaarde ID op, ook wanneer het lokale ticket na de inzendpoging al is
+verwijderd. Deze knop dient niets opnieuw in en herstelt geen toestemming.
+De knop controleert uitsluitend de laatste inzending in de huidige sessie;
+oudere ID's kun je handmatig invoeren. De server rapporteert
 of het ticket wacht, actief, verlopen, ingetrokken of al gecommit is en levert
 bij een commit het bijbehorende record, ook buiten de laatste 100 logboekregels.
 Dit historische resultaat staat apart en verdringt geen recente logboekregels.

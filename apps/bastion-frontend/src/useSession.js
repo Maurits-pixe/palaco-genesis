@@ -122,6 +122,12 @@ export function useSession({
     return perform('status')
   }
 
+  function checkLastSubmission() {
+    if (disposed || busy.value || !lastSubmissionId.value || !token.value.trim()) return
+    lookupId.value = lastSubmissionId.value
+    return perform('status')
+  }
+
   async function perform(action) {
     if (disposed || busy.value) return
     const started = session
@@ -194,6 +200,6 @@ export function useSession({
   return {
     token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, busy,
     message, error, lookupId, outcome, lastSubmissionId, realtimeStatus, now,
-    canCommit, remaining, realtime, perform, checkCurrentTicket, clearSession,
+    canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearSession,
   }
 }

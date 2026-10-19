@@ -5,7 +5,7 @@ import { realtimeLabels, useSession } from './useSession.js'
 const {
   token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, busy,
   message, error, lookupId, outcome, lastSubmissionId, realtimeStatus,
-  canCommit, remaining, realtime, perform, checkCurrentTicket, clearSession,
+  canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearSession,
 } = useSession()
 
 function date(value) {
@@ -63,6 +63,7 @@ function date(value) {
         <div v-if="lastSubmissionId">
           <label for="last-submission">Laatste ingezonden ticket-ID (selecteer en kopieer)</label>
           <input id="last-submission" :value="lastSubmissionId" readonly @focus="$event.target.select()" />
+          <button type="button" class="secondary" :disabled="!!busy || !token.trim()" @click="checkLastSubmission">Controleer laatste inzending</button>
         </div>
         <form @submit.prevent="perform('status')">
           <label for="lookup-id">Ticket-ID</label>

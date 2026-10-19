@@ -454,6 +454,179 @@ test('current-ticket button delegates to the composable without gating on expiry
   assert.match(app, /<input id="lookup-id" v-model="lookupId"/)
 })
 
+for (const commitResult of ['lost', 'successful']) {
+  test(`last-submission shortcut checks the retained ID after a ${commitResult} commit response without a held ticket`, async t => {
+    const { state, calls } = fixture(t)
+    prepare(state, 'commit')
+    const submitting = state.perform('commit')
+    assert.equal(state.ticket.value, null)
+    assert.equal(state.lastSubmissionId.value, 'ticket-1')
+    if (commitResult === 'lost') calls[0].reject(new Error('commit response lost'))
+    else calls[0].resolve(record())
+    await submitting
+    assert.equal(calls.length, 1)
+    state.lookupId.value = 'unrelated-manual-id'
+    const checking = state.checkLastSubmission()
+    assert.equal(state.lookupId.value, 'ticket-1')
+    assert.equal(state.busy.value, 'status')
+    assert.equal(calls.length, 2)
+    assert.equal(calls[1].action, 'status')
+    assert.deepEqual(calls[1].args.slice(0, -1), ['ticket-1', 'test-session-token', undefined])
+    assert.ok(calls[1].signal instanceof AbortSignal)
+    const committed = snapshot({ status: 'committed', record: record('historical-record') })
+    calls[1].resolve(committed)
+    await checking
+    assert.deepEqual(state.outcome.value, committed)
+    assert.equal(state.ticket.value, null)
+    assert.equal(state.canCommit.value, false)
+    assert.equal(state.lastSubmissionId.value, 'ticket-1')
+    assert.deepEqual(state.commands.value, [record()])
+    assert.equal(state.error.value, '')
+    assert.equal(calls.length, 2)
+  })
+}
+
+for (const guard of ['busy', 'missing ID', 'empty token', 'blank token', 'disposed']) {
+  test(`last-submission shortcut: ${guard} leaves lookup unchanged and makes no request`, async t => {
+    const { state, calls, scope } = fixture(t)
+    if (guard === 'disposed') scope.stop()
+    if (guard === 'empty token') state.token.value = ''
+    if (guard === 'blank token') state.token.value = ' \t\n '
+    // Populate after disposal/token resets so each guard is exercised independently.
+    prepare(state, 'status')
+    if (guard === 'missing ID') state.lastSubmissionId.value = ''
+    let inFlight
+    if (guard === 'busy') inFlight = state.perform('list')
+    state.lookupId.value = 'manual-id-to-preserve'
+    const before = calls.length
+    await state.checkLastSubmission()
+    assert.equal(state.lookupId.value, 'manual-id-to-preserve')
+    assert.equal(calls.length, before)
+    assert.deepEqual(state.outcome.value, snapshot())
+    assert.deepEqual(state.ticket.value, held())
+    if (inFlight) {
+      assert.equal(state.busy.value, 'list')
+      calls[0].resolve([])
+      await inFlight
+    }
+  })
+}
+
+test('failed last-submission check retains its ID and does not retry or mutate the journal', async t => {
+  const { state, calls } = fixture(t)
+  prepare(state, 'status')
+  state.ticket.value = null
+  const checking = state.checkLastSubmission()
+  calls[0].reject(new Error('status unavailable'))
+  await checking
+  await Promise.resolve()
+  assert.equal(state.lastSubmissionId.value, 'retained-id')
+  assert.equal(state.lookupId.value, 'retained-id')
+  assert.equal(state.ticket.value, null)
+  assert.equal(state.outcome.value, null)
+  assert.equal(state.error.value, 'status unavailable')
+  assert.equal(state.busy.value, '')
+  assert.deepEqual(state.commands.value, [record()])
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].action, 'status')
+})
+
+for (const status of ['pending', 'active', 'committed', 'expired', 'revoked']) {
+  test(`last-submission ${status} status preserves a different held ticket and revocation uncertainty`, async t => {
+    const { state, calls } = fixture(t)
+    prepare(state, 'revoke')
+    state.lastSubmissionId.value = 'previous-ticket'
+    const checking = state.checkLastSubmission()
+    assert.equal(calls[0].args[0], 'previous-ticket')
+    const value = snapshot({
+      id: 'previous-ticket', status,
+      checked_at: status === 'pending' ? 999 : status === 'expired' ? 1100 : 1050,
+      revoked: status === 'revoked',
+      record: status === 'committed' ? record('historical-record') : null,
+    })
+    calls[0].resolve(value)
+    await checking
+    assert.deepEqual(state.outcome.value, value)
+    assert.deepEqual(state.ticket.value, held())
+    assert.equal(state.revocationUncertain.value, true)
+    assert.equal(state.canCommit.value, false)
+    assert.equal(state.lastSubmissionId.value, 'previous-ticket')
+    assert.deepEqual(state.commands.value, [record()])
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].action, 'status')
+  })
+}
+
+for (const status of ['pending', 'active', 'committed']) {
+  test(`last-submission ${status} snapshot never restores consumed authority or adds historical journal records`, async t => {
+    const { state, calls } = fixture(t)
+    prepare(state, 'status')
+    state.ticket.value = null
+    const checking = state.checkLastSubmission()
+    const value = snapshot({
+      id: 'retained-id', status, checked_at: status === 'pending' ? 999 : 1050,
+      record: status === 'committed' ? record('historical-record') : null,
+    })
+    calls[0].resolve(value)
+    await checking
+    assert.deepEqual(state.outcome.value, value)
+    assert.equal(state.ticket.value, null)
+    assert.equal(state.canCommit.value, false)
+    assert.deepEqual(state.commands.value, [record()])
+    assert.equal(calls.length, 1)
+  })
+}
+
+for (const reset of ['clear', 'token', 'dispose']) {
+  for (const settlement of ['resolve', 'reject']) {
+    test(`last-submission shortcut: ${reset} aborts and ignores stale ${settlement}`, async t => {
+      const { state, calls, scope } = fixture(t)
+      prepare(state, 'status')
+      state.ticket.value = null
+      const checking = state.checkLastSubmission()
+      if (reset === 'clear') state.clearSession()
+      else if (reset === 'token') state.token.value = 'replacement-token'
+      else scope.stop()
+      assertEmpty(state, reset === 'token' ? 'replacement-token' : '')
+      assert.equal(calls[0].signal.aborted, true)
+      let replacement
+      if (reset !== 'dispose') {
+        state.token.value = 'new-session-token'
+        state.lastSubmissionId.value = 'new-submission'
+        replacement = state.checkLastSubmission()
+      }
+      if (settlement === 'resolve') calls[0].resolve(snapshot({ id: 'retained-id', status: 'committed', record: record() }))
+      else calls[0].reject(new Error('stale failure'))
+      await checking
+      if (replacement) {
+        assert.equal(state.busy.value, 'status')
+        assert.equal(state.lookupId.value, 'new-submission')
+        assert.equal(state.lastSubmissionId.value, 'new-submission')
+        assert.equal(state.outcome.value, null)
+        assert.equal(state.error.value, '')
+        assert.equal(state.message.value, '')
+        assert.deepEqual(state.commands.value, [])
+        assert.equal(calls[1].signal.aborted, false)
+        calls[1].resolve(snapshot({ id: 'new-submission' }))
+        await replacement
+        assert.equal(state.outcome.value.id, 'new-submission')
+        assert.equal(state.busy.value, '')
+      } else assertEmpty(state)
+      assert.ok(calls.every(call => call.action === 'status'))
+      assert.equal(calls.length, replacement ? 2 : 1)
+    })
+  }
+}
+
+test('last-submission button is an explicit manual read beside the readonly retained ID', () => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  assert.match(app, /checkLastSubmission,[\s\S]*} = useSession\(\)/)
+  assert.match(app, /<div v-if="lastSubmissionId">\s*<label[^>]*>[^<]*<\/label>\s*<input id="last-submission" :value="lastSubmissionId" readonly @focus="\$event.target.select\(\)" \/>\s*<button type="button" class="secondary" :disabled="!!busy \|\| !token.trim\(\)" @click="checkLastSubmission">Controleer laatste inzending<\/button>\s*<\/div>/)
+  assert.match(app, /@click="checkCurrentTicket">Controleer huidig ticket<\/button>/)
+  assert.match(app, /<form @submit.prevent="perform\('status'\)">/)
+  assert.doesNotMatch(app, /clipboard|localStorage|sessionStorage/)
+})
+
 test('command or TTL changes retire local authority; mismatched and premature tickets cannot commit', async t => {
   const { state, calls, clock } = fixture(t)
   prepare(state, 'commit')
