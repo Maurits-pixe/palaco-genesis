@@ -181,6 +181,13 @@ oudere ID's kun je handmatig invoeren. De server rapporteert
 of het ticket wacht, actief, verlopen, ingetrokken of al gecommit is en levert
 bij een commit het bijbehorende record, ook buiten de laatste 100 logboekregels.
 Dit historische resultaat staat apart en verdringt geen recente logboekregels.
+Naast de servercontroletijd toont de uitkomst wanneer de interface het
+antwoord lokaal heeft ontvangen. Dit ontvangsttijdstip hoort uitsluitend bij
+de zichtbare uitkomst en verdwijnt bij wissen of een nieuwe statuscontrole,
+ook als die controle mislukt. Andere acties en realtime-events vernieuwen het
+niet. Bij een ongeldige lokale klokwaarde is geen ontvangsttijdstip beschikbaar.
+Dit is geen server- of audittijd, garantie op actuele status of nieuwe
+toestemming; vraag voor een nieuwe momentopname de status handmatig op.
 Ook bij statusantwoorden moeten alle tijdstippen, inclusief de eventuele
 committijd, niet-negatieve veilige gehele epochmilliseconden zijn die als
 JavaScript-datum kunnen worden weergegeven. Een ongeldig antwoord wordt

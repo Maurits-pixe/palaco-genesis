@@ -23,7 +23,7 @@ function fixture(t, eventTarget = new EventTarget()) {
   const calls = []
   const sockets = []
   const realtimeCallbacks = []
-  const clock = { time: 1050, tick: null, cleared: [], interval: null }
+  const clock = { time: 1050, reads: 0, tick: null, cleared: [], interval: null }
   const api = Object.fromEntries(Object.entries(actions).map(([action, name]) => [name, (...args) => {
     const call = { action, args, signal: args.at(-1), ...deferred() }
     calls.push(call)
@@ -33,7 +33,7 @@ function fixture(t, eventTarget = new EventTarget()) {
     api,
     eventTarget,
     scheduler: {
-      now: () => clock.time,
+      now: () => { clock.reads++; return clock.time },
       setInterval(callback, interval) { clock.tick = callback; clock.interval = interval; return 42 },
       clearInterval(id) { clock.cleared.push(id) },
     },
@@ -67,6 +67,7 @@ function prepare(state, action) {
   state.ticket.value = held()
   state.lookupId.value = held().id
   state.outcome.value = snapshot()
+  state.outcomeReceivedAt.value = 1000
   state.lastSubmissionId.value = 'retained-id'
   state.commands.value = [record()]
   state.search.value = 'journal'
@@ -91,6 +92,7 @@ function assertEmpty(state, token = '') {
   assert.equal(state.journalRefreshFailed.value, false)
   assert.equal(state.lastJournalRefreshAt.value, null)
   assert.equal(state.outcome.value, null)
+  assert.equal(state.outcomeReceivedAt.value, null)
   assert.equal(state.outcomeMismatch.value, false)
   assert.equal(state.realtimeStatus.value, 'disconnected')
   assert.equal(state.canCommit.value, false)
@@ -113,7 +115,7 @@ function pageTransition(type, persisted) {
 
 function retainedOutcomeState(state) {
   return structuredClone(Object.fromEntries(Object.entries(state)
-    .filter(([key, value]) => isRef(value) && !['outcome', 'outcomeMismatch', 'message', 'error', 'busy'].includes(key))
+    .filter(([key, value]) => isRef(value) && !['outcome', 'outcomeReceivedAt', 'outcomeMismatch', 'message', 'error', 'busy'].includes(key))
     .map(([key, value]) => [key, JSON.parse(JSON.stringify(value.value))])))
 }
 
@@ -1946,4 +1948,199 @@ test('journal receipt UI uses an accessible local-clock label and semantic ISO t
   assert.match(app, /v-else>Geen ontvangsttijdstip beschikbaar\./)
   assert.match(app, /Volgens de lokale klok; geen server- of audittijd en geen garantie/)
   assert.match(app, /Realtime-events vernieuwen dit ontvangsttijdstip van de snapshot niet\./)
+})
+
+test('outcome receipt samples successful current status once, accepting epoch zero and rejecting invalid clocks', async t => {
+  const { state, calls, clock } = fixture(t)
+  assert.equal(state.outcomeReceivedAt.value, null)
+  state.lookupId.value = held().id
+  const maxDate = 8_640_000_000_000_000
+  for (const value of [
+    0, 1075, maxDate, -1, 0.5, NaN, Infinity, -Infinity, maxDate + 1,
+    Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER + 1, null, undefined, '', '1050', true, {}, [],
+  ]) {
+    const reads = clock.reads
+    const operation = state.perform('status')
+    assert.equal(state.outcome.value, null)
+    assert.equal(state.outcomeReceivedAt.value, null)
+    assert.equal(clock.reads, reads)
+    clock.time = value
+    calls.at(-1).resolve(snapshot())
+    await operation
+    const expected = Number.isSafeInteger(value) && value >= 0 && value <= maxDate ? value : null
+    assert.equal(state.outcomeReceivedAt.value, expected, String(value))
+    assert.deepEqual(state.outcome.value, snapshot())
+    assert.equal(clock.reads, reads + 1)
+  }
+})
+
+test('status retry clears the previous receipt immediately and failure leaves no receipt', async t => {
+  const { state, calls, clock } = fixture(t)
+  state.lookupId.value = held().id
+  let operation = state.perform('status')
+  calls[0].resolve(snapshot())
+  await operation
+  assert.equal(state.outcomeReceivedAt.value, 1050)
+  operation = state.perform('status')
+  assert.equal(state.outcome.value, null)
+  assert.equal(state.outcomeReceivedAt.value, null)
+  const reads = clock.reads
+  calls[1].reject(new Error('failed status retry'))
+  await operation
+  assert.equal(state.error.value, 'failed status retry')
+  assert.equal(state.outcome.value, null)
+  assert.equal(state.outcomeReceivedAt.value, null)
+  assert.equal(clock.reads, reads)
+  operation = state.perform('status')
+  clock.time = 1090
+  calls[2].resolve(snapshot())
+  await operation
+  assert.equal(state.outcomeReceivedAt.value, 1090)
+})
+
+for (const reset of ['clearOutcome', 'lookup', 'commit', 'clearSession', 'token', 'pagehide', 'dispose']) {
+  test(`${reset} clears an actually received outcome and its local receipt`, async t => {
+    const { state, calls, scope, eventTarget } = fixture(t)
+    prepare(state, 'status')
+    const operation = state.perform('status')
+    calls[0].resolve(snapshot())
+    await operation
+    assert.equal(state.outcomeReceivedAt.value, 1050)
+    let committing
+    if (reset === 'lookup') state.lookupId.value = 'other-ticket'
+    else if (reset === 'token') state.token.value = 'replacement-token'
+    else if (reset === 'pagehide') eventTarget.dispatchEvent(pageTransition('pagehide', true))
+    else if (reset === 'dispose') scope.stop()
+    else if (reset === 'commit') committing = state.perform('commit')
+    else state[reset]()
+    assert.equal(state.outcome.value, null)
+    assert.equal(state.outcomeReceivedAt.value, null)
+    if (committing) {
+      calls[1].resolve(record())
+      await committing
+      assert.equal(state.outcomeReceivedAt.value, null)
+    }
+  })
+}
+
+for (const reset of ['clearOutcome', 'lookup', 'clearSession', 'token', 'pagehide', 'dispose']) {
+  for (const settlement of ['resolve', 'reject']) {
+    test(`${reset}: stale status ${settlement}/finally cannot stamp or clear a newer receipt`, async t => {
+      const { state, calls, clock, eventTarget, scope } = fixture(t)
+      state.lookupId.value = held().id
+      const old = state.perform('status')
+      if (reset === 'lookup') state.lookupId.value = 'other-ticket'
+      else if (reset === 'token') state.token.value = 'replacement-token'
+      else if (reset === 'pagehide') eventTarget.dispatchEvent(pageTransition('pagehide', true))
+      else if (reset === 'dispose') scope.stop()
+      else state[reset]()
+      assert.equal(calls[0].signal.aborted, true)
+      assert.equal(state.outcomeReceivedAt.value, null)
+      if (reset !== 'dispose') state.token.value = 'new-session-token'
+      state.lookupId.value = 'new-ticket'
+      const newer = state.perform('status')
+      const reads = clock.reads
+      if (settlement === 'resolve') calls[0].resolve(snapshot())
+      else calls[0].reject(new Error('stale status failure'))
+      await old
+      assert.equal(state.outcomeReceivedAt.value, null)
+      assert.equal(clock.reads, reads)
+      if (reset === 'dispose') {
+        assert.equal(calls.length, 1)
+        return
+      }
+      assert.equal(state.busy.value, 'status')
+      clock.time = 1080
+      calls[1].resolve(snapshot({ id: 'new-ticket' }))
+      await newer
+      assert.equal(state.outcomeReceivedAt.value, 1080)
+      // A second stale completion after the new result must also be inert.
+      const late = state.perform('status')
+      state.clearOutcome()
+      const latest = state.perform('status')
+      calls[3].resolve(snapshot({ id: 'new-ticket' }))
+      await latest
+      clock.time = 1090
+      const before = clock.reads
+      if (settlement === 'resolve') calls[2].resolve(snapshot())
+      else calls[2].reject(new Error('late status failure'))
+      await late
+      assert.equal(state.outcomeReceivedAt.value, 1080)
+      assert.equal(state.outcome.value.id, 'new-ticket')
+      assert.equal(state.busy.value, '')
+      assert.equal(state.error.value, '')
+      assert.equal(clock.reads, before)
+    })
+  }
+}
+
+test('non-status actions, input edits, realtime lifecycle/events and ticks preserve a visible outcome receipt', async t => {
+  const { state, calls, clock, sockets } = fixture(t)
+  prepare(state, 'status')
+  let operation = state.perform('status')
+  calls[0].resolve(snapshot())
+  await operation
+  const displayed = state.outcome.value
+  for (const action of ['ticket', 'list', 'revoke']) {
+    clock.time = 1070
+    operation = state.perform(action)
+    calls.at(-1).resolve(results[action])
+    await operation
+    assert.equal(state.outcome.value, displayed)
+    assert.equal(state.outcomeReceivedAt.value, 1050, action)
+  }
+  state.command.value = 'edited'
+  state.ttlMs.value = 60
+  state.realtime.connect(state.token.value)
+  sockets[0].handlers.connect()
+  sockets[0].handlers['command:committed'](record('live'))
+  sockets[0].handlers.disconnect()
+  state.realtime.connect(state.token.value)
+  state.realtime.disconnect()
+  clock.time = 5000
+  clock.tick()
+  assert.equal(state.outcome.value, displayed)
+  assert.equal(state.outcomeReceivedAt.value, 1050)
+  assert.equal(calls.length, 4)
+})
+
+test('receipt clocks do not gate matching terminal authority or change mismatched/active authority', async t => {
+  for (const localTime of [0, 8_640_000_000_000_000, NaN]) {
+    for (const uncertain of [false, true]) {
+      for (const kind of ['matching terminal', 'mismatched terminal', 'active']) {
+        const { state, calls, clock } = fixture(t)
+        prepare(state, 'status')
+        state.revocationUncertain.value = uncertain
+        const currentTicket = state.ticket.value
+        const journal = state.commands.value
+        const operation = state.perform('status')
+        clock.time = localTime
+        const value = kind === 'active' ? snapshot() : snapshot({
+          status: 'revoked', revoked: true,
+          ...(kind === 'mismatched terminal' ? { expires_at: 1101 } : {}),
+        })
+        calls[0].resolve(value)
+        await operation
+        assert.deepEqual(state.outcome.value, value)
+        assert.equal(state.outcomeReceivedAt.value, Number.isNaN(localTime) ? null : localTime)
+        assert.equal(state.ticket.value, kind === 'matching terminal' ? null : currentTicket)
+        assert.equal(state.revocationUncertain.value, kind === 'matching terminal' ? false : uncertain)
+        assert.equal(state.commands.value, journal)
+        assert.equal(state.outcomeMismatch.value, kind === 'mismatched terminal')
+        assert.equal(state.canCommit.value, kind !== 'matching terminal' && !uncertain)
+      }
+    }
+  }
+})
+
+test('outcome UI separates server check time from local receipt with semantic time and honest help', () => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  assert.match(app, /outcomeReceivedAt,[\s\S]*} = useSession\(\)/)
+  const result = app.match(/<div v-if="outcome" class="result">([\s\S]*?)<\/div>/)[1]
+  assert.match(result, /Gecontroleerd door server: \{\{ date\(outcome.checked_at\) \}\}/)
+  assert.match(result, /aria-describedby="outcome-receipt-help">Uitkomst lokaal ontvangen:/)
+  assert.match(result, /<time v-if="outcomeReceivedAt !== null" :datetime="receiptIso\(outcomeReceivedAt\)">{{ date\(outcomeReceivedAt\) }}<\/time>/)
+  assert.match(result, /v-else>Geen ontvangsttijdstip beschikbaar\./)
+  assert.match(result, /id="outcome-receipt-help"[^>]*>Volgens de lokale klok; geen server- of audittijd en geen garantie dat de uitkomst actueel is\./)
+  assert.match(result, /Controleer de status handmatig opnieuw voor een nieuwe momentopname\./)
 })

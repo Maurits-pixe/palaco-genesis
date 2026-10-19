@@ -35,6 +35,7 @@ export function useSession({
   const error = ref('')
   const lookupId = ref('')
   const outcome = ref(null)
+  const outcomeReceivedAt = ref(null)
   const outcomeMismatch = computed(() => {
     const valid = defaultApi.validateTicketStatus(outcome.value, outcome.value?.id)
     return !!valid && ticket.value?.id === valid.id && !defaultApi.ticketMatchesStatus(ticket.value, valid)
@@ -50,6 +51,11 @@ export function useSession({
   let connectionGeneration = 0
   let journalGeneration = 0
   let journalRequest = null
+
+  function resetOutcome() {
+    outcome.value = null
+    outcomeReceivedAt.value = null
+  }
 
   function resetJournal() {
     journalGeneration++
@@ -124,7 +130,7 @@ export function useSession({
     error.value = ''
     feedbackAction = ''
     lookupId.value = ''
-    outcome.value = null
+    resetOutcome()
     lastSubmissionId.value = ''
   }
   watch(token, resetSession, { flush: 'sync' })
@@ -141,7 +147,7 @@ export function useSession({
       pending = null
       busy.value = ''
     }
-    outcome.value = null
+    resetOutcome()
     if (feedbackAction === 'status') {
       message.value = ''
       error.value = ''
@@ -219,17 +225,20 @@ export function useSession({
         ticket.value = submission.ticket
         lastSubmissionId.value = submission.lastSubmissionId
         lookupId.value = submission.lastSubmissionId
-        outcome.value = null
+        resetOutcome()
         revocationUncertain.value = false
         const committed = await api.commitCommand(currentTicket, command.value, token.value, undefined, controller.signal)
         if (!current()) return
         commands.value = defaultApi.mergeCommands(commands.value, committed)
         message.value = 'Commando vastgelegd in het logboek; er is niets uitgevoerd.'
       } else if (action === 'status') {
-        outcome.value = null
+        resetOutcome()
         const checked = await api.getTicketStatus(lookupId.value, token.value, undefined, controller.signal)
         if (!current()) return
         outcome.value = checked
+        const receivedAt = scheduler.now()
+        outcomeReceivedAt.value = Number.isSafeInteger(receivedAt) && receivedAt >= 0 &&
+          Number.isFinite(new Date(receivedAt).getTime()) ? receivedAt : null
         const reconciled = defaultApi.reconcileTicketStatus(ticket.value, revocationUncertain.value, commands.value, checked)
         ticket.value = reconciled.ticket
         revocationUncertain.value = reconciled.revocationUncertain
@@ -262,7 +271,7 @@ export function useSession({
 
   return {
     token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, lastJournalRefreshAt, busy,
-    message, error, lookupId, outcome, outcomeMismatch, lastSubmissionId, realtimeStatus, now,
+    message, error, lookupId, outcome, outcomeReceivedAt, outcomeMismatch, lastSubmissionId, realtimeStatus, now,
     canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearSession, clearOutcome,
   }
 }

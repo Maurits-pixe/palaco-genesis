@@ -4,7 +4,7 @@ import { realtimeLabels, useSession } from './useSession.js'
 
 const {
   token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, lastJournalRefreshAt, busy,
-  message, error, lookupId, outcome, outcomeMismatch, lastSubmissionId, realtimeStatus,
+  message, error, lookupId, outcome, outcomeReceivedAt, outcomeMismatch, lastSubmissionId, realtimeStatus,
   canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearSession, clearOutcome,
 } = useSession()
 
@@ -83,7 +83,13 @@ function receiptIso(value) {
           <p>Ticket: <code>{{ outcome.id }}</code></p>
           <p v-if="outcomeMismatch" role="alert" class="error">Statusgegevens wijken af van het lokaal bewaarde ticket. Deze uitkomst wijzigt het lokale ticket of de onzekerheidsblokkering niet.</p>
           <p>Status: {{ outcome.status }} · ingetrokken: {{ outcome.revoked ? 'ja' : 'nee' }}</p>
-          <p>Gecontroleerd: {{ date(outcome.checked_at) }}</p>
+          <p>Gecontroleerd door server: {{ date(outcome.checked_at) }}</p>
+          <p aria-describedby="outcome-receipt-help">Uitkomst lokaal ontvangen:
+            <time v-if="outcomeReceivedAt !== null" :datetime="receiptIso(outcomeReceivedAt)">{{ date(outcomeReceivedAt) }}</time>
+            <span v-else>Geen ontvangsttijdstip beschikbaar.</span>
+          </p>
+          <p id="outcome-receipt-help" class="muted">Volgens de lokale klok; geen server- of audittijd en geen garantie dat de uitkomst actueel is.
+            Controleer de status handmatig opnieuw voor een nieuwe momentopname.</p>
           <p>Geldig vanaf: {{ date(outcome.not_before) }} · verloopt: {{ date(outcome.expires_at) }}</p>
           <pre>{{ outcome.command }}</pre>
           <p v-if="outcome.record">Vastgelegd: {{ date(outcome.record.committed_at) }} · {{ outcome.record.id }}</p>
