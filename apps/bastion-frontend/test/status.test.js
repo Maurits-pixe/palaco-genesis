@@ -8,6 +8,7 @@ const snapshot = (changes = {}) => ({
   checked_at: 1000, revoked: false, status: 'active', record: null, ...changes,
 })
 const record = { id: 'record-1', command: 'journal only', committed_at: 1010 }
+const maxDate = 8_640_000_000_000_000
 const response = (value, status = 200) => new Response(JSON.stringify(value), {
   status, headers: { 'Content-Type': 'application/json' },
 })
@@ -54,7 +55,8 @@ test('status response rejects malformed schemas, commands, times and windows', a
     snapshot({ revoked: 0 }), snapshot({ record: undefined }),
   ]
   for (const field of ['not_before', 'expires_at', 'checked_at']) {
-    for (const value of ['1970-01-01T00:00:01Z', '1000', null, NaN, Infinity, -1, 1000.5, Number.MAX_SAFE_INTEGER + 1]) {
+    for (const value of ['1970-01-01T00:00:01Z', '1000', null, NaN, Infinity, -1, 1000.5,
+      maxDate + 1, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER + 1]) {
       invalid.push(snapshot({ [field]: value }))
     }
   }
@@ -81,11 +83,87 @@ test('status response rejects precedence conflicts, missing records and wrong re
     { id: '' }, { id: 'a'.repeat(129) }, { command: 'different' }, { extra: true },
     { committed_at: 999 }, { committed_at: 1100 }, { committed_at: 1021 },
     { committed_at: '1970-01-01T00:00:01Z' }, { committed_at: 1010.5 },
-    { committed_at: Number.MAX_SAFE_INTEGER + 1 },
+    { committed_at: -1 }, { committed_at: maxDate + 1 },
+    { committed_at: Number.MAX_SAFE_INTEGER }, { committed_at: Number.MAX_SAFE_INTEGER + 1 },
   ]) invalid.push(snapshot({ checked_at: 1020, status: 'committed', record: { ...record, ...change } }))
   for (const value of invalid) {
     assert.equal(validateTicketStatus(value, 'ticket-1'), null)
     await assert.rejects(getTicketStatus('ticket-1', token, async () => response(value)), /ticketstatusantwoord/)
+  }
+})
+
+test('status accepts zero and the inclusive Date limit without consulting the client clock', async () => {
+  for (const value of [
+    snapshot({ not_before: 0, expires_at: 1, checked_at: 0 }),
+    snapshot({
+      not_before: 0, expires_at: 60_000, checked_at: 0, status: 'committed',
+      record: { ...record, committed_at: 0 },
+    }),
+    snapshot({ not_before: maxDate - 60_000, expires_at: maxDate, checked_at: maxDate - 1 }),
+    snapshot({ not_before: maxDate - 1, expires_at: maxDate, checked_at: maxDate, status: 'expired' }),
+    snapshot({
+      not_before: maxDate - 1, expires_at: maxDate, checked_at: maxDate, status: 'committed',
+      record: { ...record, committed_at: maxDate - 1 },
+    }),
+  ]) {
+    assert.equal(validateTicketStatus(value, value.id), value)
+    let calls = 0
+    assert.deepEqual(await getTicketStatus(value.id, token, async () => {
+      calls++
+      return response(value)
+    }), value)
+    assert.equal(calls, 1)
+    const held = { id: value.id, command: value.command }
+    const commands = [record]
+    const terminal = value.status !== 'active'
+    assert.deepEqual(reconcileTicketStatus(held, true, commands, value), {
+      ticket: terminal ? null : held, revocationUncertain: !terminal, commands,
+    })
+  }
+})
+
+test('Date-invalid consistent snapshots cannot retire held authority or uncertainty', async () => {
+  const invalid = []
+  for (const limit of [maxDate, Number.MAX_SAFE_INTEGER - 100]) {
+    const nearLimit = { not_before: limit - 99, expires_at: limit + 1, checked_at: limit }
+    const aboveLimit = { not_before: limit + 1, expires_at: limit + 100, checked_at: limit + 50 }
+    for (const times of [nearLimit, aboveLimit]) {
+      invalid.push(
+        snapshot({ ...times, status: 'active' }),
+        snapshot({ ...times, status: 'revoked', revoked: true }),
+        snapshot({ ...times, checked_at: times.expires_at, status: 'expired' }),
+        snapshot({
+          ...times, status: 'committed', revoked: true,
+          record: { ...record, committed_at: times.checked_at },
+        }),
+      )
+    }
+  }
+  for (const checked_at of [maxDate + 1, Number.MAX_SAFE_INTEGER]) {
+    invalid.push(
+      snapshot({ checked_at, status: 'expired' }),
+      snapshot({ checked_at, status: 'revoked', revoked: true }),
+      snapshot({ checked_at, status: 'committed', record }),
+    )
+  }
+  for (const value of invalid) {
+    assert.equal(validateTicketStatus(value, value.id), null)
+    let calls = 0
+    await assert.rejects(getTicketStatus(value.id, token, async () => {
+      calls++
+      return response(value)
+    }), /ticketstatusantwoord/)
+    assert.equal(calls, 1)
+    const held = {
+      id: value.id, command: value.command, not_before: value.not_before, expires_at: value.expires_at,
+    }
+    const commands = [record]
+    for (const uncertain of [false, true]) {
+      const state = reconcileTicketStatus(held, uncertain, commands, value)
+      assert.equal(state.ticket, held)
+      assert.equal(state.revocationUncertain, uncertain)
+      assert.equal(state.commands, commands)
+    }
   }
 })
 

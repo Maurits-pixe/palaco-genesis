@@ -227,12 +227,14 @@ export function validateTicketStatus(value, ticketId) {
   if (!exactObject(value, keys) || !validId(ticketId) || ticketId.length > 128 ||
       value.id !== ticketId || typeof value.command !== 'string' || !value.command.trim() ||
       commandLength(value.command) > MAX_COMMAND_LENGTH || typeof value.revoked !== 'boolean' ||
-      ![value.not_before, value.expires_at, value.checked_at].every(time => Number.isSafeInteger(time) && time >= 0) ||
+      ![value.not_before, value.expires_at, value.checked_at].every(time =>
+        Number.isSafeInteger(time) && time >= 0 && Number.isFinite(new Date(time).getTime())) ||
       value.expires_at <= value.not_before || value.expires_at - value.not_before > 60_000) return null
   const record = value.record
   if (record !== null && (!exactObject(record, ['id', 'command', 'committed_at']) ||
       !validId(record.id) || record.id.length > 128 || record.command !== value.command ||
-      !Number.isSafeInteger(record.committed_at) || record.committed_at < value.not_before ||
+      !Number.isSafeInteger(record.committed_at) || record.committed_at < 0 ||
+      !Number.isFinite(new Date(record.committed_at).getTime()) || record.committed_at < value.not_before ||
       record.committed_at >= value.expires_at || record.committed_at > value.checked_at)) return null
   const expected = record !== null ? 'committed' : value.revoked ? 'revoked' :
     value.checked_at >= value.expires_at ? 'expired' : value.checked_at < value.not_before ? 'pending' : 'active'

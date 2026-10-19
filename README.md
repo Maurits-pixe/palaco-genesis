@@ -181,6 +181,11 @@ oudere ID's kun je handmatig invoeren. De server rapporteert
 of het ticket wacht, actief, verlopen, ingetrokken of al gecommit is en levert
 bij een commit het bijbehorende record, ook buiten de laatste 100 logboekregels.
 Dit historische resultaat staat apart en verdringt geen recente logboekregels.
+Ook bij statusantwoorden moeten alle tijdstippen, inclusief de eventuele
+committijd, niet-negatieve veilige gehele epochmilliseconden zijn die als
+JavaScript-datum kunnen worden weergegeven. Een ongeldig antwoord wordt
+afgewezen en heft geen lokale ticketblokkering op. Deze formaatcontrole
+vergelijkt de servertijdstippen niet met de lokale klok.
 Een statuscontrole dient nooit opnieuw een commando in. Een actieve status is
 slechts een momentopname, geen nieuwe toestemming. Alleen een bevestigde
 terminale status van hetzelfde ticket kan een onzekere intrekking lokaal
