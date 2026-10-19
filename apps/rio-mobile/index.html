@@ -17,18 +17,36 @@
     </header>
     <section class="mobile-content" aria-labelledby="mobile-title">
       <span class="eyebrow">Jouw ruimte</span>
-      <h1 id="mobile-title">Goedemorgen.</h1>
-      <p>Neem even de tijd. Wat wil je vandaag helder krijgen?</p>
-      <div class="mobile-message">Ik wil mijn week wat overzichtelijker maken.</div>
-      <div class="mobile-reply"><span class="brand-mark">R</span><span>Laten we samen beginnen. Wat zijn de drie dingen die deze week voor jou het belangrijkst zijn?</span></div>
-      <article class="mobile-card" id="bewaren"><span class="tiny">SESSIES &amp; HERKOMST · CONCEPT</span><p>RIO-contracten modelleren gesprekken, sessies en gebeurtenissen. Dit demo-scherm slaat niets op en toont geen live sessie.</p></article>
-      <div class="mobile-compose" role="status" aria-label="Voorbeeld van het niet-verbonden invoerveld"><span>Deel wat er in je opkomt…</span><span aria-hidden="true">↑</span></div>
+      <div id="screen-start" class="mobile-screen" role="tabpanel" aria-labelledby="tab-start">
+        <h1 id="mobile-title">Goedemorgen.</h1>
+        <p>Neem even de tijd. Wat wil je vandaag helder krijgen?</p>
+        <div class="mobile-transcript" data-transcript aria-live="polite" aria-relevant="additions">
+          <div class="mobile-message">Ik wil mijn week wat overzichtelijker maken.</div>
+          <div class="mobile-reply"><span class="brand-mark">R</span><span>Laten we samen beginnen. Wat zijn de drie dingen die deze week voor jou het belangrijkst zijn?</span></div>
+        </div>
+        <form class="mobile-compose" data-composer aria-label="Lokaal demo-gesprek">
+          <input aria-label="Bericht voor RIO" placeholder="Deel wat er in je opkomt…" autocomplete="off">
+          <button type="submit" aria-label="Bericht toevoegen">↑</button>
+        </form>
+        <p class="privacy" data-feedback role="status">Lokale demo: berichten worden niet verstuurd of bewaard.</p>
+      </div>
+      <section id="screen-saved" class="mobile-screen" role="tabpanel" aria-labelledby="tab-saved" hidden>
+        <h1>Bewaard</h1>
+        <p>Een plek voor gedachten om later op terug te komen.</p>
+        <article class="mobile-card"><span class="tiny">SESSIES &amp; HERKOMST · CONCEPT</span><p>RIO-contracten modelleren gesprekken, sessies en gebeurtenissen met herkomst. Dit voorbeeld wordt niet echt bewaard.</p></article>
+      </section>
+      <section id="screen-profile" class="mobile-screen" role="tabpanel" aria-labelledby="tab-profile" hidden>
+        <h1>Jouw profiel</h1>
+        <p>Deze conceptweergave is niet verbonden met een account.</p>
+        <article class="mobile-card"><span class="tiny">PRIVACY EERST</span><p>Er wordt geen identiteit aangemaakt en er worden geen voorkeuren of berichten opgeslagen.</p></article>
+      </section>
     </section>
-    <nav class="tabbar" aria-label="Hoofdnavigatie">
-      <a class="active" href="#mobile-title"><span class="tab-icon">⌂</span>START</a>
-      <a href="#bewaren"><span class="tab-icon">◇</span>BEWAARD</a>
-      <a href="#mobile-title"><span class="tab-icon">◯</span>PROFIEL</a>
+    <nav class="tabbar" role="tablist" aria-label="RIO-navigatie">
+      <button class="active" id="tab-start" type="button" role="tab" aria-selected="true" aria-controls="screen-start"><span class="tab-icon">⌂</span>START</button>
+      <button id="tab-saved" type="button" role="tab" aria-selected="false" aria-controls="screen-saved" tabindex="-1"><span class="tab-icon">◇</span>BEWAARD</button>
+      <button id="tab-profile" type="button" role="tab" aria-selected="false" aria-controls="screen-profile" tabindex="-1"><span class="tab-icon">◯</span>PROFIEL</button>
     </nav>
   </main>
+  <script src="demo.js" defer></script>
 </body>
 </html>

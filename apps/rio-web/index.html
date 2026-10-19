@@ -20,20 +20,31 @@
       <div class="profile"><span class="avatar">MV</span><span>M. van G. <span class="muted">· Persoonlijk</span></span></div>
     </aside>
     <section class="chat-panel" id="gesprek">
-      <header class="chat-top"><h2>RIO <span class="muted">/ gesprek</span></h2><span class="tiny"><span class="dot"></span> CONCEPT</span></header>
+      <header class="chat-top"><h2>RIO <span class="muted">/ gesprek</span></h2><div style="display:flex;align-items:center;gap:14px"><span class="tiny"><span class="dot"></span> CONCEPT</span><button class="button ghost" type="button" data-reset>Nieuw gesprek</button></div></header>
       <div class="chat-main">
         <div class="chat-intro"><span class="brand-mark">R</span><h1>Waar beginnen we?</h1><p>Een rustige plek om vragen te verkennen en gedachten te ordenen.</p></div>
-        <div class="message user"><p>Ik wil mijn projectidee wat scherper krijgen.</p></div>
-        <div class="message"><span class="avatar">R</span><div><strong>RIO</strong><p>Natuurlijk. Wat wil je met het project veranderen, en voor wie? We kunnen beginnen bij het resultaat dat je voor ogen hebt.</p></div></div>
+        <div class="transcript" data-transcript aria-live="polite" aria-relevant="additions">
+          <div class="message user"><p>Ik wil mijn projectidee wat scherper krijgen.</p></div>
+          <div class="message"><span class="avatar">R</span><div><strong>RIO · VOORBEELD</strong><p>Natuurlijk. Wat wil je met het project veranderen, en voor wie? We kunnen beginnen bij het resultaat dat je voor ogen hebt.</p></div></div>
+        </div>
         <article class="card" style="min-height:0;margin:20px 0 26px;padding:15px 17px"><span class="eyebrow">Onder de motorkap · concept</span><p style="margin:8px 0 0">RIO-contracten modelleren gesprekken, sessies en gebeurtenissen met herkomst. Deze preview bewaart geen berichten en toont geen echte sessiestatus.</p></article>
-        <div class="prompt-row"><div class="prompt">Help me mijn idee helder te formuleren ↗</div><div class="prompt">Vat deze notities samen ↗</div><div class="prompt">Waar moet ik rekening mee houden? ↗</div></div>
-        <form class="composer" aria-label="Demo gesprek" onsubmit="event.preventDefault(); const input=this.querySelector('input'); if(input.value.trim()){ const message=document.createElement('div'); message.className='message user'; const text=document.createElement('p'); text.textContent=input.value.trim(); message.append(text); this.before(message); input.value=''; }">
+        <div class="prompt-row" aria-label="Voorbeeldvragen">
+          <button class="prompt" type="button" data-prompt="Help me mijn idee helder te formuleren">Help me mijn idee helder te formuleren ↗</button>
+          <button class="prompt" type="button" data-prompt="Vat deze notities samen">Vat deze notities samen ↗</button>
+          <button class="prompt" type="button" data-prompt="Waar moet ik rekening mee houden?">Waar moet ik rekening mee houden? ↗</button>
+        </div>
+        <form class="composer" data-composer aria-label="Lokaal demo-gesprek">
           <input aria-label="Bericht voor RIO" placeholder="Schrijf je gedachte of vraag..." autocomplete="off">
           <button type="submit" aria-label="Bericht toevoegen">↑</button>
         </form>
-        <p class="privacy">Deze demo bewaart of verstuurt geen berichten. RIO verleent geen bevoegdheid.</p>
+        <p class="privacy" data-feedback role="status">Lokale demo: berichten worden niet verstuurd of bewaard. Antwoorden zijn vooraf ingesteld.</p>
       </div>
     </section>
   </main>
+  <template id="conversation-start">
+    <div class="message user"><p>Ik wil mijn projectidee wat scherper krijgen.</p></div>
+    <div class="message"><span class="avatar">R</span><div><strong>RIO · VOORBEELD</strong><p>Natuurlijk. Wat wil je met het project veranderen, en voor wie? We kunnen beginnen bij het resultaat dat je voor ogen hebt.</p></div></div>
+  </template>
+  <script src="demo.js" defer></script>
 </body>
 </html>
