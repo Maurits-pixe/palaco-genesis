@@ -156,8 +156,13 @@ zichtbare gegevens mogelijk verouderd zijn; er volgt geen automatische
 herhaling. Een geslaagde verversing vervangt de oude lijst door de nieuwe
 serversnapshot, aangevuld met realtime-records die tijdens die verversing
 binnenkwamen. Oude records buiten die snapshot worden niet teruggezet.
+Het logboek toont ook wanneer de laatste geslaagde verversing lokaal is
+ontvangen. Dat tijdstip blijft staan tijdens vernieuwen en bij een fout;
+realtime-events en afzonderlijke commits werken het niet bij.
+Dit is de lokale klok, geen server- of audittijd en geen garantie dat het
+logboek nog actueel is.
 Sessiewissen en het resetten van de realtimeverbinding blijven de lokale
-logboekgegevens wissen.
+logboekgegevens en dit ontvangsttijdstip wissen.
 Met **Zoek in geladen logboek** filter je lokaal op commandotekst of
 record-ID, zonder onderscheid tussen hoofdletters en kleine letters.
 De zoektekst is letterlijk, geen reguliere expressie; spaties aan begin

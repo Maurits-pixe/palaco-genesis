@@ -3,13 +3,17 @@ import { commandLength, MAX_COMMAND_LENGTH, timestamp } from './api.js'
 import { realtimeLabels, useSession } from './useSession.js'
 
 const {
-  token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, busy,
+  token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, lastJournalRefreshAt, busy,
   message, error, lookupId, outcome, lastSubmissionId, realtimeStatus,
   canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearSession,
 } = useSession()
 
 function date(value) {
   return new Date(timestamp(value)).toLocaleString('nl-NL')
+}
+
+function receiptIso(value) {
+  return value !== null ? new Date(value).toISOString() : undefined
 }
 </script>
 
@@ -91,6 +95,14 @@ function date(value) {
         <button :disabled="!!busy || !token.trim()" @click="perform('list')">Logboek vernieuwen</button>
         <p v-if="busy === 'list'" role="status" aria-live="polite">Logboek vernieuwen… Bestaande records blijven zichtbaar.</p>
         <p v-if="journalRefreshFailed" role="alert" class="error">Logboek vernieuwen mislukt. Getoonde gegevens kunnen verouderd zijn. Er worden geen automatische nieuwe pogingen gedaan.</p>
+        <p role="status" aria-live="polite" aria-describedby="journal-receipt-help">
+          <template v-if="lastJournalRefreshAt !== null">Laatste geslaagde verversing ontvangen:
+            <time :datetime="receiptIso(lastJournalRefreshAt)">{{ date(lastJournalRefreshAt) }}</time>
+          </template>
+          <template v-else>Geen ontvangsttijdstip beschikbaar.</template>
+        </p>
+        <p id="journal-receipt-help" class="muted">Volgens de lokale klok; geen server- of audittijd en geen garantie dat het logboek actueel is.
+          Realtime-events vernieuwen dit ontvangsttijdstip van de snapshot niet.</p>
         <label for="journal-search">Zoek in geladen logboek</label>
         <input id="journal-search" v-model="search" type="search" autocomplete="off" spellcheck="false" maxlength="1024" aria-describedby="journal-search-help" />
         <p id="journal-search-help" class="muted">Zoekt letterlijk, zonder hoofdletterverschil, in commandotekst of record-ID van maximaal 100 lokaal geladen records.

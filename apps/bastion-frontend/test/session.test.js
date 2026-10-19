@@ -67,6 +67,7 @@ function prepare(state, action) {
   state.search.value = 'journal'
   state.hasLoaded.value = true
   state.journalRefreshFailed.value = true
+  state.lastJournalRefreshAt.value = 1000
   state.message.value = 'previous message'
   state.error.value = 'previous error'
   if (action === 'revoke') state.revocationUncertain.value = true
@@ -83,6 +84,7 @@ function assertEmpty(state, token = '') {
   assert.deepEqual(state.filteredCommands.value, [])
   assert.equal(state.hasLoaded.value, false)
   assert.equal(state.journalRefreshFailed.value, false)
+  assert.equal(state.lastJournalRefreshAt.value, null)
   assert.equal(state.outcome.value, null)
   assert.equal(state.realtimeStatus.value, 'disconnected')
   assert.equal(state.canCommit.value, false)
@@ -140,6 +142,7 @@ for (const action of Object.keys(actions)) {
         assert.equal(state.error.value, '')
         assert.equal(state.message.value, '')
         assert.equal(state.journalRefreshFailed.value, false)
+        assert.equal(state.lastJournalRefreshAt.value, null)
         assert.equal(calls[1].signal.aborted, false)
         calls[1].resolve({ ...held(), id: 'new-ticket', command: 'new session' })
         await replacement
@@ -807,6 +810,78 @@ test('journal UI wires local search, accessible controls, counts, distinct empty
   assert.match(app, /alleen in sessiegeheugen/)
 })
 
+test('snapshot receipt time uses successful response time, survives failure and search, and advances on empty retry', async t => {
+  const { state, calls, clock } = fixture(t)
+  assert.equal(state.lastJournalRefreshAt.value, null)
+  const loading = state.perform('list')
+  assert.equal(state.lastJournalRefreshAt.value, null)
+  clock.time = 1060
+  calls[0].resolve([record()])
+  await loading
+  assert.equal(state.lastJournalRefreshAt.value, 1060)
+  state.search.value = 'missing'
+  assert.deepEqual(state.filteredCommands.value, [])
+  assert.equal(state.lastJournalRefreshAt.value, 1060)
+
+  clock.time = 1070
+  const refreshing = state.perform('list')
+  assert.equal(state.lastJournalRefreshAt.value, 1060)
+  clock.time = 1080
+  calls[1].reject(new Error('unavailable'))
+  await refreshing
+  assert.equal(state.lastJournalRefreshAt.value, 1060)
+  const retry = state.perform('list')
+  assert.equal(state.lastJournalRefreshAt.value, 1060)
+  clock.time = 1090
+  calls[2].resolve([])
+  await retry
+  assert.equal(state.lastJournalRefreshAt.value, 1090)
+  assert.equal(state.hasLoaded.value, true)
+  assert.deepEqual(state.commands.value, [])
+  assert.equal(state.search.value, 'missing')
+})
+
+test('realtime arrivals, clock ticks and successful ticket, commit, status and revoke do not refresh snapshot receipt time', async t => {
+  const { state, calls, sockets, clock } = fixture(t)
+  state.realtime.connect(state.token.value)
+  sockets[0].handlers.connect()
+  sockets[0].handlers['command:committed'](record('before-snapshot'))
+  assert.equal(state.lastJournalRefreshAt.value, null)
+  const loading = state.perform('list')
+  calls[0].resolve([record()])
+  await loading
+  const receivedAt = state.lastJournalRefreshAt.value
+  clock.time = 1060
+  clock.tick()
+  sockets[0].handlers['command:committed'](record('after-snapshot'))
+  assert.equal(state.lastJournalRefreshAt.value, receivedAt)
+  state.command.value = held().command
+  state.lookupId.value = held().id
+  for (const action of ['ticket', 'commit', 'status', 'ticket', 'revoke']) {
+    const operation = state.perform(action)
+    assert.equal(calls.at(-1).action, action)
+    calls.at(-1).resolve(results[action])
+    await operation
+    assert.equal(state.lastJournalRefreshAt.value, receivedAt, action)
+  }
+})
+
+test('snapshot receipt accepts epoch zero and Date limits but rejects invalid local clock values', async t => {
+  const { state, calls, clock } = fixture(t)
+  for (const value of [0, 8640000000000000, NaN, Infinity, -Infinity, -1, 0.5,
+    8640000000000001, Number.MAX_SAFE_INTEGER + 1, '1050', null, undefined]) {
+    const loading = state.perform('list')
+    clock.time = value
+    calls.at(-1).resolve([])
+    await loading
+    const expected = value === 0 || value === 8640000000000000 ? value : null
+    assert.equal(state.lastJournalRefreshAt.value, expected, String(value))
+    assert.equal(state.hasLoaded.value, true)
+    assert.equal(state.error.value, '')
+    if (expected !== null) assert.doesNotThrow(() => new Date(expected).toISOString())
+  }
+})
+
 test('refresh retains loaded rows and search on failure; unrelated successes cannot clear its warning', async t => {
   const { state, calls } = fixture(t)
   prepare(state, 'list')
@@ -850,6 +925,7 @@ test('initial list failure is not a successfully loaded empty journal', async t 
   await loading
   assert.deepEqual(state.commands.value, [])
   assert.equal(state.hasLoaded.value, false)
+  assert.equal(state.lastJournalRefreshAt.value, null)
   assert.equal(state.journalRefreshFailed.value, true)
   assert.equal(state.error.value, 'initial load unavailable')
   assert.equal(state.busy.value, '')
@@ -867,6 +943,7 @@ for (const loaded of [[], [record('snapshot')]]) {
     assert.deepEqual(state.commands.value, loaded)
     assert.equal(state.hasLoaded.value, true)
     assert.equal(state.journalRefreshFailed.value, false)
+    assert.equal(state.lastJournalRefreshAt.value, 1050)
     assert.equal(state.search.value, 'journal')
   })
 }
@@ -934,6 +1011,7 @@ for (const reset of ['manual disconnect', 'socket disconnect', 'socket error', '
       assert.deepEqual(state.commands.value, [])
       assert.equal(state.hasLoaded.value, false)
       assert.equal(state.journalRefreshFailed.value, false)
+      assert.equal(state.lastJournalRefreshAt.value, null)
       socket.handlers['command:committed'](record('stale-socket'))
       assert.deepEqual(state.commands.value, [])
       if (reset === 'reconnect') {
@@ -946,6 +1024,7 @@ for (const reset of ['manual disconnect', 'socket disconnect', 'socket error', '
       assert.equal(state.hasLoaded.value, false)
       assert.equal(state.journalRefreshFailed.value, false)
       assert.equal(state.error.value, '')
+      assert.equal(state.lastJournalRefreshAt.value, null)
       assert.equal(state.message.value, '')
       assert.equal(state.busy.value, '')
       assert.equal(state.search.value, 'journal')
@@ -954,6 +1033,7 @@ for (const reset of ['manual disconnect', 'socket disconnect', 'socket error', '
       await fresh
       assert.deepEqual(state.commands.value, [record('fresh-snapshot')])
       assert.equal(state.hasLoaded.value, true)
+      assert.equal(state.lastJournalRefreshAt.value, 1050)
     })
   }
 }
@@ -983,4 +1063,16 @@ test('journal UI announces refresh progress and failure independently of generic
   assert.match(app, /v-if="busy === 'list'" role="status" aria-live="polite">Logboek vernieuwen… Bestaande records blijven zichtbaar\./)
   assert.match(app, /v-if="journalRefreshFailed" role="alert"[^>]*>Logboek vernieuwen mislukt\. Getoonde gegevens kunnen verouderd zijn\./)
   assert.match(app, /Er worden geen automatische nieuwe pogingen gedaan\./)
+})
+
+test('journal receipt UI uses an accessible local-clock label and semantic ISO time, including epoch zero', () => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  assert.match(app, /lastJournalRefreshAt,[\s\S]*} = useSession\(\)/)
+  assert.match(app, /role="status" aria-live="polite" aria-describedby="journal-receipt-help"/)
+  assert.match(app, /v-if="lastJournalRefreshAt !== null">Laatste geslaagde verversing ontvangen:/)
+  assert.match(app, /<time :datetime="receiptIso\(lastJournalRefreshAt\)">{{ date\(lastJournalRefreshAt\) }}<\/time>/)
+  assert.match(app, /return value !== null \? new Date\(value\).toISOString\(\) : undefined/)
+  assert.match(app, /v-else>Geen ontvangsttijdstip beschikbaar\./)
+  assert.match(app, /Volgens de lokale klok; geen server- of audittijd en geen garantie/)
+  assert.match(app, /Realtime-events vernieuwen dit ontvangsttijdstip van de snapshot niet\./)
 })

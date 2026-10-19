@@ -28,6 +28,7 @@ export function useSession({
   })
   const hasLoaded = ref(false)
   const journalRefreshFailed = ref(false)
+  const lastJournalRefreshAt = ref(null)
   const busy = ref('')
   const message = ref('')
   const error = ref('')
@@ -50,6 +51,7 @@ export function useSession({
     commands.value = []
     hasLoaded.value = false
     journalRefreshFailed.value = false
+    lastJournalRefreshAt.value = null
   }
 
   function disconnect() {
@@ -203,6 +205,9 @@ export function useSession({
         if (!current() || refresh.generation !== journalGeneration) return
         // Alleen events uit deze verversing aanvullen, nooit de oude snapshot.
         commands.value = [...refresh.entries].reverse().reduce(defaultApi.mergeCommands, loaded)
+        const receivedAt = scheduler.now()
+        lastJournalRefreshAt.value = Number.isSafeInteger(receivedAt) && receivedAt >= 0 &&
+          Number.isFinite(new Date(receivedAt).getTime()) ? receivedAt : null
         hasLoaded.value = true
         journalRefreshFailed.value = false
         message.value = 'Logboek bijgewerkt.'
@@ -222,7 +227,7 @@ export function useSession({
   }
 
   return {
-    token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, busy,
+    token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, lastJournalRefreshAt, busy,
     message, error, lookupId, outcome, lastSubmissionId, realtimeStatus, now,
     canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearSession,
   }
