@@ -36,6 +36,8 @@ function status(module) {
       <p role="status" aria-live="polite" aria-atomic="true">{{ launchableCount }} van {{ TRUSTED_MODULES.length }} modules momenteel te openen.</p>
     </div>
     <p>Wissen verwijdert alleen lokale controles: het stopt geen services, trekt geen tickets in en sluit geen reeds geopende tabbladen.</p>
+    <p>Bij ontvangst van pagehide worden lokale controles gewist; controleer na terugkeer handmatig opnieuw.
+      Aflevering is niet gegarandeerd. Dit stopt geen services, trekt geen tokens of tickets in en is geen autorisatie.</p>
     <section class="grid" aria-label="Lokale modules">
       <article v-for="module in TRUSTED_MODULES" :key="module.id" :aria-busy="states[module.id].status === 'verifying'">
         <p class="eyebrow">MODULE / {{ module.id }}</p>

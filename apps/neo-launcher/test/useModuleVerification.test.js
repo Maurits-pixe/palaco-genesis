@@ -10,7 +10,7 @@ const evidence = (module, verifiedAt) => ({
   status: 'verified', moduleId: module.id, health: 'ok', verifiedAt,
 })
 
-function setup(t, verifier) {
+function setup(t, verifier, eventTarget = new EventTarget()) {
   let time = 100_000
   let tick
   const timer = {}
@@ -33,10 +33,11 @@ function setup(t, verifier) {
       return timer
     },
     unschedule: (handle) => cleared.push(handle),
+    eventTarget,
   }))
   t.after(() => scope.stop())
   return {
-    model, calls, signals, pending, scope, timer, cleared,
+    model, calls, signals, pending, scope, timer, cleared, eventTarget,
     setTime: (value) => { time = value },
     tick: () => tick(),
   }
@@ -299,12 +300,150 @@ test('late results after repeated resets without new attempts leave all states i
   assert.equal(model.isVerifying.value, false)
 })
 
+function pageEvent(type, persisted) {
+  const event = new Event(type)
+  Object.defineProperty(event, 'persisted', { value: persisted })
+  return event
+}
+
+for (const persisted of [false, true]) {
+  test(`pagehide (persisted=${persisted}) clears approvals and return requires manual verification`, async (t) => {
+    const { model, pending, calls, eventTarget, cleared, setTime, tick } = setup(t)
+    const batch = model.verifyAll()
+    for (const request of pending) request.resolve(evidence(request.module, 100_000))
+    await batch
+    assert.equal(model.launchableCount.value, 2)
+    eventTarget.dispatchEvent(new Event('visibilitychange'))
+    assert.equal(model.launchableCount.value, 2)
+    eventTarget.dispatchEvent(pageEvent('pagehide', persisted))
+    assert.deepEqual(Object.values(model.states.value), [{ status: 'idle' }, { status: 'idle' }])
+    assert.equal(model.launchableCount.value, 0)
+    assert.equal(model.isVerifying.value, false)
+    for (const module of TRUSTED_MODULES) {
+      assert.equal(launchUrl(module, model.states.value[module.id], model.now.value), null)
+    }
+    eventTarget.dispatchEvent(pageEvent('pageshow', persisted))
+    setTime(110_000)
+    tick()
+    assert.equal(model.now.value, 110_000)
+    assert.deepEqual(cleared, [])
+    assert.equal(calls.length, 2)
+    assert.equal(model.launchableCount.value, 0)
+    const individual = model.verify(aether)
+    pending[2].resolve(evidence(aether, 110_000))
+    await individual
+    assert.equal(model.launchableCount.value, 1)
+    const freshBatch = model.verifyAll()
+    for (const request of pending.slice(3)) request.resolve(evidence(request.module, 110_000))
+    await freshBatch
+    assert.equal(model.launchableCount.value, 2)
+    setTime(110_000 + MAX_AGE_MS)
+    tick()
+    assert.equal(model.launchableCount.value, 0)
+  })
+
+  for (const batch of [false, true]) {
+    test(`pagehide (persisted=${persisted}) aborts ${batch ? 'batch' : 'individual'} attempts and ignores stale results`, async (t) => {
+      const { model, pending, calls, eventTarget, setTime } = setup(t)
+      const old = batch ? model.verifyAll() : Promise.all(TRUSTED_MODULES.map(model.verify))
+      eventTarget.dispatchEvent(new Event('visibilitychange'))
+      assert.ok(pending.every(({ signal }) => !signal.aborted))
+      assert.equal(model.isVerifying.value, true)
+      eventTarget.dispatchEvent(pageEvent('pagehide', persisted))
+      assert.ok(pending.every(({ signal }) => signal.aborted))
+      assert.deepEqual(Object.values(model.states.value), [{ status: 'idle' }, { status: 'idle' }])
+      assert.equal(model.isVerifying.value, false)
+      eventTarget.dispatchEvent(pageEvent('pageshow', persisted))
+      assert.equal(calls.length, 2)
+      const fresh = batch ? Promise.all(TRUSTED_MODULES.map(model.verify)) : model.verifyAll()
+      assert.ok(pending.slice(2).every(({ signal }) => !signal.aborted))
+      setTime(150_000)
+      // Exercise stale completion both during fresh attempts and after new approvals.
+      if (!batch) {
+        for (const request of pending.slice(2)) request.resolve(evidence(request.module, 150_000))
+        await fresh
+      }
+      const before = JSON.parse(JSON.stringify(model.states.value))
+      const clockBefore = model.now.value
+      setTime(200_000)
+      pending[0].resolve(evidence(aether, 200_000))
+      pending[1].reject(new Error('Stale page error'))
+      await old
+      assert.deepEqual(model.states.value, before)
+      assert.equal(model.now.value, clockBefore)
+      assert.equal(model.launchableCount.value, batch ? 0 : 2)
+      if (batch) {
+        await Promise.all([model.verify(aether), model.verifyAll()])
+        assert.equal(calls.length, 4)
+        // Stale finally blocks must not remove the fresh controllers.
+        eventTarget.dispatchEvent(pageEvent('pagehide', persisted))
+        assert.ok(pending.slice(2).every(({ signal }) => signal.aborted))
+        pending[2].reject(new Error('Late fresh error'))
+        pending[3].resolve(evidence(bastion, 200_000))
+        await fresh
+        assert.deepEqual(Object.values(model.states.value), [{ status: 'idle' }, { status: 'idle' }])
+        assert.equal(model.launchableCount.value, 0)
+      }
+    })
+  }
+}
+
+test('scope disposal removes the exact pagehide listener before timer and request cleanup', async (t) => {
+  const listeners = []
+  const removed = []
+  class TrackedTarget extends EventTarget {
+    addEventListener(type, listener) {
+      listeners.push({ type, listener })
+      super.addEventListener(type, listener)
+    }
+
+    removeEventListener(type, listener) {
+      removed.push({ type, listener })
+      super.removeEventListener(type, listener)
+    }
+  }
+  const eventTarget = new TrackedTarget()
+  const { model, scope, pending, cleared } = setup(t, undefined, eventTarget)
+  assert.deepEqual(listeners, [{ type: 'pagehide', listener: model.reset }])
+  const batch = model.verifyAll()
+  for (const { signal } of pending) {
+    signal.addEventListener('abort', () => {
+      assert.deepEqual(removed, listeners)
+      assert.equal(cleared.length, 1)
+    })
+  }
+  scope.stop()
+  assert.deepEqual(removed, listeners)
+  eventTarget.dispatchEvent(pageEvent('pagehide', true))
+  assert.ok(Object.values(model.states.value).every(({ status }) => status === 'verifying'))
+  pending[0].resolve(evidence(aether, 100_000))
+  pending[1].reject(new Error('Disposed'))
+  await batch
+})
+
+test('the default event target is safe without a browser window', () => {
+  assert.equal(globalThis.window, undefined)
+  const scope = effectScope()
+  try {
+    const model = scope.run(() => useModuleVerification({
+      schedule: () => 0,
+      unschedule: () => {},
+    }))
+    assert.equal(model.launchableCount.value, 0)
+    model.reset()
+  } finally {
+    scope.stop()
+  }
+})
+
 test('UI wires manual batch, independent controls, live count, and click-time launch gate', async () => {
   const app = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
   assert.match(app, /useModuleVerification\(\)/)
   assert.match(app, /<button :disabled="isVerifying" @click="verifyAll">Controleer alle modules<\/button>/)
   assert.match(app, /<button @click="reset">Wis controles<\/button>/)
   assert.match(app, /Wissen verwijdert alleen lokale controles: het stopt geen services, trekt geen tickets in en sluit geen reeds geopende tabbladen/)
+  assert.match(app, /Bij ontvangst van pagehide worden lokale controles gewist; controleer na terugkeer handmatig opnieuw/)
+  assert.match(app, /Aflevering is niet gegarandeerd\. Dit stopt geen services, trekt geen tokens of tickets in en is geen autorisatie/)
   assert.match(app, /role="status" aria-live="polite" aria-atomic="true">\{\{ launchableCount \}\} van \{\{ TRUSTED_MODULES.length \}\} modules momenteel te openen/)
   assert.match(app, /:disabled="states\[module.id\].status === 'verifying'" @click="verify\(module\)"/)
   assert.match(app, /if \(!launchUrl\(module, states.value\[module.id\], Date.now\(\)\)\) \{\s*event.preventDefault\(\)/)

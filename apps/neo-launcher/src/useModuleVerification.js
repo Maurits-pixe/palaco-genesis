@@ -6,6 +6,7 @@ export function useModuleVerification({
   getNow = Date.now,
   schedule = setInterval,
   unschedule = clearInterval,
+  eventTarget = globalThis.window,
 } = {}) {
   const states = ref(Object.fromEntries(TRUSTED_MODULES.map(({ id }) => [id, { status: 'idle' }])))
   const now = ref(getNow())
@@ -14,7 +15,9 @@ export function useModuleVerification({
   const clock = schedule(() => {
     if (!disposed) now.value = getNow()
   }, 500)
+  eventTarget?.addEventListener('pagehide', reset)
   onScopeDispose(() => {
+    eventTarget?.removeEventListener('pagehide', reset)
     disposed = true
     unschedule(clock)
     abortAttempts()

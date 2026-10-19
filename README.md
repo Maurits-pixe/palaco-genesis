@@ -86,6 +86,12 @@ worden lokaal geannuleerd; vertraagde antwoorden activeren geen links
 opnieuw. Je kunt daarna direct een nieuwe controle starten.
 Wissen stopt geen services, sluit geen reeds geopende tabbladen en trekt
 geen server-side tickets of toestemming in.
+Bij `pagehide` wist NEO dezelfde controles, ook wanneer de browser de pagina
+in de terug-/vooruitcache bewaart. Na terugnavigeren controleer je de modules
+handmatig opnieuw; oude antwoorden herstellen geen startlinks. Alleen van
+tabblad wisselen wist niets. Browsers leveren `pagehide` niet gegarandeerd,
+bijvoorbeeld bij een procescrash; de bestaande geldigheidscontrole blijft
+onafhankelijk daarvan gelden.
 NEO activeert een link alleen na een passend manifest én een gezond
 `/health`-antwoord van dezelfde geconfigureerde backend. Bij onbeschikbaarheid,
 een ongeldig antwoord of een timeout blijft de link uitgeschakeld. De controle
