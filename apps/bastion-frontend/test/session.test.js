@@ -1023,6 +1023,33 @@ test('status never restores authority or journal history and only retires the sa
   assert.equal(state.lastSubmissionId.value, 'retained-id')
 })
 
+test('production status flow displays mismatched terminal windows without retiring held authority', async t => {
+  const { state, calls } = fixture(t)
+  prepare(state, 'revoke')
+  const ticket = state.ticket.value
+  const commands = state.commands.value
+  for (const status of ['revoked', 'expired', 'committed']) {
+    for (const [not_before, expires_at] of [[1001, 1100], [1000, 1101], [1100, 1200]]) {
+      const value = snapshot({
+        not_before, expires_at, checked_at: expires_at, status,
+        revoked: status === 'revoked',
+        record: status === 'committed' ? { ...record('historical'), committed_at: not_before } : null,
+      })
+      const operation = state.perform('status')
+      calls.at(-1).resolve(value)
+      await operation
+      assert.deepEqual(state.outcome.value, value)
+      assert.equal(state.ticket.value, ticket)
+      assert.equal(state.revocationUncertain.value, true)
+      assert.equal(state.canCommit.value, false)
+      assert.equal(state.commands.value, commands)
+      assert.equal(state.error.value, '')
+      assert.match(state.message.value, /geen nieuwe toestemming/)
+    }
+  }
+  assert.equal(calls.length, 9)
+})
+
 test('current-ticket shortcut does not change lookup or call the API while busy', async t => {
   const { state, calls } = fixture(t)
   prepare(state, 'revoke')

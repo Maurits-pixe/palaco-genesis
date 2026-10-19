@@ -189,7 +189,13 @@ vergelijkt de servertijdstippen niet met de lokale klok.
 Een statuscontrole dient nooit opnieuw een commando in. Een actieve status is
 slechts een momentopname, geen nieuwe toestemming. Alleen een bevestigde
 terminale status van hetzelfde ticket kan een onzekere intrekking lokaal
-afsluiten. Sessie wissen of herladen verwijdert de lokaal bewaarde ID's.
+afsluiten. Hiervoor moeten ticket-ID, commando en beide grenzen van het
+geldigheidsvenster overeenkomen met het lokaal bewaarde ticket. Een op
+zichzelf geldig statusresultaat met een afwijkend venster blijft als
+historische uitkomst zichtbaar, maar verwijdert het lokale ticket of de
+onzekerheidsblokkering niet. Ontbrekende of ongeldige lokale venstergrenzen
+geven evenmin aanleiding tot reconciliatie. Sessie wissen of herladen
+verwijdert de lokaal bewaarde ID's.
 Met **Wis ticketuitkomst** verwijder je alleen het lokale statusresultaat en
 de bijbehorende statusmelding. Een lopend statusverzoek wordt lokaal
 geannuleerd; late antwoorden wijzigen daarna geen resultaat of ticketstaat.

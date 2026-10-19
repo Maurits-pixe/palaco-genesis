@@ -113,7 +113,9 @@ test('status accepts zero and the inclusive Date limit without consulting the cl
       return response(value)
     }), value)
     assert.equal(calls, 1)
-    const held = { id: value.id, command: value.command }
+    const held = {
+      id: value.id, command: value.command, not_before: value.not_before, expires_at: value.expires_at,
+    }
     const commands = [record]
     const terminal = value.status !== 'active'
     assert.deepEqual(reconcileTicketStatus(held, true, commands, value), {
@@ -233,6 +235,54 @@ test('historical committed lookup preserves all 100 current journal rows and the
   assert.equal(state.commands.length, 100)
   assert.equal(state.commands.some(value => value.id === record.id), false)
 })
+
+for (const status of ['revoked', 'expired', 'committed']) {
+  for (const uncertain of [false, true]) {
+    test(`${status} reconciliation binds both held boundaries, uncertain=${uncertain}`, t => {
+      t.mock.method(Date, 'now', () => assert.fail('reconciliation must not consult the client clock'))
+      const held = { id: 'ticket-1', command: 'journal only', not_before: 1000, expires_at: 1100 }
+      const commands = [record]
+      const terminalSnapshot = (not_before, expires_at) => snapshot({
+        not_before, expires_at, checked_at: expires_at, status,
+        revoked: status === 'revoked',
+        record: status === 'committed' ? { ...record, committed_at: not_before } : null,
+      })
+      const preserve = (ticket, value) => {
+        assert.equal(validateTicketStatus(value, value.id), value)
+        const state = reconcileTicketStatus(ticket, uncertain, commands, value)
+        assert.equal(state.ticket, ticket)
+        assert.equal(state.revocationUncertain, uncertain)
+        assert.equal(state.commands, commands)
+      }
+      for (const [start, end] of [[1001, 1100], [1000, 1101], [1100, 1200]]) {
+        preserve(held, terminalSnapshot(start, end))
+      }
+      const value = terminalSnapshot(1000, 1100)
+      for (const field of ['not_before', 'expires_at']) {
+        const missing = { ...held }
+        delete missing[field]
+        preserve(missing, value)
+        for (const boundary of [
+          undefined, null, '', 'invalid', {}, [], true, NaN, Infinity, -Infinity,
+          -1, 1000.5, maxDate + 1, Number.MAX_SAFE_INTEGER,
+        ]) preserve({ ...held, [field]: boundary }, value)
+      }
+      for (const [start, end] of [[0, 100], [maxDate - 100, maxDate]]) {
+        for (const legacy of [false, true]) {
+          const matching = {
+            ...held,
+            not_before: legacy ? new Date(start).toISOString() : start,
+            expires_at: legacy ? new Date(end).toISOString() : end,
+          }
+          const state = reconcileTicketStatus(matching, uncertain, commands, terminalSnapshot(start, end))
+          assert.equal(state.ticket, null)
+          assert.equal(state.revocationUncertain, false)
+          assert.equal(state.commands, commands)
+        }
+      }
+    })
+  }
+}
 
 test('submission retires local authority and retains its ID even when the response is lost', async () => {
   const held = { id: 'ticket-1', command: 'journal only' }

@@ -254,7 +254,8 @@ export function reconcileTicketStatus(ticket, revocationUncertain, commands, out
   const valid = validateTicketStatus(outcome, outcome?.id)
   if (!valid) return { ticket, revocationUncertain, commands }
   const terminal = ['revoked', 'expired', 'committed'].includes(valid.status)
-  const sameTicket = ticket?.id === valid.id && ticket.command === valid.command
+  const sameTicket = ticket?.id === valid.id && ticket.command === valid.command &&
+    timestamp(ticket.not_before) === valid.not_before && timestamp(ticket.expires_at) === valid.expires_at
   return {
     ticket: sameTicket && terminal ? null : ticket,
     revocationUncertain: sameTicket && terminal ? false : revocationUncertain,
