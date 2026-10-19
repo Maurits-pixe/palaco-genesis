@@ -120,6 +120,13 @@ een opslagverzoek server-side is teruggedraaid.
 
 BASTION geeft eerst een kortlevend ticket uit;
 pas de afzonderlijke commitactie schrijft het commando in het logboek.
+Bij uitgifte controleert de interface dat het ticket-ID maximaal 128
+tekens bevat en de tijdstippen niet-negatieve, veilige gehele
+epochmilliseconden zijn die als datum kunnen worden weergegeven.
+Het geldigheidsvenster moet exact de aangevraagde duur hebben.
+Afwijkende antwoorden worden niet als lokaal ticket bewaard; er volgt
+geen automatische nieuwe aanvraag. Dit vervangt de server-side
+geldigheidscontrole niet en veronderstelt geen gelijklopende clientklok.
 Met **Ticket intrekken** kun je het huidige ticket server-side ongeldig maken.
 De interface bevestigt dit alleen na een geldig serverantwoord. Bij een
 onzekere netwerkuitkomst blijft het ticket zichtbaar voor een nieuwe

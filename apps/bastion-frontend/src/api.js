@@ -148,9 +148,11 @@ export async function issueTicket(command, ttlMs, token, fetcher, signal) {
   const result = await request('/v1/tickets', {
     token, method: 'POST', body: { command, ttl_ms: ttlMs }, fetcher, signal,
   })
-  if (!validId(result?.id) || !Number.isFinite(timestamp(result?.not_before)) ||
-      !Number.isFinite(timestamp(result?.expires_at)) ||
-      timestamp(result.expires_at) <= timestamp(result.not_before)) {
+  if (!validId(result?.id) || result.id.length > 128 ||
+      ![result.not_before, result.expires_at].every(time =>
+        Number.isSafeInteger(time) && time >= 0 && Number.isFinite(new Date(time).getTime())) ||
+      result.expires_at <= result.not_before ||
+      result.expires_at - result.not_before !== ttlMs) {
     throw new ApiError('Onverwacht ticketantwoord van de service.')
   }
   return { id: result.id, command, not_before: result.not_before, expires_at: result.expires_at }

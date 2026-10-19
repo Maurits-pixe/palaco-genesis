@@ -12,7 +12,7 @@ const status = () => ({ ...ticket(), checked_at: Date.now(), status: 'active', r
 const headers = { 'Content-Type': 'application/json' }
 const helpers = [
   { name: 'request', invoke: (fetcher, signal) => request('/v1/commands', { token, fetcher, signal }), result: () => ({}), code: 200 },
-  { name: 'ticket', invoke: (fetcher, signal) => issueTicket(command, 1000, token, fetcher, signal), result: ticket, code: 201 },
+  { name: 'ticket', invoke: (fetcher, signal) => issueTicket(command, 1000, token, fetcher, signal), result: () => ({ id: 'ticket-1', not_before: 1000, expires_at: 2000 }), code: 201 },
   { name: 'commit', invoke: (fetcher, signal) => commitCommand(ticket(), command, token, fetcher, signal), result: entry, code: 201 },
   { name: 'revoke', invoke: (fetcher, signal) => revokeTicket(ticket(), token, fetcher, signal), result: () => ({ revoked: true }), code: 200 },
   { name: 'status', invoke: (fetcher, signal) => getTicketStatus('ticket-1', token, fetcher, signal), result: status, code: 200 },

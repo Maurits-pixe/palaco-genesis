@@ -11,20 +11,22 @@ const ticket = () => ({
   expires_at: new Date(Date.now() + 30_000).toISOString(),
 })
 const entry = () => ({ id: 'command-1', command: 'registreer wijziging', committed_at: new Date().toISOString() })
+const issuedTicket = ttlMs => ({ id: 'ticket-1', not_before: 1000, expires_at: 1000 + ttlMs })
 
 test('ticket issuance sends the exact command and integer TTL', async () => {
-  const data = ticket()
-  const result = await issueTicket(data.command, 5000, inputToken, async (url, options) => {
+  const command = 'registreer wijziging'
+  const data = issuedTicket(5000)
+  const result = await issueTicket(command, 5000, inputToken, async (url, options) => {
     assert.equal(url, '/v1/tickets')
     assert.equal(options.method, 'POST')
-    assert.deepEqual(JSON.parse(options.body), { command: data.command, ttl_ms: 5000 })
+    assert.deepEqual(JSON.parse(options.body), { command, ttl_ms: 5000 })
     assert.equal(options.headers.Authorization, ['Bearer', inputToken].join(' '))
     assert.equal(options.redirect, 'error')
     assert.equal(options.cache, 'no-store')
     assert.equal(options.credentials, 'omit')
     return json(data, 201)
   })
-  assert.deepEqual(result, data)
+  assert.deepEqual(result, { ...data, command })
 })
 
 test('invalid TTL and blank command never reach the service', async () => {
@@ -34,7 +36,7 @@ test('invalid TTL and blank command never reach the service', async () => {
   }
   await assert.rejects(issueTicket(' ', 1000, inputToken, never))
   for (const ttl of [1, 60000]) {
-    assert.ok(await issueTicket('hello', ttl, inputToken, async () => json(ticket(), 201)))
+    assert.ok(await issueTicket('hello', ttl, inputToken, async () => json(issuedTicket(ttl), 201)))
   }
 })
 
@@ -42,7 +44,7 @@ test('command limit matches backend JavaScript length of 1024 UTF-16 code units'
   assert.equal(MAX_COMMAND_LENGTH, 1024)
   assert.equal(commandLength('😀'), 2)
   for (const command of ['x'.repeat(1024), 'é'.repeat(1024), '😀'.repeat(512)]) {
-    await issueTicket(command, 1000, inputToken, async () => json(ticket(), 201))
+    await issueTicket(command, 1000, inputToken, async () => json(issuedTicket(1000), 201))
     assert.equal(mergeCommands([], { ...entry(), command })[0].command, command)
   }
   for (const command of ['x'.repeat(1025), 'é'.repeat(1025), '😀'.repeat(513)]) {
@@ -178,9 +180,10 @@ test('journal accepts 600 multibyte é characters and rejects over 1024 JavaScri
 
 test('malformed tickets and commit responses reject', async () => {
   const data = ticket()
+  const issued = issuedTicket(1000)
   for (const result of [
-    {}, { ...data, id: '../bad' }, { ...data, not_before: null },
-    { ...data, expires_at: 'bad' }, { ...data, expires_at: data.not_before },
+    {}, { ...issued, id: '../bad' }, { ...issued, not_before: null },
+    { ...issued, expires_at: 'bad' }, { ...issued, expires_at: issued.not_before },
   ]) await assert.rejects(issueTicket(data.command, 1000, inputToken, async () => json(result, 201)))
   await assert.rejects(commitCommand(data, data.command, inputToken, async () => json({ ...entry(), command: 'different' }, 201)))
 })
