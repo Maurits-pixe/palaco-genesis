@@ -4,7 +4,7 @@ import { realtimeLabels, useSession } from './useSession.js'
 
 const {
   token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, lastJournalRefreshAt, busy,
-  message, error, lookupId, outcome, lastSubmissionId, realtimeStatus,
+  message, error, lookupId, outcome, outcomeMismatch, lastSubmissionId, realtimeStatus,
   canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearSession, clearOutcome,
 } = useSession()
 
@@ -81,6 +81,7 @@ function receiptIso(value) {
         </form>
         <div v-if="outcome" class="result">
           <p>Ticket: <code>{{ outcome.id }}</code></p>
+          <p v-if="outcomeMismatch" role="alert" class="error">Statusgegevens wijken af van het lokaal bewaarde ticket. Deze uitkomst wijzigt het lokale ticket of de onzekerheidsblokkering niet.</p>
           <p>Status: {{ outcome.status }} · ingetrokken: {{ outcome.revoked ? 'ja' : 'nee' }}</p>
           <p>Gecontroleerd: {{ date(outcome.checked_at) }}</p>
           <p>Geldig vanaf: {{ date(outcome.not_before) }} · verloopt: {{ date(outcome.expires_at) }}</p>

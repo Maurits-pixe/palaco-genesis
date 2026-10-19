@@ -91,6 +91,7 @@ function assertEmpty(state, token = '') {
   assert.equal(state.journalRefreshFailed.value, false)
   assert.equal(state.lastJournalRefreshAt.value, null)
   assert.equal(state.outcome.value, null)
+  assert.equal(state.outcomeMismatch.value, false)
   assert.equal(state.realtimeStatus.value, 'disconnected')
   assert.equal(state.canCommit.value, false)
   assert.equal(state.remaining.value, 0)
@@ -112,9 +113,142 @@ function pageTransition(type, persisted) {
 
 function retainedOutcomeState(state) {
   return structuredClone(Object.fromEntries(Object.entries(state)
-    .filter(([key, value]) => isRef(value) && !['outcome', 'message', 'error', 'busy'].includes(key))
+    .filter(([key, value]) => isRef(value) && !['outcome', 'outcomeMismatch', 'message', 'error', 'busy'].includes(key))
     .map(([key, value]) => [key, JSON.parse(JSON.stringify(value.value))])))
 }
+
+for (const uncertain of [false, true]) {
+  test(`same-ID mismatches are derived warnings only, uncertainty=${uncertain}`, async t => {
+    const { state, calls, sockets, clock } = fixture(t)
+    prepare(state, 'status')
+    state.revocationUncertain.value = uncertain
+    state.realtime.connect(state.token.value)
+    sockets[0].handlers.connect()
+    const currentTicket = state.ticket.value
+    for (const changes of [
+      { command: 'different' }, { not_before: 1001 }, { expires_at: 1101 },
+    ]) {
+      const operation = state.checkCurrentTicket()
+      const request = calls.at(-1)
+      assert.equal(state.outcomeMismatch.value, false)
+      request.resolve(snapshot({ ...changes, status: 'revoked', revoked: true }))
+      await operation
+      assert.equal(state.outcomeMismatch.value, true)
+      assert.equal(state.ticket.value, currentTicket)
+      assert.equal(state.revocationUncertain.value, uncertain)
+      assert.equal(state.canCommit.value, !uncertain)
+      assert.equal(state.outcomeMismatch.value, true)
+    }
+    clock.time = 5000
+    clock.tick()
+    assert.equal(state.outcomeMismatch.value, true)
+    assert.equal(state.canCommit.value, false)
+    sockets[0].handlers['command:committed'](record('live'))
+    assert.equal(state.outcomeMismatch.value, true)
+    assert.equal(state.commands.value[0].id, 'live')
+    assert.equal(state.realtimeStatus.value, 'connected')
+    assert.equal(calls.length, 3)
+    assert.ok(calls.every(call => call.action === 'status' && !call.signal.aborted))
+    assert.equal(sockets.length, 1)
+    assert.equal(sockets[0].connects, 1)
+    assert.equal(sockets[0].disconnects, 0)
+  })
+}
+
+test('warning validates displayed outcome and ignores other IDs, absent authority and equivalent ISO windows', t => {
+  const { state, calls, sockets } = fixture(t)
+  prepare(state, 'status')
+  const valid = snapshot({ command: 'different' })
+  assert.equal(state.outcomeMismatch.value, false)
+  for (const invalid of [
+    null, {}, [], { ...valid, extra: true }, { ...valid, status: 'committed' },
+    { ...valid, not_before: '1970-01-01T00:00:01.000Z' },
+    { ...valid, expires_at: 8_640_000_000_000_001 },
+  ]) {
+    state.outcome.value = invalid
+    assert.equal(state.outcomeMismatch.value, false)
+  }
+  state.outcome.value = valid
+  assert.equal(state.outcomeMismatch.value, true)
+  state.outcome.value = snapshot({ id: 'intentionally-other-ticket', command: 'different' })
+  assert.equal(state.outcomeMismatch.value, false)
+  state.outcome.value = valid
+  state.ticket.value = null
+  assert.equal(state.outcomeMismatch.value, false)
+  state.outcome.value = snapshot()
+  state.ticket.value = {
+    ...held(), not_before: new Date(1000).toISOString(), expires_at: new Date(1100).toISOString(),
+  }
+  assert.equal(state.outcomeMismatch.value, false)
+  for (const field of ['not_before', 'expires_at']) {
+    const missing = held()
+    delete missing[field]
+    state.ticket.value = missing
+    assert.equal(state.outcomeMismatch.value, true)
+    for (const boundary of [null, undefined, '', 'invalid', {}, [], true, NaN, Infinity]) {
+      state.ticket.value = { ...held(), [field]: boundary }
+      assert.equal(state.outcomeMismatch.value, true)
+    }
+  }
+  assert.equal(calls.length, 0)
+  assert.equal(sockets.length, 0)
+})
+
+for (const reset of ['lookup', 'command', 'ttl', 'clearOutcome', 'clearSession', 'token', 'pagehide', 'dispose']) {
+  test(`${reset} removes a displayed mismatch warning without requests`, t => {
+    const { state, calls, sockets, eventTarget, scope } = fixture(t)
+    prepare(state, 'status')
+    state.outcome.value = snapshot({ command: 'different' })
+    assert.equal(state.outcomeMismatch.value, true)
+    if (reset === 'lookup') state.lookupId.value = 'other-ticket'
+    else if (reset === 'command') state.command.value = 'edited'
+    else if (reset === 'ttl') state.ttlMs.value = 60
+    else if (reset === 'token') state.token.value = 'new-test-token'
+    else if (reset === 'pagehide') eventTarget.dispatchEvent(pageTransition('pagehide', true))
+    else if (reset === 'dispose') scope.stop()
+    else state[reset]()
+    assert.equal(state.outcomeMismatch.value, false)
+    if (['clearSession', 'token', 'pagehide', 'dispose'].includes(reset)) {
+      assertEmpty(state, reset === 'token' ? 'new-test-token' : '')
+    }
+    assert.equal(calls.length, 0)
+    assert.equal(sockets.length, 0)
+  })
+}
+
+test('fresh issuance recomputes warning against the held ticket, not the lookup field or stale warning state', async t => {
+  const { state, calls, sockets } = fixture(t)
+  prepare(state, 'status')
+  assert.equal(state.outcomeMismatch.value, false)
+  let issuing = state.perform('ticket')
+  assert.equal(state.outcomeMismatch.value, false)
+  calls[0].resolve({ ...held(), expires_at: 1101 })
+  await issuing
+  assert.equal(state.outcomeMismatch.value, true)
+  issuing = state.perform('ticket')
+  assert.equal(state.outcomeMismatch.value, false)
+  calls[1].resolve(held())
+  await issuing
+  assert.equal(state.outcomeMismatch.value, false)
+  assert.equal(state.canCommit.value, true)
+  issuing = state.perform('ticket')
+  calls[2].resolve({ ...held(), id: 'fresh-ticket' })
+  await issuing
+  assert.equal(state.outcomeMismatch.value, false)
+  assert.equal(state.outcome.value.id, 'ticket-1')
+  assert.equal(calls.length, 3)
+  assert.ok(calls.every(call => call.action === 'ticket'))
+  assert.equal(sockets.length, 0)
+})
+
+test('mismatch UI is an alert inside the source-bound result without claiming all actions are blocked', () => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const result = app.match(/<div v-if="outcome" class="result">([\s\S]*?)<\/div>/)[1]
+  assert.match(result, /Ticket: <code>\{\{ outcome.id \}\}<\/code>/)
+  assert.match(result, /<p v-if="outcomeMismatch" role="alert" class="error">Statusgegevens wijken af van het lokaal bewaarde ticket\. Deze uitkomst wijzigt het lokale ticket of de onzekerheidsblokkering niet\.<\/p>/)
+  assert.match(result, /\{\{ outcome.command \}\}/)
+  assert.doesNotMatch(result, /zijn geblokkeerd/)
+})
 
 test('clearing an idle outcome retains the entire session, live connection and uncertainty, and is idempotent', async t => {
   const { state, calls, sockets, clock } = fixture(t)
@@ -152,6 +286,7 @@ test('clearing a completed terminal reconciliation only hides it, never restores
   await operation
   assert.equal(state.ticket.value, null)
   assert.equal(state.revocationUncertain.value, false)
+  assert.equal(state.outcomeMismatch.value, false)
   const before = retainedOutcomeState(state)
   state.clearOutcome()
   assert.deepEqual(retainedOutcomeState(state), before)

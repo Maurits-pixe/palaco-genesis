@@ -249,13 +249,17 @@ export async function getTicketStatus(ticketId, token, fetcher, signal) {
   return validated
 }
 
+export function ticketMatchesStatus(ticket, outcome) {
+  return !!ticket && !!outcome && ticket.id === outcome.id && ticket.command === outcome.command &&
+    timestamp(ticket.not_before) === outcome.not_before && timestamp(ticket.expires_at) === outcome.expires_at
+}
+
 // A snapshot can retire existing authority, never create or restore it.
 export function reconcileTicketStatus(ticket, revocationUncertain, commands, outcome) {
   const valid = validateTicketStatus(outcome, outcome?.id)
   if (!valid) return { ticket, revocationUncertain, commands }
   const terminal = ['revoked', 'expired', 'committed'].includes(valid.status)
-  const sameTicket = ticket?.id === valid.id && ticket.command === valid.command &&
-    timestamp(ticket.not_before) === valid.not_before && timestamp(ticket.expires_at) === valid.expires_at
+  const sameTicket = ticketMatchesStatus(ticket, valid)
   return {
     ticket: sameTicket && terminal ? null : ticket,
     revocationUncertain: sameTicket && terminal ? false : revocationUncertain,

@@ -196,6 +196,11 @@ historische uitkomst zichtbaar, maar verwijdert het lokale ticket of de
 onzekerheidsblokkering niet. Ontbrekende of ongeldige lokale venstergrenzen
 geven evenmin aanleiding tot reconciliatie. Sessie wissen of herladen
 verwijdert de lokaal bewaarde ID's.
+Bij een statusuitkomst met hetzelfde ticket-ID maar een afwijkend commando
+of geldigheidsvenster toont BASTION een waarschuwing. Deze verklaart waarom
+de uitkomst het lokale ticket en een eventuele onzekerheidsblokkering niet
+wijzigt; de waarschuwing voert zelf geen actie uit. Een bewuste opvraag van
+een ander ticket-ID krijgt deze vergelijkingswaarschuwing niet.
 Met **Wis ticketuitkomst** verwijder je alleen het lokale statusresultaat en
 de bijbehorende statusmelding. Een lopend statusverzoek wordt lokaal
 geannuleerd; late antwoorden wijzigen daarna geen resultaat of ticketstaat.

@@ -35,6 +35,10 @@ export function useSession({
   const error = ref('')
   const lookupId = ref('')
   const outcome = ref(null)
+  const outcomeMismatch = computed(() => {
+    const valid = defaultApi.validateTicketStatus(outcome.value, outcome.value?.id)
+    return !!valid && ticket.value?.id === valid.id && !defaultApi.ticketMatchesStatus(ticket.value, valid)
+  })
   const lastSubmissionId = ref('')
   const realtimeStatus = ref('disconnected')
   const now = ref(scheduler.now())
@@ -258,7 +262,7 @@ export function useSession({
 
   return {
     token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, lastJournalRefreshAt, busy,
-    message, error, lookupId, outcome, lastSubmissionId, realtimeStatus, now,
+    message, error, lookupId, outcome, outcomeMismatch, lastSubmissionId, realtimeStatus, now,
     canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearSession, clearOutcome,
   }
 }

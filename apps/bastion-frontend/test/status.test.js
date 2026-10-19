@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { beginSubmission, getTicketStatus, reconcileTicketStatus, validateTicketStatus } from '../src/api.js'
+import { beginSubmission, getTicketStatus, reconcileTicketStatus, ticketMatchesStatus, validateTicketStatus } from '../src/api.js'
 
 const token = 'test-only-token'
 const snapshot = (changes = {}) => ({
@@ -11,6 +11,34 @@ const record = { id: 'record-1', command: 'journal only', committed_at: 1010 }
 const maxDate = 8_640_000_000_000_000
 const response = (value, status = 200) => new Response(JSON.stringify(value), {
   status, headers: { 'Content-Type': 'application/json' },
+})
+
+test('ticket/status matching binds exact identity and command and normalized held bounds without a clock', t => {
+  t.mock.method(Date, 'now', () => assert.fail('matching must not consult the client clock'))
+  const held = { id: 'ticket-1', command: 'journal only', not_before: 1000, expires_at: 1100 }
+  const value = snapshot({ status: 'revoked', revoked: true })
+  assert.equal(ticketMatchesStatus(held, value), true)
+  assert.equal(ticketMatchesStatus({
+    ...held, not_before: new Date(1000).toISOString(), expires_at: new Date(1100).toISOString(),
+  }, value), true)
+  for (const changed of [
+    null, { ...held, id: 'other-ticket' }, { ...held, command: 'journal only ' },
+    { ...held, not_before: 1001 }, { ...held, expires_at: 1101 },
+    ...['not_before', 'expires_at'].flatMap(field => {
+      const missing = { ...held }
+      delete missing[field]
+      return [missing, ...[null, undefined, '', 'invalid', {}, [], true, NaN, Infinity]
+        .map(boundary => ({ ...held, [field]: boundary }))]
+    }),
+  ]) {
+    assert.equal(ticketMatchesStatus(changed, value), false)
+    for (const uncertain of [false, true]) {
+      assert.deepEqual(reconcileTicketStatus(changed, uncertain, [], value), {
+        ticket: changed, revocationUncertain: uncertain, commands: [],
+      })
+    }
+  }
+  assert.equal(ticketMatchesStatus(held, null), false)
 })
 
 test('manual status lookup makes exactly one authenticated GET and accepts all consistent states', async () => {
