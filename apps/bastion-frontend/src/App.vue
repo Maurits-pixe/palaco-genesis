@@ -1,127 +1,12 @@
 <script setup>
-import { computed, onUnmounted, ref, watch } from 'vue'
-import { beginSubmission, commandLength, commitCommand, getTicketStatus, issueTicket, listCommands, MAX_COMMAND_LENGTH, mergeCommands, reconcileTicketStatus, revokeTicket, ticketUsable, timestamp } from './api.js'
-import { createRealtime } from './realtime.js'
+import { commandLength, MAX_COMMAND_LENGTH, timestamp } from './api.js'
+import { realtimeLabels, useSession } from './useSession.js'
 
-const token = ref('')
-const command = ref('')
-const ttlMs = ref(10000)
-const ticket = ref(null)
-const revocationUncertain = ref(false)
-const commands = ref([])
-const hasLoaded = ref(false)
-const busy = ref('')
-const message = ref('')
-const error = ref('')
-const lookupId = ref('')
-const outcome = ref(null)
-const lastSubmissionId = ref('')
-let session = 0
-const realtimeStatus = ref('disconnected')
-const realtime = createRealtime({
-  onEntry: (entry) => { commands.value = mergeCommands(commands.value, entry) },
-  onStatus: (status) => { realtimeStatus.value = status },
-  onReset: () => { commands.value = []; hasLoaded.value = false },
-})
-const realtimeLabels = {
-  disconnected: 'Niet verbonden. Ontvangst van nieuwe records staat uit.',
-  connecting: 'Verbinding maken…',
-  connected: 'Verbonden. Nieuwe logboekrecords verschijnen automatisch.',
-  error: 'Verbinding mislukt. Controleer token en lokale service; verbind handmatig opnieuw.',
-}
-const now = ref(Date.now())
-const clock = setInterval(() => { now.value = Date.now() }, 100)
-onUnmounted(() => { clearInterval(clock); realtime.disconnect() })
-const canCommit = computed(() => !revocationUncertain.value && ticketUsable(ticket.value, command.value, now.value))
-const remaining = computed(() => ticket.value ? Math.max(0, Math.ceil((timestamp(ticket.value.expires_at) - now.value) / 1000)) : 0)
-
-watch([command, ttlMs], () => {
-  if (!revocationUncertain.value) ticket.value = null
-}, { flush: 'sync' })
-function resetSession() {
-  session++
-  busy.value = ''
-  realtime.disconnect()
-  ticket.value = null
-  revocationUncertain.value = false
-  commands.value = []
-  hasLoaded.value = false
-  command.value = ''
-  message.value = ''
-  error.value = ''
-  lookupId.value = ''
-  outcome.value = null
-  lastSubmissionId.value = ''
-}
-watch(token, resetSession, { flush: 'sync' })
-
-async function perform(action) {
-  if (busy.value) return
-  const started = session
-  busy.value = action
-  error.value = ''
-  message.value = ''
-  try {
-    if (action === 'ticket') {
-      if (revocationUncertain.value) return
-      ticket.value = null
-      const issued = await issueTicket(command.value, Number(ttlMs.value), token.value)
-      if (started !== session) return
-      ticket.value = issued
-      now.value = Date.now()
-      message.value = 'Ticket ontvangen. Bevestig het commando in een aparte stap.'
-    } else if (action === 'revoke') {
-      // Een onzekere intrekking blokkeert nieuwe toestemming tot bevestiging.
-      revocationUncertain.value = true
-      await revokeTicket(ticket.value, token.value)
-      if (started !== session) return
-      ticket.value = null
-      revocationUncertain.value = false
-      message.value = "Ticket door de server ingetrokken. Eerder vastgelegde commando's blijven behouden."
-    } else if (action === 'commit') {
-      if (!canCommit.value) return
-      const currentTicket = ticket.value
-      // Een onzekere netwerkuitkomst mag nooit een automatische tweede inzending veroorzaken.
-      const submission = beginSubmission(currentTicket)
-      ticket.value = submission.ticket
-      lastSubmissionId.value = submission.lastSubmissionId
-      lookupId.value = submission.lastSubmissionId
-      outcome.value = null
-      revocationUncertain.value = false
-      const committed = await commitCommand(currentTicket, command.value, token.value)
-      if (started !== session) return
-      commands.value = mergeCommands(commands.value, committed)
-      message.value = 'Commando vastgelegd in het logboek; er is niets uitgevoerd.'
-    } else if (action === 'status') {
-      outcome.value = null
-      const checked = await getTicketStatus(lookupId.value, token.value)
-      if (started !== session) return
-      outcome.value = checked
-      const reconciled = reconcileTicketStatus(ticket.value, revocationUncertain.value, commands.value, checked)
-      ticket.value = reconciled.ticket
-      revocationUncertain.value = reconciled.revocationUncertain
-      message.value = 'Ticketstatus opgehaald. Dit is een momentopname, geen nieuwe toestemming.'
-    } else {
-      commands.value = []
-      hasLoaded.value = false
-      const loaded = await listCommands(token.value)
-      if (started !== session) return
-      // Behoud ook events die tijdens het ophalen zijn ontvangen.
-      commands.value = [...commands.value].reverse().reduce(mergeCommands, loaded)
-      hasLoaded.value = true
-      message.value = 'Logboek bijgewerkt.'
-    }
-  } catch (failure) {
-    if (started === session) error.value = failure.message
-  } finally {
-    if (started === session) busy.value = ''
-  }
-}
-
-function clearSession() {
-  if (token.value) token.value = ''
-  else resetSession()
-}
+const {
+  token, command, ttlMs, ticket, revocationUncertain, commands, hasLoaded, busy,
+  message, error, lookupId, outcome, lastSubmissionId, realtimeStatus,
+  canCommit, remaining, realtime, perform, clearSession,
+} = useSession()
 
 function date(value) {
   return new Date(timestamp(value)).toLocaleString('nl-NL')
@@ -139,7 +24,10 @@ function date(value) {
       <label for="token">Toegangstoken</label>
       <input id="token" v-model="token" type="password" autocomplete="off" spellcheck="false" :disabled="!!busy" aria-describedby="token-help" />
       <p id="token-help" class="muted">Alleen in componentgeheugen; niet in opslag of een URL. Vernieuwen wist de sessie.</p>
-      <button class="secondary" :disabled="!!busy" @click="clearSession">Wis sessie</button>
+      <button class="secondary" @click="clearSession">Wis sessie</button>
+      <p class="muted">Wissen en afbreken zijn alleen lokaal: geen intrekking van servertickets of terugdraaien.
+        Een al verzonden wijziging kan nog worden voltooid. Wissen verwijdert ook lokale ID's:
+        kopieer het ticket-ID vóór het wissen om later handmatig de status op te zoeken. Dien nooit automatisch opnieuw in.</p>
     </section>
     <div role="status" aria-live="polite"><p v-if="busy" class="notice">Even wachten…</p><p v-if="message" class="notice">{{ message }}</p></div>
     <p v-if="error" role="alert" class="error">{{ error }} Bij een onzekere inzending: controleer handmatig het ticket-ID. Dien niet automatisch opnieuw in.</p>

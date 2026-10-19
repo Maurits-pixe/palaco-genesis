@@ -90,7 +90,7 @@ export function ticketUsable(ticket, command, now = Date.now()) {
     now >= timestamp(ticket.not_before) && now < timestamp(ticket.expires_at)
 }
 
-export async function request(path, { token, method = 'GET', body, fetcher = fetch, timeoutMs = 8000 }) {
+export async function request(path, { token, method = 'GET', body, fetcher = fetch, timeoutMs = 8000, signal }) {
   if (typeof token !== 'string' || !token.trim() || /[\r\n]/.test(token)) {
     throw new ApiError('Vul een geldig toegangstoken in.')
   }
@@ -98,9 +98,13 @@ export async function request(path, { token, method = 'GET', body, fetcher = fet
     throw new ApiError('Ongeldig serviceadres.')
   }
   const controller = new AbortController()
+  const abort = () => controller.abort(signal.reason)
+  signal?.addEventListener('abort', abort, { once: true })
+  if (signal?.aborted) abort()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   let response
   try {
+    controller.signal.throwIfAborted()
     response = await abortable(fetcher(path, {
       method,
       headers: {
@@ -131,17 +135,18 @@ export async function request(path, { token, method = 'GET', body, fetcher = fet
     throw new ApiError('Geen geldig antwoord. Controleer de lokale service en probeer opnieuw.')
   } finally {
     clearTimeout(timer)
+    signal?.removeEventListener('abort', abort)
   }
 }
 
-export async function issueTicket(command, ttlMs, token, fetcher) {
+export async function issueTicket(command, ttlMs, token, fetcher, signal) {
   if (typeof command !== 'string' || !command.trim() ||
       !Number.isInteger(ttlMs) || ttlMs < 1 || ttlMs > 60_000) {
     throw new ApiError('Vul een commando en een gehele geldigheidsduur van 1 t/m 60000 ms in.')
   }
   if (commandLength(command) > MAX_COMMAND_LENGTH) throw new ApiError('Een commando mag maximaal 1024 UTF-16-tekeneenheden bevatten.')
   const result = await request('/v1/tickets', {
-    token, method: 'POST', body: { command, ttl_ms: ttlMs }, fetcher,
+    token, method: 'POST', body: { command, ttl_ms: ttlMs }, fetcher, signal,
   })
   if (!validId(result?.id) || !Number.isFinite(timestamp(result?.not_before)) ||
       !Number.isFinite(timestamp(result?.expires_at)) ||
@@ -169,13 +174,13 @@ export function mergeCommands(current, incoming) {
   return [normalized, ...current.filter(({ id }) => id !== normalized.id)].slice(0, 100)
 }
 
-export async function commitCommand(ticket, command, token, fetcher) {
+export async function commitCommand(ticket, command, token, fetcher, signal) {
   if (!validId(ticket?.id) || !ticketUsable(ticket, command)) {
     throw new ApiError('Ticket niet geldig voor dit commando. Vraag een nieuw ticket aan.')
   }
   if (commandLength(command) > MAX_COMMAND_LENGTH) throw new ApiError('Een commando mag maximaal 1024 UTF-16-tekeneenheden bevatten.')
   const result = await request('/v1/commands', {
-    token, method: 'POST', body: { ticket_id: ticket.id, command }, fetcher,
+    token, method: 'POST', body: { ticket_id: ticket.id, command }, fetcher, signal,
   })
   if (!validCommand(result) || result.command !== command) {
     throw new ApiError('Onverwacht commandoantwoord van de service.')
@@ -183,20 +188,20 @@ export async function commitCommand(ticket, command, token, fetcher) {
   return { id: result.id, command: result.command, committed_at: result.committed_at }
 }
 
-export async function listCommands(token, fetcher) {
-  const result = await request('/v1/commands', { token, fetcher })
+export async function listCommands(token, fetcher, signal) {
+  const result = await request('/v1/commands', { token, fetcher, signal })
   if (!Array.isArray(result?.commands) || !result.commands.every(validCommand)) {
     throw new ApiError('Onverwacht logboekantwoord van de service.')
   }
   return result.commands.slice(0, 100).map(({ id, command, committed_at }) => ({ id, command, committed_at }))
 }
 
-export async function revokeTicket(ticket, token, fetcher) {
+export async function revokeTicket(ticket, token, fetcher, signal) {
   if (!validId(ticket?.id)) {
     throw new ApiError('Geen geldig ticket om in te trekken.')
   }
   const result = await request(`/v1/tickets/${ticket.id}`, {
-    token, method: 'DELETE', fetcher,
+    token, method: 'DELETE', fetcher, signal,
   })
   if (result?.revoked !== true) {
     throw new ApiError('Intrekking niet bevestigd door de service.')
@@ -225,9 +230,9 @@ export function validateTicketStatus(value, ticketId) {
   return value.status === expected ? value : null
 }
 
-export async function getTicketStatus(ticketId, token, fetcher) {
+export async function getTicketStatus(ticketId, token, fetcher, signal) {
   if (!validId(ticketId) || ticketId.length > 128) throw new ApiError('Vul een geldig ticket-ID in.')
-  const result = await request(`/v1/tickets/${ticketId}`, { token, fetcher })
+  const result = await request(`/v1/tickets/${ticketId}`, { token, fetcher, signal })
   const validated = validateTicketStatus(result, ticketId)
   if (!validated) throw new ApiError('Onverwacht ticketstatusantwoord van de service.')
   return validated

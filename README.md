@@ -122,6 +122,16 @@ Een statuscontrole dient nooit opnieuw een commando in. Een actieve status is
 slechts een momentopname, geen nieuwe toestemming. Alleen een bevestigde
 terminale status van hetzelfde ticket kan een onzekere intrekking lokaal
 afsluiten. Sessie wissen of herladen verwijdert de lokaal bewaarde ID's.
+**Wis sessie** blijft ook tijdens een lopend BASTION-verzoek beschikbaar:
+token, commando, tickets, statusresultaten en logboek verdwijnen direct uit
+de interface. De realtimeverbinding wordt verbroken en lopende HTTP-verzoeken
+worden lokaal geannuleerd. Vertraagde antwoorden herstellen de gewiste
+sessie niet. Dit trekt geen server-side ticket in en draait geen mutatie
+terug; een al verstuurd verzoek kan alsnog worden verwerkt.
+Kopieer het ticket-ID vóór het wissen als je een onzekere uitkomst later
+handmatig wilt controleren. Wissen verwijdert ook de lokale blokkering
+bij een onzekere intrekking, maar bewijst niet dat het ticket is ingetrokken.
+Dien een onzekere inzending niet automatisch opnieuw in.
 De BASTION-interface kan met hetzelfde token verbinden voor realtime-events;
 vernieuw het logboek na een verbindingsonderbreking.
 Voor HTTP-antwoorden accepteert de BASTION-interface alleen JSON-objecten
