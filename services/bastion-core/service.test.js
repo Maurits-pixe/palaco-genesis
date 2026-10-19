@@ -11,61 +11,161 @@ import { DatabaseSync } from 'node:sqlite';
 import { Worker } from 'node:worker_threads';
 import { io as client } from 'socket.io-client';
 import { createBastion, configFromEnv } from './service.js';
-import { getTicketStatus } from '../../apps/bastion-frontend/src/api.js';
+import {
+  issueTicket, commitCommand, revokeTicket, listCommands, getTicketStatus,
+} from '../../apps/bastion-frontend/src/api.js';
 
 const token = 'test-only-shared-operator-secret';
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-test('live client helper reconciles committed and subsequently revoked tickets over HTTP', async t => {
-  const runtimeToken = randomBytes(32).toString('hex');
-  const probe = createServer();
-  probe.listen(0, '127.0.0.1');
-  await once(probe, 'listening');
-  const port = probe.address().port;
-  await new Promise(resolve => probe.close(resolve));
-  const app = createBastion({ token: runtimeToken, port, dbPath: ':memory:' });
-  t.after(() => app.close());
-  await app.listen();
-  const base = `http://127.0.0.1:${app.port}`;
-  const fetcher = (path, options) => fetch(base + path, options);
-  const post = async (path, data) => {
-    const response = await fetcher(path, {
-      method: 'POST',
-      headers: { authorization: ['Bearer', runtimeToken].join(' '), 'content-type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    assert.equal(response.status, 201);
-    return response.json();
+async function frontendFixture(t) {
+  const f = await fixture(t, {}, randomBytes(32).toString('hex'));
+  // Both client preflight and server authorization use the fixture's fixed clock.
+  t.mock.method(Date, 'now', () => 1000);
+  return {
+    ...f,
+    token: f.config.token,
+    fetcher: (path, options) => fetch(f.base + path, options),
   };
+}
+
+test('live client helpers issue, commit, list and reconcile the same record over HTTP', async t => {
+  const { token: runtimeToken, fetcher } = await frontendFixture(t);
   const command = 'live helper integration journal record';
-  const issued = await post('/v1/tickets', { command, ttl_ms: 60000 });
-  const record = await post('/v1/commands', { ticket_id: issued.id, command });
+  const issued = await issueTicket(command, 60000, runtimeToken, fetcher);
+  assert.equal(issued.command, command);
+  assert.equal((await getTicketStatus(issued.id, runtimeToken, fetcher)).status, 'active');
+  const record = await commitCommand(issued, command, runtimeToken, fetcher);
+  assert.equal(record.command, command);
+  assert.deepEqual(await listCommands(runtimeToken, fetcher), [record]);
   const committed = await getTicketStatus(issued.id, runtimeToken, fetcher);
   assert.equal(committed.status, 'committed');
+  assert.equal(committed.id, issued.id);
+  assert.equal(committed.command, command);
   assert.equal(committed.revoked, false);
   assert.deepEqual(committed.record, record);
   assert.ok(committed.checked_at >= record.committed_at);
-  const revoked = await fetcher(`/v1/tickets/${issued.id}`, {
-    method: 'DELETE', headers: { authorization: ['Bearer', runtimeToken].join(' ') },
-  });
-  assert.equal(revoked.status, 200);
+  await revokeTicket(issued, runtimeToken, fetcher);
   const historical = await getTicketStatus(issued.id, runtimeToken, fetcher);
   assert.equal(historical.status, 'committed');
   assert.equal(historical.revoked, true);
   assert.deepEqual(historical.record, record);
+  assert.deepEqual(await listCommands(runtimeToken, fetcher), [record]);
+});
+
+test('live client reconciles a lost successful commit response without retrying the mutation', async t => {
+  const { token: runtimeToken, fetcher } = await frontendFixture(t);
+  const command = 'committed despite a lost response';
+  const issued = await issueTicket(command, 60000, runtimeToken, fetcher);
+  let commandPosts = 0;
+  const loseCommitResponse = async (path, options) => {
+    const response = await fetcher(path, options);
+    if (path === '/v1/commands' && options.method === 'POST') {
+      commandPosts++;
+      assert.equal(response.status, 201);
+      await response.body.cancel();
+      throw new TypeError('Network connection lost');
+    }
+    return response;
+  };
+  await assert.rejects(
+    commitCommand(issued, command, runtimeToken, loseCommitResponse),
+    /Geen geldig antwoord/,
+  );
+  const outcome = await getTicketStatus(issued.id, runtimeToken, loseCommitResponse);
+  assert.equal(outcome.status, 'committed');
+  assert.equal(outcome.revoked, false);
+  assert.equal(outcome.record.command, command);
+  const records = await listCommands(runtimeToken, loseCommitResponse);
+  assert.equal(records.length, 1);
+  assert.deepEqual(records, [outcome.record]);
+  assert.equal(commandPosts, 1);
+});
+
+test('live client revokes an unused ticket and the server rejects its commit without a record', async t => {
+  const { token: runtimeToken, fetcher } = await frontendFixture(t);
+  const command = 'must not enter the journal';
+  const issued = await issueTicket(command, 60000, runtimeToken, fetcher);
+  await revokeTicket(issued, runtimeToken, fetcher);
+  const outcome = await getTicketStatus(issued.id, runtimeToken, fetcher);
+  assert.equal(outcome.status, 'revoked');
+  assert.equal(outcome.revoked, true);
+  assert.equal(outcome.record, null);
+  let commandPosts = 0;
+  await assert.rejects(commitCommand(issued, command, runtimeToken, async (path, options) => {
+    commandPosts++;
+    assert.equal(path, '/v1/commands');
+    assert.equal(options.method, 'POST');
+    const response = await fetcher(path, options);
+    assert.equal(response.status, 403);
+    return response;
+  }), /Geen toestemming/);
+  assert.equal(commandPosts, 1);
+  assert.deepEqual(await listCommands(runtimeToken, fetcher), []);
+  assert.deepEqual(await getTicketStatus(issued.id, runtimeToken, fetcher), outcome);
+});
+
+test('live client reads the newest 100 maximum-length escaped journal records below 1 MiB', async t => {
+  const { token: runtimeToken, fetcher } = await frontendFixture(t);
+  const oldest = await issueTicket('outside the newest 100', 60000, runtimeToken, fetcher);
+  const evicted = await commitCommand(oldest, oldest.command, runtimeToken, fetcher);
+  const committed = [];
+  for (let i = 0; i < 100; i++) {
+    const command = `x${String(i).padStart(2, '0')}${'\u0001'.repeat(1021)}`;
+    assert.equal(command.length, 1024);
+    const issued = await issueTicket(command, 60000, runtimeToken, fetcher);
+    committed.push(await commitCommand(issued, command, runtimeToken, fetcher));
+  }
+  let payload;
+  const records = await listCommands(runtimeToken, async (path, options) => {
+    const response = await fetcher(path, options);
+    payload = new Uint8Array(await response.clone().arrayBuffer());
+    return response;
+  });
+  assert.ok(payload.byteLength > 512 * 1024);
+  assert.ok(payload.byteLength < 1024 * 1024);
+  assert.ok(new TextDecoder().decode(payload).includes('\\u0001'));
+  assert.equal(records.length, 100);
+  assert.equal(new Set(records.map(record => record.id)).size, 100);
+  assert.equal(records.some(record => record.id === evicted.id), false);
+  // Equal timestamps deliberately exercise newest-by-sequence ordering, not timing.
+  assert.deepEqual(records, committed.toReversed());
+});
+
+test('live client helpers reject invalid authentication before mutating service state', async t => {
+  const f = await frontendFixture(t);
+  const issued = await issueTicket('authenticated command', 60000, f.token, f.fetcher);
+  const invalidToken = randomBytes(32).toString('hex');
+  const before = Object.fromEntries(['tickets', 'commands', 'audit', 'clock_state'].map(table =>
+    [table, f.db.prepare(`SELECT * FROM ${table}`).all()]));
   let calls = 0;
-  await assert.rejects(getTicketStatus(issued.id, 'invalid-token', async (...args) => {
+  const unauthorized = async (...args) => {
     calls++;
-    const response = await fetcher(...args);
+    const response = await f.fetcher(...args);
     assert.equal(response.status, 401);
     assert.equal(response.headers.get('cache-control'), 'no-store');
     return response;
-  }), failure => {
-    assert.equal(failure.message.includes(runtimeToken), false);
-    assert.match(failure.message, /Toegang geweigerd/);
-    return true;
-  });
-  assert.equal(calls, 1);
+  };
+  for (const operation of [
+    () => issueTicket('unauthorized issuance', 60000, invalidToken, unauthorized),
+    () => commitCommand(issued, issued.command, invalidToken, unauthorized),
+    () => revokeTicket(issued, invalidToken, unauthorized),
+    () => listCommands(invalidToken, unauthorized),
+    () => getTicketStatus(issued.id, invalidToken, unauthorized),
+  ]) {
+    await assert.rejects(operation, failure => {
+      assert.match(failure.message, /Toegang geweigerd/);
+      assert.equal(failure.message.includes(f.token), false);
+      assert.equal(failure.message.includes(invalidToken), false);
+      return true;
+    });
+    for (const [table, rows] of Object.entries(before)) {
+      assert.deepEqual(f.db.prepare(`SELECT * FROM ${table}`).all(), rows);
+    }
+  }
+  assert.equal(calls, 5);
+  assert.equal((await getTicketStatus(issued.id, f.token, f.fetcher)).status, 'active');
+  assert.deepEqual(await listCommands(f.token, f.fetcher), []);
 });
 
 test('ticket lookup uses authoritative half-open boundaries and status precedence', async t => {
@@ -211,7 +311,7 @@ test('lookup reads time under serialization and handles storage failures without
   assert.equal((await f.request(`/v1/tickets/${issued.id}`)).status, 503);
 });
 
-async function fixture(t, options = {}) {
+async function fixture(t, options = {}, authToken = token) {
   const dir = mkdtempSync(join(process.cwd(), '.bastion-test-'));
   const dbPath = join(dir, 'test.db');
   const probe = createServer();
@@ -221,7 +321,7 @@ async function fixture(t, options = {}) {
   await new Promise(resolve => probe.close(resolve));
   let now = 1000;
   let fault = () => {};
-  const config = { token, port, dbPath };
+  const config = { token: authToken, port, dbPath };
   const createApp = () => createBastion(config, { clock: () => now, fault: stage => fault(stage), ...options });
   let app = createApp();
   await app.listen();
@@ -232,7 +332,7 @@ async function fixture(t, options = {}) {
     rmSync(dir, { recursive: true, force: true });
   });
   let base = `http://127.0.0.1:${app.port}`;
-  const request = async (path, { method = 'GET', data, auth = token, raw, headers = {} } = {}) => {
+  const request = async (path, { method = 'GET', data, auth = authToken, raw, headers = {} } = {}) => {
     const response = await fetch(base + path, {
       method,
       headers: {
@@ -252,7 +352,7 @@ async function fixture(t, options = {}) {
   const commit = (id, command = 'journal only') => request('/v1/commands', {
     method: 'POST', data: { ticket_id: id, command },
   });
-  const socket = async (auth = { token }, socketOptions = {}) => {
+  const socket = async (auth = { token: authToken }, socketOptions = {}) => {
     const connection = client(base, {
       auth, autoConnect: false, reconnection: false, timeout: 1500, ...socketOptions,
     });

@@ -276,6 +276,14 @@ for project in services/bastion-core apps/neo-launcher apps/aether-frontend apps
 done
 ```
 
+De BASTION-servicetests controleren ook de frontend-APIhelpers tegen een
+echte tijdelijke lokale HTTP-service: tickets aanvragen, vastleggen,
+intrekken, status opvragen en het logboek lezen. Ze testen ook een verloren
+commitantwoord zonder herinzending en een volledig logboek van 100 maximaal
+gevulde records. Hiervoor zijn alleen de dependencies van `bastion-core`
+nodig; de frontend-APIhelpers gebruiken geen Vue. Dit zijn geen browser-
+of Vite-proxytests en geen bewijs van productiegeschiktheid.
+
 De bestaande PALACO CI-workflow controleert ook deze service en Node-projecten.
 
 ### Werken in Visual Studio Code
