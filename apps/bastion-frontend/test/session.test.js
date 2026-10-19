@@ -64,6 +64,7 @@ function prepare(state, action) {
   state.outcome.value = snapshot()
   state.lastSubmissionId.value = 'retained-id'
   state.commands.value = [record()]
+  state.search.value = 'journal'
   state.hasLoaded.value = true
   state.message.value = 'previous message'
   state.error.value = 'previous error'
@@ -71,13 +72,14 @@ function prepare(state, action) {
 }
 
 function assertEmpty(state, token = '') {
-  for (const key of ['command', 'busy', 'message', 'error', 'lookupId', 'lastSubmissionId']) {
+  for (const key of ['command', 'search', 'busy', 'message', 'error', 'lookupId', 'lastSubmissionId']) {
     assert.equal(state[key].value, '', key)
   }
   assert.equal(state.token.value, token)
   assert.equal(state.ticket.value, null)
   assert.equal(state.revocationUncertain.value, false)
   assert.deepEqual(state.commands.value, [])
+  assert.deepEqual(state.filteredCommands.value, [])
   assert.equal(state.hasLoaded.value, false)
   assert.equal(state.outcome.value, null)
   assert.equal(state.realtimeStatus.value, 'disconnected')
@@ -373,4 +375,113 @@ test('App uses the production composable and always enables clear with the local
   assert.match(app, /al verzonden wijziging kan nog worden voltooid/)
   assert.match(app, /kopieer het ticket-ID vóór het wissen/)
   assert.match(app, /Dien nooit automatisch opnieuw in/)
+})
+
+test('local search uses trimmed case-insensitive literal command text OR record ID without mutations or requests', async t => {
+  const { state, calls, sockets } = fixture(t)
+  const loaded = Object.freeze([
+    Object.freeze({ ...record('record-A'), command: 'ÉCHO ΚαΛΗΜΈΡΑ 🙂 [a.*]+? (x) $^|\\' }),
+    Object.freeze({ ...record('MiXeD-ID-42'), command: 'different text' }),
+    Object.freeze({ ...record('record-C'), command: 'echo another' }),
+  ])
+  state.commands.value = loaded
+  const original = state.commands.value
+  for (const [query, ids] of [
+    [' écHo ', ['record-A']],
+    ['καλημέρα', ['record-A']],
+    ['🙂', ['record-A']],
+    ['[a.*]+?', ['record-A']],
+    ['(x) $^|\\', ['record-A']],
+    ['.*', ['record-A']],
+    ['[', ['record-A']],
+    ['  mixed-id-4 \n', ['MiXeD-ID-42']],
+    ['record-', ['record-A', 'record-C']],
+    ['echo', ['record-C']],
+    ['absent', []],
+    ['', ['record-A', 'MiXeD-ID-42', 'record-C']],
+    [' \t\n ', ['record-A', 'MiXeD-ID-42', 'record-C']],
+  ]) {
+    state.search.value = query
+    assert.deepEqual(state.filteredCommands.value.map(entry => entry.id), ids, query)
+    assert.strictEqual(state.commands.value, original)
+    assert.deepEqual(state.commands.value, loaded)
+    assert.equal(state.search.value, query)
+  }
+  await Promise.resolve()
+  assert.deepEqual(calls, [])
+  assert.deepEqual(sockets, [])
+})
+
+test('search reacts to list/realtime merges and eviction while retaining the query and loaded ordering', async t => {
+  const { state, calls, sockets } = fixture(t)
+  state.search.value = '  MATCH  '
+  state.realtime.connect(state.token.value)
+  const socket = sockets[0]
+  const loading = state.perform('list')
+  socket.handlers['command:committed']({ ...record('during'), command: 'match during refresh' })
+  assert.deepEqual(state.filteredCommands.value.map(entry => entry.id), ['during'])
+  const loaded = Array.from({ length: 100 }, (_, i) => ({
+    ...record(`loaded-${i}`), command: i % 2 ? 'other' : 'match',
+  }))
+  calls[0].resolve(loaded)
+  await loading
+  assert.equal(state.commands.value.length, 100)
+  assert.deepEqual(state.commands.value.map(entry => entry.id), ['during', ...loaded.slice(0, 99).map(entry => entry.id)])
+  assert.deepEqual(state.filteredCommands.value.map(entry => entry.id),
+    ['during', ...loaded.slice(0, 99).filter(entry => entry.command === 'match').map(entry => entry.id)])
+  socket.handlers['command:committed']({ ...record('new'), command: 'MATCH new' })
+  assert.equal(state.commands.value.length, 100)
+  assert.equal(state.commands.value.some(entry => entry.id === 'loaded-98'), false)
+  assert.equal(state.filteredCommands.value[0].id, 'new')
+  socket.handlers['command:committed']({ ...record('new'), command: 'no longer relevant' })
+  assert.equal(state.filteredCommands.value.some(entry => entry.id === 'new'), false)
+  assert.equal(state.search.value, '  MATCH  ')
+  const refreshing = state.perform('list')
+  assert.deepEqual(state.filteredCommands.value, [])
+  calls[1].resolve([{ ...record('replacement'), command: 'match replacement' }])
+  await refreshing
+  assert.deepEqual(state.filteredCommands.value.map(entry => entry.id), ['replacement'])
+  assert.equal(state.search.value, '  MATCH  ')
+  assert.equal(calls.length, 2)
+  assert.equal(sockets.length, 1)
+})
+
+test('search never includes historical ticket status or changes that separate panel', async t => {
+  const { state, calls } = fixture(t)
+  state.commands.value = [record()]
+  state.search.value = 'historical'
+  state.lookupId.value = 'ticket-1'
+  const checking = state.perform('status')
+  const historical = snapshot({ status: 'committed', command: 'historical', record: { ...record('historical-record'), command: 'historical' } })
+  calls[0].resolve(historical)
+  await checking
+  assert.deepEqual(state.filteredCommands.value, [])
+  assert.deepEqual(state.commands.value, [record()])
+  state.search.value = 'ticket-1'
+  assert.deepEqual(state.filteredCommands.value, [])
+  state.search.value = ''
+  assert.deepEqual(state.filteredCommands.value, [record()])
+  assert.deepEqual(state.outcome.value, historical)
+  assert.equal(state.lookupId.value, 'ticket-1')
+  assert.equal(calls.length, 1)
+})
+
+test('journal UI wires local search, accessible controls, counts, distinct empty states and escaped records', () => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  assert.match(app, /commands, search, filteredCommands[\s\S]*} = useSession\(\)/)
+  assert.match(app, /<label for="journal-search">Zoek in geladen logboek<\/label>/)
+  const input = app.match(/<input id="journal-search"[^>]*>/)?.[0]
+  assert.ok(input)
+  for (const attribute of ['v-model="search"', 'type="search"', 'autocomplete="off"', 'spellcheck="false"', 'maxlength="1024"', 'aria-describedby="journal-search-help"']) {
+    assert.ok(input.includes(attribute), attribute)
+  }
+  assert.match(app, /<button type="button"[^>]*@click="search = ''">Wis zoekopdracht<\/button>/)
+  assert.match(app, /<p role="status" aria-live="polite">{{ filteredCommands.length }} van {{ commands.length }} geladen records<\/p>/)
+  assert.match(app, /v-if="!commands.length"[^>]*>{{ hasLoaded \? 'Het logboek is leeg.' : 'Nog geen records geladen.' }}/)
+  assert.match(app, /v-else-if="!filteredCommands.length"[^>]*>Geen geladen records gevonden/)
+  assert.match(app, /v-for="entry in filteredCommands" :key="entry.id"><pre>{{ entry.command }}<\/pre>/)
+  assert.doesNotMatch(app, /v-html|localStorage|sessionStorage|URLSearchParams/)
+  assert.match(app, /maximaal 100 lokaal geladen records/)
+  assert.match(app, /Niet in de hele database of ticket-ID's/)
+  assert.match(app, /alleen in sessiegeheugen/)
 })

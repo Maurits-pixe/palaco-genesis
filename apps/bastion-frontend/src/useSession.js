@@ -20,6 +20,12 @@ export function useSession({
   const ticket = ref(null)
   const revocationUncertain = ref(false)
   const commands = ref([])
+  const search = ref('')
+  const filteredCommands = computed(() => {
+    const query = search.value.trim().toLowerCase()
+    return commands.value.filter(entry =>
+      entry.command.toLowerCase().includes(query) || entry.id.toLowerCase().includes(query))
+  })
   const hasLoaded = ref(false)
   const busy = ref('')
   const message = ref('')
@@ -88,6 +94,7 @@ export function useSession({
     commands.value = []
     hasLoaded.value = false
     command.value = ''
+    search.value = ''
     ttlMs.value = 10000
     message.value = ''
     error.value = ''
@@ -179,7 +186,7 @@ export function useSession({
   }
 
   return {
-    token, command, ttlMs, ticket, revocationUncertain, commands, hasLoaded, busy,
+    token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, busy,
     message, error, lookupId, outcome, lastSubmissionId, realtimeStatus, now,
     canCommit, remaining, realtime, perform, clearSession,
   }

@@ -140,6 +140,15 @@ bij een onzekere intrekking, maar bewijst niet dat het ticket is ingetrokken.
 Dien een onzekere inzending niet automatisch opnieuw in.
 De BASTION-interface kan met hetzelfde token verbinden voor realtime-events;
 vernieuw het logboek na een verbindingsonderbreking.
+Met **Zoek in geladen logboek** filter je lokaal op commandotekst of
+record-ID, zonder onderscheid tussen hoofdletters en kleine letters.
+De zoektekst is letterlijk, geen reguliere expressie; spaties aan begin
+en einde worden genegeerd. De teller toont zichtbare versus geladen records.
+Alleen de maximaal 100 momenteel geladen records worden doorzocht, niet
+de volledige database of ticket-ID's. Het filter verandert de records en
+hun volgorde niet en blijft actief bij vernieuwen en realtime-updates.
+Zoeken veroorzaakt geen extra API-verzoeken. De zoektekst blijft uitsluitend
+in sessiegeheugen en verdwijnt bij sessiewissen, tokenwijziging of herladen.
 Voor HTTP-antwoorden accepteert de BASTION-interface alleen JSON-objecten
 met `application/json` en maximaal 1 MiB antwoorddata, onafhankelijk van
 `Content-Length`. Dat biedt ruimte voor 100 logboekrecords met maximaal
