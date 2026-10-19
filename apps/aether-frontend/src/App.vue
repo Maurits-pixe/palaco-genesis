@@ -44,14 +44,16 @@ const { token, plaintext, recordId, lastCreatedId, result, busy, message, error,
         </div>
         <form @submit.prevent="perform('read')">
           <label for="record-id">Record-ID</label>
-          <input id="record-id" v-model="recordId" required maxlength="200" :disabled="!!busy" autocomplete="off" spellcheck="false" />
+          <input id="record-id" v-model="recordId" required maxlength="200" :disabled="!!busy" autocomplete="off" spellcheck="false" aria-describedby="record-id-help" />
+          <p id="record-id-help" class="muted">Een ander record-ID wist alleen het lokale leesresultaat en stopt lokaal wachten.
+            Verwijdert niets uit de database; haalt niet automatisch een record op.</p>
           <button :disabled="!!busy || !token.trim() || !recordId.trim()">Record ophalen</button>
         </form>
         <button type="button" class="secondary" :disabled="busy === 'create' || (!result && busy !== 'read')" aria-describedby="clear-read-help" @click="clearReadResult">Wis gelezen inhoud</button>
         <p id="clear-read-help" class="muted">Wist alleen het lokale leesresultaat en stopt lokaal wachten op een leesverzoek.
           Verwijdert niets uit de database en garandeert geen veilige geheugenwissing.
           Haal het record opnieuw op om de inhoud weer te bekijken. Token, record-ID's en niet-opgeslagen tekst blijven behouden.</p>
-        <div v-if="result" class="result"><h3>Leesbare inhoud</h3><pre>{{ result.plaintext }}</pre></div>
+        <div v-if="result" class="result"><h3>Leesbare inhoud</h3><p>Record-ID: {{ result.id }}</p><pre>{{ result.plaintext }}</pre></div>
       </section>
     </div>
     <footer>API: 127.0.0.1:8787 · Start met <code>npm run dev</code> op 127.0.0.1:5174.

@@ -102,6 +102,12 @@ opslag blijft eventueel het vorige bevestigde ID staan. Een ontbrekend
 serverantwoord kan hiermee niet worden gereconstrueerd.
 Het bewaarde ID staat alleen in sessiegeheugen en verdwijnt bij
 tokenwijziging, sessiewissen of herladen.
+Bij gelezen inhoud staat het ID uit het ontvangen record. Voer je een ander
+record-ID in, dan verdwijnen de vorige gelezen inhoud en leesmelding en wordt
+een eventueel lopend leesverzoek lokaal geannuleerd. Alleen omringende spaties
+wijzigen telt niet als een ander ID. Er wordt niets automatisch opgehaald of
+uit de database verwijderd; token, invoertekst en laatst bevestigd opgeslagen
+ID blijven behouden.
 Met **Wis gelezen inhoud** verwijder je alleen het leesresultaat en de
 bijbehorende melding; token, record-ID's en nog niet opgeslagen invoertekst
 blijven behouden. Een lopend leesverzoek wordt lokaal geannuleerd en zijn

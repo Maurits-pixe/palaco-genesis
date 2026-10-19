@@ -11,11 +11,13 @@ export function useRecordSession({ create = createRecord, read = readRecord } = 
   const message = ref('')
   const error = ref('')
   let activeRequest = null
+  let feedbackAction = ''
   let disposed = false
 
   function invalidate() {
     const previous = activeRequest
     activeRequest = null
+    feedbackAction = ''
     busy.value = ''
     plaintext.value = ''
     recordId.value = ''
@@ -26,7 +28,11 @@ export function useRecordSession({ create = createRecord, read = readRecord } = 
     previous?.abort()
   }
 
-  const stopWatching = watch(token, invalidate, { flush: 'sync' })
+  const stopWatchingToken = watch(token, invalidate, { flush: 'sync' })
+  const stopWatchingId = watch(recordId, (id, previousId) => {
+    if (disposed || busy.value === 'create' || id.trim() === previousId.trim()) return
+    if (result.value || busy.value === 'read' || feedbackAction === 'read') clearReadResult()
+  }, { flush: 'sync' })
 
   function clearSession() {
     invalidate()
@@ -37,6 +43,7 @@ export function useRecordSession({ create = createRecord, read = readRecord } = 
     if (disposed || busy.value === 'create') return
     const previous = activeRequest
     activeRequest = null
+    feedbackAction = ''
     busy.value = ''
     result.value = null
     message.value = ''
@@ -46,7 +53,8 @@ export function useRecordSession({ create = createRecord, read = readRecord } = 
 
   function dispose() {
     disposed = true
-    stopWatching()
+    stopWatchingToken()
+    stopWatchingId()
     clearSession()
   }
 
@@ -56,6 +64,7 @@ export function useRecordSession({ create = createRecord, read = readRecord } = 
     if (disposed || busy.value) return
     const controller = new AbortController()
     activeRequest = controller
+    feedbackAction = action
     const isCurrent = () => !disposed && activeRequest === controller
     busy.value = action
     result.value = null
