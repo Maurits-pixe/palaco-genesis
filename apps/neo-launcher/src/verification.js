@@ -170,11 +170,16 @@ export async function verifyModule(module, fetcher = fetch, timeoutMs = 5000, si
   }
 }
 
+function isEpochMilliseconds(value) {
+  return Number.isSafeInteger(value) && value >= 0 && value <= 8_640_000_000_000_000
+}
+
 export function launchUrl(module, verification, now = Date.now()) {
+  if (!isEpochMilliseconds(now) || !isEpochMilliseconds(verification?.verifiedAt)) return null
   const age = now - verification?.verifiedAt
   return trustedModule(module) && isAllowedOrigin(module.origin) &&
     verification?.status === 'verified' && verification.moduleId === module.id &&
-    verification.health === 'ok' && Number.isFinite(verification.verifiedAt) &&
+    verification.health === 'ok' &&
     age >= 0 && age < MAX_AGE_MS
     ? module.origin : null
 }

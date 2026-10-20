@@ -98,6 +98,11 @@ een ongeldig antwoord of een timeout blijft de link uitgeschakeld. De controle
 is maximaal 60 seconden bruikbaar en is een momentopname, geen doorlopende
 bewaking of garantie dat de frontend bereikbaar is. Een nieuwe controle
 vervangt de vorige goedkeuring; NEO vraagt hiervoor geen servicetokens.
+Zowel het verificatietijdstip als de lokale klokwaarde moeten veilige,
+niet-negatieve gehele epochmilliseconden binnen het JavaScript-datumbereik
+zijn. Ongeldige tijdwaarden activeren geen startlink en tellen niet mee in
+het moduleoverzicht. Een verificatie uit de toekomst of van 60 seconden of
+ouder is evenmin bruikbaar; deze controle start geen automatische herhaling.
 Voer het bijbehorende servicetoken in de betreffende UI in; de UI bewaart het
 niet in browseropslag. AETHER versleutelt een tekstrecord en levert een ID
 waarmee je het kunt teruglezen. Het laatst **bevestigd opgeslagen** record-ID

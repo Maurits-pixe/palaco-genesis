@@ -178,6 +178,64 @@ test('clock summary uses the exact launch gate without extending verification ti
   }
 })
 
+test('an initially undefined scheduler clock is stored as null for UI and count gates', (t) => {
+  t.mock.method(Date, 'now', () => 100_000)
+  const scope = effectScope()
+  t.after(() => scope.stop())
+  const model = scope.run(() => useModuleVerification({
+    getNow: () => undefined,
+    schedule: () => 0,
+    unschedule: () => {},
+  }))
+  model.states.value.aether = evidence(aether, 100_000)
+  assert.equal(model.now.value, null)
+  assert.equal(model.launchableCount.value, 0)
+  assert.equal(launchUrl(aether, model.states.value.aether, model.now.value), null)
+})
+
+test('invalid scheduler clocks fail closed at completion and on ticks without automatic verification', async (t) => {
+  t.mock.method(Date, 'now', () => 100_000)
+  for (const invalid of [
+    undefined, null, -1, 100_000.5, Number.MAX_SAFE_INTEGER + 1,
+    8_640_000_000_000_001, '100000', NaN, Infinity, -Infinity,
+  ]) {
+    const { model, pending, calls, setTime, tick } = setup(t)
+    const batch = model.verifyAll()
+    setTime(invalid)
+    for (const request of pending) request.resolve(evidence(request.module, 100_000))
+    await batch
+    assert.equal(model.now.value, invalid ?? null)
+    assert.equal(model.launchableCount.value, 0)
+    for (const [time, expected] of [
+      [100_000, 2], [invalid, 0], [159_999, 2], [160_000, 0], [99_999, 0],
+    ]) {
+      setTime(time)
+      tick()
+      assert.equal(model.now.value, time ?? null)
+      assert.equal(model.launchableCount.value, expected)
+      for (const module of TRUSTED_MODULES) {
+        assert.deepEqual(model.states.value[module.id], evidence(module, 100_000))
+        assert.equal(Boolean(launchUrl(module, model.states.value[module.id], model.now.value)), expected === 2)
+      }
+    }
+    assert.deepEqual(calls, TRUSTED_MODULES)
+  }
+})
+
+test('scheduler clock normalization preserves epoch zero', async (t) => {
+  const { model, pending, calls, setTime, tick } = setup(t)
+  setTime(0)
+  const batch = model.verifyAll()
+  for (const request of pending) request.resolve(evidence(request.module, 0))
+  await batch
+  assert.equal(model.now.value, 0)
+  assert.equal(model.launchableCount.value, 2)
+  tick()
+  assert.equal(model.now.value, 0)
+  assert.equal(model.launchableCount.value, 2)
+  assert.deepEqual(calls, TRUSTED_MODULES)
+})
+
 test('scope disposal clears the timer and ignores late successes, failures, and new requests', async (t) => {
   const { model, calls, signals, pending, scope, timer, cleared, setTime, tick } = setup(t)
   const batch = model.verifyAll()

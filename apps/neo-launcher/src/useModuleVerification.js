@@ -9,11 +9,12 @@ export function useModuleVerification({
   eventTarget = globalThis.window,
 } = {}) {
   const states = ref(Object.fromEntries(TRUSTED_MODULES.map(({ id }) => [id, { status: 'idle' }])))
-  const now = ref(getNow())
+  const readNow = () => getNow() ?? null
+  const now = ref(readNow())
   const attempts = new Map()
   let disposed = false
   const clock = schedule(() => {
-    if (!disposed) now.value = getNow()
+    if (!disposed) now.value = readNow()
   }, 500)
   eventTarget?.addEventListener('pagehide', reset)
   onScopeDispose(() => {
@@ -26,7 +27,7 @@ export function useModuleVerification({
   const isVerifying = computed(() =>
     TRUSTED_MODULES.some(({ id }) => states.value[id].status === 'verifying'))
   const launchableCount = computed(() =>
-    TRUSTED_MODULES.filter((module) => launchUrl(module, states.value[module.id], now.value)).length)
+    TRUSTED_MODULES.filter((module) => launchUrl(module, states.value[module.id], now.value ?? null)).length)
 
   function abortAttempts() {
     const controllers = [...attempts.values()]
@@ -54,7 +55,7 @@ export function useModuleVerification({
       const result = await verifier(module, undefined, undefined, controller.signal)
       if (isCurrent()) {
         states.value[module.id] = result
-        now.value = getNow()
+        now.value = readNow()
       }
     } catch (error) {
       if (isCurrent()) {

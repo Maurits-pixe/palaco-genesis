@@ -91,6 +91,54 @@ test('links fail closed while pending, failed, expired, or timestamp is in the f
   assert.equal(launchUrl(aether, evidence(aether, now - MAX_AGE_MS + 1), now), aether.origin)
 })
 
+test('launch times must both be nonnegative safe Date-representable epoch integers', () => {
+  for (const invalid of [
+    -1, 0.5, Number.MAX_SAFE_INTEGER + 1, 8_640_000_000_000_001,
+    '0', null, NaN, Infinity, -Infinity, false, 0n, Symbol('time'),
+  ]) {
+    assert.equal(launchUrl(aether, evidence(aether, 0), invalid), null)
+    assert.equal(launchUrl(aether, evidence(aether, invalid), 0), null)
+    assert.equal(launchUrl(aether, evidence(aether, invalid), invalid), null)
+  }
+  assert.equal(launchUrl(aether, evidence(aether, undefined), 0), null)
+})
+
+test('epoch zero and the maximum Date obey the exact age boundaries', () => {
+  for (const now of [0, 59_999, 60_000, 8_640_000_000_000_000 - 1, 8_640_000_000_000_000]) {
+    assert.equal(launchUrl(aether, evidence(aether, now), now), aether.origin)
+    if (now >= MAX_AGE_MS) {
+      assert.equal(launchUrl(aether, evidence(aether, now - 59_999), now), aether.origin)
+      assert.equal(launchUrl(aether, evidence(aether, now - 60_000), now), null)
+    }
+    assert.equal(launchUrl(aether, evidence(aether, now + 1), now), null)
+  }
+  assert.equal(launchUrl(aether, evidence(aether, 0), 59_999), aether.origin)
+  assert.equal(launchUrl(aether, evidence(aether, 0), 60_000), null)
+})
+
+test('omitted and explicitly undefined launch clocks retain the real-clock default', (t) => {
+  t.mock.method(Date, 'now', () => 100_000)
+  const result = evidence(aether, 100_000)
+  assert.equal(launchUrl(aether, result), aether.origin)
+  assert.equal(launchUrl(aether, result, undefined), aether.origin)
+  assert.equal(launchUrl(aether, result, null), null)
+})
+
+test('verification with an invalid clock remains evidence but cannot produce a launch link', async (t) => {
+  for (const invalid of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1, 8_640_000_000_000_001, '0', null, undefined, NaN, Infinity]) {
+    const clock = t.mock.method(Date, 'now', () => invalid)
+    try {
+      const result = await verifyModule(aether, async (path) =>
+        path === aether.manifestPath ? json(manifest(aether)) : json({ status: 'ok' }))
+      assert.deepEqual(result, evidence(aether, invalid))
+      assert.equal(launchUrl(aether, result), null)
+      assert.equal(launchUrl(aether, result, 0), null)
+    } finally {
+      clock.mock.restore()
+    }
+  }
+})
+
 test('mismatch, HTTP errors, redirects, invalid JSON, fetch failure, and unbounded schemas reject', async () => {
   const factories = [
     () => json(manifest(bastion)),
