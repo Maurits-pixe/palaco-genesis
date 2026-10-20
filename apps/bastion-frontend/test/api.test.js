@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { commandLength, commitCommand, issueTicket, listCommands, MAX_COMMAND_LENGTH, mergeCommands, normalizeCommand, request, revokeTicket, ticketUsable } from '../src/api.js'
+import { commandLength, commitCommand, issueTicket, listCommands, MAX_COMMAND_LENGTH, mergeCommands, normalizeCommand, request, revokeTicket, ticketRemainingSeconds, ticketUsable } from '../src/api.js'
 import config from '../vite.config.js'
 
 const inputToken = 'test-only-user-input'
@@ -90,19 +90,26 @@ test('ticket validity rejects malformed bounds and clocks without coercing now',
     for (const value of invalid) {
       assert.equal(ticketUsable({ ...data, [field]: value }, data.command, 150), false,
         `${field}=${String(value)}`)
+      assert.equal(ticketRemainingSeconds({ ...data, [field]: value }, 150), null,
+        `${field}=${String(value)}`)
     }
     const missing = { ...data }
     delete missing[field]
     assert.equal(ticketUsable(missing, data.command, 150), false)
+    assert.equal(ticketRemainingSeconds(missing, 150), null)
   }
   for (const now of [...invalid.filter(value => value !== undefined), '150', new Date(150).toISOString()]) {
     assert.equal(ticketUsable(data, data.command, now), false, `now=${String(now)}`)
+    assert.equal(ticketRemainingSeconds(data, now), null, `now=${String(now)}`)
   }
   for (const bounds of [
     { not_before: 200, expires_at: 200 },
     { not_before: 201, expires_at: 200 },
     { not_before: 100, expires_at: 60_101 },
-  ]) assert.equal(ticketUsable({ ...data, ...bounds }, data.command, 150), false)
+  ]) {
+    assert.equal(ticketUsable({ ...data, ...bounds }, data.command, 150), false)
+    assert.equal(ticketRemainingSeconds({ ...data, ...bounds }, 150), null)
+  }
 })
 
 test('numeric and legacy ISO ticket windows retain half-open epoch and Date-limit boundaries', () => {
@@ -117,9 +124,31 @@ test('numeric and legacy ISO ticket windows retain half-open epoch and Date-limi
       for (const [now, usable] of [
         [notBefore - 1, false], [notBefore, true], [expiresAt - 1, true],
         [expiresAt, false], [expiresAt + 1, false],
-      ]) assert.equal(ticketUsable(data, data.command, now), usable, `${iso}, now=${now}`)
+      ]) {
+        assert.equal(ticketUsable(data, data.command, now), usable, `${iso}, now=${now}`)
+        const remaining = now < 0 || now > maxDate
+          ? null : Math.max(0, Math.ceil((expiresAt - now) / 1000))
+        assert.equal(ticketRemainingSeconds(data, now), remaining, `${iso}, now=${now}`)
+      }
     }
   }
+})
+
+test('remaining seconds round up until expiry, including pending tickets, without command or ID gating', () => {
+  for (const iso of [false, true]) {
+    const data = {
+      not_before: iso ? new Date(1000).toISOString() : 1000,
+      expires_at: iso ? new Date(3000).toISOString() : 3000,
+    }
+    for (const [now, remaining] of [
+      [0, 3], [999, 3], [1000, 2], [1001, 2], [1999, 2],
+      [2000, 1], [2999, 1], [3000, 0], [3001, 0],
+    ]) assert.equal(ticketRemainingSeconds(data, now), remaining, `${iso}, now=${now}`)
+  }
+  assert.equal(ticketRemainingSeconds(null, NaN), 0)
+  assert.equal(ticketRemainingSeconds(undefined, Infinity), 0)
+  assert.equal(ticketRemainingSeconds({ not_before: 0, expires_at: 1 }), 0)
+  assert.equal(ticketRemainingSeconds({ not_before: 0, expires_at: 1 }, undefined), 0)
 })
 
 test('submission is a distinct request carrying ticket ID and command', async () => {

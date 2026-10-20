@@ -54,8 +54,11 @@ function receiptIso(value) {
           <p>Ticket: <code>{{ ticket.id }}</code></p>
           <p>Geldig vanaf: {{ date(ticket.not_before) }}</p>
           <p>Verloopt: {{ date(ticket.expires_at) }}</p>
-          <p>{{ remaining ? `Nog circa ${remaining} seconden.` : 'Verlopen. Vraag een nieuw ticket aan.' }}</p>
-          <p v-if="remaining && !canCommit && !revocationUncertain">Niet geldig voor de huidige invoer of begintijd.</p>
+          <p v-if="remaining === null">Resterende tijd niet beschikbaar. Controleer de lokale klok en ticketgegevens.</p>
+          <p v-else-if="remaining > 0">Nog circa {{ remaining }} seconden.</p>
+          <p v-else>Verlopen. Vraag een nieuw ticket aan.</p>
+          <p class="muted">De aftelling gebruikt de lokale klok; alleen de server beslist over geldigheid.</p>
+          <p v-if="remaining > 0 && !canCommit && !revocationUncertain">Niet geldig voor de huidige invoer of begintijd.</p>
         </div>
         <p v-else class="muted">Nog geen ticket. Tekst of duur wijzigen maakt het lokale ticket ongeldig.</p>
         <button :disabled="!!busy || !canCommit || !token.trim()" @click="perform('commit')">Commando vastleggen</button>

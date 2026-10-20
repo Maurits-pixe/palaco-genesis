@@ -120,46 +120,100 @@ function retainedOutcomeState(state) {
     .map(([key, value]) => [key, JSON.parse(JSON.stringify(value.value))])))
 }
 
-test('malformed injected ticket windows or clocks cannot consume held authority or submit', async t => {
+for (const uncertain of [false, true]) {
+  test(`malformed injected ticket windows or clocks cannot count down or submit, uncertainty=${uncertain}`, async t => {
+    const { state, calls, clock } = fixture(t)
+    prepare(state, 'commit')
+    state.revocationUncertain.value = uncertain
+    const invalid = [
+      Infinity, -Infinity, NaN, Number.MAX_SAFE_INTEGER + 1, 1000.5, -1,
+      8_640_000_000_000_001, null, undefined, true, {}, [], '', 'invalid',
+      '1969-12-31T23:59:59.999Z', '+275760-09-13T00:00:00.001Z',
+    ]
+    const tickets = []
+    for (const field of ['not_before', 'expires_at']) {
+      tickets.push(...invalid.map(value => ({ ...held(), [field]: value })))
+      const missing = held()
+      delete missing[field]
+      tickets.push(missing)
+    }
+    tickets.push(
+      { ...held(), not_before: 1100 },
+      { ...held(), not_before: 1101 },
+      { ...held(), expires_at: 61_001 },
+    )
+    async function assertGuarded() {
+      const currentTicket = state.ticket.value
+      assert.equal(state.canCommit.value, false)
+      assert.equal(state.remaining.value, null)
+      assert.equal(state.revocationUncertain.value, uncertain)
+      await state.perform('commit')
+      assert.equal(state.ticket.value, currentTicket)
+      assert.equal(state.lastSubmissionId.value, 'retained-id')
+      assert.equal(state.revocationUncertain.value, uncertain)
+      assert.equal(calls.length, 0)
+      assert.equal(state.busy.value, '')
+    }
+    for (const ticket of tickets) {
+      state.ticket.value = ticket
+      await assertGuarded()
+    }
+    state.ticket.value = held()
+    assert.equal(state.canCommit.value, !uncertain)
+    assert.equal(state.remaining.value, 1)
+    for (const time of [...invalid, '1050', new Date(1050).toISOString()]) {
+      clock.time = time
+      clock.tick()
+      await assertGuarded()
+    }
+    state.ticket.value = null
+    assert.equal(state.remaining.value, 0)
+    assert.equal(state.canCommit.value, false)
+    assert.equal(state.revocationUncertain.value, uncertain)
+    state.clearSession()
+    assertEmpty(state)
+  })
+}
+
+test('session countdown preserves valid numeric and ISO windows through pending, active and expired times', t => {
   const { state, calls, clock } = fixture(t)
   prepare(state, 'commit')
-  const invalid = [
-    Infinity, -Infinity, NaN, Number.MAX_SAFE_INTEGER + 1, 1000.5, -1,
-    8_640_000_000_000_001, null, undefined, true, {}, [], '', 'invalid',
-    '1969-12-31T23:59:59.999Z', '+275760-09-13T00:00:00.001Z',
-  ]
-  const tickets = []
-  for (const field of ['not_before', 'expires_at']) {
-    tickets.push(...invalid.map(value => ({ ...held(), [field]: value })))
-    const missing = held()
-    delete missing[field]
-    tickets.push(missing)
-  }
-  tickets.push(
-    { ...held(), not_before: 1100 },
-    { ...held(), not_before: 1101 },
-    { ...held(), expires_at: 61_001 },
-  )
-  async function assertGuarded() {
-    const currentTicket = state.ticket.value
-    assert.equal(state.canCommit.value, false)
-    await state.perform('commit')
-    assert.equal(state.ticket.value, currentTicket)
-    assert.equal(state.lastSubmissionId.value, 'retained-id')
-    assert.equal(calls.length, 0)
-    assert.equal(state.busy.value, '')
-  }
-  for (const ticket of tickets) {
-    state.ticket.value = ticket
-    await assertGuarded()
-  }
-  state.ticket.value = held()
-  assert.equal(state.canCommit.value, true)
-  for (const time of [...invalid, '1050', new Date(1050).toISOString()]) {
-    clock.time = time
+  for (const iso of [false, true]) {
+    state.ticket.value = {
+      ...held(),
+      not_before: iso ? new Date(1000).toISOString() : 1000,
+      expires_at: iso ? new Date(3000).toISOString() : 3000,
+    }
+    for (const [time, remaining, canCommit] of [
+      [0, 3, false], [999, 3, false], [1000, 2, true], [1001, 2, true],
+      [2000, 1, true], [2999, 1, true], [3000, 0, false], [3001, 0, false],
+    ]) {
+      clock.time = time
+      clock.tick()
+      assert.equal(state.remaining.value, remaining)
+      assert.equal(state.canCommit.value, canCommit)
+    }
+    state.revocationUncertain.value = true
+    clock.time = 1050
     clock.tick()
-    await assertGuarded()
+    assert.equal(state.remaining.value, 2)
+    assert.equal(state.canCommit.value, false)
+    state.revocationUncertain.value = false
+    state.command.value = 'different'
+    assert.equal(state.remaining.value, 0)
+    state.command.value = held().command
   }
+  assert.equal(calls.length, 0)
+  state.clearSession()
+  assertEmpty(state)
+})
+
+test('countdown UI separates unavailable, positive and expired time and disclaims server authority', () => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const result = app.match(/<div v-if="ticket" class="result">([\s\S]*?)<\/div>/)[1]
+  assert.match(result, /<p v-if="remaining === null">Resterende tijd niet beschikbaar\. Controleer de lokale klok en ticketgegevens\.<\/p>\s*<p v-else-if="remaining > 0">Nog circa \{\{ remaining \}\} seconden\.<\/p>\s*<p v-else>Verlopen\. Vraag een nieuw ticket aan\.<\/p>/)
+  assert.match(result, /<p v-if="remaining > 0 && !canCommit && !revocationUncertain">Niet geldig voor de huidige invoer of begintijd\.<\/p>/)
+  assert.match(result, /De aftelling gebruikt de lokale klok; alleen de server beslist over geldigheid\./)
 })
 
 for (const uncertain of [false, true]) {

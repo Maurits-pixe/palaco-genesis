@@ -104,9 +104,8 @@ export function useSession({
     if (!disposed) now.value = scheduler.now()
   }, 100)
   const canCommit = computed(() => !revocationUncertain.value &&
-    defaultApi.ticketUsable(ticket.value, command.value, now.value))
-  const remaining = computed(() => ticket.value
-    ? Math.max(0, Math.ceil((defaultApi.timestamp(ticket.value.expires_at) - now.value) / 1000)) : 0)
+    defaultApi.ticketUsable(ticket.value, command.value, now.value ?? null))
+  const remaining = computed(() => defaultApi.ticketRemainingSeconds(ticket.value, now.value ?? null))
 
   watch([command, ttlMs], () => {
     if (!revocationUncertain.value) ticket.value = null

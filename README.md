@@ -159,6 +159,11 @@ niet-negatieve gehele epochmilliseconden binnen het datumbereik zijn.
 Geldige ISO-venstergrenzen blijven ondersteund. De duur moet 1 t/m 60000 ms
 zijn; de begintijd is inclusief en de eindtijd exclusief. Ongeldige waarden
 leiden niet tot een commitverzoek en geven geen toestemming.
+De ticketafteller gebruikt dezelfde tijdvalidatie. Bij ongeldige klok- of
+vensterwaarden verschijnt **Resterende tijd niet beschikbaar**, niet een
+verlopenmelding of onbetrouwbare duur. Bij geldige waarden telt hij afgerond
+naar boven tot de eindtijd, ook als de begintijd nog niet is bereikt.
+Dit is uitsluitend een lokale indicatie, geen serverbeslissing of toestemming.
 Bij een commitbevestiging controleert de interface ook de exacte
 commandotekst, het record-ID en de numerieke vastleggingstijd:
 `not_before <= committed_at < expires_at` van het ingezonden ticket.

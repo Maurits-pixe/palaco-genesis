@@ -85,14 +85,25 @@ export function timestamp(value) {
   return typeof value === 'number' ? value : Date.parse(value)
 }
 
-export function ticketUsable(ticket, command, now = Date.now()) {
+function ticketWindow(ticket, now) {
   const notBefore = timestamp(ticket?.not_before)
   const expiresAt = timestamp(ticket?.expires_at)
-  return !!ticket && ticket.command === command &&
-    [now, notBefore, expiresAt].every(time =>
-      Number.isSafeInteger(time) && time >= 0 && Number.isFinite(new Date(time).getTime())) &&
-    expiresAt > notBefore && expiresAt - notBefore <= 60_000 &&
-    now >= notBefore && now < expiresAt
+  return [now, notBefore, expiresAt].every(time =>
+    Number.isSafeInteger(time) && time >= 0 && Number.isFinite(new Date(time).getTime())) &&
+    expiresAt > notBefore && expiresAt - notBefore <= 60_000
+    ? { notBefore, expiresAt } : null
+}
+
+export function ticketUsable(ticket, command, now = Date.now()) {
+  const window = ticketWindow(ticket, now)
+  return !!ticket && ticket.command === command && !!window &&
+    now >= window.notBefore && now < window.expiresAt
+}
+
+export function ticketRemainingSeconds(ticket, now = Date.now()) {
+  if (!ticket) return 0
+  const window = ticketWindow(ticket, now)
+  return window ? Math.max(0, Math.ceil((window.expiresAt - now) / 1000)) : null
 }
 
 export async function request(path, { token, method = 'GET', body, fetcher = fetch, timeoutMs = 8000, signal }) {
