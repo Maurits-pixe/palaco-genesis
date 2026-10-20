@@ -183,3 +183,8 @@ export function launchUrl(module, verification, now = Date.now()) {
     age >= 0 && age < MAX_AGE_MS
     ? module.origin : null
 }
+
+export function remainingVerificationSeconds(module, verification, now = Date.now()) {
+  if (!launchUrl(module, verification, now)) return null
+  return Math.ceil((MAX_AGE_MS - (now - verification.verifiedAt)) / 1000)
+}

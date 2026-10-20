@@ -103,6 +103,11 @@ niet-negatieve gehele epochmilliseconden binnen het JavaScript-datumbereik
 zijn. Ongeldige tijdwaarden activeren geen startlink en tellen niet mee in
 het moduleoverzicht. Een verificatie uit de toekomst of van 60 seconden of
 ouder is evenmin bruikbaar; deze controle start geen automatische herhaling.
+Bij een bruikbare startlink toont NEO de resterende duur, afgerond naar boven
+in seconden. Deze lokale indicatie verdwijnt zodra de controle niet meer
+bruikbaar is, wordt gewist of opnieuw wordt gestart. Het is geen garantie op
+bereikbaarheid of toestemming. Bij het openen wordt de geldigheid opnieuw
+met de actuele klok gecontroleerd, onafhankelijk van de afgeronde weergave.
 Voer het bijbehorende servicetoken in de betreffende UI in; de UI bewaart het
 niet in browseropslag. AETHER versleutelt een tekstrecord en levert een ID
 waarmee je het kunt teruglezen. Het laatst **bevestigd opgeslagen** record-ID

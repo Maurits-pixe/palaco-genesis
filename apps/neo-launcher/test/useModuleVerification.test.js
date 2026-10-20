@@ -3,12 +3,22 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { effectScope } from 'vue'
 import { useModuleVerification } from '../src/useModuleVerification.js'
-import { launchUrl, MAX_AGE_MS, TRUSTED_MODULES } from '../src/verification.js'
+import { launchUrl, MAX_AGE_MS, remainingVerificationSeconds, TRUSTED_MODULES } from '../src/verification.js'
 
 const [aether, bastion] = TRUSTED_MODULES
 const evidence = (module, verifiedAt) => ({
   status: 'verified', moduleId: module.id, health: 'ok', verifiedAt,
 })
+
+function assertRemaining(model, expected) {
+  const remaining = TRUSTED_MODULES.map((module) =>
+    remainingVerificationSeconds(module, model.states.value[module.id], model.now.value ?? null))
+  assert.deepEqual(remaining, expected)
+  assert.equal(model.launchableCount.value, remaining.filter((value) => value !== null).length)
+  for (const [index, module] of TRUSTED_MODULES.entries()) {
+    assert.equal(Boolean(launchUrl(module, model.states.value[module.id], model.now.value ?? null)), remaining[index] !== null)
+  }
+}
 
 function setup(t, verifier, eventTarget = new EventTarget()) {
   let time = 100_000
@@ -49,6 +59,7 @@ test('initialization and clock ticks never automatically verify', (t) => {
   tick()
   assert.deepEqual(calls, [])
   assert.equal(model.launchableCount.value, 0)
+  assertRemaining(model, [null, null])
   assert.equal(model.isVerifying.value, false)
 })
 
@@ -148,33 +159,40 @@ test('individual rerun immediately removes its old launch approval', async (t) =
   pending[0].resolve(evidence(aether, 100_000))
   await first
   assert.equal(model.launchableCount.value, 1)
+  assertRemaining(model, [60, null])
   const rerun = model.verify(aether)
   assert.equal(launchUrl(aether, model.states.value.aether, 100_000), null)
   assert.equal(model.launchableCount.value, 0)
+  assertRemaining(model, [null, null])
   pending[1].reject(new Error('Offline'))
   await rerun
   assert.equal(model.launchableCount.value, 0)
+  assertRemaining(model, [null, null])
 })
 
 test('clock summary uses the exact launch gate without extending verification timestamps', async (t) => {
-  const { model, pending, setTime, tick } = setup(t)
+  const { model, pending, calls, setTime, tick } = setup(t)
   const batch = model.verifyAll()
   for (const request of pending) request.resolve(evidence(request.module, 100_000))
   await batch
-  for (const [time, expected] of [
-    [100_000, 2],
-    [100_000 + MAX_AGE_MS - 1, 2],
-    [100_000 + MAX_AGE_MS, 0],
-    [100_000 - 1, 0],
+  for (const [time, expected, seconds] of [
+    [100_000, 2, 60],
+    [100_500, 2, 60],
+    [101_000, 2, 59],
+    [100_000 + MAX_AGE_MS - 1, 2, 1],
+    [100_000 + MAX_AGE_MS, 0, null],
+    [100_000 - 1, 0, null],
   ]) {
     setTime(time)
     tick()
     assert.equal(model.now.value, time)
     assert.equal(model.launchableCount.value, expected)
+    assertRemaining(model, [seconds, seconds])
     for (const module of TRUSTED_MODULES) {
       assert.equal(model.states.value[module.id].verifiedAt, 100_000)
       assert.equal(Boolean(launchUrl(module, model.states.value[module.id], time)), expected === 2)
     }
+    assert.deepEqual(calls, TRUSTED_MODULES)
   }
 })
 
@@ -190,6 +208,7 @@ test('an initially undefined scheduler clock is stored as null for UI and count 
   model.states.value.aether = evidence(aether, 100_000)
   assert.equal(model.now.value, null)
   assert.equal(model.launchableCount.value, 0)
+  assertRemaining(model, [null, null])
   assert.equal(launchUrl(aether, model.states.value.aether, model.now.value), null)
 })
 
@@ -213,6 +232,8 @@ test('invalid scheduler clocks fail closed at completion and on ticks without au
       tick()
       assert.equal(model.now.value, time ?? null)
       assert.equal(model.launchableCount.value, expected)
+      const seconds = expected === 2 ? (time === 159_999 ? 1 : 60) : null
+      assertRemaining(model, [seconds, seconds])
       for (const module of TRUSTED_MODULES) {
         assert.deepEqual(model.states.value[module.id], evidence(module, 100_000))
         assert.equal(Boolean(launchUrl(module, model.states.value[module.id], model.now.value)), expected === 2)
@@ -230,6 +251,7 @@ test('scheduler clock normalization preserves epoch zero', async (t) => {
   await batch
   assert.equal(model.now.value, 0)
   assert.equal(model.launchableCount.value, 2)
+  assertRemaining(model, [60, 60])
   tick()
   assert.equal(model.now.value, 0)
   assert.equal(model.launchableCount.value, 2)
@@ -266,6 +288,7 @@ test('reset removes completed approvals, count, and launch links and is repeatab
     assert.deepEqual(Object.values(model.states.value), [{ status: 'idle' }, { status: 'idle' }])
     assert.equal(model.isVerifying.value, false)
     assert.equal(model.launchableCount.value, 0)
+    assertRemaining(model, [null, null])
     for (const module of TRUSTED_MODULES) {
       assert.equal(launchUrl(module, model.states.value[module.id], model.now.value), null)
     }
@@ -280,6 +303,7 @@ test('reset aborts a pending batch and permits fresh individuals despite an igno
   assert.ok(pending.every(({ signal }) => signal.aborted))
   assert.equal(model.isVerifying.value, false)
   assert.equal(model.launchableCount.value, 0)
+  assertRemaining(model, [null, null])
   const first = model.verify(aether)
   const second = model.verify(bastion)
   assert.equal(calls.length, 4)
@@ -291,6 +315,7 @@ test('reset aborts a pending batch and permits fresh individuals despite an igno
   assert.deepEqual(Object.values(model.states.value), [{ status: 'verifying' }, { status: 'verifying' }])
   assert.equal(model.isVerifying.value, true)
   assert.equal(model.launchableCount.value, 0)
+  assertRemaining(model, [null, null])
   assert.equal(model.now.value, 100_000)
   await Promise.all([model.verify(aether), model.verifyAll()])
   assert.equal(calls.length, 4)
@@ -298,6 +323,7 @@ test('reset aborts a pending batch and permits fresh individuals despite an igno
   pending[3].resolve(evidence(bastion, 200_000))
   await Promise.all([first, second])
   assert.equal(model.launchableCount.value, 2)
+  assertRemaining(model, [60, 60])
   assert.equal(model.now.value, 200_000)
   assert.equal(model.isVerifying.value, false)
 })
@@ -321,6 +347,7 @@ test('reset pending individuals permits a fresh batch; late old results cannot o
   assert.deepEqual(model.states.value, before)
   assert.equal(model.now.value, 150_000)
   assert.equal(model.launchableCount.value, 2)
+  assertRemaining(model, [60, 60])
   assert.equal(model.isVerifying.value, false)
 })
 
@@ -339,6 +366,7 @@ test('old finally cannot remove a newer attempt from subsequent reset or disposa
     pending[1].resolve(evidence(aether, 100_000))
     await fresh
     assert.equal(model.launchableCount.value, 0)
+    assertRemaining(model, [null, null])
     if (!dispose) assert.equal(model.states.value.aether.status, 'idle')
   }
 })
@@ -371,11 +399,13 @@ for (const persisted of [false, true]) {
     for (const request of pending) request.resolve(evidence(request.module, 100_000))
     await batch
     assert.equal(model.launchableCount.value, 2)
+    assertRemaining(model, [60, 60])
     eventTarget.dispatchEvent(new Event('visibilitychange'))
     assert.equal(model.launchableCount.value, 2)
     eventTarget.dispatchEvent(pageEvent('pagehide', persisted))
     assert.deepEqual(Object.values(model.states.value), [{ status: 'idle' }, { status: 'idle' }])
     assert.equal(model.launchableCount.value, 0)
+    assertRemaining(model, [null, null])
     assert.equal(model.isVerifying.value, false)
     for (const module of TRUSTED_MODULES) {
       assert.equal(launchUrl(module, model.states.value[module.id], model.now.value), null)
@@ -387,6 +417,7 @@ for (const persisted of [false, true]) {
     assert.deepEqual(cleared, [])
     assert.equal(calls.length, 2)
     assert.equal(model.launchableCount.value, 0)
+    assertRemaining(model, [null, null])
     const individual = model.verify(aether)
     pending[2].resolve(evidence(aether, 110_000))
     await individual
@@ -411,6 +442,7 @@ for (const persisted of [false, true]) {
       assert.ok(pending.every(({ signal }) => signal.aborted))
       assert.deepEqual(Object.values(model.states.value), [{ status: 'idle' }, { status: 'idle' }])
       assert.equal(model.isVerifying.value, false)
+      assertRemaining(model, [null, null])
       eventTarget.dispatchEvent(pageEvent('pageshow', persisted))
       assert.equal(calls.length, 2)
       const fresh = batch ? Promise.all(TRUSTED_MODULES.map(model.verify)) : model.verifyAll()
@@ -430,6 +462,7 @@ for (const persisted of [false, true]) {
       assert.deepEqual(model.states.value, before)
       assert.equal(model.now.value, clockBefore)
       assert.equal(model.launchableCount.value, batch ? 0 : 2)
+      assertRemaining(model, batch ? [null, null] : [60, 60])
       if (batch) {
         await Promise.all([model.verify(aether), model.verifyAll()])
         assert.equal(calls.length, 4)
@@ -441,6 +474,7 @@ for (const persisted of [false, true]) {
         await fresh
         assert.deepEqual(Object.values(model.states.value), [{ status: 'idle' }, { status: 'idle' }])
         assert.equal(model.launchableCount.value, 0)
+        assertRemaining(model, [null, null])
       }
     })
   }
@@ -507,4 +541,10 @@ test('UI wires manual batch, independent controls, live count, and click-time la
   assert.match(app, /if \(!launchUrl\(module, states.value\[module.id\], Date.now\(\)\)\) \{\s*event.preventDefault\(\)/)
   assert.match(app, /v-if="launchUrl\(module, states\[module.id\], now\)" :href="launchUrl\(module, states\[module.id\], now\)"/)
   assert.match(app, /@click="follow\(\$event, module\)"/)
+  assert.match(app, /return remainingVerificationSeconds\(module, states.value\[module.id\], now.value \?\? null\)/)
+  assert.match(app, /<p class="status" role="status">\{\{ status\(module\) \}\}<\/p>\s*<p v-if="remainingSeconds\(module\) !== null">Startlink nog circa \{\{ remainingSeconds\(module\) \}\} seconden beschikbaar\.<\/p>/)
+  assert.match(app, /Dit is een momentopname, geen garantie op voortdurende beschikbaarheid/)
+  assert.match(app, /De resterende tijd is gebaseerd op de lokale klok/)
+  assert.match(app, /geen autorisatie/)
+  assert.doesNotMatch(app, /setInterval|setTimeout|localStorage|sessionStorage/)
 })

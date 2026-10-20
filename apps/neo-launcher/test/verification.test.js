@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { getEventListeners } from 'node:events'
-import { isAllowedOrigin, launchUrl, MAX_AGE_MS, PROTOCOL, TRUSTED_MODULES, validateManifest, verifyModule } from '../src/verification.js'
+import { isAllowedOrigin, launchUrl, MAX_AGE_MS, PROTOCOL, remainingVerificationSeconds, TRUSTED_MODULES, validateManifest, verifyModule } from '../src/verification.js'
 import config from '../vite.config.js'
 
 const [aether, bastion] = TRUSTED_MODULES
@@ -122,6 +122,58 @@ test('omitted and explicitly undefined launch clocks retain the real-clock defau
   assert.equal(launchUrl(aether, result), aether.origin)
   assert.equal(launchUrl(aether, result, undefined), aether.origin)
   assert.equal(launchUrl(aether, result, null), null)
+})
+
+test('remaining lifetime rounds up only inside the exact launch boundaries for both modules', () => {
+  for (const module of TRUSTED_MODULES) {
+    for (const verifiedAt of [0, 100_000, 8_640_000_000_000_000 - MAX_AGE_MS]) {
+      const result = evidence(module, verifiedAt)
+      for (const [age, expected] of [[0, 60], [1, 60], [1000, 59], [59_000, 1], [59_999, 1], [60_000, null], [60_001, null]]) {
+        assert.equal(remainingVerificationSeconds(module, result, verifiedAt + age), expected)
+      }
+      assert.equal(remainingVerificationSeconds(module, result, verifiedAt - 1), null)
+    }
+  }
+})
+
+test('remaining lifetime rejects all non-launchable states and untrusted origins', () => {
+  const now = 100_000
+  for (const module of TRUSTED_MODULES) {
+    const result = evidence(module, now)
+    for (const state of [
+      undefined, null, {}, { status: 'idle' },
+      { ...result, status: 'verifying' }, { ...result, status: 'error' },
+      { ...result, moduleId: module === aether ? bastion.id : aether.id },
+      { ...result, health: undefined }, { ...result, health: 'bad' },
+      { ...result, verifiedAt: undefined },
+    ]) assert.equal(remainingVerificationSeconds(module, state, now), null)
+    for (const untrusted of [
+      undefined, null, { ...module },
+      { ...module, origin: 'https://untrusted.example' },
+      { ...module, origin: 'http://127.0.0.1:9999' },
+    ]) assert.equal(remainingVerificationSeconds(untrusted, result, now), null)
+  }
+})
+
+test('remaining lifetime rejects invalid numeric clocks, evidence timestamps, and ISO strings', () => {
+  for (const invalid of [
+    -1, 0.5, Number.MAX_SAFE_INTEGER + 1, 8_640_000_000_000_001,
+    '0', '1970-01-01T00:00:00.000Z', null, NaN, Infinity, -Infinity,
+    false, 0n, Symbol('time'), new Date(0),
+  ]) {
+    assert.equal(remainingVerificationSeconds(aether, evidence(aether, 0), invalid), null)
+    assert.equal(remainingVerificationSeconds(aether, evidence(aether, invalid), 0), null)
+    assert.equal(remainingVerificationSeconds(aether, evidence(aether, invalid), invalid), null)
+  }
+})
+
+test('remaining lifetime defaults only omitted or undefined clocks to Date.now', (t) => {
+  t.mock.method(Date, 'now', () => 100_000)
+  const result = evidence(aether, 100_000)
+  assert.equal(remainingVerificationSeconds(aether, result), 60)
+  assert.equal(remainingVerificationSeconds(aether, result, undefined), 60)
+  assert.equal(remainingVerificationSeconds(aether, result, null), null)
+  assert.equal(remainingVerificationSeconds(aether, evidence(aether, undefined)), null)
 })
 
 test('verification with an invalid clock remains evidence but cannot produce a launch link', async (t) => {

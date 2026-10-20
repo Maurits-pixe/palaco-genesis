@@ -1,5 +1,5 @@
 <script setup>
-import { launchUrl, TRUSTED_MODULES } from './verification.js'
+import { launchUrl, remainingVerificationSeconds, TRUSTED_MODULES } from './verification.js'
 import { useModuleVerification } from './useModuleVerification.js'
 
 const { states, now, isVerifying, launchableCount, verify, verifyAll, reset } = useModuleVerification()
@@ -18,6 +18,10 @@ function status(module) {
   if (launchUrl(module, state, now.value)) return 'Identiteit klopt en backend antwoordde ok · momentopname geldig gedurende 60 seconden.'
   return state.status === 'verified' ? 'Verificatie verlopen. Controleer opnieuw.' : 'Nog niet gecontroleerd.'
 }
+
+function remainingSeconds(module) {
+  return remainingVerificationSeconds(module, states.value[module.id], now.value ?? null)
+}
 </script>
 
 <template>
@@ -27,6 +31,7 @@ function status(module) {
       <strong>Wat wordt gecontroleerd?</strong>
       De module-identiteit, naam en het protocol in het manifest, plus een publiek backendantwoord met status ok.
       Dit is een momentopname, geen garantie op voortdurende beschikbaarheid.
+      De resterende tijd is gebaseerd op de lokale klok.
       Dit is geen cryptografische code-integriteitscontrole en geen autorisatie.
       Startadressen staan vast; manifesten kunnen ze niet wijzigen.
     </aside>
@@ -45,6 +50,7 @@ function status(module) {
         <p>{{ module.description }}</p>
         <p class="address">{{ module.origin }}</p>
         <p class="status" role="status">{{ status(module) }}</p>
+        <p v-if="remainingSeconds(module) !== null">Startlink nog circa {{ remainingSeconds(module) }} seconden beschikbaar.</p>
         <div class="actions">
           <button :disabled="states[module.id].status === 'verifying'" @click="verify(module)">Controleer identiteit en backendstatus</button>
           <a v-if="launchUrl(module, states[module.id], now)" :href="launchUrl(module, states[module.id], now)" rel="noreferrer" @click="follow($event, module)">Open {{ module.name }} →</a>
