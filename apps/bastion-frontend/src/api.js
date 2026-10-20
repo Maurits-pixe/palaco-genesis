@@ -159,9 +159,10 @@ export async function issueTicket(command, ttlMs, token, fetcher, signal) {
 }
 
 function validCommand(value) {
+  const time = timestamp(value?.committed_at)
   return value && validId(value.id) && typeof value.command === 'string' &&
     commandLength(value.command) <= MAX_COMMAND_LENGTH &&
-    Number.isFinite(timestamp(value.committed_at))
+    Number.isSafeInteger(time) && time >= 0 && Number.isFinite(new Date(time).getTime())
 }
 
 export function normalizeCommand(value) {

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { commandLength, commitCommand, issueTicket, listCommands, MAX_COMMAND_LENGTH, mergeCommands, request, revokeTicket, ticketUsable } from '../src/api.js'
+import { commandLength, commitCommand, issueTicket, listCommands, MAX_COMMAND_LENGTH, mergeCommands, normalizeCommand, request, revokeTicket, ticketUsable } from '../src/api.js'
 import config from '../vite.config.js'
 
 const inputToken = 'test-only-user-input'
@@ -168,6 +168,54 @@ test('list validates each command and excludes unrelated response fields', async
   for (const result of [{}, { commands: [null] }, { commands: [{ ...item, committed_at: null }] }]) {
     await assert.rejects(listCommands(inputToken, async () => json(result)))
   }
+})
+
+for (const committed_at of [
+  -1, -0.5, 0.5, Number.MAX_SAFE_INTEGER + 1, Number.MAX_SAFE_INTEGER,
+  8_640_000_000_000_001, -8_640_000_000_000_001, Infinity, -Infinity, NaN,
+  '1969-12-31T23:59:59.999Z', '+275760-09-13T00:00:00.001Z', 'not a timestamp',
+]) {
+  test(`invalid journal timestamp ${String(committed_at)} cannot normalize, merge or enter a snapshot`, async () => {
+    const current = [entry()]
+    const invalid = { ...current[0], command: 'must not replace', committed_at }
+    assert.equal(normalizeCommand(invalid), null)
+    assert.strictEqual(mergeCommands(current, invalid), current)
+    let calls = 0
+    await assert.rejects(listCommands(inputToken, async () => {
+      calls++
+      return json({ commands: [entry(), { ...invalid, id: 'invalid' }] })
+    }), { message: 'Onverwacht logboekantwoord van de service.' })
+    assert.equal(calls, 1)
+  })
+}
+
+for (const committed_at of [
+  0, 1, 8_640_000_000_000_000,
+  '1970-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z',
+  '2026-01-01T01:00:00.000+01:00', '+275760-09-13T00:00:00.000Z',
+]) {
+  test(`valid journal timestamp ${committed_at} preserves its representation across helpers`, async () => {
+    const expected = { ...entry(), committed_at }
+    const incoming = { ...expected, ignored: true }
+    assert.deepEqual(normalizeCommand(incoming), expected)
+    assert.deepEqual(mergeCommands([], incoming), [expected])
+    assert.deepEqual(await listCommands(inputToken, async () => json({ commands: [incoming] })), [expected])
+    assert.doesNotThrow(() => new Date(committed_at).toISOString())
+  })
+}
+
+test('list rejects overflowing JSON numbers and invalid dates beyond the retained first 100', async () => {
+  for (const value of ['1e400', '-1e400', 'NaN']) {
+    await assert.rejects(listCommands(inputToken, async () => new Response(
+      `{"commands":[{"id":"overflow","command":"journal","committed_at":${value}}]}`,
+      { headers: { 'Content-Type': 'application/json' } },
+    )))
+  }
+  const commands = Array.from({ length: 101 }, (_, i) => ({ ...entry(), id: `command-${i}` }))
+  commands[100].committed_at = 8_640_000_000_000_001
+  await assert.rejects(listCommands(inputToken, async () => json({ commands })), {
+    message: 'Onverwacht logboekantwoord van de service.',
+  })
 })
 
 for (const count of [0, 1, 100, 120]) {

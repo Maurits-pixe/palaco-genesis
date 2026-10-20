@@ -255,6 +255,12 @@ als de dubbele records dezelfde inhoud hebben. De eerdere lijst en het
 laatste geslaagde ontvangsttijdstip blijven dan staan, met de waarschuwing
 voor een mislukte verversing. Dit verandert niet hoe afzonderlijke
 realtime-events met een al bekend ID worden samengevoegd.
+Committijden in logboekrecords en realtime-events moeten na datumconversie
+veilige, niet-negatieve gehele epochmilliseconden binnen het JavaScript-
+datumbereik zijn. Geldige ISO-datums blijven ondersteund. Een ongeldige
+committijd wijst het volledige logboekantwoord af; een ongeldig realtime-record
+wordt genegeerd zonder bestaande records te vervangen. Deze formaatcontrole
+vergelijkt de committijd niet met de lokale klok.
 Het logboek toont ook wanneer de laatste geslaagde verversing lokaal is
 ontvangen. Dat tijdstip blijft staan tijdens vernieuwen en bij een fout;
 realtime-events en afzonderlijke commits werken het niet bij.

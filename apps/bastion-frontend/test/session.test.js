@@ -1792,6 +1792,101 @@ test('refresh retains loaded rows and search on failure; unrelated successes can
   assert.equal(state.search.value, 'journal')
 })
 
+test('invalid realtime dates silently preserve records and receipt while valid date boundaries flow through', async t => {
+  const { state, calls, sockets, clock } = fixture(t)
+  state.realtime.connect(state.token.value)
+  sockets[0].handlers.connect()
+  const loading = state.perform('list')
+  calls[0].resolve([record()])
+  await loading
+  const rows = state.commands.value
+  const receipt = state.lastJournalRefreshAt.value
+  const reads = clock.reads
+  const message = state.message.value
+  const emit = sockets[0].handlers['command:committed']
+  clock.time = 5000
+  for (const committed_at of [
+    -1, -0.5, 0.5, Number.MAX_SAFE_INTEGER + 1, Number.MAX_SAFE_INTEGER,
+    8_640_000_000_000_001, -8_640_000_000_000_001, Infinity, -Infinity, NaN,
+    '1969-12-31T23:59:59.999Z', '+275760-09-13T00:00:00.001Z',
+  ]) {
+    for (const id of [record().id, 'invalid-new-entry']) {
+      emit({ ...record(id), command: 'invalid replacement', committed_at })
+      assert.strictEqual(state.commands.value, rows)
+      assert.deepEqual(state.commands.value, [record()])
+      assert.equal(state.lastJournalRefreshAt.value, receipt)
+      assert.equal(state.hasLoaded.value, true)
+      assert.equal(state.journalRefreshFailed.value, false)
+      assert.equal(state.error.value, '')
+      assert.equal(state.message.value, message)
+      assert.equal(state.realtimeStatus.value, 'connected')
+      assert.equal(clock.reads, reads)
+    }
+  }
+  for (const [index, committed_at] of [
+    0, 8_640_000_000_000_000, '1970-01-01T00:00:00.000Z',
+    '2026-01-01T00:00:00.000Z', '+275760-09-13T00:00:00.000Z',
+  ].entries()) {
+    const incoming = { ...record(`valid-${index}`), committed_at }
+    emit({ ...incoming, ignored: true })
+    assert.deepEqual(state.commands.value[0], incoming)
+    assert.equal(state.lastJournalRefreshAt.value, receipt)
+  }
+  assert.equal(calls.length, 1)
+  assert.equal(sockets.length, 1)
+  assert.equal(sockets[0].connects, 1)
+  assert.equal(sockets[0].disconnects, 0)
+})
+
+test('real list helper rejects invalid date snapshots atomically and retains the previous session snapshot', async t => {
+  let commands = [record('loaded')]
+  let fetches = 0
+  const { state, calls, sockets, clock } = fixture(t, undefined, {
+    listCommands: (token, _fetcher, signal) => listCommands(token, async () => {
+      fetches++
+      return Response.json({ commands })
+    }, signal),
+  })
+  state.realtime.connect(state.token.value)
+  sockets[0].handlers.connect()
+  prepare(state, 'list')
+  await state.perform('list')
+  const rows = state.commands.value
+  const receipt = state.lastJournalRefreshAt.value
+  const ticket = state.ticket.value
+  const outcome = state.outcome.value
+  const reads = clock.reads
+  clock.time = 5000
+  const invalidDates = [
+    -1, 0.5, Number.MAX_SAFE_INTEGER + 1, 8_640_000_000_000_001,
+    '1969-12-31T23:59:59.999Z',
+  ]
+  for (const committed_at of invalidDates) {
+    commands = [record('replacement'), { ...record('invalid'), committed_at }]
+    await state.perform('list')
+    assert.strictEqual(state.commands.value, rows)
+    assert.deepEqual(state.filteredCommands.value, [record('loaded')])
+    assert.equal(state.search.value, 'journal')
+    assert.equal(state.lastJournalRefreshAt.value, receipt)
+    assert.equal(state.hasLoaded.value, true)
+    assert.equal(state.journalRefreshFailed.value, true)
+    assert.equal(state.error.value, 'Onverwacht logboekantwoord van de service.')
+    assert.equal(state.message.value, '')
+    assert.equal(state.busy.value, '')
+    assert.equal(state.ticket.value, ticket)
+    assert.equal(state.outcome.value, outcome)
+    assert.equal(state.outcomeReceivedAt.value, 1000)
+    assert.equal(state.lastSubmissionId.value, 'retained-id')
+    assert.equal(state.realtimeStatus.value, 'connected')
+    assert.equal(clock.reads, reads)
+  }
+  assert.equal(fetches, 1 + invalidDates.length)
+  assert.equal(calls.length, 0)
+  assert.equal(sockets.length, 1)
+  assert.equal(sockets[0].connects, 1)
+  assert.equal(sockets[0].disconnects, 0)
+})
+
 for (const conflicting of [false, true]) {
   for (const authority of ['absent', 'held', 'uncertain']) {
     test(`actual list helper rejects duplicate snapshots without changing loaded session state, conflicting=${conflicting}, authority=${authority}`, async t => {
