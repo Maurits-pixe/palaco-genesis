@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { effectScope, isRef } from 'vue'
 import { useSession } from '../src/useSession.js'
 import { createRealtime } from '../src/realtime.js'
+import { listCommands } from '../src/api.js'
 
 const held = () => ({ id: 'ticket-1', command: 'journal only', not_before: 1000, expires_at: 1100 })
 const record = (id = 'record-1') => ({ id, command: 'journal only', committed_at: 1050 })
@@ -18,17 +19,17 @@ const deferred = () => {
   return { promise, resolve, reject }
 }
 
-function fixture(t, eventTarget = new EventTarget()) {
+function fixture(t, eventTarget = new EventTarget(), apiOverrides = {}) {
   const scope = effectScope()
   const calls = []
   const sockets = []
   const realtimeCallbacks = []
   const clock = { time: 1050, reads: 0, tick: null, cleared: [], interval: null }
-  const api = Object.fromEntries(Object.entries(actions).map(([action, name]) => [name, (...args) => {
+  const api = { ...Object.fromEntries(Object.entries(actions).map(([action, name]) => [name, (...args) => {
     const call = { action, args, signal: args.at(-1), ...deferred() }
     calls.push(call)
     return call.promise
-  }]))
+  }])), ...apiOverrides }
   const state = scope.run(() => useSession({
     api,
     eventTarget,
@@ -1790,6 +1791,137 @@ test('refresh retains loaded rows and search on failure; unrelated successes can
   assert.equal(state.journalRefreshFailed.value, false)
   assert.equal(state.search.value, 'journal')
 })
+
+for (const conflicting of [false, true]) {
+  for (const authority of ['absent', 'held', 'uncertain']) {
+    test(`actual list helper rejects duplicate snapshots without changing loaded session state, conflicting=${conflicting}, authority=${authority}`, async t => {
+      const responses = [
+        [record('loaded')],
+        [record('private-duplicate'), {
+          ...record('private-duplicate'),
+          ...(conflicting ? { command: 'private conflicting command', committed_at: 1051 } : {}),
+        }],
+        [record('replacement')],
+      ]
+      let fetches = 0
+      const { state, calls, sockets, clock } = fixture(t, undefined, {
+        listCommands: (token, _fetcher, signal) => listCommands(token, async (url, options) => {
+          assert.equal(url, '/v1/commands')
+          assert.equal(options.method, 'GET')
+          return Response.json({ commands: responses[fetches++] })
+        }, signal),
+      })
+      state.realtime.connect(state.token.value)
+      sockets[0].handlers.connect()
+      prepare(state, 'list')
+      if (authority === 'absent') state.ticket.value = null
+      state.revocationUncertain.value = authority === 'uncertain'
+      await state.perform('list')
+      const rows = state.commands.value
+      const receipt = state.lastJournalRefreshAt.value
+      const ticket = state.ticket.value
+      const outcome = state.outcome.value
+      assert.deepEqual(rows, [record('loaded')])
+      assert.equal(state.canCommit.value, authority === 'held')
+
+      clock.time = 1060
+      await state.perform('list')
+      assert.equal(state.commands.value, rows)
+      assert.deepEqual(state.filteredCommands.value, [record('loaded')])
+      assert.equal(state.search.value, 'journal')
+      assert.equal(state.lastJournalRefreshAt.value, receipt)
+      assert.equal(state.hasLoaded.value, true)
+      assert.equal(state.journalRefreshFailed.value, true)
+      assert.equal(state.error.value, 'Onverwacht logboekantwoord van de service.')
+      assert.equal(state.busy.value, '')
+      assert.equal(state.ticket.value, ticket)
+      assert.equal(state.revocationUncertain.value, authority === 'uncertain')
+      assert.equal(state.canCommit.value, authority === 'held')
+      assert.equal(state.outcome.value, outcome)
+      assert.equal(state.outcomeReceivedAt.value, 1000)
+      assert.equal(state.lastSubmissionId.value, 'retained-id')
+      assert.equal(state.realtimeStatus.value, 'connected')
+      assert.equal(sockets.length, 1)
+      assert.equal(sockets[0].connects, 1)
+      assert.equal(sockets[0].disconnects, 0)
+      assert.equal(calls.length, 0)
+      assert.equal(fetches, 2)
+
+      clock.time = 1070
+      await state.perform('list')
+      assert.deepEqual(state.commands.value, [record('replacement')])
+      assert.deepEqual(state.filteredCommands.value, [record('replacement')])
+      assert.equal(state.search.value, 'journal')
+      assert.equal(state.lastJournalRefreshAt.value, 1070)
+      assert.equal(state.journalRefreshFailed.value, false)
+      assert.equal(state.error.value, '')
+      assert.equal(state.ticket.value, ticket)
+      assert.equal(state.revocationUncertain.value, authority === 'uncertain')
+      assert.equal(state.canCommit.value, authority === 'held')
+      assert.equal(state.outcome.value, outcome)
+      assert.equal(state.outcomeReceivedAt.value, 1000)
+      assert.equal(state.lastSubmissionId.value, 'retained-id')
+      assert.equal(state.realtimeStatus.value, 'connected')
+      assert.equal(sockets.length, 1)
+      assert.equal(sockets[0].connects, 1)
+      assert.equal(sockets[0].disconnects, 0)
+      assert.equal(calls.length, 0)
+      assert.equal(fetches, 3)
+    })
+  }
+}
+
+for (const newer of ['pending', 'complete']) {
+  test(`actual duplicate rejection from an old session cannot affect a ${newer} newer refresh`, async t => {
+    const rejected = deferred()
+    const deliverFailure = deferred()
+    const newerResponse = deferred()
+    let fetches = 0
+    const { state, calls, sockets } = fixture(t, undefined, {
+      listCommands: async (token, _fetcher, signal) => {
+        try {
+          return await listCommands(token, async () => {
+            fetches++
+            return fetches === 1
+              ? Response.json({ commands: [record('duplicate'), record('duplicate')] })
+              : newerResponse.promise
+          }, signal)
+        } catch (error) {
+          rejected.resolve(error)
+          await deliverFailure.promise
+          throw error
+        }
+      },
+    })
+    const stale = state.perform('list')
+    assert.equal((await rejected.promise).message, 'Onverwacht logboekantwoord van de service.')
+    state.token.value = 'new-test-session-token'
+    prepare(state, 'list')
+    const fresh = state.perform('list')
+    if (newer === 'complete') {
+      newerResponse.resolve(Response.json({ commands: [record('new-session')] }))
+      await fresh
+    }
+    const currentState = () => JSON.parse(JSON.stringify(Object.fromEntries(Object.entries(state)
+      .filter(([, value]) => isRef(value)).map(([key, value]) => [key, value.value]))))
+    const before = currentState()
+    deliverFailure.resolve()
+    await stale
+    assert.deepEqual(currentState(), before)
+    if (newer === 'pending') {
+      assert.equal(state.busy.value, 'list')
+      newerResponse.resolve(Response.json({ commands: [record('new-session')] }))
+      await fresh
+    }
+    assert.deepEqual(state.commands.value, [record('new-session')])
+    assert.equal(state.journalRefreshFailed.value, false)
+    assert.equal(state.error.value, '')
+    assert.equal(state.busy.value, '')
+    assert.equal(fetches, 2)
+    assert.equal(calls.length, 0)
+    assert.equal(sockets.length, 0)
+  })
+}
 
 test('initial list failure is not a successfully loaded empty journal', async t => {
   const { state, calls } = fixture(t)

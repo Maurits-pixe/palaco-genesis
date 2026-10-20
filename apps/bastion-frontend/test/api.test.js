@@ -170,6 +170,57 @@ test('list validates each command and excludes unrelated response fields', async
   }
 })
 
+for (const count of [0, 1, 100, 120]) {
+  test(`list accepts ${count} unique records, preserving order and only the first 100 normalized records`, async () => {
+    const commands = Array.from({ length: count }, (_, i) => ({
+      id: `command-${i}`, command: 'same content',
+      committed_at: i % 2 ? '2026-01-01T00:00:00.000Z' : 1767225600000,
+      ignored: 'private response field',
+    }))
+    const expected = commands.slice(0, 100).map(({ id, command, committed_at }) => ({ id, command, committed_at }))
+    assert.deepEqual(await listCommands(inputToken, async () => json({ commands, ignored: true })), expected)
+  })
+}
+
+for (const conflicting of [false, true]) {
+  for (const position of ['beginning', 'end', 'beyond retained 100', 'both beyond retained 100']) {
+    test(`list rejects ${conflicting ? 'conflicting' : 'identical'} duplicate IDs at ${position} without reflection or retry`, async () => {
+      const commands = Array.from({ length: 120 }, (_, i) => ({
+        id: `private-id-${i}`, command: 'private command', committed_at: 1000,
+      }))
+      const [source, target] = {
+        beginning: [0, 1], end: [0, 99],
+        'beyond retained 100': [0, 119], 'both beyond retained 100': [100, 119],
+      }[position]
+      commands[target] = {
+        ...commands[source],
+        ...(conflicting ? { command: 'conflicting private command', committed_at: '2026-01-01T00:00:00.000Z' } : {}),
+      }
+      let calls = 0
+      await assert.rejects(listCommands(inputToken, async () => {
+        calls++
+        return json({ commands })
+      }), { message: 'Onverwacht logboekantwoord van de service.' })
+      assert.equal(calls, 1)
+    })
+  }
+}
+
+test('list IDs are case sensitive and different IDs may have identical content and timestamps', async () => {
+  const commands = ['Record', 'record', 'other'].map(id => ({
+    id, command: 'same content', committed_at: '2026-01-01T00:00:00.000Z',
+  }))
+  assert.deepEqual(await listCommands(inputToken, async () => json({ commands })), commands)
+})
+
+test('list validates records beyond the retained first 100', async () => {
+  const commands = Array.from({ length: 101 }, (_, i) => ({ ...entry(), id: `command-${i}` }))
+  commands[100].committed_at = null
+  await assert.rejects(listCommands(inputToken, async () => json({ commands })), {
+    message: 'Onverwacht logboekantwoord van de service.',
+  })
+})
+
 test('journal accepts 600 multibyte é characters and rejects over 1024 JavaScript units', async () => {
   const multibyte = { ...entry(), command: 'é'.repeat(600) }
   assert.deepEqual(await listCommands(inputToken, async () => json({ commands: [multibyte] })), [multibyte])

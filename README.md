@@ -250,6 +250,11 @@ zichtbare gegevens mogelijk verouderd zijn; er volgt geen automatische
 herhaling. Een geslaagde verversing vervangt de oude lijst door de nieuwe
 serversnapshot, aangevuld met realtime-records die tijdens die verversing
 binnenkwamen. Oude records buiten die snapshot worden niet teruggezet.
+Een logboekantwoord met dubbele record-ID's wordt volledig afgewezen, ook
+als de dubbele records dezelfde inhoud hebben. De eerdere lijst en het
+laatste geslaagde ontvangsttijdstip blijven dan staan, met de waarschuwing
+voor een mislukte verversing. Dit verandert niet hoe afzonderlijke
+realtime-events met een al bekend ID worden samengevoegd.
 Het logboek toont ook wanneer de laatste geslaagde verversing lokaal is
 ontvangen. Dat tijdstip blijft staan tijdens vernieuwen en bij een fout;
 realtime-events en afzonderlijke commits werken het niet bij.

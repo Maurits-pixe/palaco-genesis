@@ -202,6 +202,11 @@ export async function listCommands(token, fetcher, signal) {
   if (!Array.isArray(result?.commands) || !result.commands.every(validCommand)) {
     throw new ApiError('Onverwacht logboekantwoord van de service.')
   }
+  const ids = new Set()
+  for (const { id } of result.commands) {
+    if (ids.has(id)) throw new ApiError('Onverwacht logboekantwoord van de service.')
+    ids.add(id)
+  }
   return result.commands.slice(0, 100).map(({ id, command, committed_at }) => ({ id, command, committed_at }))
 }
 
