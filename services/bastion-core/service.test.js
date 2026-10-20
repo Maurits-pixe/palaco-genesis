@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { once } from 'node:events';
+import { EventEmitter, once } from 'node:events';
 import { createServer } from 'node:net';
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, rmSync, statSync, chmodSync } from 'node:fs';
@@ -14,9 +14,90 @@ import { createBastion, configFromEnv } from './service.js';
 import {
   issueTicket, commitCommand, revokeTicket, listCommands, getTicketStatus,
 } from '../../apps/bastion-frontend/src/api.js';
+import { createRealtime } from '../../apps/bastion-frontend/src/realtime.js';
 
 const token = 'test-only-shared-operator-secret';
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+async function bounded(pending, label) {
+  let timer;
+  try {
+    return await Promise.race([
+      pending,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out`)), 3000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function liveRealtime(t, f) {
+  const notifications = new EventEmitter();
+  const entries = [];
+  const statuses = [];
+  const sockets = [];
+  let resets = 0;
+  const realtime = createRealtime({
+    onEntry: entry => {
+      entries.push(entry);
+      notifications.emit('entry', entry);
+    },
+    onStatus: status => {
+      statuses.push(status);
+      notifications.emit(`status:${status}`);
+    },
+    onReset: () => { resets++; },
+    createSocket: options => {
+      assert.deepEqual(options, {
+        path: '/socket.io',
+        auth: { token: options.auth.token },
+        autoConnect: false,
+        reconnection: false,
+        withCredentials: false,
+      });
+      const socket = client(f.base, options);
+      sockets.push(socket);
+      return socket;
+    },
+  });
+  t.after(() => realtime.disconnect());
+  const next = event => once(notifications, event, { signal: AbortSignal.timeout(3000) });
+  return {
+    realtime, entries, statuses, sockets,
+    get resets() { return resets; },
+    async connect(auth = f.token) {
+      const connected = next('status:connected');
+      realtime.connect(auth);
+      await connected;
+    },
+    next,
+    async commit(command) {
+      const issued = await issueTicket(command, 60000, f.token, f.fetcher);
+      const received = next('entry');
+      // HTTP responses and socket delivery have no cross-transport ordering guarantee.
+      const [record, [entry]] = await Promise.all([
+        commitCommand(issued, command, f.token, f.fetcher), received,
+      ]);
+      assert.deepEqual(entry, record);
+      assert.deepEqual(Object.keys(entry).sort(), ['command', 'committed_at', 'id']);
+      assert.deepEqual((await getTicketStatus(issued.id, f.token, f.fetcher)).record, record);
+      return record;
+    },
+  };
+}
+
+function assertRealtimeCleaned(socket) {
+  assert.equal(socket.connected, false);
+  assert.equal(socket.active, false);
+  assert.deepEqual(socket.auth, {});
+  assert.deepEqual(socket.io.opts.auth, {});
+  assert.equal(socket.io.reconnection(), false);
+  for (const event of ['connect', 'disconnect', 'connect_error', 'command:committed']) {
+    assert.equal(socket.listeners(event).length, 0, `${event} listeners removed`);
+  }
+}
 
 async function frontendFixture(t) {
   const f = await fixture(t, {}, randomBytes(32).toString('hex'));
@@ -28,6 +109,103 @@ async function frontendFixture(t) {
     fetcher: (path, options) => fetch(f.base + path, options),
   };
 }
+
+test('production realtime receives normalized commits once, but not revoked or expired HTTP failures',
+  { timeout: 20000 }, async t => {
+    const f = await frontendFixture(t);
+    const live = liveRealtime(t, f);
+    await live.connect();
+    assert.deepEqual(live.statuses, ['disconnected', 'connecting', 'connected']);
+    assert.equal(live.sockets[0].connected, true);
+    const record = await live.commit('realtime journal <entry> \u0001');
+
+    const revoked = await issueTicket('revoked realtime command', 60000, f.token, f.fetcher);
+    const expired = await issueTicket('expired realtime command', 100, f.token, f.fetcher);
+    await revokeTicket(revoked, f.token, f.fetcher);
+    f.time(expired.expires_at);
+    let rejectedPosts = 0;
+    const denied = async (path, options) => {
+      assert.equal(path, '/v1/commands');
+      assert.equal(options.method, 'POST');
+      const response = await f.fetcher(path, options);
+      assert.equal(response.status, 403);
+      rejectedPosts++;
+      return response;
+    };
+    await assert.rejects(commitCommand(revoked, revoked.command, f.token, denied), /Geen toestemming/);
+    // Keep the client's clock before expiry so this exercises server rejection, not preflight.
+    await assert.rejects(commitCommand(expired, expired.command, f.token, denied), /Geen toestemming/);
+    assert.equal(rejectedPosts, 2);
+    for (const [issued, status] of [[revoked, 'revoked'], [expired, 'expired']]) {
+      const outcome = await getTicketStatus(issued.id, f.token, f.fetcher);
+      assert.equal(outcome.status, status);
+      assert.equal(outcome.record, null);
+    }
+    t.mock.method(Date, 'now', () => expired.expires_at);
+    const sentinel = await live.commit('successful barrier after rejected commits');
+    // A later successful event on this same ordered socket drains earlier server emissions.
+    assert.deepEqual(live.entries, [record, sentinel]);
+    assert.deepEqual(await listCommands(f.token, f.fetcher), [sentinel, record]);
+  });
+
+test('production realtime rejects invalid authentication and removes credentials without reconnecting',
+  { timeout: 20000 }, async t => {
+    const f = await frontendFixture(t);
+    const denied = liveRealtime(t, f);
+    const failed = denied.next('status:error');
+    denied.realtime.connect(randomBytes(32).toString('hex'));
+    await failed;
+    assert.deepEqual(denied.statuses, ['disconnected', 'connecting', 'error']);
+    assert.equal(denied.resets, 2);
+    assertRealtimeCleaned(denied.sockets[0]);
+    let reconnects = 0;
+    denied.sockets[0].io.on('reconnect_attempt', () => { reconnects++; });
+
+    const authorized = liveRealtime(t, f);
+    await authorized.connect();
+    const sentinel = await authorized.commit('authorized barrier after denied handshake');
+    assert.deepEqual(authorized.entries, [sentinel]);
+    assert.deepEqual(await listCommands(f.token, f.fetcher), [sentinel]);
+    assert.deepEqual(denied.entries, []);
+    assert.deepEqual(denied.statuses, ['disconnected', 'connecting', 'error']);
+    assert.equal(denied.sockets.length, 1);
+    assert.equal(reconnects, 0);
+    assertRealtimeCleaned(denied.sockets[0]);
+  });
+
+test('production realtime cleans up manual disconnect and explicitly reconnects without journal replay',
+  { timeout: 20000 }, async t => {
+    const f = await frontendFixture(t);
+    const historical = await issueTicket('before realtime connection', 60000, f.token, f.fetcher);
+    const before = await commitCommand(historical, historical.command, f.token, f.fetcher);
+    const live = liveRealtime(t, f);
+    await live.connect();
+    const first = await live.commit('first connected command');
+    assert.deepEqual(live.entries, [first]);
+    const oldSocket = live.sockets[0];
+    const resets = live.resets;
+    live.realtime.disconnect();
+    assert.equal(live.resets, resets + 1);
+    assert.equal(live.statuses.at(-1), 'disconnected');
+    assertRealtimeCleaned(oldSocket);
+
+    const offline = await issueTicket('while realtime is disconnected', 60000, f.token, f.fetcher);
+    const missed = await commitCommand(offline, offline.command, f.token, f.fetcher);
+    await live.connect();
+    assert.equal(live.sockets.length, 2);
+    assert.notEqual(live.sockets[1], oldSocket);
+    assert.equal(live.sockets[1].connected, true);
+    assert.equal(live.sockets[1].auth.token, f.token);
+    const subsequent = await live.commit('legitimate command after explicit reconnect');
+    assert.deepEqual(live.entries, [first, subsequent]);
+    assertRealtimeCleaned(oldSocket);
+    assert.deepEqual(live.statuses, [
+      'disconnected', 'connecting', 'connected', 'disconnected',
+      'disconnected', 'connecting', 'connected',
+    ]);
+    // History is available only when explicitly requested through the HTTP helper.
+    assert.deepEqual(await listCommands(f.token, f.fetcher), [subsequent, missed, first, before]);
+  });
 
 test('live client helpers issue, commit, list and reconcile the same record over HTTP', async t => {
   const { token: runtimeToken, fetcher } = await frontendFixture(t);
@@ -316,20 +494,23 @@ async function fixture(t, options = {}, authToken = token) {
   const dbPath = join(dir, 'test.db');
   const probe = createServer();
   probe.listen(0, '127.0.0.1');
-  await once(probe, 'listening');
+  await bounded(once(probe, 'listening'), 'Fixture port allocation');
   const port = probe.address().port;
-  await new Promise(resolve => probe.close(resolve));
+  await bounded(new Promise(resolve => probe.close(resolve)), 'Fixture port release');
   let now = 1000;
   let fault = () => {};
   const config = { token: authToken, port, dbPath };
   const createApp = () => createBastion(config, { clock: () => now, fault: stage => fault(stage), ...options });
   let app = createApp();
-  await app.listen();
+  await bounded(app.listen(), 'Fixture startup');
   const db = new DatabaseSync(dbPath);
   t.after(async () => {
     db.close();
-    await app.close();
-    rmSync(dir, { recursive: true, force: true });
+    try {
+      await bounded(app.close(), 'Fixture shutdown');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
   let base = `http://127.0.0.1:${app.port}`;
   const request = async (path, { method = 'GET', data, auth = authToken, raw, headers = {} } = {}) => {

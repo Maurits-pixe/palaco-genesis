@@ -84,6 +84,10 @@ jobs:
           cache-dependency-path: ${{ matrix.project }}/package-lock.json
       - name: Install
         run: npm ci
+      - name: Install frontend dependencies for live BASTION client tests
+        if: matrix.project == 'services/bastion-core'
+        working-directory: apps/bastion-frontend
+        run: npm ci
       - name: Test
         run: npm test
       - name: Build
