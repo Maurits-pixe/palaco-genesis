@@ -856,7 +856,7 @@ test('lookup help describes exact IDs, local-only clearing and explicit requests
 
 test('outcome clear UI is an explicit local-only button with status-only busy eligibility and honest help', () => {
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
-  assert.match(app, /clearSession, clearOutcome,\s*\} = useSession\(\)/)
+  assert.match(app, /clearSession, clearOutcome, clearJournal,\s*\} = useSession\(\)/)
   const button = app.match(/<button[^>]*@click="clearOutcome"[^>]*>Wis ticketuitkomst<\/button>/)?.[0]
   assert.ok(button)
   assert.match(button, /type="button"/)
@@ -2466,4 +2466,333 @@ test('outcome UI separates server check time from local receipt with semantic ti
   assert.match(result, /v-else>Geen ontvangsttijdstip beschikbaar\./)
   assert.match(result, /id="outcome-receipt-help"[^>]*>Volgens de lokale klok; geen server- of audittijd en geen garantie dat de uitkomst actueel is\./)
   assert.match(result, /Controleer de status handmatig opnieuw voor een nieuwe momentopname\./)
+})
+
+const journalRefs = [
+  'commands', 'filteredCommands', 'search', 'hasLoaded', 'journalRefreshFailed',
+  'lastJournalRefreshAt', 'realtimeStatus', 'busy', 'message', 'error',
+]
+
+function sessionSnapshot(state, excluded = []) {
+  return JSON.parse(JSON.stringify(Object.fromEntries(Object.entries(state)
+    .filter(([key, value]) => isRef(value) && !excluded.includes(key))
+    .map(([key, value]) => [key, value.value]))))
+}
+
+function assertJournalCleared(state) {
+  assert.deepEqual(state.commands.value, [])
+  assert.deepEqual(state.filteredCommands.value, [])
+  assert.equal(state.search.value, '')
+  assert.equal(state.hasLoaded.value, false)
+  assert.equal(state.journalRefreshFailed.value, false)
+  assert.equal(state.lastJournalRefreshAt.value, null)
+  assert.equal(state.realtimeStatus.value, 'disconnected')
+  assert.equal(state.busy.value, '')
+}
+
+for (const uncertain of [false, true]) {
+  for (const mismatch of [false, true]) {
+    test(`local journal clear retains authority and separate historical outcome, uncertainty=${uncertain}, mismatch=${mismatch}`, t => {
+      const { state, calls, sockets, clock } = fixture(t)
+      state.realtime.connect(state.token.value)
+      sockets[0].handlers.connect()
+      prepare(state, 'list')
+      state.revocationUncertain.value = uncertain
+      state.outcome.value = snapshot({
+        status: 'committed', record: record('historical'),
+        ...(mismatch ? { expires_at: 1101 } : {}),
+      })
+      assert.equal(state.outcomeMismatch.value, mismatch)
+      const retained = sessionSnapshot(state, journalRefs)
+      const ticket = state.ticket.value
+      const outcome = state.outcome.value
+      const reads = clock.reads
+      state.clearJournal()
+      state.clearJournal()
+      assertJournalCleared(state)
+      assertDisconnected(sockets[0])
+      assert.deepEqual(sessionSnapshot(state, journalRefs), retained)
+      assert.equal(state.ticket.value, ticket)
+      assert.equal(state.outcome.value, outcome)
+      assert.deepEqual(state.outcome.value.record, record('historical'))
+      assert.equal(state.message.value, 'previous message')
+      assert.equal(state.error.value, 'previous error')
+      assert.equal(calls.length, 0)
+      assert.equal(sockets.length, 1)
+      assert.equal(clock.reads, reads)
+      assert.deepEqual(clock.cleared, [])
+    })
+  }
+}
+
+for (const action of Object.keys(actions)) {
+  for (const settlement of ['resolve', 'reject']) {
+    test(`journal clear only removes list-owned idle feedback, action=${action}, settlement=${settlement}`, async t => {
+      const { state, calls } = fixture(t)
+      prepare(state, action)
+      const operation = state.perform(action)
+      if (settlement === 'resolve') calls[0].resolve(results[action])
+      else calls[0].reject(new Error(`${action} failed`))
+      await operation
+      const retained = sessionSnapshot(state, journalRefs)
+      const feedback = [state.message.value, state.error.value]
+      assert.ok(feedback.some(Boolean))
+      state.clearJournal()
+      state.clearJournal()
+      assertJournalCleared(state)
+      assert.deepEqual(sessionSnapshot(state, journalRefs), retained)
+      assert.deepEqual([state.message.value, state.error.value], action === 'list' ? ['', ''] : feedback)
+      assert.equal(calls.length, 1)
+      assert.equal(calls[0].signal.aborted, false)
+    })
+  }
+}
+
+for (const action of ['ticket', 'commit', 'revoke', 'status']) {
+  for (const settlement of ['resolve', 'reject']) {
+    test(`journal clear is a complete no-op during ${action}, later ${settlement} is unaffected`, async t => {
+      const { state, calls, sockets } = fixture(t)
+      state.realtime.connect(state.token.value)
+      sockets[0].handlers.connect()
+      prepare(state, action)
+      const operation = state.perform(action)
+      state.message.value = 'busy message'
+      state.error.value = 'busy error'
+      const before = sessionSnapshot(state)
+      const rows = state.commands.value
+      state.clearJournal()
+      state.clearJournal()
+      assert.deepEqual(sessionSnapshot(state), before)
+      assert.equal(state.commands.value, rows)
+      assert.equal(calls[0].signal.aborted, false)
+      assert.equal(calls.length, 1)
+      assert.equal(sockets[0].disconnects, 0)
+      assert.deepEqual(sockets[0].auth, { token: state.token.value })
+      if (settlement === 'resolve') calls[0].resolve(results[action])
+      else calls[0].reject(new Error(`${action} failed`))
+      await operation
+      assert.equal(state.busy.value, '')
+      if (settlement === 'reject') assert.equal(state.error.value, `${action} failed`)
+      else if (action === 'status') assert.deepEqual(state.outcome.value, snapshot())
+      else if (action === 'ticket') assert.deepEqual(state.ticket.value, held())
+      else assert.equal(state.ticket.value, null)
+      assert.equal(calls.length, 1)
+    })
+  }
+}
+
+for (const settlement of ['resolve', 'reject']) {
+  test(`clearing a pending list rejects late ${settlement} without changing retained status or authority`, async t => {
+    const { state, calls, sockets } = fixture(t)
+    state.realtime.connect(state.token.value)
+    sockets[0].handlers.connect()
+    prepare(state, 'revoke')
+    const retained = sessionSnapshot(state, journalRefs)
+    const old = state.perform('list')
+    sockets[0].handlers['command:committed'](record('buffered-private-record'))
+    let aborted = false
+    calls[0].signal.addEventListener('abort', () => {
+      aborted = true
+      assertJournalCleared(state)
+      assertDisconnected(sockets[0])
+      assert.equal(state.message.value, '')
+      assert.equal(state.error.value, '')
+      assert.deepEqual(sessionSnapshot(state, journalRefs), retained)
+    })
+    state.clearJournal()
+    assert.equal(aborted, true)
+    const cleared = sessionSnapshot(state)
+    if (settlement === 'resolve') calls[0].resolve([record('late-private-record')])
+    else calls[0].reject(new Error('late private error'))
+    await old
+    assert.deepEqual(sessionSnapshot(state), cleared)
+    assert.equal(calls.length, 1)
+    assert.equal(sockets.length, 1)
+  })
+
+  for (const action of Object.keys(actions)) {
+    for (const completed of [false, true]) {
+      test(`cleared list late ${settlement} cannot affect next ${action}, completed=${completed}`, async t => {
+        const { state, calls } = fixture(t)
+        prepare(state, 'list')
+        const old = state.perform('list')
+        state.clearJournal()
+        assert.equal(calls[0].signal.aborted, true)
+        const newer = state.perform(action)
+        assert.equal(calls.length, 2)
+        if (completed) {
+          calls[1].resolve(results[action])
+          await newer
+        }
+        const before = sessionSnapshot(state)
+        if (settlement === 'resolve') calls[0].resolve([record('stale-private-record')])
+        else calls[0].reject(new Error('stale private failure'))
+        await old
+        assert.deepEqual(sessionSnapshot(state), before)
+        assert.equal(calls[1].signal.aborted, false)
+        if (!completed) {
+          assert.equal(state.busy.value, action)
+          calls[1].resolve(results[action])
+          await newer
+        }
+        assert.equal(state.busy.value, '')
+        assert.equal(state.error.value, '')
+        if (action === 'list') {
+          assert.deepEqual(state.commands.value, results.list)
+          assert.equal(state.hasLoaded.value, true)
+          assert.equal(state.lastJournalRefreshAt.value, 1050)
+        } else if (action === 'status') {
+          assert.deepEqual(state.outcome.value, results.status)
+          assert.equal(state.outcomeReceivedAt.value, 1050)
+        } else if (action === 'ticket') assert.deepEqual(state.ticket.value, held())
+        else assert.equal(state.ticket.value, null)
+        assert.equal(calls.length, 2)
+      })
+    }
+  }
+}
+
+for (const settlement of ['resolve', 'reject']) {
+  test(`list abort callback can explicitly reconnect and refresh; old ${settlement}/finally cannot clear new event buffer`, async t => {
+    const { state, calls, sockets } = fixture(t)
+    state.realtime.connect(state.token.value)
+    sockets[0].handlers.connect()
+    prepare(state, 'list')
+    const old = state.perform('list')
+    sockets[0].handlers['command:committed'](record('old-buffer'))
+    let newer
+    calls[0].signal.addEventListener('abort', () => {
+      assertJournalCleared(state)
+      assertDisconnected(sockets[0])
+      assert.equal(state.message.value, '')
+      assert.equal(state.error.value, '')
+      state.realtime.connect(state.token.value)
+      sockets[1].handlers.connect()
+      newer = state.perform('list')
+      sockets[1].handlers['command:committed'](record('fresh-buffer-before-finally'))
+      state.message.value = 'fresh feedback'
+      state.search.value = 'fresh'
+    })
+    state.clearJournal()
+    assert.equal(calls.length, 2)
+    assert.equal(state.busy.value, 'list')
+    assert.equal(state.realtimeStatus.value, 'connected')
+    assert.equal(state.message.value, 'fresh feedback')
+    assert.equal(state.search.value, 'fresh')
+    if (settlement === 'resolve') calls[0].resolve([record('old-response')])
+    else calls[0].reject(new Error('old error'))
+    await old
+    assert.equal(state.busy.value, 'list')
+    assert.equal(state.message.value, 'fresh feedback')
+    assert.equal(state.error.value, '')
+    assert.equal(calls[1].signal.aborted, false)
+    sockets[1].handlers['command:committed'](record('fresh-buffer-after-finally'))
+    calls[1].resolve([record('fresh-snapshot')])
+    await newer
+    assert.deepEqual(state.commands.value.map(entry => entry.id), [
+      'fresh-buffer-after-finally', 'fresh-buffer-before-finally', 'fresh-snapshot',
+    ])
+    assert.equal(state.hasLoaded.value, true)
+    assert.equal(state.journalRefreshFailed.value, false)
+    assert.equal(state.busy.value, '')
+  })
+}
+
+test('journal clear invalidates direct realtime callbacks before and after an explicit reconnect', t => {
+  const { state, calls, sockets, realtimeCallbacks } = fixture(t)
+  state.realtime.connect(state.token.value)
+  sockets[0].handlers.connect()
+  prepare(state, 'list')
+  const stale = realtimeCallbacks[0]
+  const oldEntry = sockets[0].handlers['command:committed']
+  state.clearJournal()
+  const cleared = sessionSnapshot(state)
+  function deliverStale() {
+    stale.onEntry(record('stale-private-record'))
+    stale.onStatus('connected')
+    stale.onStatus('error')
+    stale.onReset()
+    oldEntry(record('stale-socket-record'))
+  }
+  deliverStale()
+  assert.deepEqual(sessionSnapshot(state), cleared)
+  assertDisconnected(sockets[0])
+  assert.equal(calls.length, 0)
+  assert.equal(sockets.length, 1)
+  state.realtime.connect(state.token.value)
+  sockets[1].handlers.connect()
+  sockets[1].handlers['command:committed'](record('fresh-live-record'))
+  const fresh = sessionSnapshot(state)
+  deliverStale()
+  assert.deepEqual(sessionSnapshot(state), fresh)
+  assert.deepEqual(sockets[1].auth, { token: state.token.value })
+  assert.equal(sockets[1].disconnects, 0)
+})
+
+for (const busy of ['', 'list', 'status']) {
+  test(`journal clear is inert after disposal even with manually repopulated refs, busy=${busy || 'idle'}`, async t => {
+    const { state, calls, scope } = fixture(t)
+    prepare(state, 'list')
+    const old = state.perform('list')
+    scope.stop()
+    prepare(state, 'revoke')
+    state.busy.value = busy
+    const before = sessionSnapshot(state)
+    state.clearJournal()
+    assert.deepEqual(sessionSnapshot(state), before)
+    calls[0].resolve([record('late-after-disposal')])
+    await old
+    assert.deepEqual(sessionSnapshot(state), before)
+    assert.equal(calls.length, 1)
+  })
+}
+
+test('manual refresh after local clear retains normal snapshot replacement, receipt and no automatic reconnect', async t => {
+  const { state, calls, sockets, clock } = fixture(t)
+  prepare(state, 'list')
+  state.realtime.connect(state.token.value)
+  let operation = state.perform('list')
+  calls[0].resolve([record('original')])
+  await operation
+  assert.equal(state.hasLoaded.value, true)
+  state.clearJournal()
+  assertJournalCleared(state)
+  assert.equal(calls.length, 1)
+  assert.equal(sockets.length, 1)
+  clock.time = 1080
+  operation = state.perform('list')
+  assert.equal(state.busy.value, 'list')
+  calls[1].resolve([record('fresh')])
+  await operation
+  assert.deepEqual(state.commands.value, [record('fresh')])
+  assert.deepEqual(state.filteredCommands.value, [record('fresh')])
+  assert.equal(state.hasLoaded.value, true)
+  assert.equal(state.journalRefreshFailed.value, false)
+  assert.equal(state.lastJournalRefreshAt.value, 1080)
+  assert.equal(state.message.value, 'Logboek bijgewerkt.')
+  assert.equal(state.realtimeStatus.value, 'disconnected')
+  assert.equal(sockets.length, 1)
+  operation = state.perform('list')
+  assert.deepEqual(state.commands.value, [record('fresh')])
+  calls[2].reject(new Error('manual refresh failed'))
+  await operation
+  assert.deepEqual(state.commands.value, [record('fresh')])
+  assert.equal(state.lastJournalRefreshAt.value, 1080)
+  assert.equal(state.journalRefreshFailed.value, true)
+})
+
+test('journal UI exposes a local-only clear beside refresh, retains separate outcome and requires explicit reload/reconnect', () => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  assert.match(app, /clearJournal,\s*\} = useSession\(\)/)
+  const button = app.match(/<button[^>]*@click="clearJournal"[^>]*>Wis lokaal logboek<\/button>/)?.[0]
+  assert.ok(button)
+  assert.match(button, /type="button"/)
+  assert.match(button, /:disabled="!!busy && busy !== 'list'"/)
+  assert.match(button, /aria-describedby="clear-journal-help"/)
+  assert.match(app, /Logboek vernieuwen<\/button>\s*<button[^>]*@click="clearJournal"/)
+  assert.match(app, /id="clear-journal-help"[^>]*>Wist alleen lokaal de geladen records en zoekopdracht, verbreekt realtime en breekt een lopende verversing lokaal af\./)
+  assert.match(app, /Geen verwijdering uit de database of intrekking van tickets\./)
+  assert.match(app, /De aparte ticketuitkomst blijft behouden en kan een historisch logboekrecord bevatten\./)
+  assert.match(app, /Kies expliciet Logboek vernieuwen of Realtime verbinden/)
+  assert.match(app, /geen automatische verzoeken of herverbinding\./)
 })

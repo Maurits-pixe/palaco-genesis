@@ -5,7 +5,7 @@ import { realtimeLabels, useSession } from './useSession.js'
 const {
   token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, lastJournalRefreshAt, busy,
   message, error, lookupId, outcome, outcomeReceivedAt, outcomeMismatch, lastSubmissionId, realtimeStatus,
-  canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearSession, clearOutcome,
+  canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearSession, clearOutcome, clearJournal,
 } = useSession()
 
 function date(value) {
@@ -112,6 +112,10 @@ function receiptIso(value) {
           <button class="secondary" :disabled="!!busy || (realtimeStatus !== 'connecting' && realtimeStatus !== 'connected')" @click="realtime.disconnect()">Verbinding verbreken</button>
         </div>
         <button :disabled="!!busy || !token.trim()" @click="perform('list')">Logboek vernieuwen</button>
+        <button type="button" class="secondary" :disabled="!!busy && busy !== 'list'" aria-describedby="clear-journal-help" @click="clearJournal">Wis lokaal logboek</button>
+        <p id="clear-journal-help" class="muted">Wist alleen lokaal de geladen records en zoekopdracht, verbreekt realtime en breekt een lopende verversing lokaal af.
+          Geen verwijdering uit de database of intrekking van tickets. De aparte ticketuitkomst blijft behouden en kan een historisch logboekrecord bevatten.
+          Kies expliciet Logboek vernieuwen of Realtime verbinden om opnieuw gegevens te laden; geen automatische verzoeken of herverbinding.</p>
         <p v-if="busy === 'list'" role="status" aria-live="polite">Logboek vernieuwen… Bestaande records blijven zichtbaar.</p>
         <p v-if="journalRefreshFailed" role="alert" class="error">Logboek vernieuwen mislukt. Getoonde gegevens kunnen verouderd zijn. Er worden geen automatische nieuwe pogingen gedaan.</p>
         <p role="status" aria-live="polite" aria-describedby="journal-receipt-help">

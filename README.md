@@ -272,6 +272,14 @@ ticketintrekking of terugdraaiing van een al verstuurde mutatie.
 De BASTION-interface kan met hetzelfde token verbinden voor realtime-events;
 vernieuw het logboek na een verbindingsonderbreking.
 Tijdens **Logboek vernieuwen** blijven eerder geladen records zichtbaar.
+Met **Wis lokaal logboek** verwijder je de geladen records, zoektekst en
+verversingsgegevens en verbreek je realtime. Een lopende logboekverversing
+wordt lokaal geannuleerd; late antwoorden en oude realtime-events vullen
+het gewiste logboek niet opnieuw. Token, tickets, onzekerheidsblokkering en
+de afzonderlijke ticketuitkomst blijven behouden; die uitkomst kan nog een
+historisch record tonen. Tijdens andere verzoeken is de knop uitgeschakeld.
+Dit verwijdert geen databaserecords en trekt geen toestemming in. Laden of
+realtime verbinden gebeurt daarna uitsluitend via een nieuwe handmatige actie.
 Bij een mislukte verversing toont de interface een waarschuwing dat de
 zichtbare gegevens mogelijk verouderd zijn; er volgt geen automatische
 herhaling. Een geslaagde verversing vervangt de oude lijst door de nieuwe

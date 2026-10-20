@@ -155,6 +155,22 @@ export function useSession({
     previous?.abort()
   }
 
+  function clearJournal() {
+    if (disposed || (busy.value && busy.value !== 'list')) return
+    const previous = busy.value === 'list' ? pending : null
+    pending = null
+    busy.value = ''
+    disconnect()
+    journalRequest = null
+    search.value = ''
+    if (feedbackAction === 'list') {
+      message.value = ''
+      error.value = ''
+      feedbackAction = ''
+    }
+    previous?.abort()
+  }
+
   const stopLookupWatch = watch(lookupId, (value, previous) => {
     if (!disposed && value !== previous &&
       (outcome.value || busy.value === 'status' || feedbackAction === 'status')) {
@@ -271,6 +287,6 @@ export function useSession({
   return {
     token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, lastJournalRefreshAt, busy,
     message, error, lookupId, outcome, outcomeReceivedAt, outcomeMismatch, lastSubmissionId, realtimeStatus, now,
-    canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearSession, clearOutcome,
+    canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearSession, clearOutcome, clearJournal,
   }
 }
