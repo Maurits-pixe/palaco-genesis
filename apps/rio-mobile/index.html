@@ -34,7 +34,13 @@
       </section>
       <section id="screen-profile" class="mobile-screen" role="tabpanel" aria-labelledby="tab-profile" hidden>
         <h1>Jouw profiel</h1>
-        <p>Deze conceptweergave is niet verbonden met een account.</p>
+        <p>Deze conceptweergave is niet verbonden met een account. Je naam is alleen een label.</p>
+        <form class="mobile-name-setting" data-name-form aria-label="Weergavenaam instellen">
+          <label for="rio-mobile-display-name">Weergavenaam</label>
+          <input id="rio-mobile-display-name" name="senderName" maxlength="32" autocomplete="nickname" placeholder="Gast">
+          <button class="button" type="submit">Opslaan</button>
+          <span class="tiny" data-name-feedback role="status">Niet geverifieerd</span>
+        </form>
         <article class="mobile-card"><span class="tiny">PRIVACY EERST</span><p>Er wordt geen identiteit aangemaakt en er worden geen voorkeuren of berichten opgeslagen.</p></article>
       </section>
     </section>

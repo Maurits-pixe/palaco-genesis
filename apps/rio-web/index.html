@@ -23,6 +23,12 @@
       <header class="chat-top"><h2>RIO <span class="muted">/ gesprek</span></h2><div class="chat-actions"><span class="tiny"><span class="dot"></span> CONCEPT</span><button class="button ghost" type="button" data-share>Delen</button><button class="button ghost" type="button" data-reset>Nieuw gesprek</button></div></header>
       <div class="chat-main">
         <div class="chat-intro"><span class="brand-mark">R</span><h1>Waar beginnen we?</h1><p>Een rustige plek om vragen te verkennen en gedachten te ordenen.</p></div>
+        <form class="name-setting" data-name-form aria-label="Weergavenaam instellen">
+          <label for="rio-display-name">Jouw weergavenaam</label>
+          <input id="rio-display-name" name="senderName" maxlength="32" autocomplete="nickname" placeholder="Gast">
+          <button class="button ghost" type="submit">Opslaan</button>
+          <span class="tiny" data-name-feedback role="status">Niet geverifieerd</span>
+        </form>
         <div class="transcript" data-transcript aria-live="polite" aria-relevant="additions"></div>
         <article class="card" style="min-height:0;margin:20px 0 26px;padding:15px 17px"><span class="eyebrow">Lokale preview</span><p style="margin:8px 0 0">Deel een gesprek alleen via de knop Delen met iemand die je vertrouwt. Toegang is niet geauthenticeerd; deel geen gevoelige berichten.</p></article>
         <div class="prompt-row" aria-label="Voorbeeldvragen">

@@ -103,11 +103,16 @@ function validateMessage(body) {
     !UUID_PATTERN.test(body.messageId) ||
     typeof body.senderId !== "string" ||
     !UUID_PATTERN.test(body.senderId) ||
+    typeof body.senderName !== "string" ||
     typeof body.content !== "string"
   ) {
-    throw new HttpError(400, "conversationId, messageId, senderId, and content are required.");
+    throw new HttpError(400, "conversationId, messageId, senderId, senderName, and content are required.");
   }
 
+  const senderName = body.senderName.trim().replace(/\s+/g, " ");
+  if (!senderName || senderName.length > 32) {
+    throw new HttpError(400, "senderName must contain 1 to 32 characters.");
+  }
   const content = body.content.trim();
   if (!content) {
     throw new HttpError(400, "Message content cannot be empty.");
@@ -115,7 +120,7 @@ function validateMessage(body) {
   if (content.length > MAX_MESSAGE_LENGTH) {
     throw new HttpError(413, `Messages cannot exceed ${MAX_MESSAGE_LENGTH} characters.`);
   }
-  return { conversationId: body.conversationId, messageId: body.messageId, senderId: body.senderId, content };
+  return { conversationId: body.conversationId, messageId: body.messageId, senderId: body.senderId, senderName, content };
 }
 
 function apiPath(pathname) {
@@ -203,11 +208,11 @@ export function createServer({ appsDirectory = DEFAULT_APPS_DIRECTORY } = {}) {
           throw new HttpError(415, "Content-Type must be application/json.");
         }
 
-        const { conversationId, messageId, senderId, content } = validateMessage(await readJson(request));
+        const { conversationId, messageId, senderId, senderName, content } = validateMessage(await readJson(request));
         const key = `${conversationId}:${messageId}`;
         const existing = messageIndex.get(key);
         if (existing) {
-          if (existing.content !== content || existing.senderId !== senderId) {
+          if (existing.content !== content || existing.senderId !== senderId || existing.senderName !== senderName) {
             throw new HttpError(409, "messageId was already used for different content.");
           }
           sendJson(response, 200, { message: existing, duplicate: true });
@@ -229,6 +234,7 @@ export function createServer({ appsDirectory = DEFAULT_APPS_DIRECTORY } = {}) {
           id: messageId,
           conversationId,
           senderId,
+          senderName,
           role: "human",
           content,
           acceptedAt: new Date().toISOString(),

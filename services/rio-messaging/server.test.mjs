@@ -21,11 +21,11 @@ after(async () => {
   });
 });
 
-function postMessage(conversationId, messageId, senderId, content, origin = baseUrl) {
+function postMessage(conversationId, messageId, senderId, senderName, content, origin = baseUrl) {
   return fetch(`${baseUrl}/api/messages`, {
     method: "POST",
     headers: { origin, "content-type": "application/json" },
-    body: JSON.stringify({ conversationId, messageId, senderId, content }),
+    body: JSON.stringify({ conversationId, messageId, senderId, senderName, content }),
   });
 }
 
@@ -38,25 +38,28 @@ test("serves the previews and accepts bounded same-origin messages idempotently"
   const conversationId = randomUUID();
   const messageId = randomUUID();
   const senderId = randomUUID();
-  const accepted = await postMessage(conversationId, messageId, senderId, "  Hallo RIO  ");
+  const accepted = await postMessage(conversationId, messageId, senderId, "  Noor   de Vries ", "  Hallo RIO  ");
   assert.equal(accepted.status, 201);
   const body = await accepted.json();
   assert.equal(body.message.content, "Hallo RIO");
   assert.equal(body.message.role, "human");
   assert.equal(body.message.senderId, senderId);
+  assert.equal(body.message.senderName, "Noor de Vries");
   assert.equal(body.duplicate, false);
 
-  const duplicate = await postMessage(conversationId, messageId, senderId, "Hallo RIO");
+  const duplicate = await postMessage(conversationId, messageId, senderId, "Noor de Vries", "Hallo RIO");
   assert.equal(duplicate.status, 200);
   assert.equal((await duplicate.json()).duplicate, true);
 
-  const changedDuplicate = await postMessage(conversationId, messageId, senderId, "Andere tekst");
+  const changedDuplicate = await postMessage(conversationId, messageId, senderId, "Noor de Vries", "Andere tekst");
   assert.equal(changedDuplicate.status, 409);
-  const changedSender = await postMessage(conversationId, messageId, randomUUID(), "Hallo RIO");
+  const changedSender = await postMessage(conversationId, messageId, randomUUID(), "Noor de Vries", "Hallo RIO");
   assert.equal(changedSender.status, 409);
+  const changedSenderName = await postMessage(conversationId, messageId, senderId, "Andere naam", "Hallo RIO");
+  assert.equal(changedSenderName.status, 409);
 
   const secondSenderId = randomUUID();
-  const secondMessage = await postMessage(conversationId, randomUUID(), secondSenderId, "Bericht van een tweede browser");
+  const secondMessage = await postMessage(conversationId, randomUUID(), secondSenderId, "Sam", "Bericht van een tweede browser");
   assert.equal(secondMessage.status, 201);
 
   const history = await fetch(
@@ -66,28 +69,33 @@ test("serves the previews and accepts bounded same-origin messages idempotently"
   const messages = (await history.json()).messages;
   assert.equal(messages.length, 2);
   assert.equal(messages[1].senderId, secondSenderId);
+  assert.equal(messages[1].senderName, "Sam");
 });
 
 test("rejects invalid content, cross-origin requests, and traversal", async () => {
   const conversationId = randomUUID();
-  assert.equal((await postMessage(conversationId, randomUUID(), randomUUID(), "   ")).status, 400);
-  assert.equal((await postMessage(conversationId, randomUUID(), randomUUID(), "x".repeat(2001))).status, 413);
-  assert.equal((await postMessage(conversationId, randomUUID(), randomUUID(), "Nee", "https://example.com")).status, 403);
+  assert.equal((await postMessage(conversationId, randomUUID(), randomUUID(), "Gast", "   ")).status, 400);
+  assert.equal((await postMessage(conversationId, randomUUID(), randomUUID(), "Gast", "x".repeat(2001))).status, 413);
+  assert.equal((await postMessage(conversationId, randomUUID(), randomUUID(), "Gast", "Nee", "https://example.com")).status, 403);
 
   const noOriginRead = await fetch(`${baseUrl}/api/messages?conversationId=${conversationId}`);
   assert.equal(noOriginRead.status, 200);
   const noOriginWrite = await fetch(`${baseUrl}/api/messages`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ conversationId, messageId: randomUUID(), senderId: randomUUID(), content: "Nee" }),
+    body: JSON.stringify({ conversationId, messageId: randomUUID(), senderId: randomUUID(), senderName: "Gast", content: "Nee" }),
   });
   assert.equal(noOriginWrite.status, 403);
   const missingSender = await fetch(`${baseUrl}/api/messages`, {
     method: "POST",
     headers: { origin: baseUrl, "content-type": "application/json" },
-    body: JSON.stringify({ conversationId, messageId: randomUUID(), content: "Geen afzender" }),
+  body: JSON.stringify({ conversationId, messageId: randomUUID(), senderId: randomUUID(), content: "Geen afzender" }),
   });
   assert.equal(missingSender.status, 400);
+  const tooLongName = await postMessage(conversationId, randomUUID(), randomUUID(), "n".repeat(33), "Te lange naam");
+  assert.equal(tooLongName.status, 400);
+  const emptyName = await postMessage(conversationId, randomUUID(), randomUUID(), "  ", "Lege naam");
+  assert.equal(emptyName.status, 400);
   const wrongContentType = await fetch(`${baseUrl}/api/messages`, {
     method: "POST",
     headers: { origin: baseUrl, "content-type": "text/plain" },

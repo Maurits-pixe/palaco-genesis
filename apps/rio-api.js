@@ -1,5 +1,6 @@
 const STORAGE_KEY = "rio-preview-conversation-id";
 const SENDER_KEY = "rio-preview-sender-id";
+const DISPLAY_NAME_KEY = "rio-preview-display-name";
 const CONVERSATION_PARAM = "conversation";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 let fallbackConversationId;
@@ -63,6 +64,25 @@ export function senderId() {
   }
 }
 
+export function displayName() {
+  try {
+    return sessionStorage.getItem(DISPLAY_NAME_KEY) || "Gast";
+  } catch {
+    return "Gast";
+  }
+}
+
+export function saveDisplayName(value) {
+  const normalized = value.trim().replace(/\s+/g, " ").slice(0, 32);
+  try {
+    if (normalized) sessionStorage.setItem(DISPLAY_NAME_KEY, normalized);
+    else sessionStorage.removeItem(DISPLAY_NAME_KEY);
+  } catch {
+    return normalized || "Gast";
+  }
+  return normalized || "Gast";
+}
+
 export async function shareConversation(id) {
   const url = new URL(window.location.href);
   url.searchParams.set(CONVERSATION_PARAM, id);
@@ -106,11 +126,11 @@ export async function loadMessages(id) {
   return result.messages;
 }
 
-export async function sendMessage(id, messageId, senderId, content) {
+export async function sendMessage(id, messageId, senderId, senderName, content) {
   const result = await request("/api/messages", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ conversationId: id, messageId, senderId, content }),
+    body: JSON.stringify({ conversationId: id, messageId, senderId, senderName, content }),
   });
   return result.message;
 }

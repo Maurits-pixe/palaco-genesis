@@ -1,7 +1,9 @@
 import {
   conversationId as getConversationId,
+  displayName,
   loadMessages,
   newConversation,
+  saveDisplayName,
   sendMessage,
   senderId,
   shareConversation,
@@ -12,7 +14,11 @@ const composer = document.querySelector("[data-composer]");
 const input = composer.querySelector("input");
 const feedback = document.querySelector("[data-feedback]");
 const submitButton = composer.querySelector("button[type=submit]");
+const nameForm = document.querySelector("[data-name-form]");
+const nameInput = nameForm.querySelector("input");
+const nameFeedback = nameForm.querySelector("[data-name-feedback]");
 const messageSenderId = senderId();
+let messageSenderName = displayName();
 let conversation = getConversationId();
 let pending = null;
 let initialized = false;
@@ -24,18 +30,31 @@ function renderMessage(record) {
   const message = document.createElement("div");
   message.dataset.messageId = record.id;
   message.className = ownMessage ? "message user" : "message received";
+  const content = document.createElement("div");
+  content.className = "message-content";
+  const label = document.createElement("strong");
+  label.textContent = `${record.senderName || "Gast"}${ownMessage ? " · jij" : " · niet geverifieerd"}`;
   const paragraph = document.createElement("p");
   paragraph.textContent = record.content;
-  message.append(paragraph);
-
-  if (!ownMessage) {
-    const content = document.createElement("div");
-    const label = document.createElement("strong");
-    label.textContent = "Andere browser · niet geverifieerd";
-    content.append(label, paragraph);
-    message.replaceChildren(content);
-  }
+  content.append(label, paragraph);
+  appendTimestamp(content, record.acceptedAt);
+  message.append(content);
   transcript.append(message);
+}
+
+function appendTimestamp(container, value) {
+  const date = new Date(value);
+  const time = document.createElement("time");
+  if (Number.isNaN(date.getTime())) {
+    time.textContent = "Tijd onbekend";
+  } else {
+    time.dateTime = date.toISOString();
+    time.textContent = new Intl.DateTimeFormat("nl-NL", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(date);
+  }
+  container.append(time);
 }
 
 async function refreshMessages() {
@@ -65,12 +84,12 @@ composer.addEventListener("submit", async (event) => {
   const text = input.value.trim();
   if (!text || !initialized || composer.dataset.sending === "true") return;
 
-  pending ??= { id: crypto.randomUUID(), content: text };
+  pending ??= { id: crypto.randomUUID(), content: text, senderName: messageSenderName };
   composer.dataset.sending = "true";
   submitButton.disabled = true;
   feedback.textContent = "Bericht wordt naar de lokale RIO-dienst gestuurd…";
   try {
-    const accepted = await sendMessage(conversation, pending.id, messageSenderId, pending.content);
+    const accepted = await sendMessage(conversation, pending.id, messageSenderId, pending.senderName, pending.content);
     renderMessage(accepted);
     pending = null;
     input.value = "";
@@ -82,6 +101,14 @@ composer.addEventListener("submit", async (event) => {
     submitButton.disabled = false;
     input.focus();
   }
+});
+
+nameInput.value = messageSenderName;
+nameForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  messageSenderName = saveDisplayName(nameInput.value);
+  nameInput.value = messageSenderName;
+  nameFeedback.textContent = `Weergavenaam opgeslagen: ${messageSenderName} (niet geverifieerd)`;
 });
 
 document.querySelector("[data-reset]").addEventListener("click", () => {
