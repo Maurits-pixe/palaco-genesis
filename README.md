@@ -153,6 +153,12 @@ Het geldigheidsvenster moet exact de aangevraagde duur hebben.
 Afwijkende antwoorden worden niet als lokaal ticket bewaard; er volgt
 geen automatische nieuwe aanvraag. Dit vervangt de server-side
 geldigheidscontrole niet en veronderstelt geen gelijklopende clientklok.
+Ook de lokale bruikbaarheidscontrole weigert ongeldige ticketvensters en
+klokwaarden: beide venstergrenzen en de lokale tijd moeten veilige,
+niet-negatieve gehele epochmilliseconden binnen het datumbereik zijn.
+Geldige ISO-venstergrenzen blijven ondersteund. De duur moet 1 t/m 60000 ms
+zijn; de begintijd is inclusief en de eindtijd exclusief. Ongeldige waarden
+leiden niet tot een commitverzoek en geven geen toestemming.
 Bij een commitbevestiging controleert de interface ook de exacte
 commandotekst, het record-ID en de numerieke vastleggingstijd:
 `not_before <= committed_at < expires_at` van het ingezonden ticket.

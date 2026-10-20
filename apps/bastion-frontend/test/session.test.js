@@ -120,6 +120,48 @@ function retainedOutcomeState(state) {
     .map(([key, value]) => [key, JSON.parse(JSON.stringify(value.value))])))
 }
 
+test('malformed injected ticket windows or clocks cannot consume held authority or submit', async t => {
+  const { state, calls, clock } = fixture(t)
+  prepare(state, 'commit')
+  const invalid = [
+    Infinity, -Infinity, NaN, Number.MAX_SAFE_INTEGER + 1, 1000.5, -1,
+    8_640_000_000_000_001, null, undefined, true, {}, [], '', 'invalid',
+    '1969-12-31T23:59:59.999Z', '+275760-09-13T00:00:00.001Z',
+  ]
+  const tickets = []
+  for (const field of ['not_before', 'expires_at']) {
+    tickets.push(...invalid.map(value => ({ ...held(), [field]: value })))
+    const missing = held()
+    delete missing[field]
+    tickets.push(missing)
+  }
+  tickets.push(
+    { ...held(), not_before: 1100 },
+    { ...held(), not_before: 1101 },
+    { ...held(), expires_at: 61_001 },
+  )
+  async function assertGuarded() {
+    const currentTicket = state.ticket.value
+    assert.equal(state.canCommit.value, false)
+    await state.perform('commit')
+    assert.equal(state.ticket.value, currentTicket)
+    assert.equal(state.lastSubmissionId.value, 'retained-id')
+    assert.equal(calls.length, 0)
+    assert.equal(state.busy.value, '')
+  }
+  for (const ticket of tickets) {
+    state.ticket.value = ticket
+    await assertGuarded()
+  }
+  state.ticket.value = held()
+  assert.equal(state.canCommit.value, true)
+  for (const time of [...invalid, '1050', new Date(1050).toISOString()]) {
+    clock.time = time
+    clock.tick()
+    await assertGuarded()
+  }
+})
+
 for (const uncertain of [false, true]) {
   test(`same-ID mismatches are derived warnings only, uncertainty=${uncertain}`, async t => {
     const { state, calls, sockets, clock } = fixture(t)

@@ -53,8 +53,7 @@ test('commit rejects timestamps before the start and at the exclusive end withou
 
 test('commit requires a nonnegative safe integer Date-representable numeric epoch', async t => {
   t.mock.method(Date, 'now', () => start)
-  // Broad bounds isolate timestamp validation from window membership.
-  const data = { ...ticket(), not_before: -100, expires_at: Number.MAX_SAFE_INTEGER + 2 }
+  const data = ticket()
   for (const time of [
     new Date(start).toISOString(), String(start), start + 0.5, -1,
     Number.MAX_SAFE_INTEGER + 1, 8_640_000_000_000_001,
@@ -62,6 +61,36 @@ test('commit requires a nonnegative safe integer Date-representable numeric epoc
   ]) {
     await assert.rejects(commitCommand(data, command, token, async () => json(record(time))), invalidResponse)
   }
+})
+
+test('commit rejects malformed held windows and clocks before any request', async t => {
+  let now = start
+  t.mock.method(Date, 'now', () => now)
+  let calls = 0
+  const never = () => { calls++; assert.fail('must not fetch') }
+  const invalidTicket = { message: 'Ticket niet geldig voor dit commando. Vraag een nieuw ticket aan.' }
+  const invalid = [
+    Infinity, -Infinity, NaN, Number.MAX_SAFE_INTEGER + 1, start + 0.5, -1,
+    8_640_000_000_000_001, null, undefined, true, {}, [], '', 'invalid',
+    '1969-12-31T23:59:59.999Z', '+275760-09-13T00:00:00.001Z',
+  ]
+  for (const field of ['not_before', 'expires_at']) {
+    for (const value of invalid) {
+      await assert.rejects(commitCommand({ ...ticket(), [field]: value }, command, token, never), invalidTicket)
+    }
+    const missing = ticket()
+    delete missing[field]
+    await assert.rejects(commitCommand(missing, command, token, never), invalidTicket)
+  }
+  for (const bounds of [
+    { not_before: end, expires_at: end },
+    { not_before: end, expires_at: start },
+    { not_before: start, expires_at: start + 60_001 },
+  ]) await assert.rejects(commitCommand({ ...ticket(), ...bounds }, command, token, never), invalidTicket)
+  for (now of [...invalid, String(start), new Date(start).toISOString()]) {
+    await assert.rejects(commitCommand(ticket(), command, token, never), invalidTicket)
+  }
+  assert.equal(calls, 0)
 })
 
 test('commit rejects oversized IDs, invalid records and nonexact commands with sanitized single-POST failures', async t => {

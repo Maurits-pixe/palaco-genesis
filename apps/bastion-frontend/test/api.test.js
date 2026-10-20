@@ -79,6 +79,49 @@ test('ticket validity checks not-before, expiry and exact command', () => {
   assert.equal(ticketUsable(null, 'hello', 150), false)
 })
 
+test('ticket validity rejects malformed bounds and clocks without coercing now', () => {
+  const data = { id: 'id', command: 'hello', not_before: 100, expires_at: 200 }
+  const invalid = [
+    Infinity, -Infinity, NaN, Number.MAX_SAFE_INTEGER + 1, 100.5, -1,
+    8_640_000_000_000_001, null, undefined, true, {}, [], '', 'invalid',
+    '1969-12-31T23:59:59.999Z', '+275760-09-13T00:00:00.001Z',
+  ]
+  for (const field of ['not_before', 'expires_at']) {
+    for (const value of invalid) {
+      assert.equal(ticketUsable({ ...data, [field]: value }, data.command, 150), false,
+        `${field}=${String(value)}`)
+    }
+    const missing = { ...data }
+    delete missing[field]
+    assert.equal(ticketUsable(missing, data.command, 150), false)
+  }
+  for (const now of [...invalid.filter(value => value !== undefined), '150', new Date(150).toISOString()]) {
+    assert.equal(ticketUsable(data, data.command, now), false, `now=${String(now)}`)
+  }
+  for (const bounds of [
+    { not_before: 200, expires_at: 200 },
+    { not_before: 201, expires_at: 200 },
+    { not_before: 100, expires_at: 60_101 },
+  ]) assert.equal(ticketUsable({ ...data, ...bounds }, data.command, 150), false)
+})
+
+test('numeric and legacy ISO ticket windows retain half-open epoch and Date-limit boundaries', () => {
+  const maxDate = 8_640_000_000_000_000
+  for (const [notBefore, expiresAt] of [[0, 1], [100, 60_100], [maxDate - 1, maxDate]]) {
+    for (const iso of [false, true]) {
+      const data = {
+        command: 'hello',
+        not_before: iso ? new Date(notBefore).toISOString() : notBefore,
+        expires_at: iso ? new Date(expiresAt).toISOString() : expiresAt,
+      }
+      for (const [now, usable] of [
+        [notBefore - 1, false], [notBefore, true], [expiresAt - 1, true],
+        [expiresAt, false], [expiresAt + 1, false],
+      ]) assert.equal(ticketUsable(data, data.command, now), usable, `${iso}, now=${now}`)
+    }
+  }
+})
+
 test('submission is a distinct request carrying ticket ID and command', async () => {
   const data = ticket()
   const result = { ...entry(), committed_at: Date.now() }

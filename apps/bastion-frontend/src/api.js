@@ -86,8 +86,13 @@ export function timestamp(value) {
 }
 
 export function ticketUsable(ticket, command, now = Date.now()) {
+  const notBefore = timestamp(ticket?.not_before)
+  const expiresAt = timestamp(ticket?.expires_at)
   return !!ticket && ticket.command === command &&
-    now >= timestamp(ticket.not_before) && now < timestamp(ticket.expires_at)
+    [now, notBefore, expiresAt].every(time =>
+      Number.isSafeInteger(time) && time >= 0 && Number.isFinite(new Date(time).getTime())) &&
+    expiresAt > notBefore && expiresAt - notBefore <= 60_000 &&
+    now >= notBefore && now < expiresAt
 }
 
 export async function request(path, { token, method = 'GET', body, fetcher = fetch, timeoutMs = 8000, signal }) {
