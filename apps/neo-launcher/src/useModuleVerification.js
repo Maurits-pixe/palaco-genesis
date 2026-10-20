@@ -41,6 +41,15 @@ export function useModuleVerification({
     abortAttempts()
   }
 
+  function resetModule(module) {
+    if (disposed || !TRUSTED_MODULES.includes(module) ||
+        states.value[module.id].status === 'idle') return
+    const controller = attempts.get(module.id)
+    attempts.delete(module.id)
+    states.value[module.id] = { status: 'idle' }
+    controller?.abort()
+  }
+
   function begin(module) {
     const controller = new AbortController()
     attempts.set(module.id, controller)
@@ -79,5 +88,5 @@ export function useModuleVerification({
     await Promise.all(TRUSTED_MODULES.map((module, index) => run(module, controllers[index])))
   }
 
-  return { states, now, isVerifying, launchableCount, verify, verifyAll, reset }
+  return { states, now, isVerifying, launchableCount, verify, verifyAll, reset, resetModule }
 }

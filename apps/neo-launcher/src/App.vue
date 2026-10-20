@@ -2,7 +2,7 @@
 import { launchUrl, remainingVerificationSeconds, TRUSTED_MODULES } from './verification.js'
 import { useModuleVerification } from './useModuleVerification.js'
 
-const { states, now, isVerifying, launchableCount, verify, verifyAll, reset } = useModuleVerification()
+const { states, now, isVerifying, launchableCount, verify, verifyAll, reset, resetModule } = useModuleVerification()
 
 function follow(event, module) {
   if (!launchUrl(module, states.value[module.id], Date.now())) {
@@ -53,6 +53,7 @@ function remainingSeconds(module) {
         <p v-if="remainingSeconds(module) !== null">Startlink nog circa {{ remainingSeconds(module) }} seconden beschikbaar.</p>
         <div class="actions">
           <button :disabled="states[module.id].status === 'verifying'" @click="verify(module)">Controleer identiteit en backendstatus</button>
+          <button type="button" :disabled="states[module.id].status === 'idle'" :aria-label="`Wis deze controle voor ${module.name}`" @click="resetModule(module)">Wis deze controle</button>
           <a v-if="launchUrl(module, states[module.id], now)" :href="launchUrl(module, states[module.id], now)" rel="noreferrer" @click="follow($event, module)">Open {{ module.name }} →</a>
           <span v-else class="disabled" role="link" aria-disabled="true">Open {{ module.name }} →</span>
         </div>

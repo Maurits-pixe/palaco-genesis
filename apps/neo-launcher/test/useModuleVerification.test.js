@@ -277,6 +277,212 @@ test('scope disposal clears the timer and ignores late successes, failures, and 
   assert.deepEqual(cleared, [timer])
 })
 
+test('module reset removes only its approval and preserves the other approval lifetime and timer', async (t) => {
+  const { model, pending, calls, setTime, tick, cleared } = setup(t)
+  const batch = model.verifyAll()
+  for (const request of pending) request.resolve(evidence(request.module, 100_000))
+  await batch
+  setTime(110_000)
+  tick()
+  const states = model.states.value
+  const other = states.bastion
+  setTime(120_000)
+  model.resetModule(aether)
+  assert.equal(model.states.value, states)
+  assert.deepEqual(states.aether, { status: 'idle' })
+  assert.equal(states.bastion, other)
+  assert.equal(other.verifiedAt, 100_000)
+  assert.equal(model.now.value, 110_000)
+  assert.equal(model.launchableCount.value, 1)
+  assertRemaining(model, [null, 50])
+  assert.ok(pending.every(({ signal }) => !signal.aborted))
+  assert.deepEqual(cleared, [])
+  tick()
+  assertRemaining(model, [null, 40])
+  setTime(160_000)
+  tick()
+  assertRemaining(model, [null, null])
+  assert.equal(states.bastion, other)
+  model.resetModule(bastion)
+  assert.deepEqual(states.bastion, { status: 'idle' })
+  assert.deepEqual(calls, TRUSTED_MODULES)
+})
+
+test('module reset preserves the pending half of a partially settled batch', async (t) => {
+  for (const outcome of ['verified', 'error']) {
+    const { model, pending, calls, cleared } = setup(t)
+    const batch = model.verifyAll()
+    if (outcome === 'verified') pending[0].resolve(evidence(aether, 100_000))
+    else pending[0].reject(new Error('Offline'))
+    await Promise.resolve()
+    assert.equal(model.states.value.aether.status, outcome)
+    const other = model.states.value.bastion
+    model.resetModule(aether)
+    assert.deepEqual(model.states.value.aether, { status: 'idle' })
+    assert.equal(model.states.value.bastion, other)
+    assert.equal(model.isVerifying.value, true)
+    assert.equal(model.launchableCount.value, 0)
+    assertRemaining(model, [null, null])
+    assert.ok(pending.every(({ signal }) => !signal.aborted))
+    await model.verifyAll()
+    assert.equal(calls.length, 2)
+    pending[1].resolve(evidence(bastion, 100_000))
+    await batch
+    assert.equal(model.isVerifying.value, false)
+    assertRemaining(model, [null, 60])
+    assert.deepEqual(cleared, [])
+  }
+})
+
+test('module reset aborts only the selected pending batch attempt and ignores its late result', async (t) => {
+  for (const outcome of ['success', 'error']) {
+    const { model, pending, setTime, calls, cleared } = setup(t)
+    const batch = model.verifyAll()
+    const other = model.states.value.bastion
+    model.resetModule(aether)
+    assert.equal(pending[0].signal.aborted, true)
+    assert.equal(pending[1].signal.aborted, false)
+    assert.deepEqual(model.states.value.aether, { status: 'idle' })
+    assert.equal(model.states.value.bastion, other)
+    assert.equal(model.isVerifying.value, true)
+    setTime(120_000)
+    if (outcome === 'success') pending[0].resolve(evidence(aether, 120_000))
+    else pending[0].reject(new Error('Stale failure'))
+    await Promise.resolve()
+    assert.equal(model.now.value, 100_000)
+    assert.deepEqual(model.states.value.aether, { status: 'idle' })
+    assert.equal(model.states.value.bastion, other)
+    pending[1].resolve(evidence(bastion, 120_000))
+    await batch
+    assert.equal(model.isVerifying.value, false)
+    assertRemaining(model, [null, 60])
+    assert.deepEqual(calls, TRUSTED_MODULES)
+    assert.deepEqual(cleared, [])
+  }
+})
+
+test('module reset retains another completed approval while aborting its pending attempt', async (t) => {
+  const { model, pending } = setup(t)
+  const batch = model.verifyAll()
+  pending[1].resolve(evidence(bastion, 100_000))
+  await Promise.resolve()
+  const other = model.states.value.bastion
+  model.resetModule(aether)
+  assert.equal(pending[0].signal.aborted, true)
+  assert.equal(pending[1].signal.aborted, false)
+  assert.equal(model.isVerifying.value, false)
+  assert.equal(model.states.value.bastion, other)
+  assertRemaining(model, [null, 60])
+  pending[0].reject(new Error('Aborted'))
+  await batch
+  assert.equal(model.states.value.bastion, other)
+  assertRemaining(model, [null, 60])
+})
+
+test('module reset fences stale success, error, and finally from a fresh attempt and other modules', async (t) => {
+  for (const outcome of ['success', 'error']) {
+    for (const settled of [false, true]) {
+      const { model, pending, calls, setTime } = setup(t)
+      const oldBatch = model.verifyAll()
+      model.resetModule(aether)
+      const fresh = model.verify(aether)
+      assert.equal(pending[2].signal.aborted, false)
+      if (settled) {
+        setTime(110_000)
+        pending[2].resolve(evidence(aether, 110_000))
+        await fresh
+      }
+      const selected = model.states.value.aether
+      const other = model.states.value.bastion
+      const clock = model.now.value
+      setTime(120_000)
+      if (outcome === 'success') pending[0].resolve(evidence(aether, 120_000))
+      else pending[0].reject(new Error('Stale failure'))
+      await Promise.resolve()
+      assert.equal(model.states.value.aether, selected)
+      assert.equal(model.states.value.bastion, other)
+      assert.equal(model.now.value, clock)
+      assertRemaining(model, settled ? [60, null] : [null, null])
+      if (!settled) {
+        await model.verify(aether)
+        assert.equal(calls.length, 3)
+        // A stale finally must not detach the new controller from cancellation.
+        model.resetModule(aether)
+        assert.equal(pending[2].signal.aborted, true)
+        pending[2].resolve(evidence(aether, 120_000))
+        await fresh
+        assert.deepEqual(model.states.value.aether, { status: 'idle' })
+      }
+      assert.equal(pending[1].signal.aborted, false)
+      pending[1].resolve(evidence(bastion, 120_000))
+      await oldBatch
+      assertRemaining(model, settled ? [50, 60] : [null, 60])
+    }
+  }
+})
+
+test('module reset rejects same-id clones and is a no-op for idle, invalid, and disposed calls', async (t) => {
+  const { model, pending, scope, cleared, timer, calls } = setup(t)
+  const states = model.states.value
+  const idle = states.aether
+  model.resetModule(aether)
+  model.resetModule(aether)
+  assert.equal(states.aether, idle)
+  const batch = model.verifyAll()
+  const selected = states.aether
+  for (const invalid of [{ ...aether }, { id: aether.id }, {}, null, undefined, 'aether']) {
+    model.resetModule(invalid)
+    await model.verify(invalid)
+    assert.equal(states.aether, selected)
+    assert.ok(pending.every(({ signal }) => !signal.aborted))
+  }
+  assert.equal(calls.length, 2)
+  scope.stop()
+  model.resetModule(aether)
+  model.resetModule(bastion)
+  model.resetModule(aether)
+  model.reset()
+  assert.equal(model.states.value, states)
+  assert.equal(states.aether, selected)
+  assert.equal(model.now.value, 100_000)
+  assert.deepEqual(cleared, [timer])
+  pending[0].resolve(evidence(aether, 100_000))
+  pending[1].reject(new Error('Disposed'))
+  await batch
+  assert.equal(states.aether, selected)
+})
+
+test('module reset invalidates identity and sets idle before synchronous abort callbacks start a fresh attempt', async (t) => {
+  const { model, pending, setTime } = setup(t)
+  const batch = model.verifyAll()
+  let observed
+  let fresh
+  pending[0].signal.addEventListener('abort', () => {
+    observed = model.states.value.aether
+    fresh = model.verify(aether)
+    pending[0].reject(new Error('Synchronous abort'))
+  })
+  model.resetModule(aether)
+  assert.deepEqual(observed, { status: 'idle' })
+  assert.equal(pending.length, 3)
+  assert.equal(model.states.value.aether.status, 'verifying')
+  assert.equal(pending[1].signal.aborted, false)
+  assert.equal(pending[2].signal.aborted, false)
+  await Promise.resolve()
+  assert.equal(model.states.value.aether.status, 'verifying')
+  // Global reset must still find both current controllers, including the reentrant one.
+  model.reset()
+  assert.equal(pending[1].signal.aborted, true)
+  assert.equal(pending[2].signal.aborted, true)
+  setTime(120_000)
+  pending[1].resolve(evidence(bastion, 120_000))
+  pending[2].resolve(evidence(aether, 120_000))
+  await Promise.all([batch, fresh])
+  assert.deepEqual(Object.values(model.states.value), [{ status: 'idle' }, { status: 'idle' }])
+  assert.equal(model.now.value, 100_000)
+  assertRemaining(model, [null, null])
+})
+
 test('reset removes completed approvals, count, and launch links and is repeatable', async (t) => {
   const { model, pending, calls } = setup(t)
   const batch = model.verifyAll()
@@ -538,6 +744,10 @@ test('UI wires manual batch, independent controls, live count, and click-time la
   assert.match(app, /Aflevering is niet gegarandeerd\. Dit stopt geen services, trekt geen tokens of tickets in en is geen autorisatie/)
   assert.match(app, /role="status" aria-live="polite" aria-atomic="true">\{\{ launchableCount \}\} van \{\{ TRUSTED_MODULES.length \}\} modules momenteel te openen/)
   assert.match(app, /:disabled="states\[module.id\].status === 'verifying'" @click="verify\(module\)"/)
+  const article = app.match(/<article\b[\s\S]*?<\/article>/)?.[0]
+  assert.ok(article)
+  assert.match(app, /const \{[^}]*resetModule[^}]*\} = useModuleVerification\(\)/)
+  assert.match(article, /<button type="button" :disabled="states\[module.id\].status === 'idle'" :aria-label="`Wis deze controle voor \$\{module.name\}`" @click="resetModule\(module\)">Wis deze controle<\/button>/)
   assert.match(app, /if \(!launchUrl\(module, states.value\[module.id\], Date.now\(\)\)\) \{\s*event.preventDefault\(\)/)
   assert.match(app, /v-if="launchUrl\(module, states\[module.id\], now\)" :href="launchUrl\(module, states\[module.id\], now\)"/)
   assert.match(app, /@click="follow\(\$event, module\)"/)

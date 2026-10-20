@@ -84,6 +84,12 @@ Met **Wis controles** verwijder je alle lokale controleresultaten en
 startgoedkeuringen, ook tijdens een lopende controle. Lopende verzoeken
 worden lokaal geannuleerd; vertraagde antwoorden activeren geen links
 opnieuw. Je kunt daarna direct een nieuwe controle starten.
+Met **Wis deze controle** wis je alleen de betreffende modulecontrole,
+inclusief de startlink en resterende duur. Een lopend verzoek voor die
+module wordt lokaal geannuleerd; controles en verzoeken voor de andere
+module blijven behouden. Ook tijdens een gezamenlijke controle kun je één
+module afbreken en daarna handmatig opnieuw controleren. Vertraagde
+antwoorden uit de gewiste poging herstellen de controle niet.
 Wissen stopt geen services, sluit geen reeds geopende tabbladen en trekt
 geen server-side tickets of toestemming in.
 Bij `pagehide` wist NEO dezelfde controles, ook wanneer de browser de pagina
