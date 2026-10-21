@@ -426,6 +426,12 @@ HTTP/SQLite-service. Ze controleren een normale vastlegging en expliciete
 statusopvraging na verloren succesvolle commit- en intrekkingsantwoorden.
 Een verloren commitantwoord mag niet tot herinzending leiden; een onzekere
 intrekking blijft geblokkeerd tot de serveruitkomst expliciet is gecontroleerd.
+De sessietests combineren ook de echte realtimeclient en service om lokaal
+logboekwissen en een gesimuleerd `pagehide` te controleren: socketcredentials
+worden verwijderd, serverrecords blijven behouden en opnieuw verbinden vereist
+een handmatige actie. Logboekwissen behoudt de lokale ticketstaat; `pagehide`
+wist de sessie zonder servertickets in te trekken. Dit simuleert het
+pagina-event in Node, niet de levenscyclus of terug-/vooruitcache van een browser.
 Installeer voor beide BASTION-testsuites vooraf de dependencies van zowel `services/bastion-core`
 als `apps/bastion-frontend` met `npm ci --prefix <map>`; de bestaande
 installatiestap hierboven doet dit al voor alle Node-projecten. Beide BASTION-CI-jobs

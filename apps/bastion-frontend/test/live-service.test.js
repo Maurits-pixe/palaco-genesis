@@ -6,8 +6,10 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { effectScope } from 'vue'
+import { effectScope, watch } from 'vue'
+import { io } from 'socket.io-client'
 import * as productionApi from '../src/api.js'
+import { createRealtime } from '../src/realtime.js'
 import { useSession } from '../src/useSession.js'
 import { createBastion } from '../../../services/bastion-core/service.js'
 
@@ -28,14 +30,51 @@ async function bounded(pending, label) {
   }
 }
 
-async function fixture(t) {
+async function waitFor(read, predicate, label) {
+  let stop
+  try {
+    await bounded(new Promise(resolve => {
+      stop = watch(read, value => {
+        if (predicate(value)) resolve()
+      }, { immediate: true, flush: 'sync' })
+    }), label)
+  } finally {
+    stop?.()
+  }
+}
+
+async function nextCommit(socket, command) {
+  let listener
+  try {
+    return await bounded(new Promise(resolve => {
+      listener = entry => {
+        if (entry.command === command) resolve(entry)
+      }
+      socket.on('command:committed', listener)
+    }), `realtime commit: ${command}`)
+  } finally {
+    socket.off('command:committed', listener)
+  }
+}
+
+function assertDisconnected(socket) {
+  assert.equal(socket.connected, false)
+  assert.equal(socket.active, false)
+  assert.deepEqual(socket.auth, {})
+  assert.deepEqual(socket.io.opts.auth, {})
+  assert.deepEqual(Object.keys(socket._callbacks ?? {}), [])
+  assert.equal(socket.io._readyState, 'closed')
+}
+
+async function fixture(t, { realtime = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'palaco-bastion-live-test-'))
   const probe = createServer()
   const scope = effectScope()
   const eventTarget = new EventTarget()
   const intervals = new Set()
   const calls = []
-  let app, db, session, dropNext
+  const sockets = []
+  let app, db, session, dropNext, witness
   let losses = 0
   t.after(async () => {
     try {
@@ -50,7 +89,10 @@ async function fixture(t) {
       }
       assert.equal(intervals.size, 0)
       assert.equal(getEventListeners(eventTarget, 'pagehide').length, 0)
+      for (const socket of sockets) assertDisconnected(socket)
     } finally {
+      witness?.removeAllListeners()
+      witness?.disconnect()
       try {
         db?.close()
         if (app) await bounded(app.close(), 'service shutdown')
@@ -109,6 +151,20 @@ async function fixture(t) {
   t.mock.method(Date, 'now', () => now)
   session = scope.run(() => useSession({
     api,
+    ...(realtime ? {
+      realtimeFactory: callbacks => createRealtime({
+        ...callbacks,
+        createSocket(options) {
+          assert.deepEqual(options, {
+            path: '/socket.io', auth: { token }, autoConnect: false,
+            reconnection: false, withCredentials: false,
+          })
+          const socket = io(origin, options)
+          sockets.push(socket)
+          return socket
+        },
+      }),
+    } : {}),
     eventTarget,
     scheduler: {
       now: () => now,
@@ -126,12 +182,31 @@ async function fixture(t) {
   }))
   assert.equal(intervals.size, 1)
   assert.equal(getEventListeners(eventTarget, 'pagehide').length, 1)
-  // Realtime stays disconnected: these tests deliberately exercise only real HTTP.
+  // Even the optional live transport requires an explicit manual connection.
   assert.equal(session.realtimeStatus.value, 'disconnected')
   session.token.value = token
   session.command.value = ' registreer é😀 wijziging '
+  const externalFetch = (path, options) => fetch(origin + path, options)
+  if (realtime) {
+    // An independent real client provides an emission barrier while the session is disconnected.
+    witness = io(origin, { auth: { token }, autoConnect: false, reconnection: false })
+    const connected = bounded(once(witness, 'connect'), 'witness connection')
+    witness.connect()
+    await connected
+  }
   return {
-    session, db, calls,
+    session, db, calls, sockets, witness, scope, eventTarget, intervals,
+    async commitExternal(command) {
+      const ticket = await productionApi.issueTicket(command, 10000, token, externalFetch)
+      return productionApi.commitCommand(ticket, command, token, externalFetch)
+    },
+    statusExternal: id => productionApi.getTicketStatus(id, token, externalFetch),
+    async connect() {
+      const connected = waitFor(session.realtimeStatus, value => value === 'connected', 'session connection')
+      session.realtime.connect(session.token.value)
+      await connected
+      return sockets.at(-1)
+    },
     count: (method, path) => calls.filter(call => call.method === method && call.path === path).length,
     loseNext: (method, path) => { dropNext = `${method} ${path}` },
     get losses() { return losses },
@@ -268,4 +343,190 @@ test('live service: a lost successful revocation blocks authority until explicit
   assert.equal(f.count('GET', `/v1/tickets/${held.id}`), 1)
   assert.equal(f.count('POST', '/v1/commands'), 0)
   assert.equal(f.calls.length, 5)
+})
+
+test('live realtime: clearing the journal disconnects without losing authority or status; reconnect never replays missed commits', { timeout: 20000 }, async t => {
+  const f = await fixture(t, { realtime: true })
+  const s = f.session
+  const socket = await f.connect()
+  const firstEvent = nextCommit(socket, 'external before clear')
+  const first = await f.commitExternal('external before clear')
+  assert.deepEqual(await firstEvent, first)
+  assert.deepEqual(s.commands.value, [first])
+  assert.equal(f.calls.length, 0, 'the session receives a real event without issuing HTTP requests')
+
+  await f.run('ticket')
+  const submittedId = s.ticket.value.id
+  const ownEvent = nextCommit(socket, s.command.value)
+  await f.run('commit')
+  const own = await ownEvent
+  assert.deepEqual(s.commands.value, [own, first], 'HTTP confirmation and its real event are deduplicated')
+  await bounded(s.checkLastSubmission(), 'submission status before clear')
+  assert.equal(s.outcome.value.status, 'committed')
+  await f.run('list')
+  assert.equal(s.lastJournalRefreshAt.value, now)
+  s.search.value = 'external'
+  assert.deepEqual(s.filteredCommands.value, [first])
+  await f.run('ticket')
+  const held = { ...s.ticket.value }
+  f.loseNext('DELETE', `/v1/tickets/${held.id}`)
+  await f.run('revoke')
+  assert.equal(f.losses, 1)
+  assert.equal(s.revocationUncertain.value, true)
+  const outcome = { ...s.outcome.value }
+  const feedback = { message: s.message.value, error: s.error.value }
+  const requests = f.calls.length
+
+  s.clearJournal()
+  assertDisconnected(socket)
+  assert.equal(s.realtimeStatus.value, 'disconnected')
+  assert.deepEqual(s.commands.value, [])
+  assert.deepEqual(s.filteredCommands.value, [])
+  assert.equal(s.search.value, '')
+  assert.equal(s.hasLoaded.value, false)
+  assert.equal(s.journalRefreshFailed.value, false)
+  assert.equal(s.lastJournalRefreshAt.value, null)
+  assert.equal(s.token.value, token)
+  assert.deepEqual(s.ticket.value, held)
+  assert.equal(s.command.value, held.command)
+  assert.equal(s.revocationUncertain.value, true)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lookupId.value, submittedId)
+  assert.equal(s.lastSubmissionId.value, submittedId)
+  assert.deepEqual(s.outcome.value, outcome)
+  assert.equal(s.outcomeReceivedAt.value, now)
+  assert.deepEqual({ message: s.message.value, error: s.error.value }, feedback)
+
+  const missedEvent = nextCommit(f.witness, 'disconnected HTTP sentinel')
+  const missed = await f.commitExternal('disconnected HTTP sentinel')
+  assert.deepEqual(await missedEvent, missed)
+  assert.deepEqual(s.commands.value, [], 'a successfully emitted disconnected commit cannot refill the journal')
+  assert.equal(f.calls.length, requests)
+  const reconnected = await f.connect()
+  assert.notEqual(reconnected, socket)
+  assert.deepEqual(s.commands.value, [])
+  const freshEvent = nextCommit(reconnected, 'external after reconnect')
+  const fresh = await f.commitExternal('external after reconnect')
+  assert.deepEqual(await freshEvent, fresh)
+  assert.deepEqual(s.commands.value, [fresh], 'new events arrive, but neither old nor disconnected records replay')
+  assert.equal(s.hasLoaded.value, false)
+  assert.equal(s.lastJournalRefreshAt.value, null)
+  assert.equal(f.calls.length, requests, 'reconnection does not automatically refresh or mutate')
+
+  await f.run('list')
+  const persisted = f.db.prepare('SELECT id, command, committed_at FROM commands ORDER BY seq DESC').all().map(row => ({ ...row }))
+  assert.deepEqual(persisted, [fresh, missed, own, first])
+  assert.deepEqual(s.commands.value, persisted)
+  assert.equal(new Set(s.commands.value.map(row => row.id)).size, 4)
+  assert.equal(s.hasLoaded.value, true)
+  assert.equal(s.lastJournalRefreshAt.value, now)
+  assert.deepEqual(s.ticket.value, held)
+  assert.equal(s.revocationUncertain.value, true)
+  assert.deepEqual(s.outcome.value, outcome)
+  assert.equal(s.outcomeReceivedAt.value, now)
+  assert.equal(f.count('POST', '/v1/commands'), 1)
+  assert.equal(f.count('DELETE', `/v1/tickets/${held.id}`), 1)
+  assert.equal(f.count('GET', '/v1/commands'), 2)
+  assert.equal(f.calls.length, requests + 1)
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM tickets WHERE consumed = 1').get().count, 4)
+})
+
+test('live realtime: pagehide fully clears a connected session without revoking server authority; manual reconnect and scope disposal work', { timeout: 20000 }, async t => {
+  const f = await fixture(t, { realtime: true })
+  const s = f.session
+  const socket = await f.connect()
+  const firstEvent = nextCommit(socket, 'external before pagehide')
+  const first = await f.commitExternal('external before pagehide')
+  assert.deepEqual(await firstEvent, first)
+  assert.deepEqual(s.commands.value, [first])
+  await f.run('ticket')
+  const ownEvent = nextCommit(socket, s.command.value)
+  await f.run('commit')
+  const own = await ownEvent
+  assert.notEqual(s.lastSubmissionId.value, '')
+  s.ttlMs.value = 6000
+  s.command.value = 'held through pagehide'
+  await f.run('ticket')
+  const held = { ...s.ticket.value }
+  await bounded(s.checkCurrentTicket(), 'active ticket before pagehide')
+  assert.equal(s.outcome.value.status, 'active')
+  assert.equal(s.outcomeReceivedAt.value, now)
+  await f.run('list')
+  assert.deepEqual(s.commands.value, [own, first])
+  assert.equal(s.lastJournalRefreshAt.value, now)
+  s.search.value = 'external'
+  const requests = f.calls.length
+
+  function assertCleared() {
+    assert.equal(s.token.value, '')
+    assert.equal(s.command.value, '')
+    assert.equal(s.ttlMs.value, 10000)
+    assert.equal(s.ticket.value, null)
+    assert.equal(s.revocationUncertain.value, false)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.lookupId.value, '')
+    assert.equal(s.lastSubmissionId.value, '')
+    assert.equal(s.outcome.value, null)
+    assert.equal(s.outcomeReceivedAt.value, null)
+    assert.equal(s.outcomeMismatch.value, false)
+    assert.equal(s.search.value, '')
+    assert.deepEqual(s.commands.value, [])
+    assert.deepEqual(s.filteredCommands.value, [])
+    assert.equal(s.hasLoaded.value, false)
+    assert.equal(s.journalRefreshFailed.value, false)
+    assert.equal(s.lastJournalRefreshAt.value, null)
+    assert.equal(s.busy.value, '')
+    assert.equal(s.message.value, '')
+    assert.equal(s.error.value, '')
+    assert.equal(s.realtimeStatus.value, 'disconnected')
+  }
+
+  f.eventTarget.dispatchEvent(new Event('pagehide'))
+  assertCleared()
+  assertDisconnected(socket)
+  assert.equal(f.calls.length, requests, 'pagehide sends no revocation or other HTTP request')
+  const hiddenEvent = nextCommit(f.witness, 'external after pagehide')
+  const hidden = await f.commitExternal('external after pagehide')
+  assert.deepEqual(await hiddenEvent, hidden)
+  assertCleared()
+  const status = await bounded(f.statusExternal(held.id), 'server ticket after pagehide')
+  assert.equal(status.status, 'active')
+  assert.equal(status.revoked, false)
+  assert.equal(status.record, null)
+  assert.deepEqual({ ...f.db.prepare('SELECT revoked, consumed FROM tickets WHERE id = ?').get(held.id) }, { revoked: 0, consumed: 0 })
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM commands').get().count, 3)
+  assert.equal(f.calls.length, requests)
+
+  s.token.value = token
+  assert.equal(s.realtimeStatus.value, 'disconnected')
+  assert.equal(f.sockets.length, 1, 'restoring the token does not automatically reconnect')
+  const reconnected = await f.connect()
+  const freshEvent = nextCommit(reconnected, 'external after manual recovery')
+  const fresh = await f.commitExternal('external after manual recovery')
+  assert.deepEqual(await freshEvent, fresh)
+  assert.deepEqual(s.commands.value, [fresh])
+  await f.run('list')
+  assert.deepEqual(s.commands.value, [fresh, hidden, own, first])
+  assert.equal(s.ticket.value, null, 'reconnecting never restores cleared local authority')
+  assert.equal(f.count('POST', '/v1/commands'), 1)
+  assert.equal(f.calls.some(call => call.method === 'DELETE'), false)
+
+  f.scope.stop()
+  assertCleared()
+  assertDisconnected(reconnected)
+  assert.equal(f.intervals.size, 0)
+  assert.equal(getEventListeners(f.eventTarget, 'pagehide').length, 0)
+  const disposedEvent = nextCommit(f.witness, 'external after disposal')
+  const disposed = await f.commitExternal('external after disposal')
+  assert.deepEqual(await disposedEvent, disposed)
+  assertCleared()
+  s.realtime.connect(token)
+  await f.run('list')
+  assert.equal(f.sockets.length, 2, 'a disposed scope cannot reconnect')
+  assert.equal(f.calls.length, requests + 1, 'a disposed scope cannot send requests')
+  assert.deepEqual(
+    f.db.prepare('SELECT id, command, committed_at FROM commands ORDER BY seq DESC').all().map(row => ({ ...row })),
+    [disposed, fresh, hidden, own, first],
+  )
+  assert.equal((await f.statusExternal(held.id)).status, 'active')
 })
