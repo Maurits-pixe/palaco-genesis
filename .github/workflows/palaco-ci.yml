@@ -88,6 +88,10 @@ jobs:
         if: matrix.project == 'services/bastion-core'
         working-directory: apps/bastion-frontend
         run: npm ci
+      - name: Install backend dependencies for live BASTION session tests
+        if: matrix.project == 'apps/bastion-frontend'
+        working-directory: services/bastion-core
+        run: npm ci
       - name: Test
         run: npm test
       - name: Build

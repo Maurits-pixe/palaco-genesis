@@ -421,10 +421,15 @@ launchbestemming en geldigheidsgrens, weigering van een verkeerde module-identit
 en falen wanneer de service na het manifest onbereikbaar wordt. De testadapter
 vertaalt uitsluitend de vaste verificatiepaden naar de tijdelijke HTTP-service;
 dit test niet de Vite-proxy of browsernavigatie en verleent geen uitvoeringsrecht.
-Installeer hiervoor vooraf de dependencies van zowel `services/bastion-core`
+De BASTION-frontendtests draaien ook de productie-sessie tegen de echte
+HTTP/SQLite-service. Ze controleren een normale vastlegging en expliciete
+statusopvraging na verloren succesvolle commit- en intrekkingsantwoorden.
+Een verloren commitantwoord mag niet tot herinzending leiden; een onzekere
+intrekking blijft geblokkeerd tot de serveruitkomst expliciet is gecontroleerd.
+Installeer voor beide BASTION-testsuites vooraf de dependencies van zowel `services/bastion-core`
 als `apps/bastion-frontend` met `npm ci --prefix <map>`; de bestaande
-installatiestap hierboven doet dit al voor alle Node-projecten. De CI-job voor
-BASTION installeert beide projecten. Dit zijn geen browser- of Vite-proxytests
+installatiestap hierboven doet dit al voor alle Node-projecten. Beide BASTION-CI-jobs
+installeren beide projecten. Dit zijn geen browser- of Vite-proxytests
 en geen bewijs van productiegeschiktheid.
 
 De bestaande PALACO CI-workflow controleert ook deze service en Node-projecten.
