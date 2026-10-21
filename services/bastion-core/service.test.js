@@ -15,6 +15,9 @@ import {
   issueTicket, commitCommand, revokeTicket, listCommands, getTicketStatus,
 } from '../../apps/bastion-frontend/src/api.js';
 import { createRealtime } from '../../apps/bastion-frontend/src/realtime.js';
+import {
+  verifyModule, TRUSTED_MODULES, launchUrl, MAX_AGE_MS,
+} from '../../apps/neo-launcher/src/verification.js';
 
 const token = 'test-only-shared-operator-secret';
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -109,6 +112,118 @@ async function frontendFixture(t) {
     fetcher: (path, options) => fetch(f.base + path, options),
   };
 }
+
+async function launcherFixture(t, module, stopBeforeHealth = false) {
+  const f = await fixture(t);
+  const issued = await f.ticket('existing launcher journal entry');
+  assert.equal((await f.commit(issued.id, 'existing launcher journal entry')).status, 201);
+  await f.ticket('existing active launcher ticket');
+  const snapshot = () => Object.fromEntries(['tickets', 'commands', 'audit', 'clock_state'].map(table =>
+    [table, f.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]));
+  const before = snapshot();
+  f.time(1200);
+  const calls = [];
+  // This explicit transport adapter exercises real HTTP, not Vite proxying or browser behavior.
+  const routes = new Map([
+    [module.manifestPath, '/.well-known/palaco-app.json'],
+    [module.healthPath, '/health'],
+  ]);
+  const fetcher = async (path, options) => {
+    const call = { path, options };
+    calls.push(call);
+    assert.ok(routes.has(path), 'only configured verification paths may reach the real service');
+    if (path === module.healthPath) {
+      call.manifestConsumedBeforeHealth = calls[0].response.bodyUsed;
+      if (stopBeforeHealth) await f.close();
+    }
+    call.request = new Request(f.base + routes.get(path), options);
+    call.response = await fetch(call.request);
+    call.payload = await bounded(call.response.clone().json(), 'Verification response inspection');
+    return call.response;
+  };
+  return { ...f, calls, fetcher, snapshot, before };
+}
+
+function assertLauncherRequests(f, module, paths) {
+  assert.ok(TRUSTED_MODULES.includes(module));
+  assert.deepEqual(f.calls.map(call => call.path), paths);
+  for (const { options, request } of f.calls) {
+    assert.deepEqual(Object.keys(options).sort(), ['cache', 'credentials', 'headers', 'redirect', 'signal']);
+    assert.equal(options.redirect, 'error');
+    assert.equal(options.cache, 'no-store');
+    assert.equal(options.credentials, 'omit');
+    assert.ok(options.signal instanceof AbortSignal);
+    assert.equal(options.signal.aborted, false);
+    assert.deepEqual(options.headers, { Accept: 'application/json' });
+    assert.equal(request.method, 'GET');
+    assert.equal(request.credentials, 'omit');
+    assert.deepEqual([...request.headers], [['accept', 'application/json']]);
+    assert.equal(request.headers.has('authorization'), false);
+    assert.equal(request.headers.has('cookie'), false);
+    assert.equal(new URL(request.url).username, '');
+    assert.equal(new URL(request.url).password, '');
+  }
+  assert.equal(f.calls[0].response.status, 200);
+  assert.deepEqual(f.calls[0].payload, { id: 'bastion', name: 'BASTION', protocol: 'palaco-app/v1' });
+  assert.equal(f.calls[0].response.bodyUsed, true);
+  assert.deepEqual(f.snapshot(), f.before);
+}
+
+test('NEO verifies the configured BASTION manifest then health anonymously without changing service state',
+  { timeout: 15000 }, async t => {
+    const module = TRUSTED_MODULES.find(candidate => candidate.id === 'bastion');
+    const f = await launcherFixture(t, module);
+    const startedAt = Date.now();
+    const evidence = await verifyModule(module, f.fetcher, 3000);
+    const finishedAt = Date.now();
+    assertLauncherRequests(f, module, [module.manifestPath, module.healthPath]);
+    assert.equal(f.calls[1].manifestConsumedBeforeHealth, true);
+    assert.equal(f.calls[0].options.signal, f.calls[1].options.signal);
+    assert.equal(f.calls[1].response.status, 200);
+    assert.deepEqual(f.calls[1].payload, { status: 'ok' });
+    assert.equal(f.calls[1].response.bodyUsed, true);
+    assert.deepEqual(evidence, {
+      status: 'verified', moduleId: 'bastion', health: 'ok', verifiedAt: evidence.verifiedAt,
+    });
+    assert.ok(Number.isSafeInteger(evidence.verifiedAt));
+    assert.ok(evidence.verifiedAt >= startedAt && evidence.verifiedAt <= finishedAt);
+    assert.equal(module.origin, 'http://127.0.0.1:5175');
+    assert.notEqual(module.origin, f.base);
+    assert.equal(launchUrl(module, evidence, evidence.verifiedAt - 1), null);
+    assert.equal(launchUrl(module, evidence, evidence.verifiedAt), module.origin);
+    assert.equal(launchUrl(module, evidence, evidence.verifiedAt + MAX_AGE_MS - 1), module.origin);
+    assert.equal(launchUrl(module, evidence, evidence.verifiedAt + MAX_AGE_MS), null);
+    assert.equal(launchUrl(module, evidence, evidence.verifiedAt + MAX_AGE_MS + 1), null);
+  });
+
+test('NEO rejects a real BASTION manifest mapped to configured AETHER before requesting health',
+  { timeout: 15000 }, async t => {
+    const module = TRUSTED_MODULES.find(candidate => candidate.id === 'aether');
+    const f = await launcherFixture(t, module);
+    let evidence;
+    await assert.rejects(async () => {
+      evidence = await verifyModule(module, f.fetcher, 3000);
+    }, /Verificatie mislukt/);
+    assertLauncherRequests(f, module, [module.manifestPath]);
+    assert.equal(evidence, undefined);
+    assert.equal(launchUrl(module, evidence), null);
+  });
+
+test('NEO fails closed when the real service stops after a valid BASTION manifest',
+  { timeout: 15000 }, async t => {
+    const module = TRUSTED_MODULES.find(candidate => candidate.id === 'bastion');
+    const f = await launcherFixture(t, module, true);
+    let evidence;
+    await assert.rejects(async () => {
+      evidence = await verifyModule(module, f.fetcher, 3000);
+    }, /Verificatie mislukt/);
+    assertLauncherRequests(f, module, [module.manifestPath, module.healthPath]);
+    assert.equal(f.calls[1].manifestConsumedBeforeHealth, true);
+    assert.equal(f.calls[0].options.signal, f.calls[1].options.signal);
+    assert.equal(f.calls[1].response, undefined, 'health must fail at the real HTTP transport');
+    assert.equal(evidence, undefined);
+    assert.equal(launchUrl(module, evidence), null);
+  });
 
 test('production realtime receives normalized commits once, but not revoked or expired HTTP failures',
   { timeout: 20000 }, async t => {
@@ -503,11 +618,17 @@ async function fixture(t, options = {}, authToken = token) {
   const createApp = () => createBastion(config, { clock: () => now, fault: stage => fault(stage), ...options });
   let app = createApp();
   await bounded(app.listen(), 'Fixture startup');
+  let closed = false;
+  const close = async () => {
+    if (closed) return;
+    await bounded(app.close(), 'Fixture shutdown');
+    closed = true;
+  };
   const db = new DatabaseSync(dbPath);
   t.after(async () => {
     db.close();
     try {
-      await bounded(app.close(), 'Fixture shutdown');
+      await close();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -546,11 +667,11 @@ async function fixture(t, options = {}, authToken = token) {
     return connected;
   };
   return {
-    app, db, config, base, request, ticket, commit, socket,
+    app, db, config, base, request, ticket, commit, socket, close,
     time: value => { now = value; },
     fault: value => { fault = value; },
     restart: async () => {
-      await app.close();
+      await close();
       // A new origin avoids reusing the fetch pool's just-closed keepalive socket.
       const probe = createServer();
       probe.listen(0, '127.0.0.1');
@@ -558,6 +679,7 @@ async function fixture(t, options = {}, authToken = token) {
       config.port = probe.address().port;
       await new Promise(resolve => probe.close(resolve));
       app = createApp();
+      closed = false;
       await app.listen();
       base = `http://127.0.0.1:${app.port}`;
     },

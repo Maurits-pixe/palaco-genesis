@@ -415,6 +415,12 @@ commitantwoord zonder herinzending en een volledig logboek van 100 maximaal
 gevulde records. Ook de productie-realtimeclient wordt tegen de echte
 Socket.IO-service getest: authenticatie, ontvangst van bevestigde commits,
 geen events voor geweigerde mutaties en expliciet verbreken en opnieuw verbinden.
+De productie-NEO-verifier controleert daarnaast het echte BASTION-manifest
+en de healthroute zonder operatortoken. De tests controleren de vaste
+launchbestemming en geldigheidsgrens, weigering van een verkeerde module-identiteit
+en falen wanneer de service na het manifest onbereikbaar wordt. De testadapter
+vertaalt uitsluitend de vaste verificatiepaden naar de tijdelijke HTTP-service;
+dit test niet de Vite-proxy of browsernavigatie en verleent geen uitvoeringsrecht.
 Installeer hiervoor vooraf de dependencies van zowel `services/bastion-core`
 als `apps/bastion-frontend` met `npm ci --prefix <map>`; de bestaande
 installatiestap hierboven doet dit al voor alle Node-projecten. De CI-job voor
