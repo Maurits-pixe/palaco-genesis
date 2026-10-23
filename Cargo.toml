@@ -19,6 +19,7 @@ members = [
     "crates/palaco-knowledge",
     "crates/palaco-runtime",
     "crates/palaco-audit",
+    "crates/palaco-record",
     "crates/palaco-observatory",
     "runtime/palaco-kernel",
     "crates/palaco-rio-core",
