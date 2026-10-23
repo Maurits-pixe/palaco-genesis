@@ -74,9 +74,11 @@ async function fixture(t, { realtime = false } = {}) {
   const intervals = new Set()
   const calls = []
   const sockets = []
-  let app, db, session, dropNext, witness
+  const listGates = []
+  let app, db, session, dropNext, witness, nextListGate
   let losses = 0
   t.after(async () => {
+    for (const gate of listGates) gate.release()
     try {
       scope.stop()
       if (session) {
@@ -118,7 +120,19 @@ async function fixture(t, { realtime = false } = {}) {
   const fetcher = async (path, options) => {
     assert.ok(options.signal instanceof AbortSignal)
     calls.push({ path, method: options.method })
-    const response = await fetch(origin + path, options)
+    const gate = options.method === 'GET' && path === '/v1/commands' ? nextListGate : undefined
+    if (gate) nextListGate = undefined
+    // A gated transport deliberately ignores cancellation, including while awaiting release.
+    // The production API still receives the session signal and must reject a late response.
+    const response = await fetch(origin + path, gate ? { ...options, signal: undefined } : options)
+    if (gate) {
+      assert.equal(response.status, 200)
+      const snapshot = await bounded(response.clone().json(), 'real journal snapshot body')
+      gate.receive({ snapshot, signal: options.signal })
+      await bounded(gate.wait, 'journal response release')
+      assert.equal(response.bodyUsed, false, 'deliver the original, unconsumed HTTP response')
+      gate.deliver()
+    }
     if (`${options.method} ${path}` === dropNext) {
       dropNext = undefined
       assert.equal(response.status, options.method === 'POST' ? 201 : 200)
@@ -208,6 +222,21 @@ async function fixture(t, { realtime = false } = {}) {
       return sockets.at(-1)
     },
     count: (method, path) => calls.filter(call => call.method === method && call.path === path).length,
+    holdNextList() {
+      assert.equal(nextListGate, undefined)
+      let receive, release, deliver
+      const received = new Promise(resolve => { receive = resolve })
+      const wait = new Promise(resolve => { release = resolve })
+      const delivered = new Promise(resolve => { deliver = resolve })
+      const gate = { receive, release, deliver, wait }
+      listGates.push(gate)
+      nextListGate = gate
+      return {
+        release,
+        received: () => bounded(received, 'journal snapshot received'),
+        delivered: () => bounded(delivered, 'journal response delivered'),
+      }
+    },
     loseNext: (method, path) => { dropNext = `${method} ${path}` },
     get losses() { return losses },
     run: action => bounded(session.perform(action), action),
@@ -429,6 +458,131 @@ test('live realtime: clearing the journal disconnects without losing authority o
   assert.equal(f.count('GET', '/v1/commands'), 2)
   assert.equal(f.calls.length, requests + 1)
   assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM tickets WHERE consumed = 1').get().count, 4)
+})
+
+test('live realtime: an event after the real list snapshot survives delayed delivery exactly once', { timeout: 20000 }, async t => {
+  const f = await fixture(t, { realtime: true })
+  const s = f.session
+  const firstEvent = nextCommit(f.witness, 'oldest snapshot record')
+  const first = await f.commitExternal('oldest snapshot record')
+  assert.deepEqual(await firstEvent, first)
+  const socket = await f.connect()
+  const sharedEvent = nextCommit(socket, 'event also present in snapshot')
+  const shared = await f.commitExternal('event also present in snapshot')
+  assert.deepEqual(await sharedEvent, shared)
+  assert.deepEqual(s.commands.value, [shared])
+
+  const gate = f.holdNextList()
+  const listing = f.run('list')
+  t.after(async () => {
+    gate.release()
+    await listing
+  })
+  const { snapshot, signal } = await gate.received()
+  assert.deepEqual(snapshot.commands, [shared, first])
+  assert.equal(signal.aborted, false)
+  assert.equal(s.busy.value, 'list')
+  assert.equal(s.hasLoaded.value, false)
+
+  const lateEvent = nextCommit(socket, 'event after snapshot')
+  const late = await f.commitExternal('event after snapshot')
+  assert.deepEqual(await lateEvent, late)
+  assert.equal(snapshot.commands.some(row => row.id === late.id), false)
+  assert.deepEqual(s.commands.value, [late, shared])
+  assert.equal(s.busy.value, 'list')
+  gate.release()
+  await gate.delivered()
+  await listing
+
+  assert.deepEqual(s.commands.value, [late, shared, first])
+  assert.deepEqual(s.commands.value.slice(1), snapshot.commands, 'snapshot order is retained')
+  assert.equal(new Set(s.commands.value.map(row => row.id)).size, 3)
+  assert.equal(s.busy.value, '')
+  assert.equal(s.hasLoaded.value, true)
+  assert.equal(s.lastJournalRefreshAt.value, now)
+  assert.equal(s.journalRefreshFailed.value, false)
+  assert.equal(s.error.value, '')
+  assert.equal(f.count('GET', '/v1/commands'), 1)
+})
+
+test('live realtime: clearing a held list isolates its late response and buffered events from a subsequent list', { timeout: 20000 }, async t => {
+  const f = await fixture(t, { realtime: true })
+  const s = f.session
+  const socket = await f.connect()
+  const firstEvent = nextCommit(socket, 'initial persisted record')
+  const first = await f.commitExternal('initial persisted record')
+  assert.deepEqual(await firstEvent, first)
+  const oldGate = f.holdNextList()
+  const oldListing = f.run('list')
+  const operations = [oldListing]
+  let newGate
+  t.after(async () => {
+    oldGate.release()
+    newGate?.release()
+    await Promise.all(operations)
+  })
+  const old = await oldGate.received()
+  assert.deepEqual(old.snapshot.commands, [first])
+  const bufferedEvent = nextCommit(socket, 'buffered in cleared generation')
+  const buffered = await f.commitExternal('buffered in cleared generation')
+  assert.deepEqual(await bufferedEvent, buffered)
+  assert.deepEqual(s.commands.value, [buffered, first])
+  s.search.value = 'buffered'
+
+  s.clearJournal()
+  assert.equal(old.signal.aborted, true)
+  assertDisconnected(socket)
+  assert.equal(s.realtimeStatus.value, 'disconnected')
+  assert.deepEqual(s.commands.value, [])
+  assert.deepEqual(s.filteredCommands.value, [])
+  assert.equal(s.search.value, '')
+  assert.equal(s.busy.value, '')
+  assert.equal(s.hasLoaded.value, false)
+  assert.equal(s.lastJournalRefreshAt.value, null)
+  assert.equal(s.journalRefreshFailed.value, false)
+  assert.equal(s.token.value, token)
+
+  const newerEvent = nextCommit(f.witness, 'persisted while disconnected')
+  const newer = await f.commitExternal('persisted while disconnected')
+  assert.deepEqual(await newerEvent, newer)
+  assert.deepEqual(s.commands.value, [])
+  newGate = f.holdNextList()
+  const newListing = f.run('list')
+  operations.push(newListing)
+  const current = await newGate.received()
+  assert.deepEqual(current.snapshot.commands, [newer, buffered, first])
+  s.search.value = 'persisted'
+  oldGate.release()
+  await oldGate.delivered()
+  await oldListing
+
+  assert.equal(current.signal.aborted, false)
+  assert.equal(s.busy.value, 'list', 'the old completion cannot finish the new request')
+  assert.deepEqual(s.commands.value, [])
+  assert.deepEqual(s.filteredCommands.value, [])
+  assert.equal(s.search.value, 'persisted')
+  assert.equal(s.hasLoaded.value, false)
+  assert.equal(s.lastJournalRefreshAt.value, null)
+  assert.equal(s.journalRefreshFailed.value, false)
+  assert.equal(s.message.value, '')
+  assert.equal(s.error.value, '')
+  assert.equal(s.realtimeStatus.value, 'disconnected')
+
+  newGate.release()
+  await newGate.delivered()
+  await newListing
+  const persisted = f.db.prepare('SELECT id, command, committed_at FROM commands ORDER BY seq DESC').all().map(row => ({ ...row }))
+  assert.deepEqual(persisted, [newer, buffered, first])
+  assert.deepEqual(s.commands.value, persisted, 'a cleared realtime buffer must not promote its record above the newer snapshot record')
+  assert.deepEqual(s.filteredCommands.value, [newer, first])
+  assert.equal(new Set(s.commands.value.map(row => row.id)).size, 3)
+  assert.equal(s.busy.value, '')
+  assert.equal(s.hasLoaded.value, true)
+  assert.equal(s.lastJournalRefreshAt.value, now)
+  assert.equal(s.journalRefreshFailed.value, false)
+  assert.equal(s.error.value, '')
+  assert.equal(f.count('GET', '/v1/commands'), 2)
+  assert.equal(f.sockets.length, 1, 'manual listing does not reconnect realtime')
 })
 
 test('live realtime: pagehide fully clears a connected session without revoking server authority; manual reconnect and scope disposal work', { timeout: 20000 }, async t => {

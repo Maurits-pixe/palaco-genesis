@@ -432,6 +432,11 @@ worden verwijderd, serverrecords blijven behouden en opnieuw verbinden vereist
 een handmatige actie. Logboekwissen behoudt de lokale ticketstaat; `pagehide`
 wist de sessie zonder servertickets in te trekken. Dit simuleert het
 pagina-event in Node, niet de levenscyclus of terug-/vooruitcache van een browser.
+Gecontroleerd vertraagde echte logboekantwoorden testen daarnaast dat
+realtime-commits tijdens een verversing behouden blijven zonder dubbele records.
+Een antwoord uit een gewiste verversing mag een volgende verversing niet
+overschrijven of voortijdig beëindigen. Alleen de aflevering wordt vertraagd;
+de snapshot en commits komen uit de echte HTTP/SQLite-service.
 Installeer voor beide BASTION-testsuites vooraf de dependencies van zowel `services/bastion-core`
 als `apps/bastion-frontend` met `npm ci --prefix <map>`; de bestaande
 installatiestap hierboven doet dit al voor alle Node-projecten. Beide BASTION-CI-jobs
