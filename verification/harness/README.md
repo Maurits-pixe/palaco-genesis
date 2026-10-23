@@ -16,6 +16,10 @@ PAD-EXEC-FIRST-EFFECT-001 defines the one-time first-effect handoff gate in docs
 
 PAD-EXEC-001 defines the governed execution boundary in docs/rio/PAD-EXEC-001.md.
 
+PAD-RECORD-001 defines the append-only execution record and evidence handoff contract in docs/rio/PAD-RECORD-001.md.
+
+PAD-RECORD-001 harness tests are specified in verification/harness/PAD-RECORD-001-TESTS.md and implemented by the pure in-memory palaco-record crate.
+
 Status: SPECIFICATION COMPLETE — NOT EXECUTED.
 
-Current gate: PAD-ENVGATE BLOCKED; PAD-AUTHGATE NOT AUTHORIZED; PAD-EXEC-ENVELOPE SPECIFICATION ONLY; PAD-EXEC-REVALIDATE NOT EXECUTED; PAD-EXEC-COMMIT MERGED SPECIFICATION ONLY; PAD-EXEC-FIRST-EFFECT MERGED SPECIFICATION ONLY; PAD-EXEC SPECIFICATION ONLY. No runtime release, launch, first effect, execution, harness runner, RUN 002, integration observation, evidence closure, or conformance result exists in this directory.
+Current gate: PAD-ENVGATE BLOCKED; PAD-AUTHGATE NOT AUTHORIZED; PAD-EXEC-ENVELOPE SPECIFICATION ONLY; PAD-EXEC-REVALIDATE NOT EXECUTED; PAD-EXEC-COMMIT MERGED SPECIFICATION ONLY; PAD-EXEC-FIRST-EFFECT MERGED SPECIFICATION ONLY; PAD-EXEC SPECIFICATION ONLY; PAD-RECORD SPECIFICATION PLUS PURE HARNESS TESTS ONLY. No runtime release, launch, first effect, execution, RUN 002, integration observation, evidence closure, or conformance result exists in this directory.
