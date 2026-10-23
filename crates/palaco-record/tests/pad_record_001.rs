@@ -1,3 +1,5 @@
+//! Contract tests for PAD-RECORD-001.
+
 use palaco_record::{
     AppendOutcome, CompletionState, EvidenceState, ExecutionState, FailureState, Record,
     RecordError, RecordLedger, VerificationState,
