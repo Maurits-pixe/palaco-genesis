@@ -77,10 +77,7 @@ fn record_handoff_preserves_parent_and_previous_lineage_without_authority() {
     let child = parent.child_record("record-002", "idempotency-002", 1_001, 2);
 
     assert_eq!(child.provenance().parent_record_id(), Some("record-001"));
-    assert_eq!(
-        child.provenance().previous_record_id(),
-        Some("record-001")
-    );
+    assert_eq!(child.provenance().previous_record_id(), Some("record-001"));
     assert_eq!(child.provenance().authorization_ref(), "auth-ref-001");
     assert!(!child.grants_authority());
 }
@@ -126,10 +123,7 @@ fn uncertain_completion_blocks_verification_even_with_complete_evidence() {
     record.set_evidence(EvidenceState::Complete);
 
     assert_eq!(record.completion_state(), CompletionState::Unknown);
-    assert_eq!(
-        record.verify(),
-        Err(RecordError::VerificationNotReady)
-    );
+    assert_eq!(record.verify(), Err(RecordError::VerificationNotReady));
     assert_eq!(
         record.failure_state(),
         Some(FailureState::UnknownCompletion)
