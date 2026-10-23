@@ -14,6 +14,8 @@ PAD-EXEC-COMMIT-001 defines the final execution-acceptance and first-effect comm
 
 PAD-EXEC-FIRST-EFFECT-001 defines the one-time first-effect handoff gate in docs/rio/PAD-EXEC-FIRST-EFFECT-001.md.
 
+PAD-EXEC-001 defines the governed execution boundary in docs/rio/PAD-EXEC-001.md.
+
 Status: SPECIFICATION COMPLETE — NOT EXECUTED.
 
-Current gate: PAD-ENVGATE BLOCKED; PAD-AUTHGATE NOT AUTHORIZED; PAD-EXEC-ENVELOPE SPECIFICATION ONLY; PAD-EXEC-REVALIDATE NOT EXECUTED; PAD-EXEC-COMMIT SPECIFICATION ONLY; PAD-EXEC-FIRST-EFFECT SPECIFICATION ONLY. No handoff token, first effect, harness runner, RUN 002, integration observation, evidence closure, or conformance result exists in this directory.
+Current gate: PAD-ENVGATE BLOCKED; PAD-AUTHGATE NOT AUTHORIZED; PAD-EXEC-ENVELOPE SPECIFICATION ONLY; PAD-EXEC-REVALIDATE NOT EXECUTED; PAD-EXEC-COMMIT MERGED SPECIFICATION ONLY; PAD-EXEC-FIRST-EFFECT MERGED SPECIFICATION ONLY; PAD-EXEC SPECIFICATION ONLY. No runtime release, launch, first effect, execution, harness runner, RUN 002, integration observation, evidence closure, or conformance result exists in this directory.
