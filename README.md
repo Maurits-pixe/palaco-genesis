@@ -443,6 +443,12 @@ Een ongeldig token wordt bij expliciet verbinden geweigerd; terugzetten van
 het geldige token verbindt of laadt niets automatisch en herstelt geen lokale
 ticketbevoegdheid. Dit test sessie-isolatie binnen het gedeelde operatormodel,
 geen scheiding tussen meerdere gebruikers of server-side tokenrotatie.
+Live tests met afzonderlijke lokale en serverklokken controleren dat een
+lokaal nog bruikbaar ticket op de server bij de exacte verloopgrens wordt
+geweigerd. Ook externe intrekking wordt bij de commit opnieuw gecontroleerd.
+Beide weigeringen maken geen commandorecord of succesvolle auditmutatie;
+expliciete statuscontrole verklaart de uitkomst zonder lokale toestemming
+te herstellen. De gesimuleerde klokafwijking bewijst geen kloksynchronisatie.
 Installeer voor beide BASTION-testsuites vooraf de dependencies van zowel `services/bastion-core`
 als `apps/bastion-frontend` met `npm ci --prefix <map>`; de bestaande
 installatiestap hierboven doet dit al voor alle Node-projecten. Beide BASTION-CI-jobs

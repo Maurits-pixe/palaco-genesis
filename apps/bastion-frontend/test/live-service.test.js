@@ -76,6 +76,7 @@ async function fixture(t, { realtime = false } = {}) {
   const sockets = []
   const listGates = []
   let app, db, session, dropNext, witness, nextListGate
+  let serverNow = now
   let losses = 0
   t.after(async () => {
     for (const gate of listGates) gate.release()
@@ -113,18 +114,20 @@ async function fixture(t, { realtime = false } = {}) {
   const port = probe.address().port
   await bounded(new Promise(resolve => probe.close(resolve)), 'port release')
   const dbPath = join(dir, 'journal.db')
-  app = createBastion({ token, port, dbPath }, { clock: () => now })
+  app = createBastion({ token, port, dbPath }, { clock: () => serverNow })
   await bounded(app.listen(), 'service startup')
   db = new DatabaseSync(dbPath)
   const origin = `http://127.0.0.1:${app.port}`
   const fetcher = async (path, options) => {
     assert.ok(options.signal instanceof AbortSignal)
-    calls.push({ path, method: options.method })
+    const call = { path, method: options.method }
+    calls.push(call)
     const gate = options.method === 'GET' && path === '/v1/commands' ? nextListGate : undefined
     if (gate) nextListGate = undefined
     // A gated transport deliberately ignores cancellation, including while awaiting release.
     // The production API still receives the session signal and must reject a late response.
     const response = await fetch(origin + path, gate ? { ...options, signal: undefined } : options)
+    call.status = response.status
     if (gate) {
       assert.equal(response.status, 200)
       const snapshot = await bounded(response.clone().json(), 'real journal snapshot body')
@@ -210,11 +213,13 @@ async function fixture(t, { realtime = false } = {}) {
   }
   return {
     session, db, calls, sockets, witness, scope, eventTarget, intervals,
+    setServerNow: value => { serverNow = value },
     async commitExternal(command) {
       const ticket = await productionApi.issueTicket(command, 10000, token, externalFetch)
       return productionApi.commitCommand(ticket, command, token, externalFetch)
     },
     statusExternal: id => productionApi.getTicketStatus(id, token, externalFetch),
+    revokeExternal: ticket => productionApi.revokeTicket(ticket, token, externalFetch),
     async connect() {
       const connected = waitFor(session.realtimeStatus, value => value === 'connected', 'session connection')
       session.realtime.connect(session.token.value)
@@ -283,6 +288,118 @@ test('live service: ticket, commit, explicit status and journal use the same per
   assert.equal(f.count('GET', `/v1/tickets/${issued.id}`), 1)
   assert.equal(f.count('GET', '/v1/commands'), 1)
   assert.equal(f.calls.length, 4)
+})
+
+test('live service: stale local time permits preflight but the server denies commit exactly at expiry', { timeout: 15000 }, async t => {
+  const f = await fixture(t)
+  const s = f.session
+  await f.run('ticket')
+  assert.equal(s.error.value, '')
+  const held = { ...s.ticket.value }
+  assert.equal(held.not_before, now)
+  assert.equal(s.canCommit.value, true)
+
+  // Only server time advances: local usability is preflight, not authority.
+  f.setServerNow(held.expires_at)
+  assert.equal(Date.now(), now)
+  assert.deepEqual(s.ticket.value, held)
+  assert.equal(s.canCommit.value, true)
+  assert.equal(productionApi.ticketUsable(held, s.command.value), true)
+  await f.run('commit')
+  assert.deepEqual(f.calls.at(-1), { path: '/v1/commands', method: 'POST', status: 403 })
+  assert.match(s.error.value, /Geen toestemming/)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, held.id)
+  assert.equal(s.lookupId.value, held.id)
+  assert.equal(s.outcome.value, null)
+  assert.deepEqual(s.commands.value, [])
+  assert.equal(f.db.prepare('SELECT consumed FROM tickets WHERE id = ?').get(held.id).consumed, 0)
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM commands').get().count, 0)
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM audit').get().count, 0)
+  assert.equal(f.calls.length, 2, 'denial triggers neither retry nor automatic status lookup')
+
+  await f.run('commit')
+  assert.equal(f.calls.length, 2, 'consumed local authority cannot send another request')
+  assert.equal(s.lastSubmissionId.value, held.id)
+  await bounded(s.checkLastSubmission(), 'expired submission status')
+  assert.equal(s.error.value, '')
+  assert.equal(s.outcome.value.id, held.id)
+  assert.equal(s.outcome.value.status, 'expired')
+  assert.equal(s.outcome.value.checked_at, held.expires_at)
+  assert.equal(s.outcome.value.revoked, false)
+  assert.equal(s.outcome.value.record, null)
+  assert.equal(s.outcomeReceivedAt.value, now)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, held.id)
+  assert.deepEqual(s.commands.value, [])
+  assert.equal(f.db.prepare('SELECT consumed FROM tickets WHERE id = ?').get(held.id).consumed, 0)
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM commands').get().count, 0)
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM audit').get().count, 0)
+  assert.equal(f.count('POST', '/v1/tickets'), 1)
+  assert.equal(f.count('POST', '/v1/commands'), 1)
+  assert.equal(f.count('GET', `/v1/tickets/${held.id}`), 1)
+  assert.equal(f.calls.length, 3)
+})
+
+test('live service: external production revocation leaves stale local preflight usable until the real commit is denied', { timeout: 15000 }, async t => {
+  const f = await fixture(t)
+  const s = f.session
+  await f.run('ticket')
+  assert.equal(s.error.value, '')
+  const held = { ...s.ticket.value }
+  assert.equal(s.canCommit.value, true)
+  await bounded(f.revokeExternal(held), 'external ticket revocation')
+  assert.deepEqual({ ...f.db.prepare('SELECT consumed, revoked FROM tickets WHERE id = ?').get(held.id) },
+    { consumed: 0, revoked: 1 })
+  const audit = f.db.prepare('SELECT * FROM audit').all()
+  assert.equal(audit.length, 1)
+  assert.equal(audit[0].action, 'ticket:revoke')
+  assert.deepEqual(s.ticket.value, held)
+  assert.equal(s.revocationUncertain.value, false)
+  assert.equal(s.canCommit.value, true)
+  assert.equal(productionApi.ticketUsable(held, s.command.value), true)
+  assert.equal(f.calls.length, 1, 'external revocation is not a session operation')
+
+  await f.run('commit')
+  assert.deepEqual(f.calls.at(-1), { path: '/v1/commands', method: 'POST', status: 403 })
+  assert.match(s.error.value, /Geen toestemming/)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, held.id)
+  assert.equal(s.lookupId.value, held.id)
+  assert.equal(s.outcome.value, null)
+  assert.deepEqual(s.commands.value, [])
+  assert.deepEqual({ ...f.db.prepare('SELECT consumed, revoked FROM tickets WHERE id = ?').get(held.id) },
+    { consumed: 0, revoked: 1 })
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM commands').get().count, 0)
+  assert.deepEqual(f.db.prepare('SELECT * FROM audit').all(), audit)
+  assert.equal(f.calls.length, 2, 'denial triggers neither retry nor automatic status lookup')
+
+  await f.run('commit')
+  assert.equal(f.calls.length, 2, 'consumed local authority cannot send another request')
+  assert.equal(s.lastSubmissionId.value, held.id)
+  await bounded(s.checkLastSubmission(), 'externally revoked submission status')
+  assert.equal(s.error.value, '')
+  assert.equal(s.outcome.value.id, held.id)
+  assert.equal(s.outcome.value.status, 'revoked')
+  assert.equal(s.outcome.value.checked_at, now)
+  assert.equal(s.outcome.value.revoked, true)
+  assert.equal(s.outcome.value.record, null)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.revocationUncertain.value, false)
+  assert.equal(s.lastSubmissionId.value, held.id)
+  assert.deepEqual(s.commands.value, [])
+  assert.deepEqual({ ...f.db.prepare('SELECT consumed, revoked FROM tickets WHERE id = ?').get(held.id) },
+    { consumed: 0, revoked: 1 })
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM commands').get().count, 0)
+  assert.deepEqual(f.db.prepare('SELECT * FROM audit').all(), audit)
+  assert.equal(f.count('POST', '/v1/tickets'), 1)
+  assert.equal(f.count('POST', '/v1/commands'), 1)
+  assert.equal(f.count('GET', `/v1/tickets/${held.id}`), 1)
+  assert.equal(f.calls.length, 3)
 })
 
 test('live service: a lost successful commit consumes local authority without retry; explicit lookup recovers its record', { timeout: 15000 }, async t => {
