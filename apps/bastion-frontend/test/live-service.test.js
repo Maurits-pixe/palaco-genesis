@@ -170,7 +170,7 @@ async function fixture(t, { realtime = false } = {}) {
         ...callbacks,
         createSocket(options) {
           assert.deepEqual(options, {
-            path: '/socket.io', auth: { token }, autoConnect: false,
+            path: '/socket.io', auth: { token: session.token.value }, autoConnect: false,
             reconnection: false, withCredentials: false,
           })
           const socket = io(origin, options)
@@ -458,6 +458,213 @@ test('live realtime: clearing the journal disconnects without losing authority o
   assert.equal(f.count('GET', '/v1/commands'), 2)
   assert.equal(f.calls.length, requests + 1)
   assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM tickets WHERE consumed = 1').get().count, 4)
+})
+
+test('live realtime: replacing the token resets only local authority; explicit authentication and listing recover shared server records', { timeout: 20000 }, async t => {
+  const f = await fixture(t, { realtime: true })
+  const s = f.session
+  const socket = await f.connect()
+  await f.run('ticket')
+  const submittedId = s.ticket.value.id
+  const committedEvent = nextCommit(socket, s.command.value)
+  await f.run('commit')
+  const committed = await committedEvent
+  await bounded(s.checkLastSubmission(), 'submission receipt before token replacement')
+  await f.run('list')
+  s.search.value = 'registreer'
+  s.command.value = 'held across local token replacement'
+  s.ttlMs.value = 20000
+  await f.run('ticket')
+  const held = { ...s.ticket.value }
+  assert.deepEqual(s.commands.value, [committed])
+  assert.deepEqual(s.filteredCommands.value, [committed])
+  assert.equal(s.hasLoaded.value, true)
+  assert.equal(s.lastJournalRefreshAt.value, now)
+  assert.equal(s.outcome.value.id, submittedId)
+  assert.equal(s.outcome.value.status, 'committed')
+  assert.deepEqual(s.outcome.value.record, committed)
+  assert.equal(s.outcomeReceivedAt.value, now)
+  assert.equal(s.lookupId.value, submittedId)
+  assert.equal(s.lastSubmissionId.value, submittedId)
+  assert.equal(s.canCommit.value, true)
+  assert.notEqual(s.message.value, '')
+  assert.equal((await f.statusExternal(held.id)).status, 'active')
+  const requests = f.calls.length
+  const invalidToken = 'invalid-nonempty-operator-token'
+
+  s.token.value = invalidToken
+  assert.equal(s.token.value, invalidToken)
+  assertDisconnected(socket)
+  assert.equal(s.realtimeStatus.value, 'disconnected')
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.revocationUncertain.value, false)
+  assert.equal(s.command.value, '')
+  assert.equal(s.ttlMs.value, 10000)
+  assert.equal(s.search.value, '')
+  assert.deepEqual(s.commands.value, [])
+  assert.deepEqual(s.filteredCommands.value, [])
+  assert.equal(s.hasLoaded.value, false)
+  assert.equal(s.journalRefreshFailed.value, false)
+  assert.equal(s.lastJournalRefreshAt.value, null)
+  assert.equal(s.lookupId.value, '')
+  assert.equal(s.lastSubmissionId.value, '')
+  assert.equal(s.outcome.value, null)
+  assert.equal(s.outcomeReceivedAt.value, null)
+  assert.equal(s.outcomeMismatch.value, false)
+  assert.equal(s.message.value, '')
+  assert.equal(s.error.value, '')
+  assert.equal(s.busy.value, '')
+  assert.equal(f.calls.length, requests, 'token replacement sends no request, including revocation')
+  assert.equal(f.sockets.length, 1, 'a typed token never starts a connection')
+  assert.equal((await f.statusExternal(held.id)).status, 'active')
+  assert.deepEqual({ ...f.db.prepare('SELECT consumed, revoked FROM tickets WHERE id = ?').get(held.id) }, { consumed: 0, revoked: 0 })
+  assert.equal(f.count('DELETE', `/v1/tickets/${held.id}`), 0)
+
+  const rejected = waitFor(s.realtimeStatus, value => value === 'error', 'invalid token connection rejection')
+  s.realtime.connect(s.token.value)
+  await rejected
+  const invalidSocket = f.sockets.at(-1)
+  assert.notEqual(invalidSocket, socket)
+  assert.equal(f.sockets.length, 2)
+  assertDisconnected(invalidSocket)
+  await f.run('list')
+  assert.notEqual(s.error.value, '')
+  assert.equal(s.journalRefreshFailed.value, true)
+  assert.equal(s.hasLoaded.value, false)
+  const feedback = { message: s.message.value, error: s.error.value }
+  const barrierEvent = nextCommit(f.witness, 'shared operator commit while token is invalid')
+  const barrier = await f.commitExternal('shared operator commit while token is invalid')
+  assert.deepEqual(await barrierEvent, barrier)
+  assert.deepEqual(s.commands.value, [], 'an independently witnessed real commit cannot update the rejected session')
+  assert.deepEqual({ message: s.message.value, error: s.error.value }, feedback)
+  assert.equal(s.realtimeStatus.value, 'error')
+  assertDisconnected(socket)
+  assertDisconnected(invalidSocket)
+  assert.equal(f.sockets.length, 2, 'authentication failure never reconnects')
+  assert.equal(f.calls.length, requests + 1)
+
+  s.token.value = token
+  assert.equal(f.calls.length, requests + 1, 'restoring the shared operator token does not fetch')
+  assert.equal(f.sockets.length, 2, 'restoring the token does not connect')
+  assert.equal(s.realtimeStatus.value, 'disconnected')
+  assert.equal(s.error.value, '')
+  assert.equal(s.journalRefreshFailed.value, false)
+  assert.deepEqual(s.commands.value, [])
+  const restoredSocket = await f.connect()
+  assert.notEqual(restoredSocket, invalidSocket)
+  assert.deepEqual(s.commands.value, [], 'connection alone does not replay shared records')
+  assert.equal(f.calls.length, requests + 1)
+  await f.run('list')
+  assert.deepEqual(s.commands.value, [barrier, committed])
+  assert.equal(s.hasLoaded.value, true)
+  assert.equal(s.lastJournalRefreshAt.value, now)
+  assert.equal(s.error.value, '')
+  assert.equal(s.busy.value, '')
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, '')
+  assert.equal(s.lookupId.value, '')
+  assert.equal(s.outcome.value, null)
+  assert.equal(s.outcomeReceivedAt.value, null)
+  assert.equal((await f.statusExternal(held.id)).status, 'active', 'local credential changes do not revoke the shared operator ticket')
+  assert.equal(f.calls.length, requests + 2)
+})
+
+test('live realtime: token replacement isolates a held real list from a newer explicit request', { timeout: 20000 }, async t => {
+  const f = await fixture(t, { realtime: true })
+  const s = f.session
+  const socket = await f.connect()
+  const firstEvent = nextCommit(socket, 'snapshot before token replacement')
+  const first = await f.commitExternal('snapshot before token replacement')
+  assert.deepEqual(await firstEvent, first)
+  const oldGate = f.holdNextList()
+  const oldListing = f.run('list')
+  const operations = [oldListing]
+  let newGate
+  t.after(async () => {
+    oldGate.release()
+    newGate?.release()
+    await Promise.all(operations)
+  })
+  const old = await oldGate.received()
+  assert.deepEqual(old.snapshot.commands, [first])
+  assert.equal(old.signal.aborted, false)
+  assert.equal(s.busy.value, 'list')
+  const bufferedEvent = nextCommit(socket, 'buffered before token replacement')
+  const buffered = await f.commitExternal('buffered before token replacement')
+  assert.deepEqual(await bufferedEvent, buffered)
+  assert.deepEqual(s.commands.value, [buffered, first])
+  s.search.value = 'buffered'
+
+  s.token.value = 'another-invalid-nonempty-token'
+  assert.equal(old.signal.aborted, true)
+  assertDisconnected(socket)
+  assert.equal(s.realtimeStatus.value, 'disconnected')
+  assert.deepEqual(s.commands.value, [])
+  assert.deepEqual(s.filteredCommands.value, [])
+  assert.equal(s.search.value, '')
+  assert.equal(s.busy.value, '')
+  assert.equal(s.hasLoaded.value, false)
+  assert.equal(s.lastJournalRefreshAt.value, null)
+  assert.equal(s.message.value, '')
+  assert.equal(s.error.value, '')
+  assert.equal(f.calls.length, 1)
+  assert.equal(f.sockets.length, 1)
+
+  const newerEvent = nextCommit(f.witness, 'shared record after token replacement')
+  const newer = await f.commitExternal('shared record after token replacement')
+  assert.deepEqual(await newerEvent, newer)
+  assert.deepEqual(s.commands.value, [])
+  s.token.value = token
+  assert.equal(f.calls.length, 1)
+  assert.equal(f.sockets.length, 1)
+  newGate = f.holdNextList()
+  const newListing = f.run('list')
+  operations.push(newListing)
+  const current = await newGate.received()
+  assert.deepEqual(current.snapshot.commands, [newer, buffered, first])
+  assert.equal(current.signal.aborted, false)
+  s.search.value = 'shared'
+  s.command.value = 'new local draft'
+  oldGate.release()
+  await oldGate.delivered()
+  await oldListing
+
+  assert.equal(current.signal.aborted, false)
+  assert.equal(s.busy.value, 'list', 'the aborted generation cannot finish the newer request')
+  assert.deepEqual(s.commands.value, [], 'neither the old snapshot nor its buffered real event can repopulate')
+  assert.deepEqual(s.filteredCommands.value, [])
+  assert.equal(s.token.value, token)
+  assert.equal(s.command.value, 'new local draft')
+  assert.equal(s.search.value, 'shared')
+  assert.equal(s.hasLoaded.value, false)
+  assert.equal(s.lastJournalRefreshAt.value, null)
+  assert.equal(s.journalRefreshFailed.value, false)
+  assert.equal(s.message.value, '')
+  assert.equal(s.error.value, '')
+  assert.equal(s.realtimeStatus.value, 'disconnected')
+  assertDisconnected(socket)
+  assert.equal(f.sockets.length, 1)
+  assert.equal(f.calls.length, 2)
+
+  newGate.release()
+  await newGate.delivered()
+  await newListing
+  assert.deepEqual(s.commands.value, [newer, buffered, first], 'the new real snapshot alone determines shared journal order')
+  assert.deepEqual(s.filteredCommands.value, [newer])
+  assert.equal(new Set(s.commands.value.map(row => row.id)).size, 3)
+  assert.equal(s.hasLoaded.value, true)
+  assert.equal(s.lastJournalRefreshAt.value, now)
+  assert.equal(s.journalRefreshFailed.value, false)
+  assert.equal(s.message.value, 'Logboek bijgewerkt.')
+  assert.equal(s.error.value, '')
+  assert.equal(s.busy.value, '')
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.realtimeStatus.value, 'disconnected')
+  assert.equal(f.count('GET', '/v1/commands'), 2)
+  assert.equal(f.calls.length, 2)
 })
 
 test('live realtime: an event after the real list snapshot survives delayed delivery exactly once', { timeout: 20000 }, async t => {
