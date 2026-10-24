@@ -1,0 +1,35 @@
+name: Verbetering voorstellen
+description: Bespreek een gerichte uitbreiding of documentatieverbetering.
+title: "[Voorstel]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Beschrijf het probleem zonder gevoelige gegevens.
+        Maak onderscheid tussen de Rust-domeinworkspace en de lokale NEO/AETHER/BASTION-alpha.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Probleem
+      description: Welk gebruiksscenario wordt nu niet ondersteund?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Voorstel en scope
+      description: Welk onderdeel moet veranderen en wat valt buiten de scope?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatieven
+      description: Welke bestaande oplossingen of andere benaderingen heb je overwogen?
+  - type: textarea
+    id: verification
+    attributes:
+      label: Acceptatiecriteria
+      description: Hoe kan een reviewer vaststellen dat de verbetering werkt?
+    validations:
+      required: true

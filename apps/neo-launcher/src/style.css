@@ -1,0 +1,24 @@
+:root { font-family: system-ui, sans-serif; color: #192b36; background: #f3f5f6; line-height: 1.6; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 1060px; margin: auto; padding: 3rem 1.25rem; }
+header { margin-bottom: 2rem; }
+h1 { font-size: clamp(2.5rem, 7vw, 4rem); line-height: 1.1; letter-spacing: -.04em; margin: .5rem 0; }
+h2 { margin: .4rem 0 1rem; }
+p { margin: .7rem 0; }
+.eyebrow { font-size: .75rem; font-weight: 750; letter-spacing: .16em; color: #496675; }
+.notice { border-left: 3px solid #31756f; padding: 1rem 1.2rem; background: #e6eeec; margin: 1.5rem 0; }
+.notice strong { display: block; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.3rem; margin: 2rem 0; }
+article { background: white; border: 1px solid #d7dfe3; padding: 1.5rem; border-radius: .65rem; }
+.address { font-family: monospace; overflow-wrap: anywhere; font-size: .9rem; color: #49616b; }
+.status { min-height: 5rem; }
+.actions { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+button { font: inherit; font-weight: 650; background: #215a56; color: white; border: 1px solid transparent; border-radius: .35rem; padding: .65rem .9rem; cursor: pointer; }
+button:hover:not(:disabled) { background: #173e3b; }
+button:disabled { background: #e5e9eb; color: #53626a; cursor: not-allowed; }
+a { color: #185953; font-weight: 650; text-underline-offset: .2em; }
+.disabled { color: #5b6870; cursor: not-allowed; }
+:focus-visible { outline: 3px solid #b76a15; outline-offset: 4px; }
+footer { color: #52656f; font-size: .85rem; border-top: 1px solid #d7dfe3; padding-top: 1.3rem; }
+@media (max-width: 650px) { .grid { grid-template-columns: 1fr; } main { padding-top: 2rem; } }
