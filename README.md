@@ -455,6 +455,12 @@ auditregel, zonder automatische herinzending door de sessie. Een actieve
 serverstatus herstelt geen lokaal verbruikte toestemming en heft onzekerheid
 over intrekking niet op; daarvoor blijft expliciet handelen nodig.
 Dit simuleert transactiefouten, geen fysieke schijffout of stroomuitval.
+Een aanvullende live test laat ook het vastleggen van de tijdsmarkering
+falen: de service blijft daarna geblokkeerd, zelfs als de foutinjectie wordt
+verwijderd. Statuscontrole en opnieuw intrekken geven geen veilige bevestiging,
+zodat de sessie haar onzekerheidsblokkering behoudt. NEO weigert dezelfde
+service na een geldig manifest wegens de ongezonde healthroute.
+Deze test bewijst geen herstelprocedure voor beschadigde opslag.
 Installeer voor beide BASTION-testsuites vooraf de dependencies van zowel `services/bastion-core`
 als `apps/bastion-frontend` met `npm ci --prefix <map>`; de bestaande
 installatiestap hierboven doet dit al voor alle Node-projecten. Beide BASTION-CI-jobs

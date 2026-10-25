@@ -12,6 +12,7 @@ import * as productionApi from '../src/api.js'
 import { createRealtime } from '../src/realtime.js'
 import { useSession } from '../src/useSession.js'
 import { createBastion } from '../../../services/bastion-core/service.js'
+import { TRUSTED_MODULES, verifyModule, launchUrl } from '../../neo-launcher/src/verification.js'
 
 const token = 'test-only-live-service-operator-secret'
 const now = 1000
@@ -213,6 +214,7 @@ async function fixture(t, { realtime = false, fault = () => {} } = {}) {
   }
   return {
     session, db, calls, sockets, witness, scope, eventTarget, intervals,
+    externalFetch,
     setServerNow: value => { serverNow = value },
     setFault: value => { fault = value },
     async commitExternal(command) {
@@ -479,6 +481,129 @@ test('live service: a real commit 503 rolls back mutation without restoring loca
   assert.equal(f.count('POST', '/v1/commands'), 2)
   assert.equal(f.count('GET', `/v1/tickets/${held.id}`), 1)
   assert.equal(f.calls.length, 5, 'manual recovery commits exactly once without automatic calls')
+})
+
+test('live service: failed watermark durability latches revocation and NEO verification fail-closed', { timeout: 15000 }, async t => {
+  const f = await fixture(t)
+  const s = f.session
+  await f.run('ticket')
+  assert.equal(s.error.value, '')
+  const held = { ...s.ticket.value }
+  const path = `/v1/tickets/${held.id}`
+  const snapshot = () => Object.fromEntries(['tickets', 'commands', 'audit', 'clock_state'].map(table =>
+    [table, f.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]))
+  const healthy = snapshot()
+  assert.equal(healthy.tickets.length, 1)
+  assert.equal(healthy.tickets[0].id, held.id)
+  assert.equal(healthy.tickets[0].consumed, 0)
+  assert.equal(healthy.tickets[0].revoked, 0)
+  assert.deepEqual(healthy.commands, [])
+  assert.deepEqual(healthy.audit, [])
+  assert.equal(s.canCommit.value, true)
+
+  const stages = []
+  f.setFault(stage => {
+    stages.push(stage)
+    if (stage === 'before-commit' || stage === 'before-watermark-commit') {
+      throw new Error('injected transaction and watermark durability failure')
+    }
+  })
+  await f.run('revoke')
+  const injectedStages = ['after-begin', 'before-commit', 'before-watermark-commit']
+  assert.deepEqual(stages, injectedStages)
+  assert.deepEqual(f.calls, [
+    { path: '/v1/tickets', method: 'POST', status: 201 },
+    { path, method: 'DELETE', status: 503 },
+  ])
+  assert.match(s.error.value, /De service kan dit verzoek niet verwerken/)
+  assert.deepEqual(snapshot(), healthy, 'both mutation and watermark transactions rolled back')
+  assert.deepEqual(s.ticket.value, held)
+  assert.equal(s.revocationUncertain.value, true)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.outcome.value, null)
+  assert.equal(s.lastSubmissionId.value, '')
+  assert.deepEqual(s.commands.value, [])
+  await f.run('ticket')
+  await f.run('commit')
+  assert.equal(f.calls.length, 2, 'uncertainty sends no issuance, commit, retry or status requests')
+
+  // Remove the throwing injection, but record any unexpected re-entry past the storage latch.
+  f.setFault(stage => { stages.push(stage) })
+  await bounded(s.checkCurrentTicket(), 'latched ticket status')
+  assert.deepEqual(f.calls.at(-1), { path, method: 'GET', status: 503 })
+  assert.match(s.error.value, /De service kan dit verzoek niet verwerken/)
+  assert.equal(s.outcome.value, null)
+  assert.deepEqual(s.ticket.value, held)
+  assert.equal(s.revocationUncertain.value, true)
+  assert.equal(s.canCommit.value, false)
+  await f.run('revoke')
+  assert.deepEqual(f.calls.at(-1), { path, method: 'DELETE', status: 503 })
+  assert.match(s.error.value, /De service kan dit verzoek niet verwerken/)
+  assert.deepEqual(s.ticket.value, held)
+  assert.equal(s.revocationUncertain.value, true)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(productionApi.ticketUsable(held, s.command.value), true, 'old local preflight is not authority')
+  await f.run('ticket')
+  await f.run('commit')
+  assert.equal(f.calls.length, 4, 'failed explicit checks do not restore authority or schedule requests')
+
+  const externalCalls = []
+  const transport = async (path, options) => {
+    const response = await bounded(f.externalFetch(path, options), 'real public or stale-authority request')
+    const payload = await bounded(response.clone().json(), 'real response inspection')
+    externalCalls.push({ path, method: options.method ?? 'GET', status: response.status, payload })
+    return response
+  }
+  await assert.rejects(bounded(productionApi.commitCommand(held, held.command, token, transport),
+    'old authority commit'), /De service kan dit verzoek niet verwerken/)
+  await assert.rejects(bounded(productionApi.issueTicket(held.command, s.ttlMs.value, token, transport),
+    'latched issuance'), /De service kan dit verzoek niet verwerken/)
+  const health = await transport('/health', { signal: AbortSignal.timeout(5000) })
+  assert.equal(health.status, 503)
+  assert.deepEqual(await bounded(health.json(), 'public unavailable health'), { status: 'unavailable' })
+
+  const module = TRUSTED_MODULES.find(candidate => candidate.id === 'bastion')
+  const routes = new Map([
+    [module.manifestPath, '/.well-known/palaco-app.json'],
+    [module.healthPath, '/health'],
+  ])
+  const neoCalls = []
+  const neoFetch = async (path, options) => {
+    assert.ok(routes.has(path), 'only actual configured BASTION verification paths are mapped')
+    assert.equal(options.credentials, 'omit')
+    assert.deepEqual(options.headers, { Accept: 'application/json' })
+    assert.ok(options.signal instanceof AbortSignal)
+    if (path === module.healthPath) assert.equal(neoCalls[0].response.bodyUsed, true)
+    const response = await transport(routes.get(path), options)
+    neoCalls.push({ path, response })
+    return response
+  }
+  let evidence
+  await assert.rejects(bounded(verifyModule(module, neoFetch, 3000).then(result => { evidence = result }),
+    'NEO latched service verification'), /Verificatie mislukt/)
+  assert.equal(evidence, undefined)
+  assert.equal(launchUrl(module, evidence, now), null)
+  assert.deepEqual(neoCalls.map(({ path, response }) => [path, response.status]), [
+    [module.manifestPath, 200], [module.healthPath, 503],
+  ])
+  assert.deepEqual(externalCalls.map(({ path, method, status }) => ({ path, method, status })), [
+    { path: '/v1/commands', method: 'POST', status: 503 },
+    { path: '/v1/tickets', method: 'POST', status: 503 },
+    { path: '/health', method: 'GET', status: 503 },
+    { path: '/.well-known/palaco-app.json', method: 'GET', status: 200 },
+    { path: '/health', method: 'GET', status: 503 },
+  ])
+  assert.deepEqual(externalCalls[3].payload, { id: 'bastion', name: 'BASTION', protocol: 'palaco-app/v1' })
+  assert.deepEqual(externalCalls[4].payload, { status: 'unavailable' })
+  assert.deepEqual(stages, injectedStages, 'the latch rejects operations before invoking the now nonthrowing hook')
+  assert.deepEqual(snapshot(), healthy, 'healthy persisted ticket, clock and empty journal/audit remain unchanged')
+  assert.deepEqual(s.ticket.value, held)
+  assert.equal(s.revocationUncertain.value, true)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.outcome.value, null)
+  assert.equal(s.lastSubmissionId.value, '')
+  assert.deepEqual(s.commands.value, [])
+  assert.equal(f.calls.length, 4, 'health and NEO checks trigger no session reconciliation')
 })
 
 test('live service: a real revocation 503 preserves uncertainty through active status until explicit retry', { timeout: 15000 }, async t => {
