@@ -449,6 +449,12 @@ geweigerd. Ook externe intrekking wordt bij de commit opnieuw gecontroleerd.
 Beide weigeringen maken geen commandorecord of succesvolle auditmutatie;
 expliciete statuscontrole verklaart de uitkomst zonder lokale toestemming
 te herstellen. De gesimuleerde klokafwijking bewijst geen kloksynchronisatie.
+Live foutinjectietests laten de echte SQLite-transactie vlak voor de commit
+falen. Ze controleren rollback van commando, ticketmutatie en bijbehorende
+auditregel, zonder automatische herinzending door de sessie. Een actieve
+serverstatus herstelt geen lokaal verbruikte toestemming en heft onzekerheid
+over intrekking niet op; daarvoor blijft expliciet handelen nodig.
+Dit simuleert transactiefouten, geen fysieke schijffout of stroomuitval.
 Installeer voor beide BASTION-testsuites vooraf de dependencies van zowel `services/bastion-core`
 als `apps/bastion-frontend` met `npm ci --prefix <map>`; de bestaande
 installatiestap hierboven doet dit al voor alle Node-projecten. Beide BASTION-CI-jobs

@@ -66,7 +66,7 @@ function assertDisconnected(socket) {
   assert.equal(socket.io._readyState, 'closed')
 }
 
-async function fixture(t, { realtime = false } = {}) {
+async function fixture(t, { realtime = false, fault = () => {} } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'palaco-bastion-live-test-'))
   const probe = createServer()
   const scope = effectScope()
@@ -114,7 +114,7 @@ async function fixture(t, { realtime = false } = {}) {
   const port = probe.address().port
   await bounded(new Promise(resolve => probe.close(resolve)), 'port release')
   const dbPath = join(dir, 'journal.db')
-  app = createBastion({ token, port, dbPath }, { clock: () => serverNow })
+  app = createBastion({ token, port, dbPath }, { clock: () => serverNow, fault: stage => fault(stage) })
   await bounded(app.listen(), 'service startup')
   db = new DatabaseSync(dbPath)
   const origin = `http://127.0.0.1:${app.port}`
@@ -214,6 +214,7 @@ async function fixture(t, { realtime = false } = {}) {
   return {
     session, db, calls, sockets, witness, scope, eventTarget, intervals,
     setServerNow: value => { serverNow = value },
+    setFault: value => { fault = value },
     async commitExternal(command) {
       const ticket = await productionApi.issueTicket(command, 10000, token, externalFetch)
       return productionApi.commitCommand(ticket, command, token, externalFetch)
@@ -400,6 +401,164 @@ test('live service: external production revocation leaves stale local preflight 
   assert.equal(f.count('POST', '/v1/commands'), 1)
   assert.equal(f.count('GET', `/v1/tickets/${held.id}`), 1)
   assert.equal(f.calls.length, 3)
+})
+
+test('live service: a real commit 503 rolls back mutation without restoring local authority or retrying', { timeout: 15000 }, async t => {
+  const f = await fixture(t)
+  const s = f.session
+  await f.run('ticket')
+  assert.equal(s.error.value, '')
+  const held = { ...s.ticket.value }
+  const stages = []
+  f.setFault(stage => {
+    stages.push(stage)
+    if (stage === 'before-commit') throw new Error('injected transaction failure')
+  })
+  await f.run('commit')
+  assert.deepEqual(stages, ['after-begin', 'before-commit', 'before-watermark-commit'])
+  assert.deepEqual(f.calls.at(-1), { path: '/v1/commands', method: 'POST', status: 503 })
+  assert.match(s.error.value, /De service kan dit verzoek niet verwerken/)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, held.id)
+  assert.equal(s.lookupId.value, held.id)
+  assert.equal(s.outcome.value, null)
+  assert.deepEqual(s.commands.value, [])
+  assert.deepEqual({ ...f.db.prepare('SELECT consumed, revoked FROM tickets WHERE id = ?').get(held.id) },
+    { consumed: 0, revoked: 0 })
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM commands').get().count, 0)
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM audit').get().count, 0)
+  assert.equal(f.db.prepare('SELECT last_time FROM clock_state WHERE id = 1').get().last_time, now)
+  assert.equal(f.calls.length, 2, '503 triggers neither retry nor automatic status lookup')
+
+  await f.run('commit')
+  assert.equal(f.calls.length, 2, 'lost local authority cannot send another POST')
+  assert.equal(s.lastSubmissionId.value, held.id)
+  f.setFault(() => {})
+  await bounded(s.checkLastSubmission(), 'rolled back submission status')
+  assert.deepEqual(f.calls.at(-1), { path: `/v1/tickets/${held.id}`, method: 'GET', status: 200 })
+  assert.equal(s.error.value, '')
+  assert.equal(s.outcome.value.id, held.id)
+  assert.equal(s.outcome.value.status, 'active')
+  assert.equal(s.outcome.value.checked_at, now)
+  assert.equal(s.outcome.value.revoked, false)
+  assert.equal(s.outcome.value.record, null)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, held.id)
+  await f.run('commit')
+  assert.equal(f.calls.length, 3, 'an active status snapshot does not reauthorize submission')
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM commands').get().count, 0)
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM audit').get().count, 0)
+
+  await f.run('ticket')
+  assert.equal(s.error.value, '')
+  const fresh = { ...s.ticket.value }
+  assert.notEqual(fresh.id, held.id)
+  assert.equal(s.canCommit.value, true)
+  assert.equal(f.calls.length, 4, 'new issuance does not automatically commit')
+  await f.run('commit')
+  assert.deepEqual(f.calls.at(-1), { path: '/v1/commands', method: 'POST', status: 201 })
+  assert.equal(s.error.value, '')
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.lastSubmissionId.value, fresh.id)
+  assert.equal(s.commands.value.length, 1)
+  assert.deepEqual({ ...f.db.prepare('SELECT id, command, committed_at FROM commands WHERE ticket_id = ?').get(fresh.id) },
+    { ...s.commands.value[0] })
+  assert.deepEqual({ ...f.db.prepare('SELECT consumed, revoked FROM tickets WHERE id = ?').get(fresh.id) },
+    { consumed: 1, revoked: 0 })
+  assert.deepEqual({ ...f.db.prepare('SELECT consumed, revoked FROM tickets WHERE id = ?').get(held.id) },
+    { consumed: 0, revoked: 0 })
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM commands').get().count, 1)
+  const audit = f.db.prepare('SELECT ticket_id, action FROM audit').all()
+  assert.equal(audit.length, 1)
+  assert.equal(audit[0].ticket_id, fresh.id)
+  assert.equal(audit[0].action, 'journal:append')
+  await f.run('commit')
+  assert.equal(f.count('POST', '/v1/tickets'), 2)
+  assert.equal(f.count('POST', '/v1/commands'), 2)
+  assert.equal(f.count('GET', `/v1/tickets/${held.id}`), 1)
+  assert.equal(f.calls.length, 5, 'manual recovery commits exactly once without automatic calls')
+})
+
+test('live service: a real revocation 503 preserves uncertainty through active status until explicit retry', { timeout: 15000 }, async t => {
+  const f = await fixture(t)
+  const s = f.session
+  await f.run('ticket')
+  assert.equal(s.error.value, '')
+  const held = { ...s.ticket.value }
+  const path = `/v1/tickets/${held.id}`
+  const stages = []
+  f.setFault(stage => {
+    stages.push(stage)
+    if (stage === 'before-commit') throw new Error('injected transaction failure')
+  })
+  await f.run('revoke')
+  assert.deepEqual(stages, ['after-begin', 'before-commit', 'before-watermark-commit'])
+  assert.deepEqual(f.calls.at(-1), { path, method: 'DELETE', status: 503 })
+  assert.match(s.error.value, /De service kan dit verzoek niet verwerken/)
+  assert.deepEqual(s.ticket.value, held)
+  assert.equal(s.revocationUncertain.value, true)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, '')
+  assert.equal(s.outcome.value, null)
+  assert.deepEqual(s.commands.value, [])
+  assert.deepEqual({ ...f.db.prepare('SELECT consumed, revoked FROM tickets WHERE id = ?').get(held.id) },
+    { consumed: 0, revoked: 0 })
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM commands').get().count, 0)
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM audit').get().count, 0)
+  assert.equal(f.db.prepare('SELECT last_time FROM clock_state WHERE id = 1').get().last_time, now)
+  assert.equal(f.calls.length, 2, '503 triggers neither retry nor automatic reconciliation')
+
+  await f.run('ticket')
+  await f.run('commit')
+  assert.equal(f.calls.length, 2, 'uncertainty blocks issuance and commit without requests')
+  f.setFault(() => {})
+  await bounded(s.checkCurrentTicket(), 'rolled back revocation status')
+  assert.deepEqual(f.calls.at(-1), { path, method: 'GET', status: 200 })
+  assert.equal(s.error.value, '')
+  assert.equal(s.outcome.value.id, held.id)
+  assert.equal(s.outcome.value.status, 'active')
+  assert.equal(s.outcome.value.checked_at, now)
+  assert.equal(s.outcome.value.revoked, false)
+  assert.equal(s.outcome.value.record, null)
+  assert.deepEqual(s.ticket.value, held)
+  assert.equal(s.revocationUncertain.value, true)
+  assert.equal(s.canCommit.value, false)
+  await f.run('ticket')
+  await f.run('commit')
+  assert.equal(f.calls.length, 3, 'active status does not resolve uncertainty or retry revocation')
+  assert.deepEqual({ ...f.db.prepare('SELECT consumed, revoked FROM tickets WHERE id = ?').get(held.id) },
+    { consumed: 0, revoked: 0 })
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM audit').get().count, 0)
+
+  await f.run('revoke')
+  assert.deepEqual(f.calls.at(-1), { path, method: 'DELETE', status: 200 })
+  assert.equal(s.error.value, '')
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.revocationUncertain.value, false)
+  assert.equal(s.canCommit.value, false)
+  assert.deepEqual({ ...f.db.prepare('SELECT consumed, revoked FROM tickets WHERE id = ?').get(held.id) },
+    { consumed: 0, revoked: 1 })
+  const audit = f.db.prepare('SELECT ticket_id, action FROM audit').all()
+  assert.equal(audit.length, 1)
+  assert.equal(audit[0].ticket_id, held.id)
+  assert.equal(audit[0].action, 'ticket:revoke')
+  assert.equal(f.calls.length, 4, 'only the explicit retry revokes')
+  await f.run('ticket')
+  assert.equal(s.error.value, '')
+  assert.notEqual(s.ticket.value.id, held.id)
+  assert.equal(s.canCommit.value, true)
+  assert.deepEqual({ ...f.db.prepare('SELECT consumed, revoked FROM tickets WHERE id = ?').get(s.ticket.value.id) },
+    { consumed: 0, revoked: 0 })
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM commands').get().count, 0)
+  assert.deepEqual(f.db.prepare('SELECT ticket_id, action FROM audit').all(), audit)
+  assert.deepEqual(s.commands.value, [])
+  assert.equal(f.count('POST', '/v1/tickets'), 2)
+  assert.equal(f.count('DELETE', path), 2)
+  assert.equal(f.count('GET', path), 1)
+  assert.equal(f.count('POST', '/v1/commands'), 0)
+  assert.equal(f.calls.length, 5)
 })
 
 test('live service: a lost successful commit consumes local authority without retry; explicit lookup recovers its record', { timeout: 15000 }, async t => {
