@@ -118,7 +118,7 @@ async function fixture(t, { realtime = false, fault = () => {} } = {}) {
   app = createBastion({ token, port, dbPath }, { clock: () => serverNow, fault: stage => fault(stage) })
   await bounded(app.listen(), 'service startup')
   db = new DatabaseSync(dbPath)
-  const origin = `http://127.0.0.1:${app.port}`
+  let origin = `http://127.0.0.1:${app.port}`
   const fetcher = async (path, options) => {
     assert.ok(options.signal instanceof AbortSignal)
     const call = { path, method: options.method }
@@ -215,6 +215,27 @@ async function fixture(t, { realtime = false, fault = () => {} } = {}) {
   return {
     session, db, calls, sockets, witness, scope, eventTarget, intervals,
     externalFetch,
+    get origin() { return origin },
+    async restart() {
+      assert.equal(sockets.length, 0, 'restart is only supported without session sockets')
+      assert.equal(witness, undefined, 'restart is only supported without a witness')
+      const previousPort = app.port
+      await bounded(app.close(), 'service restart shutdown')
+      app = undefined
+      let port
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const listening = once(probe, 'listening')
+        probe.listen(0, '127.0.0.1')
+        await bounded(listening, 'restart port allocation')
+        port = probe.address().port
+        await bounded(new Promise(resolve => probe.close(resolve)), 'restart port release')
+        if (port !== previousPort) break
+      }
+      assert.notEqual(port, previousPort, 'restart needs a fresh endpoint, not pooled closed connections')
+      app = createBastion({ token, port, dbPath }, { clock: () => serverNow, fault: stage => fault(stage) })
+      await bounded(app.listen(), 'service restart startup')
+      origin = `http://127.0.0.1:${app.port}`
+    },
     setServerNow: value => { serverNow = value },
     setFault: value => { fault = value },
     async commitExternal(command) {
@@ -725,6 +746,92 @@ test('live service: a lost successful commit consumes local authority without re
   assert.equal(f.count('POST', '/v1/commands'), 1)
   assert.equal(f.count('GET', `/v1/tickets/${id}`), 1)
   assert.equal(f.calls.length, 4)
+})
+
+test('live service: explicit lookup finds a lost successful commit after service close and recreation on the same database', { timeout: 15000 }, async t => {
+  const f = await fixture(t)
+  const s = f.session
+  await f.run('ticket')
+  assert.equal(s.error.value, '')
+  const held = { ...s.ticket.value }
+  f.loseNext('POST', '/v1/commands')
+  await f.run('commit')
+  assert.equal(f.losses, 1)
+  assert.match(s.error.value, /Geen geldig antwoord/)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, held.id)
+  assert.equal(s.lookupId.value, held.id)
+  assert.equal(s.outcome.value, null)
+  assert.deepEqual(s.commands.value, [])
+  assert.equal(f.calls.length, 2, 'lost success triggers neither retry nor status lookup')
+  const persisted = { ...f.db.prepare('SELECT id, command, committed_at FROM commands WHERE ticket_id = ?').get(held.id) }
+  assert.deepEqual(persisted, { id: persisted.id, command: held.command, committed_at: now })
+  const tickets = f.db.prepare('SELECT * FROM tickets').all()
+  assert.equal(tickets.length, 1)
+  assert.equal(tickets[0].id, held.id)
+  assert.equal(tickets[0].consumed, 1)
+  assert.equal(tickets[0].revoked, 0)
+  const audit = f.db.prepare('SELECT * FROM audit').all()
+  assert.equal(audit.length, 1)
+  assert.equal(audit[0].ticket_id, held.id)
+  assert.equal(audit[0].action, 'journal:append')
+  const assertPersisted = () => {
+    assert.deepEqual(f.db.prepare('SELECT * FROM tickets').all(), tickets)
+    assert.deepEqual(f.db.prepare('SELECT id, command, committed_at FROM commands').all().map(row => ({ ...row })), [persisted])
+    assert.deepEqual(f.db.prepare('SELECT * FROM audit').all(), audit)
+  }
+  assertPersisted()
+
+  const previousOrigin = f.origin
+  await f.restart()
+  assert.notEqual(f.origin, previousOrigin)
+  assert.equal(f.session, s)
+  assert.equal(f.scope.active, true)
+  assert.equal(f.intervals.size, 1)
+  assert.equal(getEventListeners(f.eventTarget, 'pagehide').length, 1)
+  assert.equal(s.token.value, token)
+  assert.equal(s.command.value, held.command)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, held.id)
+  assert.equal(s.lookupId.value, held.id)
+  assert.equal(s.outcome.value, null)
+  assert.deepEqual(s.commands.value, [])
+  assert.equal(s.realtimeStatus.value, 'disconnected')
+  assert.equal(f.sockets.length, 0)
+  assert.equal(f.witness, undefined)
+  assert.equal(f.calls.length, 2, 'service recreation does not automatically request anything')
+  assertPersisted()
+
+  await bounded(s.checkLastSubmission(), 'lost commit status after service recreation')
+  assert.equal(s.error.value, '')
+  assert.equal(s.outcome.value.id, held.id)
+  assert.equal(s.outcome.value.status, 'committed')
+  assert.equal(s.outcome.value.checked_at, now)
+  assert.equal(s.outcome.value.revoked, false)
+  assert.deepEqual(s.outcome.value.record, persisted)
+  assert.equal(s.outcomeReceivedAt.value, now)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, held.id)
+  assert.deepEqual(s.commands.value, [])
+  assert.equal(f.calls.length, 3, 'explicit status does not fetch the journal')
+  await f.run('list')
+  assert.equal(s.error.value, '')
+  assert.equal(s.hasLoaded.value, true)
+  assert.deepEqual(s.commands.value, [persisted])
+  await f.run('commit')
+  assert.equal(f.calls.length, 4, 'a second commit cannot send another POST after reconciliation')
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, held.id)
+  assert.equal(f.count('POST', '/v1/tickets'), 1)
+  assert.equal(f.count('POST', '/v1/commands'), 1)
+  assert.equal(f.count('GET', `/v1/tickets/${held.id}`), 1)
+  assert.equal(f.count('GET', '/v1/commands'), 1)
+  assert.equal(f.losses, 1)
+  assertPersisted()
 })
 
 test('live service: a lost successful revocation blocks authority until explicit terminal status permits new issuance', { timeout: 15000 }, async t => {

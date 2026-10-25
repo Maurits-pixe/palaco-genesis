@@ -461,6 +461,11 @@ verwijderd. Statuscontrole en opnieuw intrekken geven geen veilige bevestiging,
 zodat de sessie haar onzekerheidsblokkering behoudt. NEO weigert dezelfde
 service na een geldig manifest wegens de ongezonde healthroute.
 Deze test bewijst geen herstelprocedure voor beschadigde opslag.
+Een live herstarttest sluit de service na een verloren succesvol commitantwoord
+en opent dezelfde SQLite-database opnieuw. De nog levende frontend-sessie
+bevestigt de bestaande vastlegging uitsluitend via expliciete statuscontrole
+en logboekverversing, zonder dubbele inzending of herstelde lokale toestemming.
+Dit test een nette serviceherstart, geen procescrash, browserherstart of stroomuitval.
 Installeer voor beide BASTION-testsuites vooraf de dependencies van zowel `services/bastion-core`
 als `apps/bastion-frontend` met `npm ci --prefix <map>`; de bestaande
 installatiestap hierboven doet dit al voor alle Node-projecten. Beide BASTION-CI-jobs
