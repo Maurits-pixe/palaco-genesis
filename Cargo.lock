@@ -362,6 +362,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "palaco-monetary-contracts"
+version = "0.1.0"
+
+[[package]]
 name = "palaco-observatory"
 version = "0.1.0-alpha.1"
 dependencies = [
@@ -410,6 +414,7 @@ dependencies = [
  "palaco-oracle",
  "palaco-trias",
  "palaco-types",
+ "sha2",
  "uuid",
 ]
 
