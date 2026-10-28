@@ -1,0 +1,21 @@
+name: Document exchange contract
+on:
+  push:
+    paths: ['ecosystem/**', '.github/workflows/document-exchange.yml']
+  pull_request:
+    paths: ['ecosystem/**', '.github/workflows/document-exchange.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          sparse-checkout: |
+            ecosystem
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: node --test ecosystem/*.test.mjs
