@@ -17,7 +17,7 @@
 
 ## Initial Citadel slice — limited evidence
 
-Code candidate: `PALACO-Citadel` service worker public shell v6, self-contained offline fallback in 12 languages, explicit connectivity label and honest no-sync status. Intended branch: `feature/offline-continuity-g1` (exact PR/commit to be bound when created).
+Code candidate: [`PALACO-Citadel` PR #50](https://github.com/Maurits-pixe/PALACO-Citadel/pull/50) service worker public shell v6, self-contained offline fallback in 12 languages, explicit connectivity label and honest no-sync status. Candidate branch `feature/offline-continuity-g1`, browser-evidence HEAD `b6cd066e2afc191e6cae8b19be4cd415f1442a67`.
 
 | ID | Test | Local simulated result | Remaining evidence |
 | --- | --- | --- | --- |
@@ -31,6 +31,13 @@ Code candidate: `PALACO-Citadel` service worker public shell v6, self-contained 
 | OFF-008 | Mock sync timestamps/false receipts removed from public prototype | PASS (static assertion) | Browser test of offline/online toggling |
 
 Reproducible command on the candidate checkout: `npm run test:offline`. This validates eight bounded offline-shell contracts, **not** RIO delivery, private storage, cross-app data, account security, true offline runtime or deployment.
+
+### Automated browser evidence, separately scoped
+
+- **Source:** [`Citadel offline-browser workflow run 40969979920`](https://github.com/Maurits-pixe/PALACO-Citadel/actions/runs/40969979920), HEAD `b6cd066e2afc191e6cae8b19be4cd415f1442a67`, **PASS** on 2026-10-29.
+- **Execution:** GitHub-hosted Chromium on mobile and desktop viewport projects. The test opens the public app, waits for the active worker, sets the browser context offline, reloads the allowlisted public routes, and checks the Arabic RTL fallback for an unknown route.
+- **Boundary:** This is `BROWSER_OFFLINE_PASS` for the scoped public shell under automated browser network emulation. It is **not** a physical disconnected-device trial, cold native installation, durable private-archive proof, an authorization/security attestation, or production availability.
+- **Separate work:** OFF-004 simulated negative access passed, but integrated browser/network authorization negative tests are still required. The two Vercel preview statuses are distinct from this offline-browser job and do not constitute release evidence.
 
 ## Required adversarial harness before wider rollout
 

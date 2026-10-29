@@ -99,7 +99,7 @@ Required invariants:
 | Gate | Exit evidence required | Current assessment |
 | --- | --- | --- |
 | G0 — Inventory | Accessible repositories, branches and observed dependencies | INVENTORIED — seven accessible repos |
-| G1 — Public shell | Online install → unplug → public reload, non-public negative access, multilingual fallback | Citadel code candidate only; browser test/release pending |
+| G1 — Public shell | Online install → unplug → public reload, non-public negative access, multilingual fallback | Citadel PR #50: automated Chromium offline-context test PASS on `b6cd066e2afc191e6cae8b19be4cd415f1442a67` (run `40969979920`); physical-device and human release review pending |
 | G2 — Creative local core | OR6IT/MUNDO/ERA drafts after restart, storage quota, export and corruption tests | PROGRAM-WIDE NOT EXECUTED |
 | G3 — Durable outbox | Crash pre/post first effect, duplicate delivery, reconnect, conflict and replay | NOT EXECUTED |
 | G4 — Private/identity | Revocation, expiry, trusted clock rollback, old snapshot, shared device and logout | HOLD — security evidence required |
