@@ -272,9 +272,15 @@ impl LocalAnchorFloorJournal {
             .map_err(|_| StoreError::UncertainCompletion)?;
         #[cfg(test)]
         terminate_at("after_file_sync");
+        #[cfg(test)]
+        if std::env::var("PALACO_ANCHOR_TEST_DIRSYNC_FAILURE").as_deref() == Ok("1") {
+            return Err(StoreError::UncertainCompletion);
+        }
         self.directory
             .sync_all()
             .map_err(|_| StoreError::UncertainCompletion)?;
+        #[cfg(test)]
+        terminate_at("after_directory_sync");
         Ok(())
     }
 }
@@ -406,7 +412,12 @@ mod tests {
 
     #[test]
     fn terminated_process_never_silently_skips_partial_anchor() {
-        for stage in ["after_create", "after_write", "after_file_sync"] {
+        for stage in [
+            "after_create",
+            "after_write",
+            "after_file_sync",
+            "after_directory_sync",
+        ] {
             let dir = TestDir::new();
             let status = Command::new(std::env::current_exe().unwrap_or_else(|_| panic!("exe")))
                 .arg("--exact")
@@ -425,6 +436,44 @@ mod tests {
                 assert_eq!(recovered, Ok(Some(record(1))));
             }
         }
+    }
+
+    #[test]
+    fn directory_sync_failure_is_uncertain_and_requires_reconciliation() {
+        let dir = TestDir::new();
+        let status = Command::new(std::env::current_exe().unwrap_or_else(|_| panic!("exe")))
+            .arg("--exact")
+            .arg("local_anchor_floor_journal::tests::directory_sync_failure_child")
+            .env("PALACO_ANCHOR_TEST_DIRSYNC_ROOT", &dir.0)
+            .env("PALACO_ANCHOR_TEST_DIRSYNC_FAILURE", "1")
+            .status()
+            .unwrap_or_else(|_| panic!("child"));
+        assert!(status.success());
+        let key = SigningKey::from_bytes(&[49; 32]);
+        // Process-visible recovery is not evidence of persistence across power loss.
+        assert_eq!(dir.open(&key).recover(None), Ok(Some(record(1))));
+        assert_eq!(
+            dir.open(&key).append_sync(&signed(record(1), &key)),
+            Err(StoreError::IntegrityUncertain)
+        );
+        assert_eq!(
+            dir.open(&key).recover(Some(&record(2))),
+            Err(StoreError::IntegrityUncertain)
+        );
+    }
+
+    #[test]
+    fn directory_sync_failure_child() {
+        let Ok(root) = std::env::var("PALACO_ANCHOR_TEST_DIRSYNC_ROOT") else {
+            return;
+        };
+        let key = SigningKey::from_bytes(&[49; 32]);
+        let mut journal = LocalAnchorFloorJournal::open(root, key.verifying_key().to_bytes())
+            .unwrap_or_else(|_| panic!("child open"));
+        assert_eq!(
+            journal.append_sync(&signed(record(1), &key)),
+            Err(StoreError::UncertainCompletion)
+        );
     }
 
     #[test]
