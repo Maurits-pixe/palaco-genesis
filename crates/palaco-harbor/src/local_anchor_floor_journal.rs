@@ -202,7 +202,7 @@ impl LocalAnchorFloorJournal {
         self.verify_directory_identity()?;
         let revisions = self.list_revisions()?;
         let mut latest: Option<AnchorRecord> = None;
-        for revision in revisions {
+        for revision in revisions.iter().copied() {
             if latest
                 .as_ref()
                 .is_some_and(|p| p.revision.checked_add(1) != Some(revision))
