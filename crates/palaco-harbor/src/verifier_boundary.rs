@@ -74,9 +74,11 @@ pub fn assess_verified_envelope<S: ReplayReservationStore, V: EvidenceVerifier>(
         Err(VerificationFailure::RevocationUnknown) => {
             return AdmissionDisposition::Quarantine(QuarantineReason::RevocationUnknown);
         }
-        Err(VerificationFailure::InvalidSignature
-        | VerificationFailure::UntrustedVerifier
-        | VerificationFailure::Unavailable) => {
+        Err(
+            VerificationFailure::InvalidSignature
+            | VerificationFailure::UntrustedVerifier
+            | VerificationFailure::Unavailable,
+        ) => {
             return AdmissionDisposition::Quarantine(QuarantineReason::ProvenanceUnknown);
         }
     };
@@ -106,9 +108,7 @@ pub fn assess_verified_envelope<S: ReplayReservationStore, V: EvidenceVerifier>(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        assess_verified_envelope, EvidenceVerifier, VerificationFailure, VerifiedClaims,
-    };
+    use super::{assess_verified_envelope, EvidenceVerifier, VerificationFailure, VerifiedClaims};
     use crate::replay_contract::{ReplayReservationStore, ReservationError, ReservationOutcome};
     use crate::{AdmissionDisposition, AdmissionRequest, QuarantineReason, RejectionReason};
     use std::collections::HashMap;
@@ -120,7 +120,11 @@ mod tests {
     }
 
     impl ReplayReservationStore for FakeStore {
-        fn reserve(&mut self, receipt: &str, key: &str) -> Result<ReservationOutcome, ReservationError> {
+        fn reserve(
+            &mut self,
+            receipt: &str,
+            key: &str,
+        ) -> Result<ReservationOutcome, ReservationError> {
             self.writes += 1;
             match self.values.get(receipt) {
                 None => {
@@ -171,16 +175,42 @@ mod tests {
     #[test]
     fn negative_verification_never_reserves() {
         for (failure, expected) in [
-            (VerificationFailure::InvalidSignature, AdmissionDisposition::Quarantine(QuarantineReason::ProvenanceUnknown)),
-            (VerificationFailure::UntrustedVerifier, AdmissionDisposition::Quarantine(QuarantineReason::ProvenanceUnknown)),
-            (VerificationFailure::Expired, AdmissionDisposition::Quarantine(QuarantineReason::TemporalUnknown)),
-            (VerificationFailure::ScopeMismatch, AdmissionDisposition::Quarantine(QuarantineReason::BindingMismatch)),
-            (VerificationFailure::Revoked, AdmissionDisposition::Reject(RejectionReason::Revoked)),
-            (VerificationFailure::RevocationUnknown, AdmissionDisposition::Quarantine(QuarantineReason::RevocationUnknown)),
-            (VerificationFailure::TemporalUnknown, AdmissionDisposition::Quarantine(QuarantineReason::TemporalUnknown)),
-            (VerificationFailure::Unavailable, AdmissionDisposition::Quarantine(QuarantineReason::ProvenanceUnknown)),
+            (
+                VerificationFailure::InvalidSignature,
+                AdmissionDisposition::Quarantine(QuarantineReason::ProvenanceUnknown),
+            ),
+            (
+                VerificationFailure::UntrustedVerifier,
+                AdmissionDisposition::Quarantine(QuarantineReason::ProvenanceUnknown),
+            ),
+            (
+                VerificationFailure::Expired,
+                AdmissionDisposition::Quarantine(QuarantineReason::TemporalUnknown),
+            ),
+            (
+                VerificationFailure::ScopeMismatch,
+                AdmissionDisposition::Quarantine(QuarantineReason::BindingMismatch),
+            ),
+            (
+                VerificationFailure::Revoked,
+                AdmissionDisposition::Reject(RejectionReason::Revoked),
+            ),
+            (
+                VerificationFailure::RevocationUnknown,
+                AdmissionDisposition::Quarantine(QuarantineReason::RevocationUnknown),
+            ),
+            (
+                VerificationFailure::TemporalUnknown,
+                AdmissionDisposition::Quarantine(QuarantineReason::TemporalUnknown),
+            ),
+            (
+                VerificationFailure::Unavailable,
+                AdmissionDisposition::Quarantine(QuarantineReason::ProvenanceUnknown),
+            ),
         ] {
-            let verifier = ScriptedVerifier { result: Err(failure) };
+            let verifier = ScriptedVerifier {
+                result: Err(failure),
+            };
             let mut store = FakeStore::default();
             assert_eq!(
                 assess_verified_envelope(&mut store, &verifier, "r-1", &request(), b"envelope"),
@@ -192,7 +222,9 @@ mod tests {
 
     #[test]
     fn accepted_claims_forward_once_and_replay_quarantines() {
-        let verifier = ScriptedVerifier { result: Ok(accepted()) };
+        let verifier = ScriptedVerifier {
+            result: Ok(accepted()),
+        };
         let mut store = FakeStore::default();
         assert_eq!(
             assess_verified_envelope(&mut store, &verifier, "r-1", &request(), b"envelope"),
@@ -221,10 +253,14 @@ mod tests {
     #[test]
     fn same_receipt_different_verified_payload_quarantines() {
         let mut store = FakeStore::default();
-        let first = ScriptedVerifier { result: Ok(accepted()) };
+        let first = ScriptedVerifier {
+            result: Ok(accepted()),
+        };
         let mut changed = accepted();
         changed.payload_sha256 = "b".repeat(64);
-        let second = ScriptedVerifier { result: Ok(changed) };
+        let second = ScriptedVerifier {
+            result: Ok(changed),
+        };
         assert_eq!(
             assess_verified_envelope(&mut store, &first, "r-1", &request(), b"envelope"),
             AdmissionDisposition::ForwardForAuthorization
