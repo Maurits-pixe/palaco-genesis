@@ -224,7 +224,7 @@ impl LocalAnchorFloorJournal {
             if !meta.is_file() || meta.nlink() != 1 || meta.len() > MAX_RECORD_BYTES as u64 {
                 return Err(StoreError::IntegrityUncertain);
             }
-            frame_identities.push((revision, meta.dev(), meta.ino()));
+            frame_identities.push((revision, meta.dev(), meta.ino(), meta.len()));
             let mut bytes = Vec::new();
             file.take((MAX_RECORD_BYTES + 1) as u64)
                 .read_to_end(&mut bytes)
@@ -264,6 +264,15 @@ impl LocalAnchorFloorJournal {
                 fs::write(self.root.join(Self::filename(2)), b"late frame")
                     .map_err(|_| StoreError::IntegrityUncertain)?;
             }
+            Ok("truncate") => {
+                let frame = fs::OpenOptions::new()
+                    .write(true)
+                    .open(self.root.join(Self::filename(1)))
+                    .map_err(|_| StoreError::IntegrityUncertain)?;
+                frame
+                    .set_len(1)
+                    .map_err(|_| StoreError::IntegrityUncertain)?;
+            }
             Ok("replace") => {
                 let source = self.root.join(Self::filename(1));
                 let replacement = self.root.join("replacement.tmp");
@@ -277,7 +286,7 @@ impl LocalAnchorFloorJournal {
         }
         // A name-preserving rename can evade set comparison. Reopen each name
         // through the pinned directory and reject persistent inode replacement.
-        for (revision, dev, ino) in frame_identities {
+        for (revision, dev, ino, len) in frame_identities {
             let fd = openat(
                 &self.directory,
                 Self::filename(revision),
@@ -288,7 +297,12 @@ impl LocalAnchorFloorJournal {
             let meta = File::from(fd)
                 .metadata()
                 .map_err(|_| StoreError::IntegrityUncertain)?;
-            if !meta.is_file() || meta.nlink() != 1 || meta.dev() != dev || meta.ino() != ino {
+            if !meta.is_file()
+                || meta.nlink() != 1
+                || meta.dev() != dev
+                || meta.ino() != ino
+                || meta.len() != len
+            {
                 return Err(StoreError::IntegrityUncertain);
             }
         }
@@ -750,6 +764,27 @@ mod tests {
         // Same signed bytes and filename remain valid for a fresh recovery.
         // The in-flight recovery must detect the changed inode.
         assert_eq!(dir.open(&key).recover(None), Ok(Some(record(1))));
+    }
+
+    #[test]
+    fn in_place_truncation_during_recovery_is_not_silently_accepted() {
+        let dir = TestDir::new();
+        let key = SigningKey::from_bytes(&[49; 32]);
+        dir.open(&key)
+            .append_sync(&signed(record(1), &key))
+            .unwrap_or_else(|_| panic!("append"));
+        let status = Command::new(std::env::current_exe().unwrap_or_else(|_| panic!("exe")))
+            .arg("--exact")
+            .arg("local_anchor_floor_journal::tests::directory_mutation_child")
+            .env("PALACO_ANCHOR_TEST_ENUM_ROOT", &dir.0)
+            .env("PALACO_ANCHOR_TEST_ENUM_MUTATION", "truncate")
+            .status()
+            .unwrap_or_else(|_| panic!("child"));
+        assert!(status.success());
+        assert_eq!(
+            dir.open(&key).recover(None),
+            Err(StoreError::IntegrityUncertain)
+        );
     }
 
     #[test]
