@@ -8,6 +8,7 @@ use crate::anchor_cas::{AnchorRecord, StoreError};
 use crate::remote_anchor_adapter::{attestation_bytes, AttestedAnchor};
 use ed25519_dalek::{Signature, VerifyingKey};
 use rustix::fs::{open, openat, Dir, Mode, OFlags};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fs::{self, File};
 use std::io::{Read, Write};
@@ -224,12 +225,13 @@ impl LocalAnchorFloorJournal {
             if !meta.is_file() || meta.nlink() != 1 || meta.len() > MAX_RECORD_BYTES as u64 {
                 return Err(StoreError::IntegrityUncertain);
             }
-            frame_identities.push((revision, meta.dev(), meta.ino(), meta.len()));
             let mut bytes = Vec::new();
             file.take((MAX_RECORD_BYTES + 1) as u64)
                 .read_to_end(&mut bytes)
                 .map_err(|_| StoreError::IntegrityUncertain)?;
             let record = self.decode(&bytes)?;
+            let fingerprint: [u8; 32] = Sha256::digest(&bytes).into();
+            frame_identities.push((revision, meta.dev(), meta.ino(), meta.len(), fingerprint));
             if record.revision != revision {
                 return Err(StoreError::IntegrityUncertain);
             }
@@ -264,6 +266,13 @@ impl LocalAnchorFloorJournal {
                 fs::write(self.root.join(Self::filename(2)), b"late frame")
                     .map_err(|_| StoreError::IntegrityUncertain)?;
             }
+            Ok("rewrite") => {
+                let path = self.root.join(Self::filename(1));
+                let mut bytes = fs::read(&path).map_err(|_| StoreError::IntegrityUncertain)?;
+                let first = bytes.first_mut().ok_or(StoreError::IntegrityUncertain)?;
+                *first ^= 1;
+                fs::write(&path, bytes).map_err(|_| StoreError::IntegrityUncertain)?;
+            }
             Ok("truncate") => {
                 let frame = fs::OpenOptions::new()
                     .write(true)
@@ -286,7 +295,7 @@ impl LocalAnchorFloorJournal {
         }
         // A name-preserving rename can evade set comparison. Reopen each name
         // through the pinned directory and reject persistent inode replacement.
-        for (revision, dev, ino, len) in frame_identities {
+        for (revision, dev, ino, len, fingerprint) in frame_identities {
             let fd = openat(
                 &self.directory,
                 Self::filename(revision),
@@ -294,7 +303,8 @@ impl LocalAnchorFloorJournal {
                 Mode::empty(),
             )
             .map_err(|_| StoreError::IntegrityUncertain)?;
-            let meta = File::from(fd)
+            let file = File::from(fd);
+            let meta = file
                 .metadata()
                 .map_err(|_| StoreError::IntegrityUncertain)?;
             if !meta.is_file()
@@ -303,6 +313,14 @@ impl LocalAnchorFloorJournal {
                 || meta.ino() != ino
                 || meta.len() != len
             {
+                return Err(StoreError::IntegrityUncertain);
+            }
+            let mut bytes = Vec::new();
+            file.take((MAX_RECORD_BYTES + 1) as u64)
+                .read_to_end(&mut bytes)
+                .map_err(|_| StoreError::IntegrityUncertain)?;
+            let reread_fingerprint: [u8; 32] = Sha256::digest(&bytes).into();
+            if bytes.len() as u64 != len || reread_fingerprint != fingerprint {
                 return Err(StoreError::IntegrityUncertain);
             }
         }
@@ -778,6 +796,27 @@ mod tests {
             .arg("local_anchor_floor_journal::tests::directory_mutation_child")
             .env("PALACO_ANCHOR_TEST_ENUM_ROOT", &dir.0)
             .env("PALACO_ANCHOR_TEST_ENUM_MUTATION", "truncate")
+            .status()
+            .unwrap_or_else(|_| panic!("child"));
+        assert!(status.success());
+        assert_eq!(
+            dir.open(&key).recover(None),
+            Err(StoreError::IntegrityUncertain)
+        );
+    }
+
+    #[test]
+    fn same_length_rewrite_during_recovery_is_not_silently_accepted() {
+        let dir = TestDir::new();
+        let key = SigningKey::from_bytes(&[49; 32]);
+        dir.open(&key)
+            .append_sync(&signed(record(1), &key))
+            .unwrap_or_else(|_| panic!("append"));
+        let status = Command::new(std::env::current_exe().unwrap_or_else(|_| panic!("exe")))
+            .arg("--exact")
+            .arg("local_anchor_floor_journal::tests::directory_mutation_child")
+            .env("PALACO_ANCHOR_TEST_ENUM_ROOT", &dir.0)
+            .env("PALACO_ANCHOR_TEST_ENUM_MUTATION", "rewrite")
             .status()
             .unwrap_or_else(|_| panic!("child"));
         assert!(status.success());
