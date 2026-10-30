@@ -18,6 +18,13 @@ const MAX_RECORD_BYTES: usize = 64_000;
 const PREFIX: &[u8] = b"PALACO-HARBOR-REMOTE-ANCHOR-v1\0";
 const MAX_FRAMES: usize = 10_000;
 
+#[cfg(test)]
+fn terminate_at(stage: &str) {
+    if std::env::var("PALACO_ANCHOR_TEST_EXIT_STAGE").as_deref() == Ok(stage) {
+        std::process::exit(86);
+    }
+}
+
 #[derive(Debug)]
 pub struct LocalAnchorFloorJournal {
     root: PathBuf,
@@ -255,10 +262,16 @@ impl LocalAnchorFloorJournal {
         )
         .map_err(|_| StoreError::UncertainCompletion)?;
         let mut file = File::from(fd);
+        #[cfg(test)]
+        terminate_at("after_create");
         file.write_all(&frame)
             .map_err(|_| StoreError::UncertainCompletion)?;
+        #[cfg(test)]
+        terminate_at("after_write");
         file.sync_all()
             .map_err(|_| StoreError::UncertainCompletion)?;
+        #[cfg(test)]
+        terminate_at("after_file_sync");
         self.directory
             .sync_all()
             .map_err(|_| StoreError::UncertainCompletion)?;
@@ -276,6 +289,7 @@ mod tests {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
+    use std::process::Command;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -375,6 +389,58 @@ mod tests {
         let other = SigningKey::from_bytes(&[50; 32]);
         assert_eq!(
             dir.open(&other).recover(None),
+            Err(StoreError::IntegrityUncertain)
+        );
+    }
+    #[test]
+    fn process_termination_child() {
+        let Ok(root) = std::env::var("PALACO_ANCHOR_TEST_EXIT_ROOT") else {
+            return;
+        };
+        let key = SigningKey::from_bytes(&[49; 32]);
+        let mut journal = LocalAnchorFloorJournal::open(root, key.verifying_key().to_bytes())
+            .unwrap_or_else(|_| panic!("child open"));
+        let _ = journal.append_sync(&signed(record(1), &key));
+        panic!("termination hook not reached");
+    }
+
+    #[test]
+    fn terminated_process_never_silently_skips_partial_anchor() {
+        for stage in ["after_create", "after_write", "after_file_sync"] {
+            let dir = TestDir::new();
+            let status = Command::new(std::env::current_exe().unwrap_or_else(|_| panic!("exe")))
+                .arg("--exact")
+                .arg("local_anchor_floor_journal::tests::process_termination_child")
+                .env("PALACO_ANCHOR_TEST_EXIT_ROOT", &dir.0)
+                .env("PALACO_ANCHOR_TEST_EXIT_STAGE", stage)
+                .status()
+                .unwrap_or_else(|_| panic!("child"));
+            assert_eq!(status.code(), Some(86));
+            let key = SigningKey::from_bytes(&[49; 32]);
+            let recovered = dir.open(&key).recover(None);
+            if stage == "after_create" {
+                assert_eq!(recovered, Err(StoreError::IntegrityUncertain));
+            } else {
+                // This is process termination, not a power-loss durability test.
+                assert_eq!(recovered, Ok(Some(record(1))));
+            }
+        }
+    }
+
+    #[test]
+    fn interrupted_first_write_cannot_be_reused_as_fresh_genesis() {
+        let dir = TestDir::new();
+        let key = SigningKey::from_bytes(&[49; 32]);
+        fs::write(dir.0.join(LocalAnchorFloorJournal::filename(1)), [])
+            .unwrap_or_else(|_| panic!("create empty partial"));
+        let mut journal = dir.open(&key);
+        assert_eq!(journal.recover(None), Err(StoreError::IntegrityUncertain));
+        assert_eq!(
+            journal.append_sync(&signed(record(1), &key)),
+            Err(StoreError::IntegrityUncertain)
+        );
+        assert_eq!(
+            journal.recover(Some(&record(1))),
             Err(StoreError::IntegrityUncertain)
         );
     }
