@@ -304,11 +304,7 @@ impl LocalAnchorFloorJournal {
         }
     }
 
-    fn append_locked(
-        &self,
-        frame: &[u8],
-        verified: &AnchorRecord,
-    ) -> Result<(), StoreError> {
+    fn append_locked(&self, frame: &[u8], verified: &AnchorRecord) -> Result<(), StoreError> {
         if let Some(previous) = self.recover_unlocked(None)? {
             if previous.revision.checked_add(1) != Some(verified.revision)
                 || verified.signer_epoch < previous.signer_epoch
@@ -340,7 +336,6 @@ impl LocalAnchorFloorJournal {
             .map_err(|_| StoreError::UncertainCompletion)?;
         Ok(())
     }
-
 }
 
 #[cfg(test)]
@@ -349,8 +344,8 @@ mod tests {
     use crate::anchor_cas::{AnchorRecord, StoreError};
     use crate::remote_anchor_adapter::{attestation_bytes, AttestedAnchor};
     use ed25519_dalek::{Signer, SigningKey};
-    use std::collections::BTreeSet;
     use rustix::fs::{flock, FlockOperation};
+    use std::collections::BTreeSet;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
@@ -470,5 +465,4 @@ mod tests {
         assert!(flock(&second.lock_file, FlockOperation::NonBlockingLockExclusive).is_ok());
         assert!(flock(&second.lock_file, FlockOperation::Unlock).is_ok());
     }
-
 }
