@@ -174,7 +174,10 @@ mod tests {
         identity.payload_sha256 =
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         identity.trust_epoch = 0;
-        assert_eq!(derive_binding_key(&request("person", "contact"), &identity), Err(ReservationError::Unavailable));
+        assert_eq!(
+            derive_binding_key(&request("person", "contact"), &identity),
+            Err(ReservationError::Unavailable)
+        );
     }
 
     #[test]
