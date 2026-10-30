@@ -268,8 +268,7 @@ impl LocalAnchorFloorJournal {
                 let source = self.root.join(Self::filename(1));
                 let replacement = self.root.join("replacement.tmp");
                 fs::copy(&source, &replacement).map_err(|_| StoreError::IntegrityUncertain)?;
-                fs::rename(&replacement, &source)
-                    .map_err(|_| StoreError::IntegrityUncertain)?;
+                fs::rename(&replacement, &source).map_err(|_| StoreError::IntegrityUncertain)?;
             }
             _ => {}
         }
