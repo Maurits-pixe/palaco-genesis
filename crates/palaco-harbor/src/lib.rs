@@ -10,8 +10,8 @@ use std::collections::HashSet;
 
 pub mod anchor_cas;
 pub mod anchor_checkpoint;
-pub mod checkpoint_verifier;
 pub mod anchor_rotation;
+pub mod checkpoint_verifier;
 pub mod detached_signature;
 pub mod evidence_digest;
 pub mod journal_integrity;
