@@ -25,6 +25,30 @@ pub struct AdmissionEvidence {
     pub temporal_validity_verified: bool,
 }
 
+/// The exact request identifiers to which upstream evidence must be bound.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AdmissionRequest<'a> {
+    /// Non-empty subject identifier.
+    pub subject_id: &'a str,
+    /// Non-empty, purpose-specific identifier.
+    pub purpose: &'a str,
+    /// Non-empty requested authorization scope identifier.
+    pub scope: &'a str,
+}
+
+/// Identifiers that an upstream verifier asserts were checked.
+///
+/// This type does not authenticate the assertions or establish freshness.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EvidenceBinding<'a> {
+    /// Subject named in the verified evidence.
+    pub subject_id: &'a str,
+    /// Purpose named in the verified consent evidence.
+    pub purpose: &'a str,
+    /// Scope named in the verified evidence.
+    pub scope: &'a str,
+}
+
 /// A routing choice that never grants execution authority.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AdmissionDisposition {
@@ -51,6 +75,10 @@ pub enum QuarantineReason {
     RevocationUnknown,
     /// Trusted temporal validity has not been established.
     TemporalUnknown,
+    /// A required request/evidence identifier was empty.
+    MissingBinding,
+    /// Evidence references a different subject, purpose, or scope.
+    BindingMismatch,
 }
 
 /// A condition that is independently sufficient for rejection.
@@ -93,11 +121,46 @@ pub fn assess_admission(evidence: &AdmissionEvidence) -> AdmissionDisposition {
     AdmissionDisposition::ForwardForAuthorization
 }
 
+/// Checks exact evidence/request binding before ordinary Harbor routing.
+///
+/// Equality here is necessary but not sufficient: callers must independently
+/// authenticate, time-bind, and replay-protect the supplied evidence.
+#[must_use]
+pub fn assess_bound_admission(
+    request: &AdmissionRequest<'_>,
+    binding: &EvidenceBinding<'_>,
+    evidence: &AdmissionEvidence,
+) -> AdmissionDisposition {
+    if request.subject_id.is_empty()
+        || request.purpose.is_empty()
+        || request.scope.is_empty()
+        || binding.subject_id.is_empty()
+        || binding.purpose.is_empty()
+        || binding.scope.is_empty()
+    {
+        return AdmissionDisposition::Quarantine(QuarantineReason::MissingBinding);
+    }
+
+    // A verified revocation always takes precedence over mismatched metadata.
+    if evidence.revocation_checked && evidence.revoked {
+        return AdmissionDisposition::Reject(RejectionReason::Revoked);
+    }
+
+    if request.subject_id != binding.subject_id
+        || request.purpose != binding.purpose
+        || request.scope != binding.scope
+    {
+        return AdmissionDisposition::Quarantine(QuarantineReason::BindingMismatch);
+    }
+
+    assess_admission(evidence)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        assess_admission, AdmissionDisposition, AdmissionEvidence, QuarantineReason,
-        RejectionReason,
+        assess_admission, assess_bound_admission, AdmissionDisposition, AdmissionEvidence,
+        AdmissionRequest, EvidenceBinding, QuarantineReason, RejectionReason,
     };
 
     fn complete() -> AdmissionEvidence {
@@ -202,4 +265,80 @@ mod tests {
             AdmissionDisposition::Quarantine(QuarantineReason::RevocationUnknown)
         );
     }
+    fn request() -> AdmissionRequest<'static> {
+        AdmissionRequest {
+            subject_id: "person-1",
+            purpose: "contact",
+            scope: "rio:invite",
+        }
+    }
+
+    fn binding() -> EvidenceBinding<'static> {
+        EvidenceBinding {
+            subject_id: "person-1",
+            purpose: "contact",
+            scope: "rio:invite",
+        }
+    }
+
+    #[test]
+    fn exact_binding_only_forwards_to_authorization() {
+        assert_eq!(
+            assess_bound_admission(&request(), &binding(), &complete()),
+            AdmissionDisposition::ForwardForAuthorization
+        );
+    }
+
+    #[test]
+    fn subject_mismatch_quarantines() {
+        let mut b = binding();
+        b.subject_id = "person-2";
+        assert_eq!(
+            assess_bound_admission(&request(), &b, &complete()),
+            AdmissionDisposition::Quarantine(QuarantineReason::BindingMismatch)
+        );
+    }
+
+    #[test]
+    fn purpose_mismatch_quarantines() {
+        let mut b = binding();
+        b.purpose = "marketing";
+        assert_eq!(
+            assess_bound_admission(&request(), &b, &complete()),
+            AdmissionDisposition::Quarantine(QuarantineReason::BindingMismatch)
+        );
+    }
+
+    #[test]
+    fn scope_mismatch_quarantines() {
+        let mut b = binding();
+        b.scope = "citadel:admin";
+        assert_eq!(
+            assess_bound_admission(&request(), &b, &complete()),
+            AdmissionDisposition::Quarantine(QuarantineReason::BindingMismatch)
+        );
+    }
+
+    #[test]
+    fn empty_binding_quarantines() {
+        let mut b = binding();
+        b.subject_id = "";
+        assert_eq!(
+            assess_bound_admission(&request(), &b, &complete()),
+            AdmissionDisposition::Quarantine(QuarantineReason::MissingBinding)
+        );
+    }
+
+    #[test]
+    fn verified_revocation_wins_even_with_binding_mismatch() {
+        let mut b = binding();
+        b.scope = "citadel:admin";
+        let mut e = complete();
+        e.revoked = true;
+        assert_eq!(
+            assess_bound_admission(&request(), &b, &e),
+            AdmissionDisposition::Reject(RejectionReason::Revoked)
+        );
+    }
+
 }
