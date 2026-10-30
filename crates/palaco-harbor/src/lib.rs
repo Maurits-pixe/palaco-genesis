@@ -6,6 +6,8 @@
 #![forbid(unsafe_code)]
 #![deny(warnings, clippy::unwrap_used, clippy::todo)]
 
+use std::collections::HashSet;
+
 /// Information asserted by the caller, not independently verified by Harbor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AdmissionEvidence {
@@ -23,6 +25,30 @@ pub struct AdmissionEvidence {
     pub revoked: bool,
     /// A trusted time source established temporal validity.
     pub temporal_validity_verified: bool,
+}
+
+/// The exact request identifiers to which upstream evidence must be bound.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AdmissionRequest<'a> {
+    /// Non-empty subject identifier.
+    pub subject_id: &'a str,
+    /// Non-empty, purpose-specific identifier.
+    pub purpose: &'a str,
+    /// Non-empty requested authorization scope identifier.
+    pub scope: &'a str,
+}
+
+/// Identifiers that an upstream verifier asserts were checked.
+///
+/// This type does not authenticate the assertions or establish freshness.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EvidenceBinding<'a> {
+    /// Subject named in the verified evidence.
+    pub subject_id: &'a str,
+    /// Purpose named in the verified consent evidence.
+    pub purpose: &'a str,
+    /// Scope named in the verified evidence.
+    pub scope: &'a str,
 }
 
 /// A routing choice that never grants execution authority.
@@ -51,6 +77,14 @@ pub enum QuarantineReason {
     RevocationUnknown,
     /// Trusted temporal validity has not been established.
     TemporalUnknown,
+    /// A required request/evidence identifier was empty.
+    MissingBinding,
+    /// Evidence references a different subject, purpose, or scope.
+    BindingMismatch,
+    /// A receipt identifier was not supplied.
+    MissingReceiptId,
+    /// This process has already forwarded the receipt identifier.
+    ReplayDetected,
 }
 
 /// A condition that is independently sufficient for rejection.
@@ -93,11 +127,89 @@ pub fn assess_admission(evidence: &AdmissionEvidence) -> AdmissionDisposition {
     AdmissionDisposition::ForwardForAuthorization
 }
 
+/// Checks exact evidence/request binding before ordinary Harbor routing.
+///
+/// Equality here is necessary but not sufficient: callers must independently
+/// authenticate, time-bind, and replay-protect the supplied evidence.
+#[must_use]
+pub fn assess_bound_admission(
+    request: &AdmissionRequest<'_>,
+    binding: &EvidenceBinding<'_>,
+    evidence: &AdmissionEvidence,
+) -> AdmissionDisposition {
+    if request.subject_id.is_empty()
+        || request.purpose.is_empty()
+        || request.scope.is_empty()
+        || binding.subject_id.is_empty()
+        || binding.purpose.is_empty()
+        || binding.scope.is_empty()
+    {
+        return AdmissionDisposition::Quarantine(QuarantineReason::MissingBinding);
+    }
+
+    // A verified revocation always takes precedence over mismatched metadata.
+    if evidence.revocation_checked && evidence.revoked {
+        return AdmissionDisposition::Reject(RejectionReason::Revoked);
+    }
+
+    if request.subject_id != binding.subject_id
+        || request.purpose != binding.purpose
+        || request.scope != binding.scope
+    {
+        return AdmissionDisposition::Quarantine(QuarantineReason::BindingMismatch);
+    }
+
+    assess_admission(evidence)
+}
+
+/// Process-local ledger of receipt identifiers forwarded for authorization.
+///
+/// This is not durable, distributed, or cryptographic replay protection. A
+/// restart, parallel instance, or forged identifier can bypass this ledger.
+/// An external durable uniqueness authority is required for production.
+#[derive(Debug, Default)]
+pub struct InMemoryReplayLedger {
+    forwarded_receipts: HashSet<String>,
+}
+
+impl InMemoryReplayLedger {
+    /// Creates an empty process-local ledger.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Assesses an exactly bound request and reserves a non-empty receipt ID.
+    ///
+    /// The exclusive mutable borrow serializes attempts that share this ledger.
+    /// Only requests eligible for an independent authorization gate consume an
+    /// ID. This method does not itself authorize or execute anything.
+    pub fn assess_once(
+        &mut self,
+        receipt_id: &str,
+        request: &AdmissionRequest<'_>,
+        binding: &EvidenceBinding<'_>,
+        evidence: &AdmissionEvidence,
+    ) -> AdmissionDisposition {
+        let disposition = assess_bound_admission(request, binding, evidence);
+        if disposition != AdmissionDisposition::ForwardForAuthorization {
+            return disposition;
+        }
+        if receipt_id.is_empty() {
+            return AdmissionDisposition::Quarantine(QuarantineReason::MissingReceiptId);
+        }
+        if !self.forwarded_receipts.insert(receipt_id.to_owned()) {
+            return AdmissionDisposition::Quarantine(QuarantineReason::ReplayDetected);
+        }
+        AdmissionDisposition::ForwardForAuthorization
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        assess_admission, AdmissionDisposition, AdmissionEvidence, QuarantineReason,
-        RejectionReason,
+        assess_admission, assess_bound_admission, AdmissionDisposition, AdmissionEvidence,
+        AdmissionRequest, EvidenceBinding, InMemoryReplayLedger, QuarantineReason, RejectionReason,
     };
 
     fn complete() -> AdmissionEvidence {
@@ -200,6 +312,146 @@ mod tests {
         assert_eq!(
             assess_admission(&e),
             AdmissionDisposition::Quarantine(QuarantineReason::RevocationUnknown)
+        );
+    }
+    #[test]
+    fn receipt_is_forwarded_only_once_in_same_ledger() {
+        let mut ledger = InMemoryReplayLedger::new();
+        assert_eq!(
+            ledger.assess_once("receipt-1", &request(), &binding(), &complete()),
+            AdmissionDisposition::ForwardForAuthorization
+        );
+        assert_eq!(
+            ledger.assess_once("receipt-1", &request(), &binding(), &complete()),
+            AdmissionDisposition::Quarantine(QuarantineReason::ReplayDetected)
+        );
+    }
+
+    #[test]
+    fn distinct_receipts_are_independent() {
+        let mut ledger = InMemoryReplayLedger::new();
+        assert_eq!(
+            ledger.assess_once("receipt-1", &request(), &binding(), &complete()),
+            AdmissionDisposition::ForwardForAuthorization
+        );
+        assert_eq!(
+            ledger.assess_once("receipt-2", &request(), &binding(), &complete()),
+            AdmissionDisposition::ForwardForAuthorization
+        );
+    }
+
+    #[test]
+    fn missing_receipt_id_quarantines() {
+        let mut ledger = InMemoryReplayLedger::new();
+        assert_eq!(
+            ledger.assess_once("", &request(), &binding(), &complete()),
+            AdmissionDisposition::Quarantine(QuarantineReason::MissingReceiptId)
+        );
+    }
+
+    #[test]
+    fn rejected_or_quarantined_requests_do_not_consume_receipt() {
+        let mut ledger = InMemoryReplayLedger::new();
+        let mut bad_binding = binding();
+        bad_binding.scope = "wrong";
+        assert_eq!(
+            ledger.assess_once("receipt-1", &request(), &bad_binding, &complete()),
+            AdmissionDisposition::Quarantine(QuarantineReason::BindingMismatch)
+        );
+        assert_eq!(
+            ledger.assess_once("receipt-1", &request(), &binding(), &complete()),
+            AdmissionDisposition::ForwardForAuthorization
+        );
+    }
+
+    #[test]
+    fn verified_revocation_wins_over_replay_detection() {
+        let mut ledger = InMemoryReplayLedger::new();
+        assert_eq!(
+            ledger.assess_once("receipt-1", &request(), &binding(), &complete()),
+            AdmissionDisposition::ForwardForAuthorization
+        );
+        let mut evidence = complete();
+        evidence.revoked = true;
+        assert_eq!(
+            ledger.assess_once("receipt-1", &request(), &binding(), &evidence),
+            AdmissionDisposition::Reject(RejectionReason::Revoked)
+        );
+    }
+
+    fn request() -> AdmissionRequest<'static> {
+        AdmissionRequest {
+            subject_id: "person-1",
+            purpose: "contact",
+            scope: "rio:invite",
+        }
+    }
+
+    fn binding() -> EvidenceBinding<'static> {
+        EvidenceBinding {
+            subject_id: "person-1",
+            purpose: "contact",
+            scope: "rio:invite",
+        }
+    }
+
+    #[test]
+    fn exact_binding_only_forwards_to_authorization() {
+        assert_eq!(
+            assess_bound_admission(&request(), &binding(), &complete()),
+            AdmissionDisposition::ForwardForAuthorization
+        );
+    }
+
+    #[test]
+    fn subject_mismatch_quarantines() {
+        let mut b = binding();
+        b.subject_id = "person-2";
+        assert_eq!(
+            assess_bound_admission(&request(), &b, &complete()),
+            AdmissionDisposition::Quarantine(QuarantineReason::BindingMismatch)
+        );
+    }
+
+    #[test]
+    fn purpose_mismatch_quarantines() {
+        let mut b = binding();
+        b.purpose = "marketing";
+        assert_eq!(
+            assess_bound_admission(&request(), &b, &complete()),
+            AdmissionDisposition::Quarantine(QuarantineReason::BindingMismatch)
+        );
+    }
+
+    #[test]
+    fn scope_mismatch_quarantines() {
+        let mut b = binding();
+        b.scope = "citadel:admin";
+        assert_eq!(
+            assess_bound_admission(&request(), &b, &complete()),
+            AdmissionDisposition::Quarantine(QuarantineReason::BindingMismatch)
+        );
+    }
+
+    #[test]
+    fn empty_binding_quarantines() {
+        let mut b = binding();
+        b.subject_id = "";
+        assert_eq!(
+            assess_bound_admission(&request(), &b, &complete()),
+            AdmissionDisposition::Quarantine(QuarantineReason::MissingBinding)
+        );
+    }
+
+    #[test]
+    fn verified_revocation_wins_even_with_binding_mismatch() {
+        let mut b = binding();
+        b.scope = "citadel:admin";
+        let mut e = complete();
+        e.revoked = true;
+        assert_eq!(
+            assess_bound_admission(&request(), &b, &e),
+            AdmissionDisposition::Reject(RejectionReason::Revoked)
         );
     }
 }
