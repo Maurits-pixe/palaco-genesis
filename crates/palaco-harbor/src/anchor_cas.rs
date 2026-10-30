@@ -70,7 +70,8 @@ fn id_valid(id: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || b"_.:-".contains(&byte))
 }
 
-fn record_valid(record: &AnchorRecord) -> bool {
+/// Structural validation shared by checkpoint adapters before trust verification.
+pub(crate) fn record_is_valid(record: &AnchorRecord) -> bool {
     record.revision != 0
         && record.signer_epoch != 0
         && record.sequence != 0
@@ -88,7 +89,7 @@ pub fn publish_next<S: AtomicAnchorStore>(
     proposal: AnchorProposal,
 ) -> Result<AnchorRecord, PublishError> {
     let current = store.load().map_err(PublishError::Store)?;
-    if !record_valid(&current) {
+    if !record_is_valid(&current) {
         return Err(PublishError::InvalidCurrent);
     }
     if proposal.signer_epoch < current.signer_epoch

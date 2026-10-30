@@ -9,6 +9,7 @@
 use std::collections::HashSet;
 
 pub mod anchor_cas;
+pub mod anchor_checkpoint;
 pub mod anchor_rotation;
 pub mod detached_signature;
 pub mod evidence_digest;
