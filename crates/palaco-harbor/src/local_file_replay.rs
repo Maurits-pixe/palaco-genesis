@@ -1,0 +1,219 @@
+//! POSIX-local filesystem replay reservation adapter.
+//!
+//! Reference implementation only. Requires a private, trusted directory on one
+//! local filesystem with atomic O_EXCL creation and working fsync semantics.
+//! Never use on network shares, replicated volumes or untrusted directories.
+//! No authorization, receipt authentication or cryptographic binding is provided.
+
+use crate::replay_contract::{
+    ReplayReservationStore, ReservationError, ReservationOutcome,
+};
+use std::fs::{File, OpenOptions};
+use std::io::{ErrorKind, Read, Write};
+use std::path::{Path, PathBuf};
+
+const MAGIC: &[u8] = b"PALACO-HARBOR-REPLAY-1\n";
+const MAX_IDENTIFIER_BYTES: usize = 128;
+const MAX_BINDING_BYTES: usize = 4096;
+
+/// A single-host reservation store; callers must provision a private directory.
+#[derive(Debug)]
+pub struct LocalFileReplayStore {
+    root: PathBuf,
+}
+
+impl LocalFileReplayStore {
+    /// Opens an existing private directory. Does not create or authorize storage.
+    pub fn open(root: impl AsRef<Path>) -> Result<Self, ReservationError> {
+        let root = root.as_ref();
+        if !root.is_dir() {
+            return Err(ReservationError::Unavailable);
+        }
+        let canonical = root.canonicalize().map_err(|_| ReservationError::Unavailable)?;
+        Ok(Self { root: canonical })
+    }
+
+    fn path_for(&self, receipt_id: &str) -> Result<PathBuf, ReservationError> {
+        if receipt_id.is_empty() || receipt_id.len() > MAX_IDENTIFIER_BYTES {
+            return Err(ReservationError::Unavailable);
+        }
+        let mut filename = String::from("r-");
+        for byte in receipt_id.bytes() {
+            use std::fmt::Write as _;
+            write!(&mut filename, "{byte:02x}").map_err(|_| ReservationError::Unavailable)?;
+        }
+        Ok(self.root.join(filename))
+    }
+
+    fn encoded(binding_key: &str) -> Result<Vec<u8>, ReservationError> {
+        if binding_key.is_empty() || binding_key.len() > MAX_BINDING_BYTES {
+            return Err(ReservationError::Unavailable);
+        }
+        let mut result = Vec::with_capacity(MAGIC.len() + binding_key.len());
+        result.extend_from_slice(MAGIC);
+        result.extend_from_slice(binding_key.as_bytes());
+        Ok(result)
+    }
+
+    fn read_existing(path: &Path, expected: &[u8]) -> Result<ReservationOutcome, ReservationError> {
+        let mut file = File::open(path).map_err(|_| ReservationError::UncertainCompletion)?;
+        let mut bytes = Vec::new();
+        file.take((MAGIC.len() + MAX_BINDING_BYTES + 1) as u64)
+            .read_to_end(&mut bytes)
+            .map_err(|_| ReservationError::UncertainCompletion)?;
+        if !bytes.starts_with(MAGIC)
+            || bytes.len() <= MAGIC.len()
+            || bytes.len() > MAGIC.len() + MAX_BINDING_BYTES
+        {
+            return Err(ReservationError::UncertainCompletion);
+        }
+        if bytes == expected {
+            Ok(ReservationOutcome::AlreadyReserved)
+        } else {
+            Ok(ReservationOutcome::BindingConflict)
+        }
+    }
+
+    fn sync_directory(&self) -> Result<(), ReservationError> {
+        File::open(&self.root)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|_| ReservationError::UncertainCompletion)
+    }
+}
+
+impl ReplayReservationStore for LocalFileReplayStore {
+    fn reserve(
+        &mut self,
+        receipt_id: &str,
+        binding_key: &str,
+    ) -> Result<ReservationOutcome, ReservationError> {
+        let path = self.path_for(receipt_id)?;
+        let encoded = Self::encoded(binding_key)?;
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(mut file) => {
+                // A failure after O_EXCL can leave an incomplete record. Never
+                // unlink it automatically: this ID must fail closed on retry.
+                file.write_all(&encoded)
+                    .and_then(|()| file.sync_all())
+                    .map_err(|_| ReservationError::UncertainCompletion)?;
+                self.sync_directory()?;
+                Ok(ReservationOutcome::Reserved)
+            }
+            Err(err) if err.kind() == ErrorKind::AlreadyExists => {
+                Self::read_existing(&path, &encoded)
+            }
+            Err(_) => Err(ReservationError::Unavailable),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{LocalFileReplayStore, MAGIC};
+    use crate::replay_contract::{ReplayReservationStore, ReservationError, ReservationOutcome};
+    use std::fs::{self, OpenOptions};
+    use std::io::Write;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let id = NEXT.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "palaco-harbor-replay-{}-{id}",
+                std::process::id()
+            ));
+            fs::create_dir(&path).expect("unique test directory");
+            Self(path)
+        }
+
+        fn store(&self) -> LocalFileReplayStore {
+            LocalFileReplayStore::open(&self.0).expect("test directory available")
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn persists_across_reopen_and_rejects_conflicts() {
+        let directory = TestDirectory::new();
+        assert_eq!(
+            directory.store().reserve("r-1", "binding-a"),
+            Ok(ReservationOutcome::Reserved)
+        );
+        assert_eq!(
+            directory.store().reserve("r-1", "binding-a"),
+            Ok(ReservationOutcome::AlreadyReserved)
+        );
+        assert_eq!(
+            directory.store().reserve("r-1", "binding-b"),
+            Ok(ReservationOutcome::BindingConflict)
+        );
+    }
+
+    #[test]
+    fn competing_instances_exactly_one_wins() {
+        let directory = TestDirectory::new();
+        let barrier = Arc::new(Barrier::new(8));
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            let path = directory.0.clone();
+            let barrier = Arc::clone(&barrier);
+            handles.push(thread::spawn(move || {
+                let mut store = LocalFileReplayStore::open(path).expect("open");
+                barrier.wait();
+                store.reserve("same-receipt", "same-binding")
+            }));
+        }
+        let outcomes: Vec<_> = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("thread joined"))
+            .collect();
+        assert_eq!(
+            outcomes.iter().filter(|outcome| **outcome == Ok(ReservationOutcome::Reserved)).count(),
+            1
+        );
+        assert!(outcomes.iter().all(|outcome| matches!(
+            outcome,
+            Ok(ReservationOutcome::Reserved | ReservationOutcome::AlreadyReserved)
+                | Err(ReservationError::UncertainCompletion)
+        )));
+    }
+
+    #[test]
+    fn interrupted_partial_record_is_never_accepted() {
+        let directory = TestDirectory::new();
+        let mut store = directory.store();
+        let path = store.path_for("partial").expect("path");
+        let mut file = OpenOptions::new().write(true).create_new(true).open(path).expect("create");
+        file.write_all(&MAGIC[..5]).expect("partial write");
+        file.sync_all().expect("sync");
+        assert_eq!(
+            store.reserve("partial", "binding"),
+            Err(ReservationError::UncertainCompletion)
+        );
+    }
+
+    #[test]
+    fn invalid_inputs_fail_closed_without_creating_records() {
+        let directory = TestDirectory::new();
+        let mut store = directory.store();
+        assert_eq!(store.reserve("", "key"), Err(ReservationError::Unavailable));
+        assert_eq!(store.reserve("ok", ""), Err(ReservationError::Unavailable));
+        assert_eq!(
+            store.reserve(&"x".repeat(129), "key"),
+            Err(ReservationError::Unavailable)
+        );
+        assert_eq!(fs::read_dir(&directory.0).expect("list").count(), 0);
+    }
+}
