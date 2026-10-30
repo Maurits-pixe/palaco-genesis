@@ -155,13 +155,23 @@ mod tests {
         let mut store = FakeStore::default();
         assert_eq!(
             assess_with_reservation(
-                &mut store, "r-1", "binding-1", &request(), &binding(), &evidence(),
+                &mut store,
+                "r-1",
+                "binding-1",
+                &request(),
+                &binding(),
+                &evidence(),
             ),
             AdmissionDisposition::ForwardForAuthorization
         );
         assert_eq!(
             assess_with_reservation(
-                &mut store, "r-1", "binding-1", &request(), &binding(), &evidence(),
+                &mut store,
+                "r-1",
+                "binding-1",
+                &request(),
+                &binding(),
+                &evidence(),
             ),
             AdmissionDisposition::Quarantine(QuarantineReason::ReplayDetected)
         );
@@ -173,7 +183,12 @@ mod tests {
         store.records.insert("r-1".into(), "binding-1".into());
         assert_eq!(
             assess_with_reservation(
-                &mut store, "r-1", "binding-2", &request(), &binding(), &evidence(),
+                &mut store,
+                "r-1",
+                "binding-2",
+                &request(),
+                &binding(),
+                &evidence(),
             ),
             AdmissionDisposition::Quarantine(QuarantineReason::BindingMismatch)
         );
@@ -191,7 +206,12 @@ mod tests {
             };
             assert_eq!(
                 assess_with_reservation(
-                    &mut store, "r-1", "binding-1", &request(), &binding(), &evidence(),
+                    &mut store,
+                    "r-1",
+                    "binding-1",
+                    &request(),
+                    &binding(),
+                    &evidence(),
                 ),
                 AdmissionDisposition::Quarantine(QuarantineReason::ReservationUncertain)
             );
@@ -205,7 +225,12 @@ mod tests {
         e.revoked = true;
         assert_eq!(
             assess_with_reservation(
-                &mut store, "r-1", "binding-1", &request(), &binding(), &e,
+                &mut store,
+                "r-1",
+                "binding-1",
+                &request(),
+                &binding(),
+                &e,
             ),
             AdmissionDisposition::Reject(RejectionReason::Revoked)
         );
@@ -218,7 +243,12 @@ mod tests {
         for (receipt, key) in [("", "binding-1"), ("r-1", "")] {
             assert_eq!(
                 assess_with_reservation(
-                    &mut store, receipt, key, &request(), &binding(), &evidence(),
+                    &mut store,
+                    receipt,
+                    key,
+                    &request(),
+                    &binding(),
+                    &evidence(),
                 ),
                 AdmissionDisposition::Quarantine(QuarantineReason::MissingReceiptId)
             );
