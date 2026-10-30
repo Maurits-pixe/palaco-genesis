@@ -8,6 +8,8 @@
 
 use std::collections::HashSet;
 
+pub mod replay_contract;
+
 /// Information asserted by the caller, not independently verified by Harbor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AdmissionEvidence {
@@ -85,6 +87,8 @@ pub enum QuarantineReason {
     MissingReceiptId,
     /// This process has already forwarded the receipt identifier.
     ReplayDetected,
+    /// Durable reservation did not return a trustworthy completion outcome.
+    ReservationUncertain,
 }
 
 /// A condition that is independently sufficient for rejection.
