@@ -5,7 +5,9 @@
 //! Supplying a self-signed local anchor or untrusted key proves no authority.
 //! No production anchor source, key provisioning or authorization is included.
 
-use crate::trust_recovery::{recover, JournalError, RecoveryError, RecoveryFloor, TrustFrame, TrustJournal};
+use crate::trust_recovery::{
+    recover, JournalError, RecoveryError, RecoveryFloor, TrustFrame, TrustJournal,
+};
 use ed25519_dalek::{Signature, VerifyingKey};
 use sha2::{Digest, Sha256};
 
@@ -60,13 +62,13 @@ pub fn chain_digest(frames: &[TrustFrame]) -> Result<[u8; 32], IntegrityError> {
         hasher.update(frame.sequence.to_be_bytes());
         hasher.update(frame.trust_epoch.to_be_bytes());
         hasher.update(frame.highest_trusted_time_ms.to_be_bytes());
-        let count = u64::try_from(frame.revoked_keys.len())
-            .map_err(|_| IntegrityError::TooManyFrames)?;
+        let count =
+            u64::try_from(frame.revoked_keys.len()).map_err(|_| IntegrityError::TooManyFrames)?;
         hasher.update(count.to_be_bytes());
         for key in &frame.revoked_keys {
             let key_bytes = key.as_bytes();
-            let length = u64::try_from(key_bytes.len())
-                .map_err(|_| IntegrityError::TooManyFrames)?;
+            let length =
+                u64::try_from(key_bytes.len()).map_err(|_| IntegrityError::TooManyFrames)?;
             hasher.update(length.to_be_bytes());
             hasher.update(key_bytes);
         }
@@ -97,10 +99,13 @@ pub fn verify_anchored_recovery<J: TrustJournal, A: AnchorSource>(
     if anchor.sequence == 0 {
         return Err(IntegrityError::InvalidAnchor);
     }
-    let key = VerifyingKey::from_bytes(signer_public_key)
-        .map_err(|_| IntegrityError::InvalidSigner)?;
-    key.verify_strict(&anchor_message(&anchor), &Signature::from_bytes(&anchor.signature))
-        .map_err(|_| IntegrityError::InvalidSignature)?;
+    let key =
+        VerifyingKey::from_bytes(signer_public_key).map_err(|_| IntegrityError::InvalidSigner)?;
+    key.verify_strict(
+        &anchor_message(&anchor),
+        &Signature::from_bytes(&anchor.signature),
+    )
+    .map_err(|_| IntegrityError::InvalidSignature)?;
 
     // Check monotonic semantics before treating the signed checksum as useful.
     let latest = recover(journal, floor).map_err(IntegrityError::Recovery)?;
@@ -108,7 +113,9 @@ pub fn verify_anchored_recovery<J: TrustJournal, A: AnchorSource>(
         return Err(IntegrityError::SequenceMismatch);
     }
     let frames = journal.load().map_err(IntegrityError::Journal)?;
-    if frames.len() != usize::try_from(latest.sequence).map_err(|_| IntegrityError::TooManyFrames)? {
+    if frames.len()
+        != usize::try_from(latest.sequence).map_err(|_| IntegrityError::TooManyFrames)?
+    {
         return Err(IntegrityError::SequenceMismatch);
     }
     if chain_digest(&frames)? != anchor.chain_digest {
@@ -123,9 +130,7 @@ mod tests {
         anchor_message, chain_digest, verify_anchored_recovery, AnchorError, AnchorSource,
         IntegrityError, SignedAnchor,
     };
-    use crate::trust_recovery::{
-        JournalError, RecoveryFloor, TrustFrame, TrustJournal,
-    };
+    use crate::trust_recovery::{JournalError, RecoveryFloor, TrustFrame, TrustJournal};
     use ed25519_dalek::{Signer, SigningKey};
     use std::collections::BTreeSet;
 
@@ -233,7 +238,9 @@ mod tests {
     fn invalid_signature_and_wrong_signer_fail() {
         let frames = sample();
         let (source, key) = signed(&frames);
-        let wrong = SigningKey::from_bytes(&[24_u8; 32]).verifying_key().to_bytes();
+        let wrong = SigningKey::from_bytes(&[24_u8; 32])
+            .verifying_key()
+            .to_bytes();
         assert_eq!(
             verify_anchored_recovery(&frames, &source, &wrong, floor()),
             Err(IntegrityError::InvalidSignature)
@@ -254,7 +261,12 @@ mod tests {
         let frames = sample();
         let (_, key) = signed(&frames);
         assert_eq!(
-            verify_anchored_recovery(&frames, &Source(Err(AnchorError::Unavailable)), &key, floor()),
+            verify_anchored_recovery(
+                &frames,
+                &Source(Err(AnchorError::Unavailable)),
+                &key,
+                floor()
+            ),
             Err(IntegrityError::Anchor(AnchorError::Unavailable))
         );
         assert_eq!(
