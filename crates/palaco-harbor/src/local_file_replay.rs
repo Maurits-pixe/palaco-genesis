@@ -10,7 +10,7 @@ use rustix::fs::{open, openat, Mode, OFlags};
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{Read, Write};
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 const MAGIC: &[u8] = b"PALACO-HARBOR-REPLAY-1\n";
