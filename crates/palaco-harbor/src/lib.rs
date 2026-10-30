@@ -8,6 +8,7 @@
 
 use std::collections::HashSet;
 
+pub mod evidence_digest;
 #[cfg(unix)]
 pub mod local_file_replay;
 pub mod replay_contract;
