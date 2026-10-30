@@ -233,8 +233,7 @@ impl LocalAnchorFloorJournal {
             return Err(StoreError::IntegrityUncertain);
         }
         let verified = self.decode(&frame)?;
-        match self.recover(None)? {
-            Some(previous) => {
+        if let Some(previous) = self.recover(None)? {
                 if previous.revision.checked_add(1) != Some(verified.revision)
                     || verified.signer_epoch < previous.signer_epoch
                     || verified.sequence < previous.sequence
@@ -247,8 +246,6 @@ impl LocalAnchorFloorJournal {
                 {
                     return Err(StoreError::IntegrityUncertain);
                 }
-            }
-            None => {}
         }
         let fd = openat(
             &self.directory,
