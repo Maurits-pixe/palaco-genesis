@@ -7,7 +7,7 @@
 use crate::anchor_cas::{AnchorRecord, StoreError};
 use crate::remote_anchor_adapter::{attestation_bytes, AttestedAnchor};
 use ed25519_dalek::{Signature, VerifyingKey};
-use rustix::fs::{open, openat, Mode, OFlags};
+use rustix::fs::{flock, open, openat, FlockOperation, Mode, OFlags};
 use std::collections::BTreeSet;
 use std::fs::{self, File};
 use std::io::{Read, Write};
@@ -17,12 +17,37 @@ use std::path::{Path, PathBuf};
 const MAX_RECORD_BYTES: usize = 64_000;
 const PREFIX: &[u8] = b"PALACO-HARBOR-REMOTE-ANCHOR-v1\0";
 const MAX_FRAMES: usize = 10_000;
+const LOCK_FILENAME: &str = ".anchor-floor.lock";
 
 #[derive(Debug)]
 pub struct LocalAnchorFloorJournal {
     root: PathBuf,
     directory: File,
+    lock_file: File,
     verifying_key: [u8; 32],
+}
+
+struct FileLock<'a> {
+    file: &'a File,
+    active: bool,
+}
+
+impl<'a> FileLock<'a> {
+    fn release(mut self) -> Result<(), StoreError> {
+        if self.active {
+            flock(self.file, FlockOperation::Unlock).map_err(|_| StoreError::Unavailable)?;
+            self.active = false;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for FileLock<'_> {
+    fn drop(&mut self) {
+        if self.active {
+            let _ = flock(self.file, FlockOperation::Unlock);
+        }
+    }
 }
 
 impl LocalAnchorFloorJournal {
@@ -40,10 +65,34 @@ impl LocalAnchorFloorJournal {
             return Err(StoreError::Unavailable);
         }
         VerifyingKey::from_bytes(&verifying_key).map_err(|_| StoreError::IntegrityUncertain)?;
+        let lock_fd = openat(
+            &directory,
+            LOCK_FILENAME,
+            OFlags::RDWR | OFlags::CREATE | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::from_bits_retain(0o600),
+        )
+        .map_err(|_| StoreError::Unavailable)?;
+        let lock_file = File::from(lock_fd);
+        let lock_meta = lock_file.metadata().map_err(|_| StoreError::Unavailable)?;
+        if !lock_meta.is_file()
+            || lock_meta.nlink() != 1
+            || lock_meta.permissions().mode() & 0o077 != 0
+        {
+            return Err(StoreError::Unavailable);
+        }
         Ok(Self {
             root: root.to_path_buf(),
             directory,
+            lock_file,
             verifying_key,
+        })
+    }
+
+    fn acquire_lock(&self, operation: FlockOperation) -> Result<FileLock<'_>, StoreError> {
+        flock(&self.lock_file, operation).map_err(|_| StoreError::Unavailable)?;
+        Ok(FileLock {
+            file: &self.lock_file,
+            active: true,
         })
     }
 
@@ -138,8 +187,7 @@ impl LocalAnchorFloorJournal {
         Ok(record)
     }
 
-    /// Reload the highest complete signed anchor; never skip a damaged frame.
-    pub fn recover(
+    fn recover_unlocked(
         &self,
         external_floor: Option<&AnchorRecord>,
     ) -> Result<Option<AnchorRecord>, StoreError> {
@@ -223,8 +271,22 @@ impl LocalAnchorFloorJournal {
         Ok(latest)
     }
 
+    /// Reload the highest complete signed anchor while holding a shared lock.
+    pub fn recover(
+        &self,
+        external_floor: Option<&AnchorRecord>,
+    ) -> Result<Option<AnchorRecord>, StoreError> {
+        let guard = self.acquire_lock(FlockOperation::LockShared)?;
+        let result = self.recover_unlocked(external_floor);
+        let unlock = guard.release();
+        match result {
+            Err(error) => Err(error),
+            Ok(value) => unlock.map(|()| value),
+        }
+    }
+
     /// Persist an already independently authenticated signed anchor.
-    /// Caller must serialize writers and reload after uncertain completion.
+    /// Caller must reload after uncertain completion.
     pub fn append_sync(&mut self, anchor: &AttestedAnchor) -> Result<(), StoreError> {
         let bytes = attestation_bytes(&anchor.record)?;
         let mut frame = bytes;
@@ -233,7 +295,17 @@ impl LocalAnchorFloorJournal {
             return Err(StoreError::IntegrityUncertain);
         }
         let verified = self.decode(&frame)?;
-        if let Some(previous) = self.recover(None)? {
+        let guard = self.acquire_lock(FlockOperation::LockExclusive)?;
+        let result = self.append_locked(&frame, &verified);
+        let unlock = guard.release();
+        match result {
+            Err(error) => Err(error),
+            Ok(()) => unlock,
+        }
+    }
+
+    fn append_locked(&self, frame: &[u8], verified: &AnchorRecord) -> Result<(), StoreError> {
+        if let Some(previous) = self.recover_unlocked(None)? {
             if previous.revision.checked_add(1) != Some(verified.revision)
                 || verified.signer_epoch < previous.signer_epoch
                 || verified.sequence < previous.sequence
@@ -255,7 +327,7 @@ impl LocalAnchorFloorJournal {
         )
         .map_err(|_| StoreError::UncertainCompletion)?;
         let mut file = File::from(fd);
-        file.write_all(&frame)
+        file.write_all(frame)
             .map_err(|_| StoreError::UncertainCompletion)?;
         file.sync_all()
             .map_err(|_| StoreError::UncertainCompletion)?;
@@ -272,6 +344,7 @@ mod tests {
     use crate::anchor_cas::{AnchorRecord, StoreError};
     use crate::remote_anchor_adapter::{attestation_bytes, AttestedAnchor};
     use ed25519_dalek::{Signer, SigningKey};
+    use rustix::fs::{flock, FlockOperation};
     use std::collections::BTreeSet;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
@@ -377,5 +450,19 @@ mod tests {
             dir.open(&other).recover(None),
             Err(StoreError::IntegrityUncertain)
         );
+    }
+    #[test]
+    fn local_writers_share_an_advisory_lock() {
+        let dir = TestDir::new();
+        let key = SigningKey::from_bytes(&[49; 32]);
+        let first = dir.open(&key);
+        let held = first
+            .acquire_lock(FlockOperation::LockExclusive)
+            .unwrap_or_else(|_| panic!("lock"));
+        let second = dir.open(&key);
+        assert!(flock(&second.lock_file, FlockOperation::NonBlockingLockExclusive).is_err());
+        drop(held);
+        assert!(flock(&second.lock_file, FlockOperation::NonBlockingLockExclusive).is_ok());
+        assert!(flock(&second.lock_file, FlockOperation::Unlock).is_ok());
     }
 }
