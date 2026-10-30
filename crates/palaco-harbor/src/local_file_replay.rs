@@ -43,11 +43,16 @@ impl LocalFileReplayStore {
         )
         .map_err(|_| ReservationError::Unavailable)?;
         let directory = File::from(fd);
-        let metadata = directory.metadata().map_err(|_| ReservationError::Unavailable)?;
+        let metadata = directory
+            .metadata()
+            .map_err(|_| ReservationError::Unavailable)?;
         if !metadata.is_dir() || metadata.permissions().mode() & 0o077 != 0 {
             return Err(ReservationError::Unavailable);
         }
-        Ok(Self { root: root.to_path_buf(), directory })
+        Ok(Self {
+            root: root.to_path_buf(),
+            directory,
+        })
     }
 
     fn path_for(&self, receipt_id: &str) -> Result<PathBuf, ReservationError> {
@@ -85,7 +90,9 @@ impl LocalFileReplayStore {
         )
         .map_err(|_| ReservationError::UncertainCompletion)?;
         let file = File::from(fd);
-        let metadata = file.metadata().map_err(|_| ReservationError::UncertainCompletion)?;
+        let metadata = file
+            .metadata()
+            .map_err(|_| ReservationError::UncertainCompletion)?;
         if !metadata.is_file() || metadata.nlink() != 1 {
             return Err(ReservationError::UncertainCompletion);
         }
