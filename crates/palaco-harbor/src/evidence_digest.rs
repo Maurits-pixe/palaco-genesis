@@ -5,7 +5,10 @@
 //! revocation, freshness and the payload before providing this context.
 
 use crate::replay_contract::{assess_with_reservation, ReplayReservationStore, ReservationError};
-use crate::{assess_bound_admission, AdmissionDisposition, AdmissionEvidence, AdmissionRequest, EvidenceBinding, QuarantineReason};
+use crate::{
+    assess_bound_admission, AdmissionDisposition, AdmissionEvidence, AdmissionRequest,
+    EvidenceBinding, QuarantineReason,
+};
 use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
 
@@ -44,7 +47,10 @@ pub fn derive_binding_key(
     evidence: &EvidenceIdentity<'_>,
 ) -> Result<String, ReservationError> {
     if evidence.payload_sha256.len() != 64
-        || !evidence.payload_sha256.bytes().all(|b| b.is_ascii_hexdigit())
+        || !evidence
+            .payload_sha256
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit())
         || evidence.trust_epoch == 0
     {
         return Err(ReservationError::Unavailable);
@@ -94,11 +100,18 @@ pub fn assess_with_derived_reservation<S: ReplayReservationStore>(
 mod tests {
     use super::{assess_with_derived_reservation, derive_binding_key, EvidenceIdentity};
     use crate::replay_contract::{ReplayReservationStore, ReservationError, ReservationOutcome};
-    use crate::{AdmissionDisposition, AdmissionEvidence, AdmissionRequest, EvidenceBinding, QuarantineReason};
+    use crate::{
+        AdmissionDisposition, AdmissionEvidence, AdmissionRequest, EvidenceBinding,
+        QuarantineReason,
+    };
     use std::collections::HashMap;
 
     fn request<'a>(subject: &'a str, purpose: &'a str) -> AdmissionRequest<'a> {
-        AdmissionRequest { subject_id: subject, purpose, scope: "rio:invite" }
+        AdmissionRequest {
+            subject_id: subject,
+            purpose,
+            scope: "rio:invite",
+        }
     }
 
     fn evidence<'a>(digest: &'a str) -> EvidenceIdentity<'a> {
@@ -145,14 +158,21 @@ mod tests {
         let mut epoch = evidence(&a);
         epoch.trust_epoch = 3;
         assert_ne!(baseline, changed);
-        assert_ne!(baseline, derive_binding_key(&request("person", "contact"), &epoch));
+        assert_ne!(
+            baseline,
+            derive_binding_key(&request("person", "contact"), &epoch)
+        );
     }
 
     #[test]
     fn invalid_digest_or_epoch_fails_closed() {
         let mut identity = evidence("not-a-sha256");
-        assert_eq!(derive_binding_key(&request("person", "contact"), &identity), Err(ReservationError::Unavailable));
-        identity.payload_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        assert_eq!(
+            derive_binding_key(&request("person", "contact"), &identity),
+            Err(ReservationError::Unavailable)
+        );
+        identity.payload_sha256 =
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         identity.trust_epoch = 0;
         assert_eq!(derive_binding_key(&request("person", "contact"), &identity), Err(ReservationError::Unavailable));
     }
@@ -161,20 +181,42 @@ mod tests {
     fn same_receipt_with_changed_payload_quarantines() {
         let mut store = Store::default();
         let req = request("person", "contact");
-        let bind = EvidenceBinding { subject_id: "person", purpose: "contact", scope: "rio:invite" };
+        let bind = EvidenceBinding {
+            subject_id: "person",
+            purpose: "contact",
+            scope: "rio:invite",
+        };
         let admission = AdmissionEvidence {
-            identity_verified: true, provenance_verified: true, consent_verified: true,
-            scope_verified: true, revocation_checked: true, revoked: false,
+            identity_verified: true,
+            provenance_verified: true,
+            consent_verified: true,
+            scope_verified: true,
+            revocation_checked: true,
+            revoked: false,
             temporal_validity_verified: true,
         };
         let a = "a".repeat(64);
         let b = "b".repeat(64);
         assert_eq!(
-            assess_with_derived_reservation(&mut store, "r-1", &req, &bind, &admission, &evidence(&a)),
+            assess_with_derived_reservation(
+                &mut store,
+                "r-1",
+                &req,
+                &bind,
+                &admission,
+                &evidence(&a)
+            ),
             AdmissionDisposition::ForwardForAuthorization
         );
         assert_eq!(
-            assess_with_derived_reservation(&mut store, "r-1", &req, &bind, &admission, &evidence(&b)),
+            assess_with_derived_reservation(
+                &mut store,
+                "r-1",
+                &req,
+                &bind,
+                &admission,
+                &evidence(&b)
+            ),
             AdmissionDisposition::Quarantine(QuarantineReason::BindingMismatch)
         );
     }
