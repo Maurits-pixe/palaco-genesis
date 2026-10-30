@@ -8,6 +8,8 @@
 
 use std::collections::HashSet;
 
+#[cfg(unix)]
+pub mod local_file_replay;
 pub mod replay_contract;
 
 /// Information asserted by the caller, not independently verified by Harbor.
