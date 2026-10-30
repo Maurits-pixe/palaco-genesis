@@ -8,6 +8,7 @@
 use crate::replay_contract::{ReplayReservationStore, ReservationError, ReservationOutcome};
 use std::fs::{File, OpenOptions};
 use std::io::{ErrorKind, Read, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 const MAGIC: &[u8] = b"PALACO-HARBOR-REPLAY-1\n";
@@ -24,7 +25,10 @@ impl LocalFileReplayStore {
     /// Opens an existing private directory. Does not create or authorize storage.
     pub fn open(root: impl AsRef<Path>) -> Result<Self, ReservationError> {
         let root = root.as_ref();
-        if !root.is_dir() {
+        let metadata = root
+            .symlink_metadata()
+            .map_err(|_| ReservationError::Unavailable)?;
+        if !metadata.file_type().is_dir() || metadata.permissions().mode() & 0o077 != 0 {
             return Err(ReservationError::Unavailable);
         }
         let canonical = root
@@ -111,8 +115,9 @@ impl ReplayReservationStore for LocalFileReplayStore {
 mod tests {
     use super::{LocalFileReplayStore, MAGIC};
     use crate::replay_contract::{ReplayReservationStore, ReservationError, ReservationOutcome};
-    use std::fs::{self, OpenOptions};
+    use std::fs::{self, File, OpenOptions};
     use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, Barrier};
@@ -128,6 +133,8 @@ mod tests {
             let path = std::env::temp_dir()
                 .join(format!("palaco-harbor-replay-{}-{id}", std::process::id()));
             fs::create_dir(&path).unwrap_or_else(|_| panic!("unique test directory"));
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
+                .unwrap_or_else(|_| panic!("secure test permissions"));
             Self(path)
         }
 
@@ -226,6 +233,57 @@ mod tests {
                 .unwrap_or_else(|_| panic!("list"))
                 .count(),
             0
+        );
+    }
+    #[test]
+    fn rejects_world_readable_directory() {
+        let directory = TestDirectory::new();
+        fs::set_permissions(&directory.0, fs::Permissions::from_mode(0o755))
+            .unwrap_or_else(|_| panic!("change permissions"));
+        assert!(matches!(
+            LocalFileReplayStore::open(&directory.0),
+            Err(ReservationError::Unavailable)
+        ));
+    }
+
+    #[test]
+    fn rejects_existing_symlink_and_hardlink_records() {
+        use std::os::unix::fs::symlink;
+        let directory = TestDirectory::new();
+        let mut store = directory.store();
+        let target = directory.0.join("target");
+        fs::write(&target, b"untrusted").unwrap_or_else(|_| panic!("target"));
+        let symlink_path = store.path_for("symlink").unwrap_or_else(|_| panic!("path"));
+        symlink(&target, &symlink_path).unwrap_or_else(|_| panic!("symlink"));
+        assert_eq!(
+            store.reserve("symlink", "binding"),
+            Err(ReservationError::UncertainCompletion)
+        );
+        let hardlink_path = store
+            .path_for("hardlink")
+            .unwrap_or_else(|_| panic!("path"));
+        fs::hard_link(&target, &hardlink_path).unwrap_or_else(|_| panic!("hardlink"));
+        assert_eq!(
+            store.reserve("hardlink", "binding"),
+            Err(ReservationError::UncertainCompletion)
+        );
+    }
+
+    #[test]
+    fn recovery_after_empty_record_remains_quarantined() {
+        let directory = TestDirectory::new();
+        let mut store = directory.store();
+        let path = store
+            .path_for("after-create")
+            .unwrap_or_else(|_| panic!("path"));
+        File::create(&path).unwrap_or_else(|_| panic!("create interrupted record"));
+        assert_eq!(
+            store.reserve("after-create", "binding"),
+            Err(ReservationError::UncertainCompletion)
+        );
+        assert_eq!(
+            directory.store().reserve("after-create", "binding"),
+            Err(ReservationError::UncertainCompletion)
         );
     }
 }
