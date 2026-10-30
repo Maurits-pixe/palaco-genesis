@@ -22,6 +22,7 @@ pub mod local_file_replay;
 pub mod local_trust_journal;
 pub mod remote_anchor_adapter;
 pub mod replay_contract;
+pub mod staging_checkpoint_adapter;
 pub mod staging_endpoint_policy;
 pub mod trust_recovery;
 pub mod trust_registry;
