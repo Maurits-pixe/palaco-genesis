@@ -68,6 +68,18 @@ pub fn recover<J: TrustJournal>(
     journal: &J,
     floor: RecoveryFloor,
 ) -> Result<TrustFrame, RecoveryError> {
+    let frames = journal.load().map_err(RecoveryError::Journal)?;
+    recover_frames(&frames, floor)
+}
+
+/// Recover a single, immutable in-memory snapshot of journal frames.
+///
+/// This prevents a verifier from checking monotonicity against one read and
+/// authenticating a different read after a concurrent storage mutation.
+pub fn recover_frames(
+    frames: &[TrustFrame],
+    floor: RecoveryFloor,
+) -> Result<TrustFrame, RecoveryError> {
     if floor.minimum_sequence == 0
         || floor.minimum_trust_epoch == 0
         || floor.minimum_trusted_time_ms == 0
@@ -75,7 +87,6 @@ pub fn recover<J: TrustJournal>(
         return Err(RecoveryError::MissingExternalAnchor);
     }
 
-    let frames = journal.load().map_err(RecoveryError::Journal)?;
     let (first, rest) = frames.split_first().ok_or(RecoveryError::MissingGenesis)?;
     if first.sequence != 1 || first.trust_epoch == 0 || first.highest_trusted_time_ms == 0 {
         return Err(RecoveryError::MissingGenesis);
