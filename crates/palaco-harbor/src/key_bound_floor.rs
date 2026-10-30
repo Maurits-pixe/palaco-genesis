@@ -63,13 +63,10 @@ pub fn key_bound_floor_bytes(
             GovernedFloorError::InvalidPolicy,
         ));
     }
-    let floor_bytes =
-        signed_floor_bytes(signed).map_err(|error| KeyBoundFloorError::Governed(
-            GovernedFloorError::Floor(error),
-        ))?;
-    let key_len = u64::try_from(key_id.len()).map_err(|_| {
-        KeyBoundFloorError::Governed(GovernedFloorError::InvalidPolicy)
-    })?;
+    let floor_bytes = signed_floor_bytes(signed)
+        .map_err(|error| KeyBoundFloorError::Governed(GovernedFloorError::Floor(error)))?;
+    let key_len = u64::try_from(key_id.len())
+        .map_err(|_| KeyBoundFloorError::Governed(GovernedFloorError::InvalidPolicy))?;
     let floor_len = u64::try_from(floor_bytes.len()).map_err(|_| {
         KeyBoundFloorError::Governed(GovernedFloorError::Floor(
             FloorVerificationError::InvalidCandidate,
@@ -117,11 +114,7 @@ pub fn verify_key_bound_floor<R: KeyRegistry>(
 
     let record = match registry.resolve(&candidate.key_id) {
         Ok(Some(record)) => record,
-        Ok(None) => {
-            return Err(KeyBoundFloorError::Governed(
-                GovernedFloorError::UnknownKey,
-            ))
-        }
+        Ok(None) => return Err(KeyBoundFloorError::Governed(GovernedFloorError::UnknownKey)),
         Err(RegistryError::Unavailable) => {
             return Err(KeyBoundFloorError::Governed(
                 GovernedFloorError::RegistryUnavailable,
@@ -220,7 +213,11 @@ mod tests {
         }
     }
 
-    fn candidate(revision: u64, sequence: u64, observed_at_ms: u64) -> KeyBoundGovernedFloorCandidate {
+    fn candidate(
+        revision: u64,
+        sequence: u64,
+        observed_at_ms: u64,
+    ) -> KeyBoundGovernedFloorCandidate {
         let mut signed = SignedFloorCandidate {
             candidate: ExternalFloorCandidate {
                 source_id: "checkpoint-a".to_owned(),
@@ -237,8 +234,7 @@ mod tests {
             observed_at_ms,
             signature: [0; 64],
         };
-        let floor_bytes =
-            signed_floor_bytes(&signed).unwrap_or_else(|_| panic!("floor bytes"));
+        let floor_bytes = signed_floor_bytes(&signed).unwrap_or_else(|_| panic!("floor bytes"));
         signed.signature = signing().sign(&floor_bytes).to_bytes();
         let binding_bytes = key_bound_floor_bytes("checkpoint-key-1", &signed)
             .unwrap_or_else(|_| panic!("binding bytes"));
@@ -255,12 +251,7 @@ mod tests {
 
     #[test]
     fn key_bound_candidate_returns_evidence() {
-        let result = verify_key_bound_floor(
-            &registry(),
-            &policy(),
-            &candidate(1, 1, 180),
-            None,
-        );
+        let result = verify_key_bound_floor(&registry(), &policy(), &candidate(1, 1, 180), None);
         assert!(result.is_ok());
     }
 
@@ -332,13 +323,8 @@ mod tests {
 
     #[test]
     fn evidence_remains_distinct_from_authority() {
-        let evidence = verify_key_bound_floor(
-            &registry(),
-            &policy(),
-            &candidate(1, 1, 180),
-            None,
-        )
-        .unwrap_or_else(|_| panic!("evidence"));
+        let evidence = verify_key_bound_floor(&registry(), &policy(), &candidate(1, 1, 180), None)
+            .unwrap_or_else(|_| panic!("evidence"));
         let _: GovernedFloorVerification = evidence;
     }
 }
