@@ -175,9 +175,7 @@ pub fn verify_signed_floor(
         if current.revision < floor.revision
             || current.sequence < floor.sequence
             || current.signer_epoch < floor.signer_epoch
-            || !floor
-                .retired_signers
-                .is_subset(&current.retired_signers)
+            || !floor.retired_signers.is_subset(&current.retired_signers)
         {
             return Err(FloorVerificationError::FloorRegression);
         }
@@ -220,7 +218,12 @@ mod tests {
         }
     }
 
-    fn signed(revision: u64, sequence: u64, trust_epoch: u64, observed_at_ms: u64) -> SignedFloorCandidate {
+    fn signed(
+        revision: u64,
+        sequence: u64,
+        trust_epoch: u64,
+        observed_at_ms: u64,
+    ) -> SignedFloorCandidate {
         let signing = key();
         let candidate = ExternalFloorCandidate {
             source_id: "checkpoint-a".to_owned(),
