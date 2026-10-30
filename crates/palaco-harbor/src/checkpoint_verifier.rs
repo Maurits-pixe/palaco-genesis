@@ -4,7 +4,7 @@
 //! trust epoch, observation time, signature, and a monotone predecessor. It
 //! does not provision a trusted key, clock, checkpoint service, or authority.
 
-use crate::anchor_cas::{record_is_valid, AnchorRecord};
+use crate::anchor_cas::record_is_valid;
 use crate::anchor_checkpoint::ExternalFloorCandidate;
 use crate::remote_anchor_adapter::attestation_bytes;
 use ed25519_dalek::{Signature, VerifyingKey};
@@ -133,7 +133,6 @@ pub fn signed_floor_bytes(
 /// A successful result means only that this exact candidate passed the supplied
 /// checks. It does not establish that the supplied key, clock, or source is
 /// actually governed.
-#[must_use]
 pub fn verify_signed_floor(
     config: &FloorVerifierConfig,
     signed: &SignedFloorCandidate,
