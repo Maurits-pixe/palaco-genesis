@@ -40,10 +40,9 @@ fn validate(
     attested: AttestedAnchor,
     pinned_key: &[u8; 32],
 ) -> Result<AnchorRecord, CheckpointGate> {
-    let key = VerifyingKey::from_bytes(pinned_key)
-        .map_err(|_| CheckpointGate::InvalidSignature)?;
-    let bytes = attestation_bytes(&attested.record)
-        .map_err(|_| CheckpointGate::InvalidSignature)?;
+    let key = VerifyingKey::from_bytes(pinned_key).map_err(|_| CheckpointGate::InvalidSignature)?;
+    let bytes =
+        attestation_bytes(&attested.record).map_err(|_| CheckpointGate::InvalidSignature)?;
     key.verify_strict(&bytes, &Signature::from_bytes(&attested.signature))
         .map_err(|_| CheckpointGate::InvalidSignature)?;
     Ok(attested.record)
@@ -119,9 +118,16 @@ mod tests {
             signature: key.sign(&bytes).to_bytes(),
         }
     }
-    fn test(local: Option<AnchorRecord>, remote: Result<Option<AttestedAnchor>, CheckpointError>,
-        key: &SigningKey) -> CheckpointGate {
-        reconcile(Ok(local), &FakeCheckpoint { value: remote }, &key.verifying_key().to_bytes())
+    fn test(
+        local: Option<AnchorRecord>,
+        remote: Result<Option<AttestedAnchor>, CheckpointError>,
+        key: &SigningKey,
+    ) -> CheckpointGate {
+        reconcile(
+            Ok(local),
+            &FakeCheckpoint { value: remote },
+            &key.verifying_key().to_bytes(),
+        )
     }
 
     #[test]
@@ -194,8 +200,11 @@ mod tests {
             CheckpointGate::Unavailable
         );
         assert_eq!(
-            reconcile(Err(CheckpointError::Timeout), &FakeCheckpoint { value: Ok(None) },
-                &key.verifying_key().to_bytes()),
+            reconcile(
+                Err(CheckpointError::Timeout),
+                &FakeCheckpoint { value: Ok(None) },
+                &key.verifying_key().to_bytes()
+            ),
             CheckpointGate::Uncertain
         );
     }
