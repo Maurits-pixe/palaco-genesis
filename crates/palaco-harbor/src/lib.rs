@@ -12,6 +12,7 @@ pub mod anchor_cas;
 pub mod anchor_rotation;
 pub mod detached_signature;
 pub mod evidence_digest;
+pub mod independent_checkpoint;
 pub mod journal_integrity;
 #[cfg(unix)]
 pub mod local_anchor_floor_journal;
