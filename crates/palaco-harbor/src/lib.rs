@@ -9,6 +9,8 @@
 use std::collections::HashSet;
 
 pub mod replay_contract;
+#[cfg(unix)]
+pub mod local_file_replay;
 
 /// Information asserted by the caller, not independently verified by Harbor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
