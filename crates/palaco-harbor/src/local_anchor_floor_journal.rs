@@ -7,7 +7,7 @@
 use crate::anchor_cas::{AnchorRecord, StoreError};
 use crate::remote_anchor_adapter::{attestation_bytes, AttestedAnchor};
 use ed25519_dalek::{Signature, VerifyingKey};
-use rustix::fs::{open, openat, Mode, OFlags};
+use rustix::fs::{open, openat, Dir, Mode, OFlags};
 use std::collections::BTreeSet;
 use std::fs::{self, File};
 use std::io::{Read, Write};
@@ -171,10 +171,13 @@ impl LocalAnchorFloorJournal {
     ) -> Result<Option<AnchorRecord>, StoreError> {
         self.verify_directory_identity()?;
         let mut revisions = Vec::new();
-        for entry in fs::read_dir(&self.root).map_err(|_| StoreError::Unavailable)? {
+        // Enumerate the pinned directory, never a separately resolved path.
+        for entry in Dir::read_from(&self.directory).map_err(|_| StoreError::IntegrityUncertain)? {
             let entry = entry.map_err(|_| StoreError::IntegrityUncertain)?;
-            let name = entry.file_name();
-            let name = name.to_str().ok_or(StoreError::IntegrityUncertain)?;
+            let name = entry
+                .file_name()
+                .to_str()
+                .map_err(|_| StoreError::IntegrityUncertain)?;
             if let Some(part) = name.strip_prefix("anchor-") {
                 let part = part
                     .strip_suffix(".frame")
