@@ -8,6 +8,7 @@
 
 use std::collections::HashSet;
 
+pub mod anchor_rotation;
 pub mod detached_signature;
 pub mod evidence_digest;
 pub mod journal_integrity;

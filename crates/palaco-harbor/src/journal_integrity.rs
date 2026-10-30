@@ -6,7 +6,7 @@
 //! No production anchor source, key provisioning or authorization is included.
 
 use crate::trust_recovery::{
-    recover, JournalError, RecoveryError, RecoveryFloor, TrustFrame, TrustJournal,
+    recover_frames, JournalError, RecoveryError, RecoveryFloor, TrustFrame, TrustJournal,
 };
 use ed25519_dalek::{Signature, VerifyingKey};
 use sha2::{Digest, Sha256};
@@ -108,11 +108,11 @@ pub fn verify_anchored_recovery<J: TrustJournal, A: AnchorSource>(
     .map_err(|_| IntegrityError::InvalidSignature)?;
 
     // Check monotonic semantics before treating the signed checksum as useful.
-    let latest = recover(journal, floor).map_err(IntegrityError::Recovery)?;
+    let frames = journal.load().map_err(IntegrityError::Journal)?;
+    let latest = recover_frames(&frames, floor).map_err(IntegrityError::Recovery)?;
     if anchor.sequence != latest.sequence {
         return Err(IntegrityError::SequenceMismatch);
     }
-    let frames = journal.load().map_err(IntegrityError::Journal)?;
     if frames.len()
         != usize::try_from(latest.sequence).map_err(|_| IntegrityError::TooManyFrames)?
     {
