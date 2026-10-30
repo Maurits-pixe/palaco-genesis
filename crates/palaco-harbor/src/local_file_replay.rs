@@ -5,9 +5,7 @@
 //! Never use on network shares, replicated volumes or untrusted directories.
 //! No authorization, receipt authentication or cryptographic binding is provided.
 
-use crate::replay_contract::{
-    ReplayReservationStore, ReservationError, ReservationOutcome,
-};
+use crate::replay_contract::{ReplayReservationStore, ReservationError, ReservationOutcome};
 use std::fs::{File, OpenOptions};
 use std::io::{ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
@@ -29,7 +27,9 @@ impl LocalFileReplayStore {
         if !root.is_dir() {
             return Err(ReservationError::Unavailable);
         }
-        let canonical = root.canonicalize().map_err(|_| ReservationError::Unavailable)?;
+        let canonical = root
+            .canonicalize()
+            .map_err(|_| ReservationError::Unavailable)?;
         Ok(Self { root: canonical })
     }
 
@@ -56,7 +56,7 @@ impl LocalFileReplayStore {
     }
 
     fn read_existing(path: &Path, expected: &[u8]) -> Result<ReservationOutcome, ReservationError> {
-        let mut file = File::open(path).map_err(|_| ReservationError::UncertainCompletion)?;
+        let file = File::open(path).map_err(|_| ReservationError::UncertainCompletion)?;
         let mut bytes = Vec::new();
         file.take((MAGIC.len() + MAX_BINDING_BYTES + 1) as u64)
             .read_to_end(&mut bytes)
@@ -125,16 +125,14 @@ mod tests {
     impl TestDirectory {
         fn new() -> Self {
             let id = NEXT.fetch_add(1, Ordering::Relaxed);
-            let path = std::env::temp_dir().join(format!(
-                "palaco-harbor-replay-{}-{id}",
-                std::process::id()
-            ));
-            fs::create_dir(&path).expect("unique test directory");
+            let path = std::env::temp_dir()
+                .join(format!("palaco-harbor-replay-{}-{id}", std::process::id()));
+            fs::create_dir(&path).unwrap_or_else(|_| panic!("unique test directory"));
             Self(path)
         }
 
         fn store(&self) -> LocalFileReplayStore {
-            LocalFileReplayStore::open(&self.0).expect("test directory available")
+            LocalFileReplayStore::open(&self.0).unwrap_or_else(|_| panic!("test directory available"))
         }
     }
 
@@ -170,17 +168,20 @@ mod tests {
             let path = directory.0.clone();
             let barrier = Arc::clone(&barrier);
             handles.push(thread::spawn(move || {
-                let mut store = LocalFileReplayStore::open(path).expect("open");
+                let mut store = LocalFileReplayStore::open(path).unwrap_or_else(|_| panic!("open"));
                 barrier.wait();
                 store.reserve("same-receipt", "same-binding")
             }));
         }
         let outcomes: Vec<_> = handles
             .into_iter()
-            .map(|handle| handle.join().expect("thread joined"))
+            .map(|handle| handle.join().unwrap_or_else(|_| panic!("thread joined")))
             .collect();
         assert_eq!(
-            outcomes.iter().filter(|outcome| **outcome == Ok(ReservationOutcome::Reserved)).count(),
+            outcomes
+                .iter()
+                .filter(|outcome| **outcome == Ok(ReservationOutcome::Reserved))
+                .count(),
             1
         );
         assert!(outcomes.iter().all(|outcome| matches!(
@@ -194,10 +195,14 @@ mod tests {
     fn interrupted_partial_record_is_never_accepted() {
         let directory = TestDirectory::new();
         let mut store = directory.store();
-        let path = store.path_for("partial").expect("path");
-        let mut file = OpenOptions::new().write(true).create_new(true).open(path).expect("create");
-        file.write_all(&MAGIC[..5]).expect("partial write");
-        file.sync_all().expect("sync");
+        let path = store.path_for("partial").unwrap_or_else(|_| panic!("path"));
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .unwrap_or_else(|_| panic!("create"));
+        file.write_all(&MAGIC[..5]).unwrap_or_else(|_| panic!("partial write"));
+        file.sync_all().unwrap_or_else(|_| panic!("sync"));
         assert_eq!(
             store.reserve("partial", "binding"),
             Err(ReservationError::UncertainCompletion)
@@ -214,6 +219,6 @@ mod tests {
             store.reserve(&"x".repeat(129), "key"),
             Err(ReservationError::Unavailable)
         );
-        assert_eq!(fs::read_dir(&directory.0).expect("list").count(), 0);
+        assert_eq!(fs::read_dir(&directory.0).unwrap_or_else(|_| panic!("list")).count(), 0);
     }
 }
