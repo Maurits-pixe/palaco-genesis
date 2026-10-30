@@ -6,8 +6,10 @@
 //! No authorization, receipt authentication or cryptographic binding is provided.
 
 use crate::replay_contract::{ReplayReservationStore, ReservationError, ReservationOutcome};
-use std::fs::{File, OpenOptions};
-use std::io::{ErrorKind, Read, Write};
+use rustix::fs::{open, openat, Mode, OFlags};
+use std::ffi::OsStr;
+use std::fs::File;
+use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -27,22 +29,25 @@ fn injected_process_termination(stage: &str) {
 #[derive(Debug)]
 pub struct LocalFileReplayStore {
     root: PathBuf,
+    directory: File,
 }
 
 impl LocalFileReplayStore {
     /// Opens an existing private directory. Does not create or authorize storage.
     pub fn open(root: impl AsRef<Path>) -> Result<Self, ReservationError> {
         let root = root.as_ref();
-        let metadata = root
-            .symlink_metadata()
-            .map_err(|_| ReservationError::Unavailable)?;
-        if !metadata.file_type().is_dir() || metadata.permissions().mode() & 0o077 != 0 {
+        let fd = open(
+            root,
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(|_| ReservationError::Unavailable)?;
+        let directory = File::from(fd);
+        let metadata = directory.metadata().map_err(|_| ReservationError::Unavailable)?;
+        if !metadata.is_dir() || metadata.permissions().mode() & 0o077 != 0 {
             return Err(ReservationError::Unavailable);
         }
-        let canonical = root
-            .canonicalize()
-            .map_err(|_| ReservationError::Unavailable)?;
-        Ok(Self { root: canonical })
+        Ok(Self { root: root.to_path_buf(), directory })
     }
 
     fn path_for(&self, receipt_id: &str) -> Result<PathBuf, ReservationError> {
@@ -67,8 +72,23 @@ impl LocalFileReplayStore {
         Ok(result)
     }
 
-    fn read_existing(path: &Path, expected: &[u8]) -> Result<ReservationOutcome, ReservationError> {
-        let file = File::open(path).map_err(|_| ReservationError::UncertainCompletion)?;
+    fn read_existing(
+        &self,
+        filename: &OsStr,
+        expected: &[u8],
+    ) -> Result<ReservationOutcome, ReservationError> {
+        let fd = openat(
+            &self.directory,
+            filename,
+            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(|_| ReservationError::UncertainCompletion)?;
+        let file = File::from(fd);
+        let metadata = file.metadata().map_err(|_| ReservationError::UncertainCompletion)?;
+        if !metadata.is_file() || metadata.nlink() != 1 {
+            return Err(ReservationError::UncertainCompletion);
+        }
         let mut bytes = Vec::new();
         file.take((MAGIC.len() + MAX_BINDING_BYTES + 1) as u64)
             .read_to_end(&mut bytes)
@@ -87,8 +107,8 @@ impl LocalFileReplayStore {
     }
 
     fn sync_directory(&self) -> Result<(), ReservationError> {
-        File::open(&self.root)
-            .and_then(|directory| directory.sync_all())
+        self.directory
+            .sync_all()
             .map_err(|_| ReservationError::UncertainCompletion)
     }
 }
@@ -101,8 +121,15 @@ impl ReplayReservationStore for LocalFileReplayStore {
     ) -> Result<ReservationOutcome, ReservationError> {
         let path = self.path_for(receipt_id)?;
         let encoded = Self::encoded(binding_key)?;
-        match OpenOptions::new().write(true).create_new(true).open(&path) {
-            Ok(mut file) => {
+        let filename = path.file_name().ok_or(ReservationError::Unavailable)?;
+        match openat(
+            &self.directory,
+            filename,
+            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::from_bits_retain(0o600),
+        ) {
+            Ok(fd) => {
+                let mut file = File::from(fd);
                 #[cfg(test)]
                 injected_process_termination("after_create");
                 // A failure after O_EXCL can leave an incomplete record. Never
@@ -118,9 +145,7 @@ impl ReplayReservationStore for LocalFileReplayStore {
                 self.sync_directory()?;
                 Ok(ReservationOutcome::Reserved)
             }
-            Err(err) if err.kind() == ErrorKind::AlreadyExists => {
-                Self::read_existing(&path, &encoded)
-            }
+            Err(rustix::io::Errno::EXIST) => self.read_existing(filename, &encoded),
             Err(_) => Err(ReservationError::Unavailable),
         }
     }
