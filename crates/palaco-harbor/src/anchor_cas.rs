@@ -265,7 +265,10 @@ mod tests {
     fn race_does_not_overwrite_other_writer() {
         let mut state = store();
         state.race = true;
-        assert_eq!(publish_next(&mut state, proposal()), Err(PublishError::Conflict));
+        assert_eq!(
+            publish_next(&mut state, proposal()),
+            Err(PublishError::Conflict)
+        );
         assert_eq!(state.state.revision, 1);
     }
 
