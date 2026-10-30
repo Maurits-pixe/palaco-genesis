@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+ed25519-dalek = { version = "2.2", default-features = false, features = ["std"] }
 palaco-eventbus = { path = "../palaco-eventbus" }
 sha2 = "0.10"
 
