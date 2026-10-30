@@ -224,14 +224,7 @@ mod tests {
         let mut e = evidence();
         e.revoked = true;
         assert_eq!(
-            assess_with_reservation(
-                &mut store,
-                "r-1",
-                "binding-1",
-                &request(),
-                &binding(),
-                &e,
-            ),
+            assess_with_reservation(&mut store, "r-1", "binding-1", &request(), &binding(), &e,),
             AdmissionDisposition::Reject(RejectionReason::Revoked)
         );
         assert_eq!(store.calls, 0);
