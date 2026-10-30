@@ -698,7 +698,10 @@ mod tests {
             .status()
             .unwrap_or_else(|_| panic!("child"));
         assert!(status.success());
-        assert_eq!(dir.open(&key).recover(None), Err(StoreError::IntegrityUncertain));
+        assert_eq!(
+            dir.open(&key).recover(None),
+            Err(StoreError::IntegrityUncertain)
+        );
     }
 
     #[test]
