@@ -842,13 +842,12 @@ mod tests {
         // Corrupt an intermediate frame, not the final tip: replay must not skip it.
         let intermediate = dir.0.join(LocalAnchorFloorJournal::filename(16));
         let mut bytes = fs::read(&intermediate).unwrap_or_else(|_| panic!("read frame"));
-        let first = bytes.first_mut().unwrap_or_else(|| panic!("nonempty frame"));
+        let first = bytes
+            .first_mut()
+            .unwrap_or_else(|| panic!("nonempty frame"));
         *first ^= 1;
         fs::write(&intermediate, bytes).unwrap_or_else(|_| panic!("corrupt frame"));
-        assert_eq!(
-            journal.recover(None),
-            Err(StoreError::IntegrityUncertain)
-        );
+        assert_eq!(journal.recover(None), Err(StoreError::IntegrityUncertain));
     }
 
     #[test]
