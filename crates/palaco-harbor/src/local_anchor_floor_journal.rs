@@ -579,8 +579,7 @@ mod tests {
             dir.open(&key)
                 .append_sync(&signed(record(1), &key))
                 .unwrap_or_else(|_| panic!("append"));
-            fs::write(dir.0.join(name), b"untrusted")
-                .unwrap_or_else(|_| panic!("write malformed"));
+            fs::write(dir.0.join(name), b"untrusted").unwrap_or_else(|_| panic!("write malformed"));
             assert_eq!(
                 dir.open(&key).recover(None),
                 Err(StoreError::IntegrityUncertain)
