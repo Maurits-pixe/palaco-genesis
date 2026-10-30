@@ -264,10 +264,20 @@ impl LocalAnchorFloorJournal {
         let mut file = File::from(fd);
         #[cfg(test)]
         terminate_at("after_create");
+        #[cfg(test)]
+        if std::env::var("PALACO_ANCHOR_TEST_IO_FAULT").as_deref() == Ok("partial_write") {
+            file.write_all(&frame[..frame.len() / 2])
+                .map_err(|_| StoreError::UncertainCompletion)?;
+            return Err(StoreError::UncertainCompletion);
+        }
         file.write_all(&frame)
             .map_err(|_| StoreError::UncertainCompletion)?;
         #[cfg(test)]
         terminate_at("after_write");
+        #[cfg(test)]
+        if std::env::var("PALACO_ANCHOR_TEST_IO_FAULT").as_deref() == Ok("file_sync_failure") {
+            return Err(StoreError::UncertainCompletion);
+        }
         file.sync_all()
             .map_err(|_| StoreError::UncertainCompletion)?;
         #[cfg(test)]
@@ -473,6 +483,64 @@ mod tests {
         assert_eq!(
             journal.append_sync(&signed(record(1), &key)),
             Err(StoreError::UncertainCompletion)
+        );
+    }
+
+    #[test]
+    fn io_fault_child() {
+        let Ok(root) = std::env::var("PALACO_ANCHOR_TEST_IO_ROOT") else {
+            return;
+        };
+        let key = SigningKey::from_bytes(&[49; 32]);
+        let mut journal = LocalAnchorFloorJournal::open(root, key.verifying_key().to_bytes())
+            .unwrap_or_else(|_| panic!("child open"));
+        assert_eq!(
+            journal.append_sync(&signed(record(1), &key)),
+            Err(StoreError::UncertainCompletion)
+        );
+    }
+
+    #[test]
+    fn partial_write_remains_poisoned_across_reopen() {
+        let dir = TestDir::new();
+        let status = Command::new(std::env::current_exe().unwrap_or_else(|_| panic!("exe")))
+            .arg("--exact")
+            .arg("local_anchor_floor_journal::tests::io_fault_child")
+            .env("PALACO_ANCHOR_TEST_IO_ROOT", &dir.0)
+            .env("PALACO_ANCHOR_TEST_IO_FAULT", "partial_write")
+            .status()
+            .unwrap_or_else(|_| panic!("child"));
+        assert!(status.success());
+        let key = SigningKey::from_bytes(&[49; 32]);
+        let mut journal = dir.open(&key);
+        assert_eq!(journal.recover(None), Err(StoreError::IntegrityUncertain));
+        assert_eq!(
+            journal.append_sync(&signed(record(1), &key)),
+            Err(StoreError::IntegrityUncertain)
+        );
+    }
+
+    #[test]
+    fn failed_file_sync_does_not_prove_durability() {
+        let dir = TestDir::new();
+        let status = Command::new(std::env::current_exe().unwrap_or_else(|_| panic!("exe")))
+            .arg("--exact")
+            .arg("local_anchor_floor_journal::tests::io_fault_child")
+            .env("PALACO_ANCHOR_TEST_IO_ROOT", &dir.0)
+            .env("PALACO_ANCHOR_TEST_IO_FAULT", "file_sync_failure")
+            .status()
+            .unwrap_or_else(|_| panic!("child"));
+        assert!(status.success());
+        let key = SigningKey::from_bytes(&[49; 32]);
+        // Visible bytes are not proof of persistence through a power cut.
+        assert_eq!(dir.open(&key).recover(None), Ok(Some(record(1))));
+        assert_eq!(
+            dir.open(&key).recover(Some(&record(2))),
+            Err(StoreError::IntegrityUncertain)
+        );
+        assert_eq!(
+            dir.open(&key).append_sync(&signed(record(1), &key)),
+            Err(StoreError::IntegrityUncertain)
         );
     }
 
