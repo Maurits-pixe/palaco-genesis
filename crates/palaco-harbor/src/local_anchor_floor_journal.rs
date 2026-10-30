@@ -202,6 +202,7 @@ impl LocalAnchorFloorJournal {
         self.verify_directory_identity()?;
         let revisions = self.list_revisions()?;
         let mut latest: Option<AnchorRecord> = None;
+        let mut frame_identities = Vec::with_capacity(revisions.len());
         for revision in revisions.iter().copied() {
             if latest
                 .as_ref()
@@ -223,6 +224,7 @@ impl LocalAnchorFloorJournal {
             if !meta.is_file() || meta.nlink() != 1 || meta.len() > MAX_RECORD_BYTES as u64 {
                 return Err(StoreError::IntegrityUncertain);
             }
+            frame_identities.push((revision, meta.dev(), meta.ino()));
             let mut bytes = Vec::new();
             file.take((MAX_RECORD_BYTES + 1) as u64)
                 .read_to_end(&mut bytes)
@@ -257,12 +259,38 @@ impl LocalAnchorFloorJournal {
             }
         }
         #[cfg(test)]
-        if std::env::var("PALACO_ANCHOR_TEST_ENUM_MUTATION").as_deref() == Ok("insert") {
-            fs::write(self.root.join(Self::filename(2)), b"late frame")
-                .map_err(|_| StoreError::IntegrityUncertain)?;
+        match std::env::var("PALACO_ANCHOR_TEST_ENUM_MUTATION").as_deref() {
+            Ok("insert") => {
+                fs::write(self.root.join(Self::filename(2)), b"late frame")
+                    .map_err(|_| StoreError::IntegrityUncertain)?;
+            }
+            Ok("replace") => {
+                let source = self.root.join(Self::filename(1));
+                let replacement = self.root.join("replacement.tmp");
+                fs::copy(&source, &replacement).map_err(|_| StoreError::IntegrityUncertain)?;
+                fs::rename(&replacement, &source).map_err(|_| StoreError::IntegrityUncertain)?;
+            }
+            _ => {}
         }
         if self.list_revisions()? != revisions {
             return Err(StoreError::IntegrityUncertain);
+        }
+        // A name-preserving rename can evade set comparison. Reopen each name
+        // through the pinned directory and reject persistent inode replacement.
+        for (revision, dev, ino) in frame_identities {
+            let fd = openat(
+                &self.directory,
+                Self::filename(revision),
+                OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                Mode::empty(),
+            )
+            .map_err(|_| StoreError::IntegrityUncertain)?;
+            let meta = File::from(fd)
+                .metadata()
+                .map_err(|_| StoreError::IntegrityUncertain)?;
+            if !meta.is_file() || meta.nlink() != 1 || meta.dev() != dev || meta.ino() != ino {
+                return Err(StoreError::IntegrityUncertain);
+            }
         }
         self.verify_directory_identity()?;
         Ok(latest)
@@ -702,6 +730,26 @@ mod tests {
             dir.open(&key).recover(None),
             Err(StoreError::IntegrityUncertain)
         );
+    }
+
+    #[test]
+    fn replaced_frame_during_recovery_is_not_silently_accepted() {
+        let dir = TestDir::new();
+        let key = SigningKey::from_bytes(&[49; 32]);
+        dir.open(&key)
+            .append_sync(&signed(record(1), &key))
+            .unwrap_or_else(|_| panic!("append"));
+        let status = Command::new(std::env::current_exe().unwrap_or_else(|_| panic!("exe")))
+            .arg("--exact")
+            .arg("local_anchor_floor_journal::tests::directory_mutation_child")
+            .env("PALACO_ANCHOR_TEST_ENUM_ROOT", &dir.0)
+            .env("PALACO_ANCHOR_TEST_ENUM_MUTATION", "replace")
+            .status()
+            .unwrap_or_else(|_| panic!("child"));
+        assert!(status.success());
+        // Same signed bytes and filename remain valid for a fresh recovery.
+        // The in-flight recovery must detect the changed inode.
+        assert_eq!(dir.open(&key).recover(None), Ok(Some(record(1))));
     }
 
     #[test]
