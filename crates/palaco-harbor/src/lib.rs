@@ -340,5 +340,4 @@ mod tests {
             AdmissionDisposition::Reject(RejectionReason::Revoked)
         );
     }
-
 }
