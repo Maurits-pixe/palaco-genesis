@@ -5,7 +5,9 @@
 //! this module. A valid signature cannot grant admission or execution.
 
 use crate::journal_integrity::{chain_digest, IntegrityError};
-use crate::trust_recovery::{recover_frames, JournalError, RecoveryError, RecoveryFloor, TrustFrame, TrustJournal};
+use crate::trust_recovery::{
+    recover_frames, JournalError, RecoveryError, RecoveryFloor, TrustFrame, TrustJournal,
+};
 use ed25519_dalek::{Signature, VerifyingKey};
 
 const DOMAIN: &[u8] = b"PALACO-HARBOR-ROTATING-ANCHOR-v1\0";
@@ -94,7 +96,9 @@ pub fn verify_rotating_checkpoint<J: TrustJournal, G: GovernedAnchorSource>(
     governance: &G,
     floor: RecoveryFloor,
 ) -> Result<TrustFrame, RotationError> {
-    let snapshot = governance.load_snapshot().map_err(RotationError::Governance)?;
+    let snapshot = governance
+        .load_snapshot()
+        .map_err(RotationError::Governance)?;
     let anchor = &snapshot.anchor;
     let signer = &snapshot.signer;
     if signer.signer_id != anchor.signer_id || signer.signer_id.is_empty() {
@@ -130,13 +134,11 @@ pub fn verify_rotating_checkpoint<J: TrustJournal, G: GovernedAnchorSource>(
 #[cfg(test)]
 mod tests {
     use super::{
-        signed_checkpoint_bytes, verify_rotating_checkpoint, GovernedAnchorSource,
-        GovernedSnapshot, GovernanceError, RotatingAnchor, RotationError, SignerRecord,
+        signed_checkpoint_bytes, verify_rotating_checkpoint, GovernanceError, GovernedAnchorSource,
+        GovernedSnapshot, RotatingAnchor, RotationError, SignerRecord,
     };
     use crate::journal_integrity::chain_digest;
-    use crate::trust_recovery::{
-        JournalError, RecoveryFloor, TrustFrame, TrustJournal,
-    };
+    use crate::trust_recovery::{JournalError, RecoveryFloor, TrustFrame, TrustJournal};
     use ed25519_dalek::{Signer, SigningKey};
     use std::collections::BTreeSet;
 
