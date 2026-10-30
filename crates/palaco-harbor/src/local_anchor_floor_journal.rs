@@ -850,6 +850,40 @@ mod tests {
         assert_eq!(journal.recover(None), Err(StoreError::IntegrityUncertain));
     }
 
+    /// Manual: `cargo test -p palaco-harbor --lib recovery_latency_characterization -- --ignored --nocapture`.
+    /// Numbers are host-local observations, never release thresholds.
+    #[test]
+    #[ignore = "manual latency characterization; not a CI gate"]
+    fn recovery_latency_characterization() {
+        use std::time::Instant;
+
+        let key = SigningKey::from_bytes(&[49; 32]);
+        for frame_count in [1_u64, 16, 64] {
+            let dir = TestDir::new();
+            let mut journal = dir.open(&key);
+            for revision in 1..=frame_count {
+                journal
+                    .append_sync(&signed(record(revision), &key))
+                    .unwrap_or_else(|_| panic!("prepare benchmark journal"));
+            }
+            let expected = Some(record(frame_count));
+            assert_eq!(journal.recover(None), Ok(expected.clone()));
+            let mut durations_us = Vec::new();
+            for _ in 0..7 {
+                let started = Instant::now();
+                let result = journal.recover(None);
+                let micros = started.elapsed().as_micros();
+                assert_eq!(result, Ok(expected.clone()));
+                durations_us.push(micros);
+            }
+            durations_us.sort_unstable();
+            println!(
+                "HARBOR_RECOVER frames={frame_count} runs=7 min_us={} median_us={} max_us={}",
+                durations_us[0], durations_us[3], durations_us[6]
+            );
+        }
+    }
+
     #[test]
     fn interrupted_first_write_cannot_be_reused_as_fresh_genesis() {
         let dir = TestDir::new();
