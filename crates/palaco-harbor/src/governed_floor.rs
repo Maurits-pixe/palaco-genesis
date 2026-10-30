@@ -404,8 +404,8 @@ mod tests {
             &policy(),
             &candidate(2, 2, 8, 190),
             Some(&first),
-        );
-        assert!(second.is_ok());
+        )
+        .unwrap_or_else(|_| panic!("second evidence"));
 
         let mut old_key = key_record();
         old_key.trust_epoch = 7;
