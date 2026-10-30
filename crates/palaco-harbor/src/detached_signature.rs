@@ -33,8 +33,8 @@ pub fn verify_detached_signature(
     if evidence_bytes.len() > MAX_EVIDENCE_BYTES {
         return Err(SignatureCheckError::OversizedPayload);
     }
-    let key = VerifyingKey::from_bytes(public_key)
-        .map_err(|_| SignatureCheckError::InvalidPublicKey)?;
+    let key =
+        VerifyingKey::from_bytes(public_key).map_err(|_| SignatureCheckError::InvalidPublicKey)?;
     let signature = Signature::from_bytes(signature_bytes);
     let mut message = Vec::with_capacity(DOMAIN.len() + evidence_bytes.len());
     message.extend_from_slice(DOMAIN);
