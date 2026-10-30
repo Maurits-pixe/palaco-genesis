@@ -827,6 +827,30 @@ mod tests {
     }
 
     #[test]
+    fn multi_frame_recovery_rechecks_all_signed_contents() {
+        let dir = TestDir::new();
+        let key = SigningKey::from_bytes(&[49; 32]);
+        let mut journal = dir.open(&key);
+        // A moderate deterministic workload; this is not a latency benchmark.
+        for revision in 1..=32 {
+            journal
+                .append_sync(&signed(record(revision), &key))
+                .unwrap_or_else(|_| panic!("append workload frame"));
+        }
+        assert_eq!(journal.recover(None), Ok(Some(record(32))));
+        assert_eq!(dir.open(&key).recover(None), Ok(Some(record(32))));
+        // Corrupt an intermediate frame, not the final tip: replay must not skip it.
+        let intermediate = dir.0.join(LocalAnchorFloorJournal::filename(16));
+        let mut bytes = fs::read(&intermediate).unwrap_or_else(|_| panic!("read frame"));
+        let first = bytes
+            .first_mut()
+            .unwrap_or_else(|| panic!("nonempty frame"));
+        *first ^= 1;
+        fs::write(&intermediate, bytes).unwrap_or_else(|_| panic!("corrupt frame"));
+        assert_eq!(journal.recover(None), Err(StoreError::IntegrityUncertain));
+    }
+
+    #[test]
     fn interrupted_first_write_cannot_be_reused_as_fresh_genesis() {
         let dir = TestDir::new();
         let key = SigningKey::from_bytes(&[49; 32]);
