@@ -234,18 +234,18 @@ impl LocalAnchorFloorJournal {
         }
         let verified = self.decode(&frame)?;
         if let Some(previous) = self.recover(None)? {
-                if previous.revision.checked_add(1) != Some(verified.revision)
-                    || verified.signer_epoch < previous.signer_epoch
-                    || verified.sequence < previous.sequence
-                    || !previous
-                        .retired_signers
-                        .is_subset(&verified.retired_signers)
-                    || (verified.signer_id != previous.signer_id
-                        && (!verified.retired_signers.contains(&previous.signer_id)
-                            || verified.signer_epoch <= previous.signer_epoch))
-                {
-                    return Err(StoreError::IntegrityUncertain);
-                }
+            if previous.revision.checked_add(1) != Some(verified.revision)
+                || verified.signer_epoch < previous.signer_epoch
+                || verified.sequence < previous.sequence
+                || !previous
+                    .retired_signers
+                    .is_subset(&verified.retired_signers)
+                || (verified.signer_id != previous.signer_id
+                    && (!verified.retired_signers.contains(&previous.signer_id)
+                        || verified.signer_epoch <= previous.signer_epoch))
+            {
+                return Err(StoreError::IntegrityUncertain);
+            }
         }
         let fd = openat(
             &self.directory,
