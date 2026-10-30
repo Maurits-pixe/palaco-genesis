@@ -5,7 +5,7 @@
 //! revocation, freshness and the payload before providing this context.
 
 use crate::replay_contract::{assess_with_reservation, ReplayReservationStore, ReservationError};
-use crate::{AdmissionDisposition, AdmissionEvidence, AdmissionRequest, EvidenceBinding, QuarantineReason};
+use crate::{assess_bound_admission, AdmissionDisposition, AdmissionEvidence, AdmissionRequest, EvidenceBinding, QuarantineReason};
 use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
 
@@ -79,6 +79,10 @@ pub fn assess_with_derived_reservation<S: ReplayReservationStore>(
     admission: &AdmissionEvidence,
     evidence: &EvidenceIdentity<'_>,
 ) -> AdmissionDisposition {
+    let admission_decision = assess_bound_admission(request, binding, admission);
+    if admission_decision != AdmissionDisposition::ForwardForAuthorization {
+        return admission_decision;
+    }
     let key = match derive_binding_key(request, evidence) {
         Ok(key) => key,
         Err(_) => return AdmissionDisposition::Quarantine(QuarantineReason::BindingMismatch),
