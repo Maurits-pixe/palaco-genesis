@@ -34,7 +34,7 @@ The implementation claims only to verify evidence supplied by an external
 registry/time boundary. The reviewer must confirm that:
 
 1. The policy binds the expected source identifier and expected registry key.
-2. The candidate key identifier cannot be replaced by payload or URL input.
+2. The candidate key identifier is checked against policy before registry lookup. The v0.22 signature bytes do not themselves include that external key-ID label, so the reviewer must assess the source-to-key mapping or require a key-bound signature variant.
 3. The registry response is exact, non-missing, non-revoked and structurally
    valid.
 4. The trusted-time snapshot rejects clock rollback and does not silently fall
@@ -99,6 +99,7 @@ Do not report a review as complete when any exact-head value is missing.
 PR #160 does not close these gates:
 
 - key enrollment and identity-to-key binding;
+- cryptographic binding of key-ID labels to signed floor bytes;
 - source-to-key governance mapping;
 - independently authenticated trusted time;
 - durable monotone trust epoch and anti-rollback floor;
