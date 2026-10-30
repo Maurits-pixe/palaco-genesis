@@ -359,6 +359,7 @@ mod tests {
     fn key_validity_and_epoch_are_enforced() {
         let mut too_old = policy();
         too_old.time.now_ms = 150;
+        too_old.time.highest_accepted_ms = 150;
         assert_eq!(
             verify_governed_floor(&registry(), &too_old, &candidate(1, 1, 8, 90), None,),
             Err(GovernedFloorError::ObservationBeforeKeyValidity)
@@ -423,7 +424,7 @@ mod tests {
                 &registry(),
                 &policy(),
                 &candidate(1, 1, 8, 190),
-                Some(&first),
+                Some(&second),
             ),
             Err(GovernedFloorError::Floor(
                 FloorVerificationError::FloorRegression
