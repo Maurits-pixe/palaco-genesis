@@ -96,7 +96,8 @@ pub fn assess_admission(evidence: &AdmissionEvidence) -> AdmissionDisposition {
 #[cfg(test)]
 mod tests {
     use super::{
-        assess_admission, AdmissionDisposition, AdmissionEvidence, QuarantineReason, RejectionReason,
+        assess_admission, AdmissionDisposition, AdmissionEvidence, QuarantineReason,
+        RejectionReason,
     };
 
     fn complete() -> AdmissionEvidence {
