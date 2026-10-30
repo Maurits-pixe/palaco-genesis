@@ -303,7 +303,7 @@ impl LocalAnchorFloorJournal {
                 Mode::empty(),
             )
             .map_err(|_| StoreError::IntegrityUncertain)?;
-            let mut file = File::from(fd);
+            let file = File::from(fd);
             let meta = file
                 .metadata()
                 .map_err(|_| StoreError::IntegrityUncertain)?;
