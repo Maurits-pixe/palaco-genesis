@@ -8,7 +8,7 @@
 use crate::replay_contract::{ReplayReservationStore, ReservationError, ReservationOutcome};
 use std::fs::{File, OpenOptions};
 use std::io::{ErrorKind, Read, Write};
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 const MAGIC: &[u8] = b"PALACO-HARBOR-REPLAY-1\n";
@@ -118,6 +118,7 @@ mod tests {
     use std::fs::{self, File, OpenOptions};
     use std::io::Write;
     use std::path::PathBuf;
+    use std::os::unix::fs::PermissionsExt;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, Barrier};
     use std::thread;
