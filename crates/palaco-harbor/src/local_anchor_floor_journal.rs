@@ -444,5 +444,4 @@ mod tests {
             Err(StoreError::IntegrityUncertain)
         );
     }
-
 }
