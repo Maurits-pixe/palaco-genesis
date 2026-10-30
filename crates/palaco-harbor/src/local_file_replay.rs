@@ -15,6 +15,14 @@ const MAGIC: &[u8] = b"PALACO-HARBOR-REPLAY-1\n";
 const MAX_IDENTIFIER_BYTES: usize = 128;
 const MAX_BINDING_BYTES: usize = 4096;
 
+// Compiled only into test binaries: deliberate process termination at storage boundaries.
+#[cfg(test)]
+fn injected_process_termination(stage: &str) {
+    if std::env::var("PALACO_HARBOR_TEST_EXIT_STAGE").as_deref() == Ok(stage) {
+        std::process::exit(86);
+    }
+}
+
 /// A single-host reservation store; callers must provision a private directory.
 #[derive(Debug)]
 pub struct LocalFileReplayStore {
@@ -95,11 +103,18 @@ impl ReplayReservationStore for LocalFileReplayStore {
         let encoded = Self::encoded(binding_key)?;
         match OpenOptions::new().write(true).create_new(true).open(&path) {
             Ok(mut file) => {
+                #[cfg(test)]
+                injected_process_termination("after_create");
                 // A failure after O_EXCL can leave an incomplete record. Never
                 // unlink it automatically: this ID must fail closed on retry.
                 file.write_all(&encoded)
-                    .and_then(|()| file.sync_all())
                     .map_err(|_| ReservationError::UncertainCompletion)?;
+                #[cfg(test)]
+                injected_process_termination("after_write");
+                file.sync_all()
+                    .map_err(|_| ReservationError::UncertainCompletion)?;
+                #[cfg(test)]
+                injected_process_termination("after_file_sync");
                 self.sync_directory()?;
                 Ok(ReservationOutcome::Reserved)
             }
@@ -119,6 +134,7 @@ mod tests {
     use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
+    use std::process::Command;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, Barrier};
     use std::thread;
@@ -267,6 +283,42 @@ mod tests {
             store.reserve("hardlink", "binding"),
             Err(ReservationError::UncertainCompletion)
         );
+    }
+
+    #[test]
+    fn termination_child() {
+        let Ok(root) = std::env::var("PALACO_HARBOR_TEST_EXIT_ROOT") else {
+            return;
+        };
+        let mut store = LocalFileReplayStore::open(root).unwrap_or_else(|_| panic!("child store"));
+        // The test-only hook terminates this process at the requested stage.
+        let _ = store.reserve("crash-receipt", "bound-evidence");
+        panic!("injected termination was not reached");
+    }
+
+    #[test]
+    fn terminated_process_cannot_reopen_replay_gate() {
+        for (stage, expected) in [
+            ("after_create", Err(ReservationError::UncertainCompletion)),
+            ("after_write", Ok(ReservationOutcome::AlreadyReserved)),
+            ("after_file_sync", Ok(ReservationOutcome::AlreadyReserved)),
+        ] {
+            let directory = TestDirectory::new();
+            let exe = std::env::current_exe().unwrap_or_else(|_| panic!("test binary"));
+            let status = Command::new(exe)
+                .arg("--exact")
+                .arg("local_file_replay::tests::termination_child")
+                .env("PALACO_HARBOR_TEST_EXIT_ROOT", &directory.0)
+                .env("PALACO_HARBOR_TEST_EXIT_STAGE", stage)
+                .status()
+                .unwrap_or_else(|_| panic!("run isolated test process"));
+            assert_eq!(status.code(), Some(86), "stage: {stage}");
+            assert_eq!(
+                directory.store().reserve("crash-receipt", "bound-evidence"),
+                expected,
+                "stage: {stage}"
+            );
+        }
     }
 
     #[test]
