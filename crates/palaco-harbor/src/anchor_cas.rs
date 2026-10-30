@@ -89,7 +89,7 @@ pub fn publish_next<S: AtomicAnchorStore>(
     proposal: AnchorProposal,
 ) -> Result<AnchorRecord, PublishError> {
     let current = store.load().map_err(PublishError::Store)?;
-    if !record_valid(&current) {
+    if !record_is_valid(&current) {
         return Err(PublishError::InvalidCurrent);
     }
     if proposal.signer_epoch < current.signer_epoch
