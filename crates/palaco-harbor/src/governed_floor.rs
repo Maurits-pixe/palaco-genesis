@@ -211,7 +211,9 @@ mod tests {
     };
     use crate::anchor_cas::AnchorRecord;
     use crate::anchor_checkpoint::ExternalFloorCandidate;
-    use crate::checkpoint_verifier::{signed_floor_bytes, FloorVerificationError, SignedFloorCandidate};
+    use crate::checkpoint_verifier::{
+        signed_floor_bytes, FloorVerificationError, SignedFloorCandidate,
+    };
     use crate::trust_registry::{KeyRecord, KeyRegistry, RegistryError, TrustedTimeSnapshot};
     use ed25519_dalek::{Signer, SigningKey};
     use std::collections::BTreeSet;
@@ -254,7 +256,12 @@ mod tests {
         }
     }
 
-    fn candidate(revision: u64, sequence: u64, trust_epoch: u64, observed_at_ms: u64) -> GovernedFloorCandidate {
+    fn candidate(
+        revision: u64,
+        sequence: u64,
+        trust_epoch: u64,
+        observed_at_ms: u64,
+    ) -> GovernedFloorCandidate {
         let signed = SignedFloorCandidate {
             candidate: ExternalFloorCandidate {
                 source_id: "checkpoint-a".to_owned(),
@@ -275,8 +282,8 @@ mod tests {
             key_id: "checkpoint-key-1".to_owned(),
             signed,
         };
-        let bytes = signed_floor_bytes(&candidate.signed)
-            .unwrap_or_else(|_| panic!("signed floor bytes"));
+        let bytes =
+            signed_floor_bytes(&candidate.signed).unwrap_or_else(|_| panic!("signed floor bytes"));
         candidate.signed.signature = signing().sign(&bytes).to_bytes();
         candidate
     }
@@ -343,12 +350,7 @@ mod tests {
         let mut rolled_back = policy();
         rolled_back.time.now_ms = 180;
         assert_eq!(
-            verify_governed_floor(
-                &registry(),
-                &rolled_back,
-                &candidate(1, 1, 8, 180),
-                None,
-            ),
+            verify_governed_floor(&registry(), &rolled_back, &candidate(1, 1, 8, 180), None,),
             Err(GovernedFloorError::TemporalUncertain)
         );
     }
@@ -358,33 +360,18 @@ mod tests {
         let mut too_old = policy();
         too_old.time.now_ms = 150;
         assert_eq!(
-            verify_governed_floor(
-                &registry(),
-                &too_old,
-                &candidate(1, 1, 8, 90),
-                None,
-            ),
+            verify_governed_floor(&registry(), &too_old, &candidate(1, 1, 8, 90), None,),
             Err(GovernedFloorError::ObservationBeforeKeyValidity)
         );
         let mut expired = policy();
         expired.time.now_ms = 300;
         expired.time.highest_accepted_ms = 300;
         assert_eq!(
-            verify_governed_floor(
-                &registry(),
-                &expired,
-                &candidate(1, 1, 8, 220),
-                None,
-            ),
+            verify_governed_floor(&registry(), &expired, &candidate(1, 1, 8, 220), None,),
             Err(GovernedFloorError::Expired)
         );
         assert_eq!(
-            verify_governed_floor(
-                &registry(),
-                &policy(),
-                &candidate(1, 1, 7, 180),
-                None,
-            ),
+            verify_governed_floor(&registry(), &policy(), &candidate(1, 1, 7, 180), None,),
             Err(GovernedFloorError::Floor(
                 FloorVerificationError::TrustEpochBelowMinimum
             ))
@@ -409,13 +396,8 @@ mod tests {
 
     #[test]
     fn predecessor_registry_epoch_and_floor_are_monotone() {
-        let first = verify_governed_floor(
-            &registry(),
-            &policy(),
-            &candidate(1, 1, 8, 180),
-            None,
-        )
-        .unwrap_or_else(|_| panic!("first evidence"));
+        let first = verify_governed_floor(&registry(), &policy(), &candidate(1, 1, 8, 180), None)
+            .unwrap_or_else(|_| panic!("first evidence"));
         let second = verify_governed_floor(
             &registry(),
             &policy(),
@@ -451,13 +433,9 @@ mod tests {
 
     #[test]
     fn result_is_evidence_not_authority() {
-        let evidence = verify_governed_floor(
-            &registry(),
-            &policy(),
-            &candidate(1, 1, 8, 180),
-            None,
-        )
-        .unwrap_or_else(|_| panic!("evidence"));
+        let evidence =
+            verify_governed_floor(&registry(), &policy(), &candidate(1, 1, 8, 180), None)
+                .unwrap_or_else(|_| panic!("evidence"));
         let _: GovernedFloorVerification = evidence;
     }
 }
