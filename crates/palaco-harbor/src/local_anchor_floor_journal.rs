@@ -164,12 +164,8 @@ impl LocalAnchorFloorJournal {
         Ok(record)
     }
 
-    /// Reload the highest complete signed anchor; never skip a damaged frame.
-    pub fn recover(
-        &self,
-        external_floor: Option<&AnchorRecord>,
-    ) -> Result<Option<AnchorRecord>, StoreError> {
-        self.verify_directory_identity()?;
+    /// Re-read names through the pinned descriptor to detect changed frame sets.
+    fn list_revisions(&self) -> Result<Vec<u64>, StoreError> {
         let mut revisions = Vec::new();
         // Enumerate the pinned directory, never a separately resolved path.
         for entry in Dir::read_from(&self.directory).map_err(|_| StoreError::IntegrityUncertain)? {
@@ -195,8 +191,18 @@ impl LocalAnchorFloorJournal {
             return Err(StoreError::IntegrityUncertain);
         }
         revisions.sort_unstable();
+        Ok(revisions)
+    }
+
+    /// Reload the highest complete signed anchor; never skip a damaged frame.
+    pub fn recover(
+        &self,
+        external_floor: Option<&AnchorRecord>,
+    ) -> Result<Option<AnchorRecord>, StoreError> {
+        self.verify_directory_identity()?;
+        let revisions = self.list_revisions()?;
         let mut latest: Option<AnchorRecord> = None;
-        for revision in revisions {
+        for revision in revisions.iter().copied() {
             if latest
                 .as_ref()
                 .is_some_and(|p| p.revision.checked_add(1) != Some(revision))
@@ -249,6 +255,14 @@ impl LocalAnchorFloorJournal {
             {
                 return Err(StoreError::IntegrityUncertain);
             }
+        }
+        #[cfg(test)]
+        if std::env::var("PALACO_ANCHOR_TEST_ENUM_MUTATION").as_deref() == Ok("insert") {
+            fs::write(self.root.join(Self::filename(2)), b"late frame")
+                .map_err(|_| StoreError::IntegrityUncertain)?;
+        }
+        if self.list_revisions()? != revisions {
+            return Err(StoreError::IntegrityUncertain);
         }
         self.verify_directory_identity()?;
         Ok(latest)
@@ -656,6 +670,38 @@ mod tests {
             Err(StoreError::IntegrityUncertain)
         );
         fs::remove_dir_all(&relocated).unwrap_or_else(|_| panic!("cleanup relocated"));
+    }
+
+    #[test]
+    fn directory_mutation_child() {
+        let Ok(root) = std::env::var("PALACO_ANCHOR_TEST_ENUM_ROOT") else {
+            return;
+        };
+        let key = SigningKey::from_bytes(&[49; 32]);
+        let journal = LocalAnchorFloorJournal::open(root, key.verifying_key().to_bytes())
+            .unwrap_or_else(|_| panic!("child open"));
+        assert_eq!(journal.recover(None), Err(StoreError::IntegrityUncertain));
+    }
+
+    #[test]
+    fn added_frame_during_recovery_is_not_silently_skipped() {
+        let dir = TestDir::new();
+        let key = SigningKey::from_bytes(&[49; 32]);
+        dir.open(&key)
+            .append_sync(&signed(record(1), &key))
+            .unwrap_or_else(|_| panic!("append"));
+        let status = Command::new(std::env::current_exe().unwrap_or_else(|_| panic!("exe")))
+            .arg("--exact")
+            .arg("local_anchor_floor_journal::tests::directory_mutation_child")
+            .env("PALACO_ANCHOR_TEST_ENUM_ROOT", &dir.0)
+            .env("PALACO_ANCHOR_TEST_ENUM_MUTATION", "insert")
+            .status()
+            .unwrap_or_else(|_| panic!("child"));
+        assert!(status.success());
+        assert_eq!(
+            dir.open(&key).recover(None),
+            Err(StoreError::IntegrityUncertain)
+        );
     }
 
     #[test]
