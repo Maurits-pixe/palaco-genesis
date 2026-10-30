@@ -1,0 +1,63 @@
+name: Harbor recovery latency observation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/harbor-recovery-latency.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  observe:
+    name: Opt-in host-local recovery observation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact PR candidate
+        uses: actions/checkout@v4
+
+      - name: Rust setup
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Capture host and source envelope
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "head_sha=$(git rev-parse HEAD)"
+            echo "timestamp_utc=$(date -u +%FT%TZ)"
+            echo "runner_os=${RUNNER_OS}"
+            echo "kernel=$(uname -sr)"
+            echo "filesystem=$(stat -f -c %T .)"
+            echo "rustc=$(rustc --version)"
+            echo "cargo=$(cargo --version)"
+            echo "profile=test"
+            echo "source_blob=$(git rev-parse HEAD:crates/palaco-harbor/src/local_anchor_floor_journal.rs)"
+          } | tee harbor-latency-environment.txt
+
+      - name: Execute ignored benchmark and retain output
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test -p palaco-harbor --lib recovery_latency_characterization -- --ignored --nocapture 2>&1 | tee harbor-latency-raw.log
+          test "$(grep -c '^HARBOR_RECOVER frames=' harbor-latency-raw.log)" -eq 3
+          grep -E '^HARBOR_RECOVER frames=(1|16|64) runs=7 min_us=[0-9]+ median_us=[0-9]+ max_us=[0-9]+$' harbor-latency-raw.log | tee harbor-latency-summary.txt
+          test "$(wc -l < harbor-latency-summary.txt)" -eq 3
+          sha256sum harbor-latency-environment.txt harbor-latency-raw.log harbor-latency-summary.txt | tee harbor-latency-digests.txt
+
+      - name: Preserve measurement artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harbor-recovery-latency-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            harbor-latency-environment.txt
+            harbor-latency-raw.log
+            harbor-latency-summary.txt
+            harbor-latency-digests.txt
+          if-no-files-found: warn
+          retention-days: 30
