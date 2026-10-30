@@ -456,7 +456,10 @@ mod tests {
             dir.open(&key).append_sync(&signed(record(1), &key)),
             Err(StoreError::IntegrityUncertain)
         );
-        assert_eq!(dir.open(&key).recover(Some(&record(2))), Err(StoreError::IntegrityUncertain));
+        assert_eq!(
+            dir.open(&key).recover(Some(&record(2))),
+            Err(StoreError::IntegrityUncertain)
+        );
     }
 
     #[test]
