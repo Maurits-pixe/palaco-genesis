@@ -290,8 +290,7 @@ mod tests {
         let Ok(root) = std::env::var("PALACO_HARBOR_TEST_EXIT_ROOT") else {
             return;
         };
-        let mut store = LocalFileReplayStore::open(root)
-            .unwrap_or_else(|_| panic!("child store"));
+        let mut store = LocalFileReplayStore::open(root).unwrap_or_else(|_| panic!("child store"));
         // The test-only hook terminates this process at the requested stage.
         let _ = store.reserve("crash-receipt", "bound-evidence");
         panic!("injected termination was not reached");
