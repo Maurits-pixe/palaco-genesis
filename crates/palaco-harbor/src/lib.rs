@@ -17,6 +17,8 @@ pub mod journal_integrity;
 pub mod local_file_replay;
 #[cfg(unix)]
 pub mod local_trust_journal;
+#[cfg(unix)]
+pub mod local_anchor_floor_journal;
 pub mod remote_anchor_adapter;
 pub mod replay_contract;
 pub mod trust_recovery;
