@@ -12,6 +12,8 @@ pub mod detached_signature;
 pub mod evidence_digest;
 #[cfg(unix)]
 pub mod local_file_replay;
+#[cfg(unix)]
+pub mod local_trust_journal;
 pub mod replay_contract;
 pub mod trust_recovery;
 pub mod trust_registry;
