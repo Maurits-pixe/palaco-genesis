@@ -10,6 +10,7 @@ use std::collections::HashSet;
 
 pub mod detached_signature;
 pub mod evidence_digest;
+pub mod journal_integrity;
 #[cfg(unix)]
 pub mod local_file_replay;
 #[cfg(unix)]
