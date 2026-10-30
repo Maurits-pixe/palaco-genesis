@@ -2,7 +2,9 @@
 //!
 //! No production network client or independent anchor service is instantiated.
 //! Transport must provide authenticated TLS, true atomic CAS, durable quorum,
-//! and rollback-resistant freshness. A caller-supplied response signer is not
+//! and rollback-resistant freshness. Optional minimum-anchor comparison needs
+//! a separately protected, durable floor reloaded after every restart.
+//! A caller-supplied response signer is not
 //! automatically an authorized governance root. Never grants admission.
 
 use crate::anchor_cas::{AnchorRecord, AtomicAnchorStore, StoreError, SwapOutcome};
@@ -46,6 +48,7 @@ pub trait RemoteAnchorTransport {
 pub struct RemoteAnchorAdapter<T> {
     transport: T,
     response_public_key: [u8; 32],
+    minimum_anchor: Option<AnchorRecord>,
 }
 
 impl<T> RemoteAnchorAdapter<T> {
@@ -53,7 +56,15 @@ impl<T> RemoteAnchorAdapter<T> {
         Self {
             transport,
             response_public_key,
+            minimum_anchor: None,
         }
+    }
+
+    /// The minimum must come from an independently trusted, durable checkpoint.
+    /// An in-memory value does not itself provide rollback resistance after restart.
+    pub fn with_minimum_anchor(mut self, minimum: AnchorRecord) -> Self {
+        self.minimum_anchor = Some(minimum);
+        self
     }
 }
 
@@ -93,6 +104,21 @@ pub fn attestation_bytes(record: &AnchorRecord) -> Result<Vec<u8>, StoreError> {
 }
 
 impl<T: RemoteAnchorTransport> RemoteAnchorAdapter<T> {
+    fn check_floor(&self, record: &AnchorRecord) -> Result<(), StoreError> {
+        if let Some(floor) = &self.minimum_anchor {
+            attestation_bytes(floor)?;
+            if record.revision < floor.revision
+                || (record.revision == floor.revision && record != floor)
+                || record.signer_epoch < floor.signer_epoch
+                || record.sequence < floor.sequence
+                || !floor.retired_signers.is_subset(&record.retired_signers)
+            {
+                return Err(StoreError::IntegrityUncertain);
+            }
+        }
+        Ok(())
+    }
+
     fn checked(&self, attested: AttestedAnchor) -> Result<AnchorRecord, StoreError> {
         let verifying = VerifyingKey::from_bytes(&self.response_public_key)
             .map_err(|_| StoreError::IntegrityUncertain)?;
@@ -100,6 +126,7 @@ impl<T: RemoteAnchorTransport> RemoteAnchorAdapter<T> {
         verifying
             .verify_strict(&message, &Signature::from_bytes(&attested.signature))
             .map_err(|_| StoreError::IntegrityUncertain)?;
+        self.check_floor(&attested.record)?;
         Ok(attested.record)
     }
 
@@ -123,6 +150,8 @@ impl<T: RemoteAnchorTransport> AtomicAnchorStore for RemoteAnchorAdapter<T> {
         expected: &AnchorRecord,
         next: &AnchorRecord,
     ) -> Result<SwapOutcome, StoreError> {
+        self.check_floor(expected)?;
+        self.check_floor(next)?;
         let response = self
             .transport
             .compare_and_swap(expected, next)
@@ -281,6 +310,62 @@ mod tests {
             .verifying_key()
             .to_bytes();
         assert_eq!(client.load(), Err(StoreError::IntegrityUncertain));
+    }
+
+    #[test]
+    fn signed_stale_or_forked_state_cannot_cross_trusted_floor() {
+        let original = record();
+        let mut newer = original.clone();
+        newer.revision = 2;
+        newer.sequence = 2;
+        newer.chain_digest = [2; 32];
+        let client = adapter().with_minimum_anchor(newer.clone());
+        assert_eq!(client.load(), Err(StoreError::IntegrityUncertain));
+
+        let mut fork = original.clone();
+        fork.chain_digest = [9; 32];
+        let mut client = adapter().with_minimum_anchor(original);
+        client.transport.current = fork;
+        assert_eq!(client.load(), Err(StoreError::IntegrityUncertain));
+    }
+
+    #[test]
+    fn signed_newer_state_must_preserve_epoch_sequence_and_revocations() {
+        let original = record();
+        let mut floor = original.clone();
+        floor.revision = 2;
+        floor.sequence = 3;
+        floor.signer_epoch = 6;
+        floor.retired_signers.insert("retired-a".to_owned());
+        let mut candidate = floor.clone();
+        candidate.revision = 3;
+        candidate.sequence = 4;
+        candidate.retired_signers.clear();
+        let mut client = adapter().with_minimum_anchor(floor.clone());
+        client.transport.current = candidate;
+        assert_eq!(client.load(), Err(StoreError::IntegrityUncertain));
+
+        let mut acceptable = floor;
+        acceptable.revision = 3;
+        acceptable.sequence = 4;
+        acceptable.chain_digest = [3; 32];
+        client.transport.current = acceptable.clone();
+        assert_eq!(client.load(), Ok(acceptable));
+    }
+
+    #[test]
+    fn rejected_floor_never_sends_cas_to_remote() {
+        let floor = record();
+        let mut client = adapter().with_minimum_anchor(floor.clone());
+        let mut stale = floor.clone();
+        stale.revision = 0;
+        let mut next = floor;
+        next.revision = 2;
+        assert_eq!(
+            client.compare_and_swap(&stale, &next),
+            Err(StoreError::IntegrityUncertain)
+        );
+        assert_eq!(client.transport.current.revision, 1);
     }
 
     #[test]
