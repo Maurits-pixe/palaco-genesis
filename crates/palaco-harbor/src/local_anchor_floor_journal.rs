@@ -62,8 +62,7 @@ impl LocalAnchorFloorJournal {
             .directory
             .metadata()
             .map_err(|_| StoreError::IntegrityUncertain)?;
-        let named = fs::symlink_metadata(&self.root)
-            .map_err(|_| StoreError::IntegrityUncertain)?;
+        let named = fs::symlink_metadata(&self.root).map_err(|_| StoreError::IntegrityUncertain)?;
         if !named.is_dir()
             || pinned.dev() != named.dev()
             || pinned.ino() != named.ino()
