@@ -8,8 +8,8 @@
 use crate::replay_contract::{ReplayReservationStore, ReservationError, ReservationOutcome};
 use std::fs::{File, OpenOptions};
 use std::io::{ErrorKind, Read, Write};
-use std::path::{Path, PathBuf};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::path::{Path, PathBuf};
 
 const MAGIC: &[u8] = b"PALACO-HARBOR-REPLAY-1\n";
 const MAX_IDENTIFIER_BYTES: usize = 128;
@@ -258,7 +258,9 @@ mod tests {
             store.reserve("symlink", "binding"),
             Err(ReservationError::UncertainCompletion)
         );
-        let hardlink_path = store.path_for("hardlink").unwrap_or_else(|_| panic!("path"));
+        let hardlink_path = store
+            .path_for("hardlink")
+            .unwrap_or_else(|_| panic!("path"));
         fs::hard_link(&target, &hardlink_path).unwrap_or_else(|_| panic!("hardlink"));
         assert_eq!(
             store.reserve("hardlink", "binding"),
@@ -270,7 +272,9 @@ mod tests {
     fn recovery_after_empty_record_remains_quarantined() {
         let directory = TestDirectory::new();
         let mut store = directory.store();
-        let path = store.path_for("after-create").unwrap_or_else(|_| panic!("path"));
+        let path = store
+            .path_for("after-create")
+            .unwrap_or_else(|_| panic!("path"));
         File::create(&path).unwrap_or_else(|_| panic!("create interrupted record"));
         assert_eq!(
             store.reserve("after-create", "binding"),
@@ -281,5 +285,4 @@ mod tests {
             Err(ReservationError::UncertainCompletion)
         );
     }
-
 }
