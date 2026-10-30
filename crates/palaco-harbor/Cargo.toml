@@ -6,3 +6,6 @@ license.workspace = true
 
 [dependencies]
 palaco-eventbus = { path = "../palaco-eventbus" }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1", features = ["fs"] }
