@@ -14,6 +14,7 @@ pub mod anchor_rotation;
 pub mod checkpoint_verifier;
 pub mod detached_signature;
 pub mod evidence_digest;
+pub mod governed_floor;
 pub mod journal_integrity;
 #[cfg(unix)]
 pub mod local_anchor_floor_journal;
