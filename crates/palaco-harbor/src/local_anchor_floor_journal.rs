@@ -54,6 +54,26 @@ impl LocalAnchorFloorJournal {
         })
     }
 
+    /// Detect a replaced path before trusting name-based directory enumeration.
+    /// This does not eliminate concurrent path-switch races; external checkpoint
+    /// reconciliation and exclusive directory ownership remain required.
+    fn verify_directory_identity(&self) -> Result<(), StoreError> {
+        let pinned = self
+            .directory
+            .metadata()
+            .map_err(|_| StoreError::IntegrityUncertain)?;
+        let named = fs::symlink_metadata(&self.root)
+            .map_err(|_| StoreError::IntegrityUncertain)?;
+        if !named.is_dir()
+            || pinned.dev() != named.dev()
+            || pinned.ino() != named.ino()
+            || named.permissions().mode() & 0o077 != 0
+        {
+            return Err(StoreError::IntegrityUncertain);
+        }
+        Ok(())
+    }
+
     fn filename(revision: u64) -> String {
         format!("anchor-{revision:020}.frame")
     }
@@ -150,6 +170,7 @@ impl LocalAnchorFloorJournal {
         &self,
         external_floor: Option<&AnchorRecord>,
     ) -> Result<Option<AnchorRecord>, StoreError> {
+        self.verify_directory_identity()?;
         let mut revisions = Vec::new();
         for entry in fs::read_dir(&self.root).map_err(|_| StoreError::Unavailable)? {
             let entry = entry.map_err(|_| StoreError::IntegrityUncertain)?;
@@ -227,6 +248,7 @@ impl LocalAnchorFloorJournal {
                 return Err(StoreError::IntegrityUncertain);
             }
         }
+        self.verify_directory_identity()?;
         Ok(latest)
     }
 
@@ -291,6 +313,7 @@ impl LocalAnchorFloorJournal {
             .map_err(|_| StoreError::UncertainCompletion)?;
         #[cfg(test)]
         terminate_at("after_directory_sync");
+        self.verify_directory_identity()?;
         Ok(())
     }
 }
@@ -608,6 +631,29 @@ mod tests {
             dir.open(&key).recover(None),
             Err(StoreError::IntegrityUncertain)
         );
+    }
+
+    #[test]
+    fn replacing_directory_path_does_not_reset_pinned_journal() {
+        let dir = TestDir::new();
+        let key = SigningKey::from_bytes(&[49; 32]);
+        let mut journal = dir.open(&key);
+        journal
+            .append_sync(&signed(record(1), &key))
+            .unwrap_or_else(|_| panic!("append"));
+
+        let relocated = dir.0.with_extension("relocated");
+        fs::rename(&dir.0, &relocated).unwrap_or_else(|_| panic!("relocate"));
+        fs::create_dir(&dir.0).unwrap_or_else(|_| panic!("replacement"));
+        fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o700))
+            .unwrap_or_else(|_| panic!("replacement permissions"));
+
+        assert_eq!(journal.recover(None), Err(StoreError::IntegrityUncertain));
+        assert_eq!(
+            journal.append_sync(&signed(record(2), &key)),
+            Err(StoreError::IntegrityUncertain)
+        );
+        fs::remove_dir_all(&relocated).unwrap_or_else(|_| panic!("cleanup relocated"));
     }
 
     #[test]
