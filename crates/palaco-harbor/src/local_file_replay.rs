@@ -117,8 +117,8 @@ mod tests {
     use crate::replay_contract::{ReplayReservationStore, ReservationError, ReservationOutcome};
     use std::fs::{self, File, OpenOptions};
     use std::io::Write;
-    use std::path::PathBuf;
     use std::os::unix::fs::PermissionsExt;
+    use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, Barrier};
     use std::thread;
