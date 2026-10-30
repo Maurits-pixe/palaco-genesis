@@ -119,7 +119,10 @@ pub fn persist_transition<J: TrustJournal>(
     transition: TrustTransition,
 ) -> Result<TrustFrame, RecoveryError> {
     let mut next = recover(journal, floor)?;
-    next.sequence = next.sequence.checked_add(1).ok_or(RecoveryError::Overflow)?;
+    next.sequence = next
+        .sequence
+        .checked_add(1)
+        .ok_or(RecoveryError::Overflow)?;
 
     match transition {
         TrustTransition::AdvanceTime(value) => {
@@ -219,8 +222,12 @@ mod tests {
     #[test]
     fn monotone_time_epoch_and_revocation_survive_replay() {
         let mut storage = journal();
-        assert!(persist_transition(&mut storage, floor(), TrustTransition::AdvanceTime(150)).is_ok());
-        assert!(persist_transition(&mut storage, floor(), TrustTransition::AdvanceEpoch(6)).is_ok());
+        assert!(
+            persist_transition(&mut storage, floor(), TrustTransition::AdvanceTime(150)).is_ok()
+        );
+        assert!(
+            persist_transition(&mut storage, floor(), TrustTransition::AdvanceEpoch(6)).is_ok()
+        );
         let last = persist_transition(
             &mut storage,
             floor(),
@@ -254,7 +261,11 @@ mod tests {
         let mut storage = journal();
         storage.append_behavior = AppendBehavior::WriteThenLoseAck;
         assert_eq!(
-            persist_transition(&mut storage, floor(), TrustTransition::Revoke("key-7".to_owned())),
+            persist_transition(
+                &mut storage,
+                floor(),
+                TrustTransition::Revoke("key-7".to_owned())
+            ),
             Err(RecoveryError::Journal(JournalError::UncertainCompletion))
         );
         let recovered = recover(&storage, floor());
@@ -273,7 +284,10 @@ mod tests {
             minimum_trust_epoch: 5,
             minimum_trusted_time_ms: 150,
         };
-        assert_eq!(recover(&older, new_floor), Err(RecoveryError::StateRollback));
+        assert_eq!(
+            recover(&older, new_floor),
+            Err(RecoveryError::StateRollback)
+        );
     }
 
     #[test]
@@ -286,11 +300,17 @@ mod tests {
 
         storage.frames[1].sequence = 2;
         storage.frames[1].trust_epoch = 4;
-        assert_eq!(recover(&storage, floor()), Err(RecoveryError::StateRollback));
+        assert_eq!(
+            recover(&storage, floor()),
+            Err(RecoveryError::StateRollback)
+        );
 
         storage.frames[1].trust_epoch = 5;
         storage.frames[1].highest_trusted_time_ms = 99;
-        assert_eq!(recover(&storage, floor()), Err(RecoveryError::StateRollback));
+        assert_eq!(
+            recover(&storage, floor()),
+            Err(RecoveryError::StateRollback)
+        );
     }
 
     #[test]
@@ -300,7 +320,10 @@ mod tests {
         let mut next = genesis();
         next.sequence = 2;
         storage.frames.push(next);
-        assert_eq!(recover(&storage, floor()), Err(RecoveryError::StateRollback));
+        assert_eq!(
+            recover(&storage, floor()),
+            Err(RecoveryError::StateRollback)
+        );
     }
 
     #[test]
@@ -327,7 +350,11 @@ mod tests {
             Err(RecoveryError::StateRollback)
         );
         assert_eq!(
-            persist_transition(&mut storage, floor(), TrustTransition::Revoke(String::new())),
+            persist_transition(
+                &mut storage,
+                floor(),
+                TrustTransition::Revoke(String::new())
+            ),
             Err(RecoveryError::InvalidRevocation)
         );
         assert_eq!(storage.frames.len(), 1);
