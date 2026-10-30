@@ -158,13 +158,7 @@ mod tests {
 
     fn check(registry: &ScriptedRegistry, time: TrustedTimeSnapshot) -> Result<(), TrustError> {
         let payload = b"test-bound-evidence";
-        verify_with_trust_registry(
-            registry,
-            "test-key-1",
-            payload,
-            &signature(payload),
-            time,
-        )
+        verify_with_trust_registry(registry, "test-key-1", payload, &signature(payload), time)
     }
 
     #[test]
