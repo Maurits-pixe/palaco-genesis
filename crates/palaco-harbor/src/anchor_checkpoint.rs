@@ -90,9 +90,7 @@ fn source_id_valid(source_id: &str) -> bool {
 /// are structurally valid. It never means the candidate is trusted or
 /// authorized.
 #[must_use]
-pub fn classify_checkpoint<S: IndependentCheckpointSource>(
-    source: &S,
-) -> CheckpointDecision {
+pub fn classify_checkpoint<S: IndependentCheckpointSource>(source: &S) -> CheckpointDecision {
     match source.read() {
         Ok(CheckpointObservation::Candidate(candidate)) => {
             if source_id_valid(&candidate.source_id) && record_is_valid(&candidate.record) {
@@ -108,8 +106,12 @@ pub fn classify_checkpoint<S: IndependentCheckpointSource>(
         Err(CheckpointSourceError::Unavailable) => {
             CheckpointDecision::Hold(CheckpointHold::Unavailable)
         }
-        Err(CheckpointSourceError::Uncertain) => CheckpointDecision::Hold(CheckpointHold::Uncertain),
-        Err(CheckpointSourceError::Malformed) => CheckpointDecision::Hold(CheckpointHold::Malformed),
+        Err(CheckpointSourceError::Uncertain) => {
+            CheckpointDecision::Hold(CheckpointHold::Uncertain)
+        }
+        Err(CheckpointSourceError::Malformed) => {
+            CheckpointDecision::Hold(CheckpointHold::Malformed)
+        }
     }
 }
 
@@ -151,9 +153,7 @@ mod tests {
     #[test]
     fn structurally_valid_candidate_is_not_yet_trusted() {
         assert_eq!(
-            classify_checkpoint(&Script(Ok(CheckpointObservation::Candidate(
-                candidate()
-            )))),
+            classify_checkpoint(&Script(Ok(CheckpointObservation::Candidate(candidate())))),
             CheckpointDecision::CandidateAccepted(candidate())
         );
     }
