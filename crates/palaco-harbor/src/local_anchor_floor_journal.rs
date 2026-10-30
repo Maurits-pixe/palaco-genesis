@@ -303,7 +303,7 @@ mod tests {
     use ed25519_dalek::{Signer, SigningKey};
     use std::collections::BTreeSet;
     use std::fs;
-    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::{symlink, PermissionsExt};
     use std::path::PathBuf;
     use std::process::Command;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -540,6 +540,73 @@ mod tests {
         );
         assert_eq!(
             dir.open(&key).append_sync(&signed(record(1), &key)),
+            Err(StoreError::IntegrityUncertain)
+        );
+    }
+
+    #[test]
+    fn symlink_and_hardlink_frames_are_rejected_on_recovery() {
+        let key = SigningKey::from_bytes(&[49; 32]);
+        for link_type in ["symlink", "hardlink"] {
+            let dir = TestDir::new();
+            let frame = dir.0.join(LocalAnchorFloorJournal::filename(1));
+            dir.open(&key)
+                .append_sync(&signed(record(1), &key))
+                .unwrap_or_else(|_| panic!("append"));
+            let target = dir.0.join("saved-frame");
+            fs::rename(&frame, &target).unwrap_or_else(|_| panic!("rename"));
+            if link_type == "symlink" {
+                symlink(&target, &frame).unwrap_or_else(|_| panic!("symlink"));
+            } else {
+                fs::hard_link(&target, &frame).unwrap_or_else(|_| panic!("hardlink"));
+            }
+            assert_eq!(
+                dir.open(&key).recover(None),
+                Err(StoreError::IntegrityUncertain)
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_anchor_names_cannot_be_ignored() {
+        let key = SigningKey::from_bytes(&[49; 32]);
+        for name in [
+            "anchor-1.frame",
+            "anchor-00000000000000000001.backup",
+            "anchor-0000000000000000000x.frame",
+        ] {
+            let dir = TestDir::new();
+            dir.open(&key)
+                .append_sync(&signed(record(1), &key))
+                .unwrap_or_else(|_| panic!("append"));
+            fs::write(dir.0.join(name), b"untrusted")
+                .unwrap_or_else(|_| panic!("write malformed"));
+            assert_eq!(
+                dir.open(&key).recover(None),
+                Err(StoreError::IntegrityUncertain)
+            );
+        }
+    }
+
+    #[test]
+    fn permissive_directory_and_oversized_frame_fail_closed() {
+        let key = SigningKey::from_bytes(&[49; 32]);
+        let dir = TestDir::new();
+        fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o777))
+            .unwrap_or_else(|_| panic!("permissions"));
+        assert!(matches!(
+            LocalAnchorFloorJournal::open(&dir.0, key.verifying_key().to_bytes()),
+            Err(StoreError::Unavailable)
+        ));
+        fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o700))
+            .unwrap_or_else(|_| panic!("permissions"));
+        fs::write(
+            dir.0.join(LocalAnchorFloorJournal::filename(1)),
+            vec![0_u8; 64_001],
+        )
+        .unwrap_or_else(|_| panic!("oversized frame"));
+        assert_eq!(
+            dir.open(&key).recover(None),
             Err(StoreError::IntegrityUncertain)
         );
     }
