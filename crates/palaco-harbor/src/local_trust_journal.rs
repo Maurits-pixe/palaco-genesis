@@ -41,7 +41,9 @@ impl LocalTrustJournal {
         )
         .map_err(|_| JournalError::Unavailable)?;
         let directory = File::from(fd);
-        let meta = directory.metadata().map_err(|_| JournalError::Unavailable)?;
+        let meta = directory
+            .metadata()
+            .map_err(|_| JournalError::Unavailable)?;
         if !meta.is_dir() || meta.permissions().mode() & 0o077 != 0 {
             return Err(JournalError::Unavailable);
         }
@@ -109,7 +111,11 @@ impl LocalTrustJournal {
         let trust_epoch = parse_number(lines.next())?;
         let highest_trusted_time_ms = parse_number(lines.next())?;
         let count = parse_number(lines.next())?;
-        if sequence == 0 || trust_epoch == 0 || highest_trusted_time_ms == 0 || count > MAX_KEYS as u64 {
+        if sequence == 0
+            || trust_epoch == 0
+            || highest_trusted_time_ms == 0
+            || count > MAX_KEYS as u64
+        {
             return Err(JournalError::Corrupt);
         }
         let mut revoked_keys = BTreeSet::new();
@@ -280,7 +286,9 @@ mod tests {
     #[test]
     fn actual_files_survive_reopen_and_replay() {
         let dir = TestDir::new();
-        dir.open().append_sync(&genesis()).unwrap_or_else(|_| panic!("write genesis"));
+        dir.open()
+            .append_sync(&genesis())
+            .unwrap_or_else(|_| panic!("write genesis"));
         let state = persist_transition(
             &mut dir.open(),
             floor(),
@@ -309,10 +317,14 @@ mod tests {
     #[test]
     fn missing_middle_frame_and_symlink_fail_closed() {
         let dir = TestDir::new();
-        dir.open().append_sync(&genesis()).unwrap_or_else(|_| panic!("genesis"));
+        dir.open()
+            .append_sync(&genesis())
+            .unwrap_or_else(|_| panic!("genesis"));
         let mut third = genesis();
         third.sequence = 3;
-        dir.open().append_sync(&third).unwrap_or_else(|_| panic!("third"));
+        dir.open()
+            .append_sync(&third)
+            .unwrap_or_else(|_| panic!("third"));
         assert_eq!(dir.open().load(), Err(JournalError::Corrupt));
 
         let dir = TestDir::new();
