@@ -269,7 +269,9 @@ impl LocalAnchorFloorJournal {
                     .write(true)
                     .open(self.root.join(Self::filename(1)))
                     .map_err(|_| StoreError::IntegrityUncertain)?;
-                frame.set_len(1).map_err(|_| StoreError::IntegrityUncertain)?;
+                frame
+                    .set_len(1)
+                    .map_err(|_| StoreError::IntegrityUncertain)?;
             }
             Ok("replace") => {
                 let source = self.root.join(Self::filename(1));
