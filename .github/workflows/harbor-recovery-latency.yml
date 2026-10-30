@@ -11,7 +11,11 @@ permissions:
 jobs:
   observe:
     name: Opt-in host-local recovery observation
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
       - name: Checkout exact PR candidate
@@ -33,6 +37,7 @@ jobs:
             echo "head_sha=$(git rev-parse HEAD)"
             echo "timestamp_utc=$(date -u +%FT%TZ)"
             echo "runner_os=${RUNNER_OS}"
+            echo "runner_image=${{ matrix.os }}"
             echo "kernel=$(uname -sr)"
             echo "filesystem=$(stat -f -c %T .)"
             echo "rustc=$(rustc --version)"
@@ -55,7 +60,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: harbor-recovery-latency-${{ github.run_id }}-${{ github.run_attempt }}
+          name: harbor-recovery-latency-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             harbor-latency-environment.txt
             harbor-latency-raw.log
