@@ -132,7 +132,8 @@ mod tests {
         }
 
         fn store(&self) -> LocalFileReplayStore {
-            LocalFileReplayStore::open(&self.0).unwrap_or_else(|_| panic!("test directory available"))
+            LocalFileReplayStore::open(&self.0)
+                .unwrap_or_else(|_| panic!("test directory available"))
         }
     }
 
@@ -201,7 +202,8 @@ mod tests {
             .create_new(true)
             .open(path)
             .unwrap_or_else(|_| panic!("create"));
-        file.write_all(&MAGIC[..5]).unwrap_or_else(|_| panic!("partial write"));
+        file.write_all(&MAGIC[..5])
+            .unwrap_or_else(|_| panic!("partial write"));
         file.sync_all().unwrap_or_else(|_| panic!("sync"));
         assert_eq!(
             store.reserve("partial", "binding"),
@@ -219,6 +221,11 @@ mod tests {
             store.reserve(&"x".repeat(129), "key"),
             Err(ReservationError::Unavailable)
         );
-        assert_eq!(fs::read_dir(&directory.0).unwrap_or_else(|_| panic!("list")).count(), 0);
+        assert_eq!(
+            fs::read_dir(&directory.0)
+                .unwrap_or_else(|_| panic!("list"))
+                .count(),
+            0
+        );
     }
 }
