@@ -230,7 +230,10 @@ mod tests {
         next.revision += 1;
         next.sequence += 1;
         next.chain_digest = [2; 32];
-        assert_eq!(client.compare_and_swap(&before, &next), Ok(SwapOutcome::Committed));
+        assert_eq!(
+            client.compare_and_swap(&before, &next),
+            Ok(SwapOutcome::Committed)
+        );
         assert_eq!(client.load(), Ok(next));
     }
 
