@@ -59,12 +59,6 @@ impl StagingEndpoint {
         let host = origin
             .strip_prefix("https://")
             .ok_or(EndpointError::MalformedOrigin)?;
-        if !hostname_valid(host) || origin.contains(['/', '?', '#', '@', ':'][..].as_ref()) {
-            // The colon in the scheme is expected and excluded below.
-            if !hostname_valid(host) {
-                return Err(EndpointError::MalformedOrigin);
-            }
-        }
         if !hostname_valid(host) {
             return Err(EndpointError::MalformedOrigin);
         }
