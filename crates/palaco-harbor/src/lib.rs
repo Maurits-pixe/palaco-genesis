@@ -11,6 +11,7 @@ use std::collections::HashSet;
 #[cfg(unix)]
 pub mod local_file_replay;
 pub mod replay_contract;
+pub mod evidence_digest;
 
 /// Information asserted by the caller, not independently verified by Harbor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
