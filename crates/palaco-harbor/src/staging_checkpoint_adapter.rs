@@ -59,7 +59,9 @@ impl<T: StagingCheckpointTransport> IndependentCheckpoint for StagingCheckpointA
 mod tests {
     use super::{StagingCheckpointAdapter, StagingCheckpointTransport, StagingTransportError};
     use crate::anchor_cas::AnchorRecord;
-    use crate::independent_checkpoint::{reconcile, CheckpointError, CheckpointGate, IndependentCheckpoint};
+    use crate::independent_checkpoint::{
+        reconcile, CheckpointError, CheckpointGate, IndependentCheckpoint,
+    };
     use crate::remote_anchor_adapter::{attestation_bytes, AttestedAnchor};
     use crate::staging_endpoint_policy::{StagingEndpoint, TransportObservation};
     use ed25519_dalek::{Signer, SigningKey};
@@ -82,7 +84,8 @@ mod tests {
             &self,
             origin: &str,
             timeout_ms: u32,
-        ) -> Result<(TransportObservation<'_>, Option<AttestedAnchor>), StagingTransportError> {
+        ) -> Result<(TransportObservation<'_>, Option<AttestedAnchor>), StagingTransportError>
+        {
             if origin != "https://checkpoint.example.test" || timeout_ms != 5_000 {
                 return Err(StagingTransportError::InvalidResponse);
             }
@@ -118,7 +121,10 @@ mod tests {
     fn signed(key: &SigningKey) -> AttestedAnchor {
         let record = record();
         let bytes = attestation_bytes(&record).unwrap_or_else(|_| panic!("encode"));
-        AttestedAnchor { record, signature: key.sign(&bytes).to_bytes() }
+        AttestedAnchor {
+            record,
+            signature: key.sign(&bytes).to_bytes(),
+        }
     }
 
     fn transport(response: AttestedAnchor) -> FakeTransport {
@@ -156,7 +162,11 @@ mod tests {
         );
         let wrong = SigningKey::from_bytes(&[62; 32]);
         assert_eq!(
-            reconcile(Ok(Some(record())), &client, &wrong.verifying_key().to_bytes()),
+            reconcile(
+                Ok(Some(record())),
+                &client,
+                &wrong.verifying_key().to_bytes()
+            ),
             CheckpointGate::InvalidSignature
         );
     }
@@ -166,13 +176,22 @@ mod tests {
         let key = SigningKey::from_bytes(&[61; 32]);
         let mut remote = transport(signed(&key));
         remote.redirected = true;
-        assert_eq!(adapter(remote).read(), Err(CheckpointError::InvalidResponse));
+        assert_eq!(
+            adapter(remote).read(),
+            Err(CheckpointError::InvalidResponse)
+        );
         let mut remote = transport(signed(&key));
         remote.tls_verified = false;
-        assert_eq!(adapter(remote).read(), Err(CheckpointError::InvalidResponse));
+        assert_eq!(
+            adapter(remote).read(),
+            Err(CheckpointError::InvalidResponse)
+        );
         let mut remote = transport(signed(&key));
         remote.pin = [8; 32];
-        assert_eq!(adapter(remote).read(), Err(CheckpointError::InvalidResponse));
+        assert_eq!(
+            adapter(remote).read(),
+            Err(CheckpointError::InvalidResponse)
+        );
     }
 
     #[test]
@@ -180,13 +199,22 @@ mod tests {
         let key = SigningKey::from_bytes(&[61; 32]);
         let mut remote = transport(signed(&key));
         remote.observed_origin = "https://other.example.test";
-        assert_eq!(adapter(remote).read(), Err(CheckpointError::InvalidResponse));
+        assert_eq!(
+            adapter(remote).read(),
+            Err(CheckpointError::InvalidResponse)
+        );
         let mut remote = transport(signed(&key));
         remote.status = 302;
-        assert_eq!(adapter(remote).read(), Err(CheckpointError::InvalidResponse));
+        assert_eq!(
+            adapter(remote).read(),
+            Err(CheckpointError::InvalidResponse)
+        );
         let mut remote = transport(signed(&key));
         remote.bytes = 65_537;
-        assert_eq!(adapter(remote).read(), Err(CheckpointError::InvalidResponse));
+        assert_eq!(
+            adapter(remote).read(),
+            Err(CheckpointError::InvalidResponse)
+        );
     }
 
     #[test]
