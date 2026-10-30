@@ -40,9 +40,9 @@ fn hostname_valid(host: &str) -> bool {
                 && label.len() <= 63
                 && !label.starts_with('-')
                 && !label.ends_with('-')
-                && label.bytes().all(|byte| {
-                    byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-'
-                })
+                && label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
         })
         && host.contains('.')
 }
@@ -97,9 +97,7 @@ impl StagingEndpoint {
         if observation.redirected {
             return Err(EndpointError::RedirectForbidden);
         }
-        if !observation.tls_verified
-            || observation.final_origin != self.origin
-        {
+        if !observation.tls_verified || observation.final_origin != self.origin {
             return Err(EndpointError::TlsUnverified);
         }
         if observation.peer_spki_sha256 != self.spki_sha256 {
@@ -176,7 +174,12 @@ mod tests {
             );
         }
         assert_eq!(
-            StagingEndpoint::new("https://other.example.test", &["checkpoint.example.test"], [7; 32], 5000),
+            StagingEndpoint::new(
+                "https://other.example.test",
+                &["checkpoint.example.test"],
+                [7; 32],
+                5000
+            ),
             Err(EndpointError::UnapprovedHost)
         );
     }
@@ -184,12 +187,22 @@ mod tests {
     #[test]
     fn empty_pin_and_unbounded_timeouts_are_denied() {
         assert_eq!(
-            StagingEndpoint::new("https://checkpoint.example.test", &["checkpoint.example.test"], [0; 32], 5000),
+            StagingEndpoint::new(
+                "https://checkpoint.example.test",
+                &["checkpoint.example.test"],
+                [0; 32],
+                5000
+            ),
             Err(EndpointError::InvalidPin)
         );
         for timeout in [0, 99, 10_001] {
             assert_eq!(
-                StagingEndpoint::new("https://checkpoint.example.test", &["checkpoint.example.test"], [7; 32], timeout),
+                StagingEndpoint::new(
+                    "https://checkpoint.example.test",
+                    &["checkpoint.example.test"],
+                    [7; 32],
+                    timeout
+                ),
                 Err(EndpointError::InvalidTimeout)
             );
         }
@@ -200,7 +213,10 @@ mod tests {
         let policy = endpoint();
         let mut response = observed(policy.origin());
         response.redirected = true;
-        assert_eq!(policy.assess(&response), Err(EndpointError::RedirectForbidden));
+        assert_eq!(
+            policy.assess(&response),
+            Err(EndpointError::RedirectForbidden)
+        );
         response.redirected = false;
         response.tls_verified = false;
         assert_eq!(policy.assess(&response), Err(EndpointError::TlsUnverified));
@@ -217,12 +233,21 @@ mod tests {
         let policy = endpoint();
         let mut response = observed(policy.origin());
         response.body_len = MAX_RESPONSE_BYTES + 1;
-        assert_eq!(policy.assess(&response), Err(EndpointError::ResponseTooLarge));
+        assert_eq!(
+            policy.assess(&response),
+            Err(EndpointError::ResponseTooLarge)
+        );
         response.body_len = 0;
         response.status = 302;
-        assert_eq!(policy.assess(&response), Err(EndpointError::UnexpectedStatus));
+        assert_eq!(
+            policy.assess(&response),
+            Err(EndpointError::UnexpectedStatus)
+        );
         response.status = 200;
         response.content_type = "text/html";
-        assert_eq!(policy.assess(&response), Err(EndpointError::UnexpectedContentType));
+        assert_eq!(
+            policy.assess(&response),
+            Err(EndpointError::UnexpectedContentType)
+        );
     }
 }
