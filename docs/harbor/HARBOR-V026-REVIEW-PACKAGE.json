@@ -1,0 +1,162 @@
+{
+  "schema_id": "PALACO-HARBOR-REVIEW-PACKAGE-v1",
+  "record_kind": "REVIEW_PREPARATION",
+  "decision": "NOT_REVIEWED",
+  "authorization": "NONE",
+  "repository": "Maurits-pixe/palaco-genesis",
+  "object": "HARBOR",
+  "candidate": "v0.26-key-bound-hardening",
+  "prepared_at": "2026-10-31",
+  "baseline": {
+    "head_sha": "d7a00da579276ef669fa1e95e4f27bb2ede0284f",
+    "base_sha": "ccf785858406bbc4f83e9008feb6e5e991b87c89",
+    "pr": 186,
+    "branch": "codex/harbor-key-bound-hardening-v0-26"
+  },
+  "dependency_chain": [
+    {
+      "pr": 158,
+      "version": "v0.22",
+      "head_sha": "0e4224dd3f243034f9ed178f9668a098df9c0302",
+      "role": "signed-floor-evidence-verifier"
+    },
+    {
+      "pr": 160,
+      "version": "v0.23",
+      "head_sha": "a277a2111a546e49d5fd138d0ed3efff0c8f4c68",
+      "role": "governed-floor-bridge"
+    },
+    {
+      "pr": 165,
+      "version": "v0.24",
+      "head_sha": "776aaf46a35e7e0d47dc2e7879f437cee1b5b8a9",
+      "role": "independent-security-review-dossier"
+    },
+    {
+      "pr": 168,
+      "version": "v0.25",
+      "head_sha": "ccf785858406bbc4f83e9008feb6e5e991b87c89",
+      "role": "key-bound-floor-signature-envelope"
+    },
+    {
+      "pr": 186,
+      "version": "v0.26",
+      "head_sha": "d7a00da579276ef669fa1e95e4f27bb2ede0284f",
+      "role": "key-bound-boundary-hardening"
+    }
+  ],
+  "ci_evidence": [
+    {
+      "pr": 158,
+      "head_sha": "0e4224dd3f243034f9ed178f9668a098df9c0302",
+      "workflow": "PALACO CI",
+      "run_id": 41021250582,
+      "conclusion": "success",
+      "harbor_tests": {
+        "passed": 108,
+        "failed": 0
+      }
+    },
+    {
+      "pr": 160,
+      "head_sha": "a277a2111a546e49d5fd138d0ed3efff0c8f4c68",
+      "workflow": "PALACO CI",
+      "run_id": 41023082840,
+      "conclusion": "success",
+      "harbor_tests": {
+        "passed": 115,
+        "failed": 0
+      }
+    },
+    {
+      "pr": 160,
+      "head_sha": "a277a2111a546e49d5fd138d0ed3efff0c8f4c68",
+      "workflow": "Citadel A1 interoperability",
+      "run_id": 41023082943,
+      "conclusion": "success",
+      "harbor_tests": null
+    },
+    {
+      "pr": 165,
+      "head_sha": "776aaf46a35e7e0d47dc2e7879f437cee1b5b8a9",
+      "workflow": "PALACO CI",
+      "run_id": 41028772360,
+      "conclusion": "success",
+      "harbor_tests": null
+    },
+    {
+      "pr": 165,
+      "head_sha": "776aaf46a35e7e0d47dc2e7879f437cee1b5b8a9",
+      "workflow": "Citadel A1 interoperability",
+      "run_id": 41028772472,
+      "conclusion": "success",
+      "harbor_tests": null
+    },
+    {
+      "pr": 168,
+      "head_sha": "ccf785858406bbc4f83e9008feb6e5e991b87c89",
+      "workflow": "PALACO CI",
+      "run_id": 41029057776,
+      "conclusion": "success",
+      "harbor_tests": {
+        "passed": 121,
+        "failed": 0
+      }
+    },
+    {
+      "pr": 168,
+      "head_sha": "ccf785858406bbc4f83e9008feb6e5e991b87c89",
+      "workflow": "Citadel A1 interoperability",
+      "run_id": 41029057867,
+      "conclusion": "success",
+      "harbor_tests": null
+    },
+    {
+      "pr": 186,
+      "head_sha": "d7a00da579276ef669fa1e95e4f27bb2ede0284f",
+      "workflow": "PALACO CI",
+      "run_id": 41192279197,
+      "conclusion": "success",
+      "harbor_tests": {
+        "passed": 124,
+        "failed": 0
+      }
+    },
+    {
+      "pr": 186,
+      "head_sha": "d7a00da579276ef669fa1e95e4f27bb2ede0284f",
+      "workflow": "Citadel A1 interoperability",
+      "run_id": 41192279192,
+      "conclusion": "success",
+      "harbor_tests": null
+    }
+  ],
+  "claims_to_review": [
+    "The v0.22 signature binds the source identifier, complete AnchorRecord, trust epoch, observed timestamp, freshness and predecessor monotonicity.",
+    "The v0.23 bridge fail-closed checks the expected source/key pair, registry lifecycle, trusted time, trust epoch, freshness and predecessor monotonicity.",
+    "The v0.25 envelope signs the exact external key identifier together with the complete signed floor payload.",
+    "The v0.26 hardening rejects malformed key identifiers before registry access and uses one pinned registry record for both governed and key-bound checks."
+  ],
+  "open_gates": [
+    "Independent human security review of the exact candidate chain.",
+    "Trusted key enrollment and an authenticated source-to-key authority mapping.",
+    "Durable monotone trusted-time and anti-rollback persistence across crash and recovery.",
+    "Replay, quorum and external checkpoint-service semantics.",
+    "Tenant isolation and production storage controls.",
+    "Windows filesystem and cross-platform recovery matrix.",
+    "Separate merge, release, runtime-authorization and activation decisions."
+  ],
+  "not_claimed": [
+    "A valid signature is not authority.",
+    "CI success is not human review.",
+    "The review package is not an approval, release, runtime authorization or activation receipt.",
+    "No production service, trust root or key enrollment is provisioned by this package."
+  ],
+  "human_review_record": {
+    "reviewer_id": null,
+    "reviewed_at": null,
+    "decision": "NOT_REVIEWED",
+    "findings": [],
+    "signature": null
+  }
+}
