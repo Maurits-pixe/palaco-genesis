@@ -504,6 +504,140 @@ test('live service: a real commit 503 rolls back mutation without restoring loca
   assert.equal(f.calls.length, 5, 'manual recovery commits exactly once without automatic calls')
 })
 
+test('live service: persisted watermark rejects a backwards clock after restart without restoring local authority', { timeout: 15000 }, async t => {
+  const f = await fixture(t)
+  const s = f.session
+  const snapshot = () => Object.fromEntries(['tickets', 'commands', 'audit', 'clock_state'].map(table =>
+    [table, f.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]))
+  await f.run('ticket')
+  assert.equal(s.error.value, '')
+  const held = { ...s.ticket.value }
+  const path = `/v1/tickets/${held.id}`
+  assert.equal(held.not_before, now)
+  assert.ok(held.expires_at > 1100)
+  assert.equal(s.canCommit.value, true)
+
+  f.setServerNow(1100)
+  await bounded(s.checkCurrentTicket(), 'advance durable watermark with active status')
+  assert.deepEqual(f.calls.at(-1), { path, method: 'GET', status: 200 })
+  assert.equal(s.error.value, '')
+  assert.equal(s.outcome.value.id, held.id)
+  assert.equal(s.outcome.value.status, 'active')
+  assert.equal(s.outcome.value.checked_at, 1100)
+  assert.equal(s.outcome.value.record, null)
+  assert.deepEqual(s.ticket.value, held)
+  const persisted = snapshot()
+  assert.equal(persisted.tickets.length, 1)
+  assert.equal(persisted.tickets[0].id, held.id)
+  assert.equal(persisted.tickets[0].consumed, 0)
+  assert.equal(persisted.tickets[0].revoked, 0)
+  assert.deepEqual(persisted.commands, [])
+  assert.deepEqual(persisted.audit, [])
+  assert.equal(persisted.clock_state[0].last_time, 1100)
+
+  f.setServerNow(now)
+  await bounded(f.restart(), 'restart with backwards server clock')
+  assert.deepEqual(snapshot(), persisted, 'the same SQLite journal retains its watermark across restart')
+  assert.equal(f.calls.length, 2, 'restart sends no session requests')
+  assert.equal(Date.now(), now)
+  assert.equal(s.now.value, now)
+  assert.deepEqual(s.ticket.value, held)
+  assert.equal(s.canCommit.value, true)
+  assert.equal(productionApi.ticketUsable(held, s.command.value), true)
+  await f.run('commit')
+  assert.deepEqual(f.calls.at(-1), { path: '/v1/commands', method: 'POST', status: 503 })
+  assert.match(s.error.value, /De service kan dit verzoek niet verwerken/)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, held.id)
+  assert.equal(s.lookupId.value, held.id)
+  assert.equal(s.outcome.value, null)
+  assert.equal(s.outcomeReceivedAt.value, null)
+  assert.equal(s.revocationUncertain.value, false)
+  assert.deepEqual(s.commands.value, [])
+  assert.deepEqual(snapshot(), persisted, 'backwards-clock denial changes no ticket, command, audit or clock')
+  assert.equal(f.calls.length, 3, '503 triggers neither retry nor automatic status lookup')
+  await f.run('commit')
+  assert.equal(f.calls.length, 3, 'consumed local authority cannot submit again')
+
+  await bounded(s.checkLastSubmission(), 'backwards-clock submission status')
+  assert.deepEqual(f.calls.at(-1), { path, method: 'GET', status: 503 })
+  assert.match(s.error.value, /De service kan dit verzoek niet verwerken/)
+  assert.equal(s.outcome.value, null)
+  assert.equal(s.outcomeReceivedAt.value, null)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, held.id)
+  assert.equal(s.revocationUncertain.value, false)
+  assert.deepEqual(s.commands.value, [])
+  assert.deepEqual(snapshot(), persisted, 'failed explicit lookup preserves the durable watermark and empty journal')
+  assert.equal(f.calls.length, 4, 'failed lookup triggers no automatic requests')
+
+  // Clock recovery, not clearing an unhealthy-storage latch, makes explicit requests safe again.
+  f.setServerNow(1100)
+  await bounded(s.checkLastSubmission(), 'safe-clock active submission status')
+  assert.deepEqual(f.calls.at(-1), { path, method: 'GET', status: 200 })
+  assert.equal(s.error.value, '')
+  assert.equal(s.outcome.value.id, held.id)
+  assert.equal(s.outcome.value.status, 'active')
+  assert.equal(s.outcome.value.checked_at, 1100)
+  assert.equal(s.outcome.value.revoked, false)
+  assert.equal(s.outcome.value.record, null)
+  assert.equal(s.outcomeReceivedAt.value, now)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, held.id)
+  assert.deepEqual(s.commands.value, [])
+  assert.deepEqual(snapshot(), persisted)
+  await f.run('commit')
+  assert.equal(f.calls.length, 5, 'an active status snapshot cannot restore authority or permit recommit')
+
+  await f.run('ticket')
+  assert.equal(s.error.value, '')
+  const fresh = { ...s.ticket.value }
+  assert.notEqual(fresh.id, held.id)
+  assert.equal(fresh.not_before, 1100)
+  assert.equal(f.calls.length, 6, 'new manual issuance does not automatically commit')
+  // Advance local preflight only for the new ticket's later not-before boundary.
+  t.mock.method(Date, 'now', () => 1100)
+  s.now.value = 1100
+  assert.equal(s.canCommit.value, true)
+  await f.run('commit')
+  assert.deepEqual(f.calls.at(-1), { path: '/v1/commands', method: 'POST', status: 201 })
+  assert.equal(s.error.value, '')
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, fresh.id)
+  assert.equal(s.commands.value.length, 1)
+  const record = { ...s.commands.value[0] }
+  assert.equal(record.command, fresh.command)
+  assert.equal(record.committed_at, 1100)
+  assert.deepEqual({ ...f.db.prepare('SELECT id, command, committed_at FROM commands WHERE ticket_id = ?').get(fresh.id) }, record)
+  assert.deepEqual({ ...f.db.prepare('SELECT consumed, revoked FROM tickets WHERE id = ?').get(fresh.id) },
+    { consumed: 1, revoked: 0 })
+  assert.deepEqual(f.db.prepare('SELECT * FROM tickets WHERE id = ?').get(held.id), persisted.tickets[0])
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM tickets').get().count, 2)
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM commands').get().count, 1)
+  const audit = f.db.prepare('SELECT ticket_id, action FROM audit').all()
+  assert.equal(audit.length, 1)
+  assert.equal(audit[0].ticket_id, fresh.id)
+  assert.equal(audit[0].action, 'journal:append')
+  assert.equal(f.db.prepare('SELECT last_time FROM clock_state WHERE id = 1').get().last_time, 1100)
+  await f.run('commit')
+  assert.equal(f.count('POST', '/v1/tickets'), 2)
+  assert.equal(f.count('POST', '/v1/commands'), 2)
+  assert.equal(f.count('GET', path), 3)
+  assert.deepEqual(f.calls, [
+    { path: '/v1/tickets', method: 'POST', status: 201 },
+    { path, method: 'GET', status: 200 },
+    { path: '/v1/commands', method: 'POST', status: 503 },
+    { path, method: 'GET', status: 503 },
+    { path, method: 'GET', status: 200 },
+    { path: '/v1/tickets', method: 'POST', status: 201 },
+    { path: '/v1/commands', method: 'POST', status: 201 },
+  ], 'manual recovery commits once with no automatic requests or retries')
+})
+
 test('live service: failed watermark durability latches revocation and NEO verification fail-closed', { timeout: 15000 }, async t => {
   const f = await fixture(t)
   const s = f.session

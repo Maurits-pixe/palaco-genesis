@@ -466,6 +466,12 @@ en opent dezelfde SQLite-database opnieuw. De nog levende frontend-sessie
 bevestigt de bestaande vastlegging uitsluitend via expliciete statuscontrole
 en logboekverversing, zonder dubbele inzending of herstelde lokale toestemming.
 Dit test een nette serviceherstart, geen procescrash, browserherstart of stroomuitval.
+Een aanvullende herstarttest zet de serverklok terug achter de opgeslagen
+tijdsmarkering. Commits en statuscontrole blijven dan geweigerd, zonder
+ticketverbruik of commandorecord op de server. Nadat de klok de markering
+weer bereikt, werkt expliciete statuscontrole; die herstelt geen lokaal
+verbruikte toestemming. Nieuwe toestemming en vastlegging vereisen aparte
+handmatige acties. Dit simuleert klokterugloop, geen kloksynchronisatie.
 Installeer voor beide BASTION-testsuites vooraf de dependencies van zowel `services/bastion-core`
 als `apps/bastion-frontend` met `npm ci --prefix <map>`; de bestaande
 installatiestap hierboven doet dit al voor alle Node-projecten. Beide BASTION-CI-jobs
