@@ -6,6 +6,8 @@ on:
       - ".github/workflows/harbor-recovery-latency.yml"
       - ".github/scripts/validate_harbor_latency.py"
       - ".github/scripts/test_validate_harbor_latency.py"
+      - ".github/scripts/verify_harbor_pr_head.py"
+      - ".github/scripts/test_verify_harbor_pr_head.py"
 
 permissions:
   contents: read
@@ -35,11 +37,11 @@ jobs:
         run: |
           set -euo pipefail
           actual="$(git rev-parse --verify HEAD)"
-          if [[ ! "${EXPECTED_HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]] || [[ "${actual}" != "${EXPECTED_HEAD_SHA}" ]]; then
-            echo "::error::PR head SHA mismatch; refusing benchmark and evidence generation"
-            exit 1
-          fi
-          echo "Exact PR head verified: ${actual}"
+          python3 .github/scripts/verify_harbor_pr_head.py "$EXPECTED_HEAD_SHA" "$actual"
+
+      - name: Verify guard accepts exact SHA and rejects mismatches
+        shell: bash
+        run: python3 -m unittest discover -s .github/scripts -p 'test_verify_harbor_pr_head.py' -v
 
       - name: Capture host and source envelope
         shell: bash
