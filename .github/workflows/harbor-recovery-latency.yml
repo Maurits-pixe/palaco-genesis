@@ -28,6 +28,19 @@ jobs:
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Fail closed unless checked-out commit equals PR head
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse --verify HEAD)"
+          if [[ ! "${EXPECTED_HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]] || [[ "${actual}" != "${EXPECTED_HEAD_SHA}" ]]; then
+            echo "::error::PR head SHA mismatch; refusing benchmark and evidence generation"
+            exit 1
+          fi
+          echo "Exact PR head verified: ${actual}"
+
       - name: Capture host and source envelope
         shell: bash
         run: |
