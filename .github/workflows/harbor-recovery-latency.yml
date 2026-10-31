@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - ".github/workflows/harbor-recovery-latency.yml"
+      - ".github/scripts/validate_harbor_latency.py"
+      - ".github/scripts/test_validate_harbor_latency.py"
 
 permissions:
   contents: read
@@ -46,38 +48,16 @@ jobs:
             echo "source_blob=$(git rev-parse HEAD:crates/palaco-harbor/src/local_anchor_floor_journal.rs)"
           } | tee harbor-latency-environment.txt
 
+      - name: Run validator positive and negative regression tests
+        shell: bash
+        run: python3 -m unittest discover -s .github/scripts -p 'test_validate_harbor_latency.py' -v
+
       - name: Execute ignored benchmark and retain output
         shell: bash
         run: |
           set -euo pipefail
           cargo test -p palaco-harbor --lib recovery_latency_characterization -- --ignored --nocapture 2>&1 | tee harbor-latency-raw.log
-          python3 - <<'PY'
-          import pathlib
-          import re
-
-          raw = pathlib.Path("harbor-latency-raw.log").read_text()
-          lines = [line for line in raw.splitlines() if line.startswith("HARBOR_RECOVER ")]
-          pattern = re.compile(
-              r"HARBOR_RECOVER frames=(1|16|64) runs=7 "
-              r"min_us=([0-9]+) median_us=([0-9]+) max_us=([0-9]+)"
-          )
-          if len(lines) != 3:
-              raise SystemExit("expected exactly 3 recovery results")
-          seen = set()
-          for line in lines:
-              match = pattern.fullmatch(line)
-              if match is None:
-                  raise SystemExit("malformed recovery result")
-              frame, low, median, high = (int(value) for value in match.groups())
-              if frame in seen or not low <= median <= high:
-                  raise SystemExit("duplicate frame group or invalid duration ordering")
-              seen.add(frame)
-          if seen != {1, 16, 64}:
-              raise SystemExit("missing recovery frame group")
-          pathlib.Path("harbor-latency-summary.txt").write_text(
-              "\\n".join(lines) + "\\n"
-          )
-          PY
+          python3 .github/scripts/validate_harbor_latency.py harbor-latency-raw.log harbor-latency-summary.txt
           cat harbor-latency-summary.txt
           sha256sum harbor-latency-environment.txt harbor-latency-raw.log harbor-latency-summary.txt | tee harbor-latency-digests.txt
 
