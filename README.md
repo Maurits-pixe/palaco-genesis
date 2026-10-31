@@ -140,6 +140,9 @@ van browsergeheugen.
 Met **Wis sessie en tekst** kun je ook tijdens
 een lopend AETHER-verzoek direct token, tekst en resultaten uit de interface
 wissen. Vertraagde antwoorden uit die sessie worden niet opnieuw getoond.
+Token en oude sessiestaat zijn gewist voordat het verzoek zijn abortmelding
+ontvangt. Een directe abortcallback ziet geen oude credentials; een daarna
+expliciet gestarte actie wordt niet door een tweede wisstap overschreven.
 Dit stopt alleen het lokale wachten: een al verstuurd opslagverzoek kan
 server-side toch zijn uitgevoerd, zonder dat je het record-ID hebt ontvangen.
 Wissen verwijdert geen opgeslagen records. Dien een onzekere opslag niet

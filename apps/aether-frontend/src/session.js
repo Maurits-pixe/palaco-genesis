@@ -35,8 +35,12 @@ export function useRecordSession({ create = createRecord, read = readRecord, eve
   }, { flush: 'sync' })
 
   function clearSession() {
-    invalidate()
-    token.value = ''
+    if (!disposed && token.value !== '') {
+      token.value = ''
+    } else {
+      token.value = ''
+      invalidate()
+    }
   }
 
   function clearReadResult() {
