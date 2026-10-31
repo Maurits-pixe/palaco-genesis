@@ -29,6 +29,31 @@ class GuardBoundaryTests(unittest.TestCase):
         self.assertFalse(reached)
         self.assertIn("refusing benchmark", result.stderr)
 
+    def test_empty_expected_blocks_following_step(self):
+        result, reached = self.run_boundary("", A)
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(reached)
+
+    def test_empty_actual_blocks_following_step(self):
+        result, reached = self.run_boundary(A, "")
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(reached)
+
+    def test_malformed_expected_blocks_following_step(self):
+        result, reached = self.run_boundary("not-a-sha", A)
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(reached)
+
+    def test_short_actual_blocks_following_step(self):
+        result, reached = self.run_boundary(A, B[:7])
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(reached)
+
+    def test_whitespace_actual_blocks_following_step(self):
+        result, reached = self.run_boundary(A, A + "\n")
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(reached)
+
     def test_correct_commit_allows_following_step(self):
         result, reached = self.run_boundary(A, A)
         self.assertEqual(result.returncode, 0)
