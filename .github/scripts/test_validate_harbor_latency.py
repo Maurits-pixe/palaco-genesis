@@ -31,5 +31,13 @@ class ValidatorTests(unittest.TestCase):
         self.assertRaises(ValueError, validate, "\n".join([A, B + " junk", C]))
 
 
+    def test_reject_zero_minimum(self):
+        self.assertRaises(ValueError, validate, "\n".join([A.replace("min_us=10", "min_us=0"), B, C]))
+
+    def test_reject_all_zero_durations(self):
+        zero = A.replace("min_us=10 median_us=11 max_us=12", "min_us=0 median_us=0 max_us=0")
+        self.assertRaises(ValueError, validate, "\n".join([zero, B, C]))
+
+
 if __name__ == "__main__":
     unittest.main()

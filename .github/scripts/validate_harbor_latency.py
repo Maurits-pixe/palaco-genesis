@@ -21,7 +21,7 @@ def validate(raw: str) -> str:
         if match is None:
             raise ValueError("malformed recovery result")
         frame, low, median, high = map(int, match.groups())
-        if frame in seen or not (0 <= low <= median <= high):
+        if frame in seen or not (0 < low <= median <= high):
             raise ValueError("duplicate frame group or invalid duration ordering")
         seen.add(frame)
     if seen != EXPECTED:
