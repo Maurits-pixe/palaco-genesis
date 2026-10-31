@@ -15,7 +15,7 @@ class GuardBoundaryTests(unittest.TestCase):
     def run_boundary(self, expected, actual):
         with tempfile.TemporaryDirectory() as folder:
             marker = pathlib.Path(folder) / "benchmark-reached"
-            script = 'set -euo pipefail; "$1" "$2" "$3"; touch "$5"'
+            script = 'set -euo pipefail; "$1" "$2" "$3" "$4"; touch "$5"'
             result = subprocess.run(
                 ["bash", "-c", script, "guard-boundary", sys.executable,
                  str(GUARD), expected, actual, str(marker)],
