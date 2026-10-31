@@ -466,6 +466,10 @@ en opent dezelfde SQLite-database opnieuw. De nog levende frontend-sessie
 bevestigt de bestaande vastlegging uitsluitend via expliciete statuscontrole
 en logboekverversing, zonder dubbele inzending of herstelde lokale toestemming.
 Dit test een nette serviceherstart, geen procescrash, browserherstart of stroomuitval.
+Een overeenkomstige intrekkingstest behoudt de lokale onzekerheidsblokkering
+na een verloren succesvol intrekkingsantwoord en serviceherstart. Pas
+expliciete statuscontrole bevestigt de opgeslagen intrekking en verwijdert
+de lokale ticketstaat, zonder herhaalde intrekking of nieuwe toestemming.
 Een aanvullende herstarttest zet de serverklok terug achter de opgeslagen
 tijdsmarkering. Commits en statuscontrole blijven dan geweigerd, zonder
 ticketverbruik of commandorecord op de server. Nadat de klok de markering

@@ -968,6 +968,139 @@ test('live service: explicit lookup finds a lost successful commit after service
   assertPersisted()
 })
 
+test('live service: lost successful revocation survives service recreation until explicit status clears uncertainty', { timeout: 15000 }, async t => {
+  const f = await fixture(t)
+  const s = f.session
+  const snapshot = () => Object.fromEntries(['tickets', 'audit', 'commands', 'clock_state'].map(table =>
+    [table, f.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]))
+  await f.run('ticket')
+  assert.equal(s.error.value, '')
+  const held = { ...s.ticket.value }
+  const path = `/v1/tickets/${held.id}`
+  assert.equal(s.canCommit.value, true)
+  f.loseNext('DELETE', path)
+  await f.run('revoke')
+  assert.equal(f.losses, 1)
+  assert.match(s.error.value, /Geen geldig antwoord/)
+  assert.deepEqual(f.calls, [
+    { path: '/v1/tickets', method: 'POST', status: 201 },
+    { path, method: 'DELETE', status: 200 },
+  ])
+  assert.deepEqual(s.ticket.value, held)
+  assert.equal(s.revocationUncertain.value, true)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, '')
+  assert.equal(s.outcome.value, null)
+  const persisted = snapshot()
+  assert.equal(persisted.tickets.length, 1)
+  assert.equal(persisted.tickets[0].id, held.id)
+  assert.equal(persisted.tickets[0].revoked, 1)
+  assert.equal(persisted.tickets[0].consumed, 0)
+  assert.deepEqual(persisted.commands, [])
+  assert.equal(persisted.audit.length, 1)
+  assert.equal(persisted.audit[0].ticket_id, held.id)
+  assert.equal(persisted.audit[0].action, 'ticket:revoke')
+  assert.equal(persisted.clock_state.length, 1)
+  assert.equal(persisted.clock_state[0].last_time, now)
+
+  await f.run('ticket')
+  await f.run('commit')
+  assert.equal(f.calls.length, 2, 'uncertainty blocks issuance and commit without retry or lookup')
+  assert.deepEqual(s.ticket.value, held)
+  assert.equal(s.revocationUncertain.value, true)
+  assert.deepEqual(snapshot(), persisted)
+
+  const previousOrigin = f.origin
+  await bounded(f.restart(), 'restart after lost successful revocation')
+  assert.notEqual(f.origin, previousOrigin)
+  assert.equal(f.session, s)
+  assert.equal(f.scope.active, true)
+  assert.equal(f.intervals.size, 1)
+  assert.equal(getEventListeners(f.eventTarget, 'pagehide').length, 1)
+  assert.equal(s.token.value, token)
+  assert.equal(s.command.value, held.command)
+  assert.deepEqual(s.ticket.value, held)
+  assert.equal(s.revocationUncertain.value, true)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, '')
+  assert.equal(s.outcome.value, null)
+  assert.deepEqual(s.commands.value, [])
+  assert.equal(s.realtimeStatus.value, 'disconnected')
+  assert.equal(f.sockets.length, 0)
+  assert.equal(f.witness, undefined)
+  assert.equal(f.calls.length, 2, 'service recreation sends no automatic requests')
+  assert.deepEqual(snapshot(), persisted, 'the same SQLite database retains the full revocation snapshot')
+
+  await f.run('ticket')
+  await f.run('commit')
+  assert.equal(f.calls.length, 2, 'held uncertainty still blocks issuance and commit after restart')
+  assert.deepEqual(s.ticket.value, held)
+  assert.equal(s.revocationUncertain.value, true)
+  assert.equal(s.canCommit.value, false)
+  assert.deepEqual(snapshot(), persisted)
+
+  const externalCalls = []
+  await assert.rejects(bounded(productionApi.commitCommand(held, held.command, token, async (path, options) => {
+    const response = await f.externalFetch(path, options)
+    externalCalls.push({ path, method: options.method, status: response.status })
+    return response
+  }), 'external revoked ticket commit after restart'), /Geen toestemming/)
+  assert.deepEqual(externalCalls, [{ path: '/v1/commands', method: 'POST', status: 403 }])
+  assert.equal(f.calls.length, 2, 'the direct enforcement probe is not a session request')
+  assert.deepEqual(s.ticket.value, held)
+  assert.equal(s.revocationUncertain.value, true)
+  assert.deepEqual(snapshot(), persisted, 'denied old authority changes no ticket, audit, command or fixed clock')
+
+  await bounded(s.checkCurrentTicket(), 'revoked ticket status after service recreation')
+  assert.deepEqual(f.calls.at(-1), { path, method: 'GET', status: 200 })
+  assert.equal(s.error.value, '')
+  assert.equal(s.outcome.value.id, held.id)
+  assert.equal(s.outcome.value.status, 'revoked')
+  assert.equal(s.outcome.value.checked_at, now)
+  assert.equal(s.outcome.value.revoked, true)
+  assert.equal(s.outcome.value.record, null)
+  assert.equal(s.outcomeReceivedAt.value, now)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.revocationUncertain.value, false)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, '')
+  assert.deepEqual(s.commands.value, [])
+  assert.deepEqual(snapshot(), persisted, 'explicit status neither repeats revocation nor changes the durable snapshot')
+  await f.run('commit')
+  assert.equal(f.calls.length, 3, 'terminal status does not restore the old authority or automatically commit')
+
+  await f.run('ticket')
+  assert.equal(s.error.value, '')
+  const fresh = { ...s.ticket.value }
+  assert.notEqual(fresh.id, held.id)
+  assert.equal(s.revocationUncertain.value, false)
+  assert.equal(s.canCommit.value, true)
+  assert.equal(s.lastSubmissionId.value, '')
+  assert.deepEqual(s.commands.value, [])
+  const afterIssuance = snapshot()
+  assert.equal(afterIssuance.tickets.length, 2)
+  assert.deepEqual(afterIssuance.tickets.find(row => row.id === held.id), persisted.tickets[0])
+  assert.equal(afterIssuance.tickets.find(row => row.id === fresh.id).revoked, 0)
+  assert.equal(afterIssuance.tickets.find(row => row.id === fresh.id).consumed, 0)
+  assert.deepEqual(afterIssuance.audit, persisted.audit)
+  assert.deepEqual(afterIssuance.commands, persisted.commands)
+  assert.deepEqual(afterIssuance.clock_state, persisted.clock_state)
+  assert.deepEqual(f.calls, [
+    { path: '/v1/tickets', method: 'POST', status: 201 },
+    { path, method: 'DELETE', status: 200 },
+    { path, method: 'GET', status: 200 },
+    { path: '/v1/tickets', method: 'POST', status: 201 },
+  ])
+  assert.equal(f.count('POST', '/v1/tickets'), 2)
+  assert.equal(f.count('DELETE', path), 1)
+  assert.equal(f.count('GET', path), 1)
+  assert.equal(f.count('POST', '/v1/commands'), 0)
+  assert.equal(f.count('GET', '/v1/commands'), 0)
+  assert.equal(f.calls.length, 4, 'only fresh manual issuance grants authority, without automatic commit')
+  assert.equal(externalCalls.length, 1)
+  assert.equal(f.losses, 1)
+})
+
 test('live service: a lost successful revocation blocks authority until explicit terminal status permits new issuance', { timeout: 15000 }, async t => {
   const f = await fixture(t)
   const s = f.session
