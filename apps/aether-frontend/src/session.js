@@ -1,18 +1,24 @@
 import { getCurrentScope, onScopeDispose, ref, watch } from 'vue'
 import { createRecord, readRecord } from './api.js'
 
-export function useRecordSession({ create = createRecord, read = readRecord, eventTarget = globalThis.window } = {}) {
+export function useRecordSession({ create = createRecord, read = readRecord, eventTarget = globalThis.window, getNow = Date.now } = {}) {
   const token = ref('')
   const plaintext = ref('')
   const recordId = ref('')
   const lastCreatedId = ref('')
   const result = ref(null)
+  const resultReceivedAt = ref(null)
   const busy = ref('')
   const message = ref('')
   const error = ref('')
   let activeRequest = null
   let feedbackAction = ''
   let disposed = false
+
+  function resetResult() {
+    result.value = null
+    resultReceivedAt.value = null
+  }
 
   function invalidate() {
     const previous = activeRequest
@@ -22,7 +28,7 @@ export function useRecordSession({ create = createRecord, read = readRecord, eve
     plaintext.value = ''
     recordId.value = ''
     lastCreatedId.value = ''
-    result.value = null
+    resetResult()
     message.value = ''
     error.value = ''
     previous?.abort()
@@ -49,7 +55,7 @@ export function useRecordSession({ create = createRecord, read = readRecord, eve
     activeRequest = null
     feedbackAction = ''
     busy.value = ''
-    result.value = null
+    resetResult()
     message.value = ''
     error.value = ''
     previous?.abort()
@@ -73,7 +79,7 @@ export function useRecordSession({ create = createRecord, read = readRecord, eve
     feedbackAction = action
     const isCurrent = () => !disposed && activeRequest === controller
     busy.value = action
-    result.value = null
+    resetResult()
     error.value = ''
     message.value = ''
     try {
@@ -87,6 +93,15 @@ export function useRecordSession({ create = createRecord, read = readRecord, eve
       } else {
         const record = await read(recordId.value.trim(), token.value, undefined, controller.signal)
         if (!isCurrent()) return
+        let receivedAt = null
+        try {
+          const now = getNow()
+          if (Number.isSafeInteger(now) && now >= 0 && now <= 8640000000000000) receivedAt = now
+        } catch {
+          // A local clock failure must not discard a successful read.
+        }
+        if (!isCurrent()) return
+        resultReceivedAt.value = receivedAt
         result.value = record
         message.value = 'Record opgehaald.'
       }
@@ -106,5 +121,5 @@ export function useRecordSession({ create = createRecord, read = readRecord, eve
     return perform('read')
   }
 
-  return { token, plaintext, recordId, lastCreatedId, result, busy, message, error, perform, readLastCreated, clearReadResult, clearSession, dispose }
+  return { token, plaintext, recordId, lastCreatedId, result, resultReceivedAt, busy, message, error, perform, readLastCreated, clearReadResult, clearSession, dispose }
 }

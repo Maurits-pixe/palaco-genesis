@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { effectScope } from 'vue'
+import { computed, effectScope, ref } from 'vue'
 import { useRecordSession } from '../src/session.js'
 
 function deferred() {
@@ -10,7 +10,7 @@ function deferred() {
   return { promise, resolve, reject }
 }
 
-function setup(t, eventTarget = new EventTarget()) {
+function setup(t, eventTarget = new EventTarget(), options = {}) {
   const calls = []
   const send = (action) => (input, token, fetcher, signal) => {
     const pending = deferred()
@@ -18,7 +18,7 @@ function setup(t, eventTarget = new EventTarget()) {
     return pending.promise
   }
   const scope = effectScope()
-  const session = scope.run(() => useRecordSession({ create: send('create'), read: send('read'), eventTarget }))
+  const session = scope.run(() => useRecordSession({ create: send('create'), read: send('read'), eventTarget, ...options }))
   t.after(() => scope.stop())
   session.token.value = 'test-only-input'
   session.plaintext.value = 'private text'
@@ -27,11 +27,225 @@ function setup(t, eventTarget = new EventTarget()) {
 }
 
 function state(session) {
-  return Object.fromEntries(['token', 'plaintext', 'recordId', 'lastCreatedId', 'result', 'busy', 'message', 'error']
+  return Object.fromEntries(['token', 'plaintext', 'recordId', 'lastCreatedId', 'result', 'resultReceivedAt', 'busy', 'message', 'error']
     .map(key => [key, session[key].value]))
 }
 
-const empty = { token: '', plaintext: '', recordId: '', lastCreatedId: '', result: null, busy: '', message: '', error: '' }
+const empty = { token: '', plaintext: '', recordId: '', lastCreatedId: '', result: null, resultReceivedAt: null, busy: '', message: '', error: '' }
+
+test('default clock stamps a successful read only after it resolves, not create or failure', async (t) => {
+  let now = 100
+  let clockCalls = 0
+  t.mock.method(Date, 'now', () => { clockCalls++; return now })
+  const { session, calls } = setup(t)
+  assert.equal(session.resultReceivedAt.value, null)
+  const pending = session.perform('read')
+  assert.equal(clockCalls, 0)
+  assert.equal(session.resultReceivedAt.value, null)
+  now = 200
+  calls[0].resolve({ id: 'record-1', plaintext: 'loaded' })
+  await pending
+  assert.equal(clockCalls, 1)
+  assert.equal(session.resultReceivedAt.value, 200)
+  const failed = session.perform('read')
+  assert.equal(session.result.value, null)
+  assert.equal(session.resultReceivedAt.value, null)
+  calls[1].reject(new Error('read failed'))
+  await failed
+  const created = session.perform('create')
+  calls[2].resolve({ id: 'created' })
+  await created
+  assert.equal(clockCalls, 1)
+  assert.equal(session.result.value, null)
+  assert.equal(session.resultReceivedAt.value, null)
+})
+
+for (const now of [0, 1, 1700000000123, 8640000000000000]) {
+  test(`injected clock accepts Date-representable receipt ${now}`, async (t) => {
+    let clockCalls = 0
+    const { session, calls } = setup(t, undefined, { getNow: () => { clockCalls++; return now } })
+    const pending = session.perform('read')
+    assert.equal(clockCalls, 0)
+    calls[0].resolve({ id: 'record-1', plaintext: 'loaded' })
+    await pending
+    assert.equal(clockCalls, 1)
+    assert.equal(session.resultReceivedAt.value, now)
+    assert.equal(session.result.value.plaintext, 'loaded')
+    assert.equal(session.message.value, 'Record opgehaald.')
+    assert.equal(session.error.value, '')
+    assert.equal(session.busy.value, '')
+  })
+}
+
+const invalidClocks = [
+  ['null', null], ['undefined', undefined], ['numeric string', '1700000000123'],
+  ['empty string', ''], ['negative', -1], ['fraction', 1.5], ['NaN', NaN],
+  ['Infinity', Infinity], ['negative Infinity', -Infinity], ['bigint', 0n],
+  ['symbol', Symbol('clock')], ['outside Date range', 8640000000000001],
+  ['unsafe integer', Number.MAX_SAFE_INTEGER + 1], ['boolean', false],
+  ['Date object', new Date(0)], ['boxed number', new Number(0)],
+  ['coercion trap', { valueOf() { throw new Error('must not coerce') } }],
+]
+for (const [label, now] of invalidClocks) {
+  test(`invalid local clock (${label}) leaves a successful read visible without a receipt`, async (t) => {
+    const { session, calls } = setup(t, undefined, { getNow: () => now })
+    const pending = session.perform('read')
+    calls[0].resolve({ id: 'record-1', plaintext: 'loaded' })
+    await pending
+    assert.equal(session.resultReceivedAt.value, null)
+    assert.deepEqual(session.result.value, { id: 'record-1', plaintext: 'loaded' })
+    assert.equal(session.message.value, 'Record opgehaald.')
+    assert.equal(session.error.value, '')
+    assert.equal(session.busy.value, '')
+  })
+}
+
+test('throwing local clock cannot turn a successful read into an error', async (t) => {
+  const { session, calls } = setup(t, undefined, { getNow: () => { throw new Error('clock failed') } })
+  const pending = session.perform('read')
+  calls[0].resolve({ id: 'record-1', plaintext: 'loaded' })
+  await pending
+  assert.equal(session.resultReceivedAt.value, null)
+  assert.equal(session.result.value.plaintext, 'loaded')
+  assert.equal(session.message.value, 'Record opgehaald.')
+  assert.equal(session.error.value, '')
+  assert.equal(session.busy.value, '')
+})
+
+for (const cleanup of ['retry read', 'create', 'selective clear', 'ID edit', 'token clear', 'session clear', 'pagehide', 'dispose', 'scope']) {
+  test(`${cleanup} synchronously clears a loaded result and its receipt together`, async (t) => {
+    const { session, calls, eventTarget, scope } = setup(t, undefined, { getNow: () => 0 })
+    session.lastCreatedId.value = 'confirmed'
+    const loaded = session.perform('read')
+    calls[0].resolve({ id: 'record-1', plaintext: 'loaded' })
+    await loaded
+    assert.equal(session.resultReceivedAt.value, 0)
+    const before = state(session)
+    let pending
+    if (cleanup === 'retry read') pending = session.perform('read')
+    else if (cleanup === 'create') pending = session.perform('create')
+    else if (cleanup === 'selective clear') session.clearReadResult()
+    else if (cleanup === 'ID edit') session.recordId.value = 'other'
+    else if (cleanup === 'token clear') session.token.value = ''
+    else if (cleanup === 'session clear') session.clearSession()
+    else if (cleanup === 'pagehide') eventTarget.dispatchEvent(pageTransition('pagehide', true))
+    else if (cleanup === 'dispose') session.dispose()
+    else scope.stop()
+    assert.equal(session.result.value, null)
+    assert.equal(session.resultReceivedAt.value, null)
+    if (['retry read', 'create', 'selective clear', 'ID edit'].includes(cleanup)) {
+      assert.equal(session.token.value, before.token)
+      assert.equal(session.plaintext.value, before.plaintext)
+      assert.equal(session.lastCreatedId.value, before.lastCreatedId)
+    } else assert.deepEqual(state(session), empty)
+    if (pending) {
+      calls[1].reject(new Error('request failed'))
+      await pending
+      assert.equal(session.result.value, null)
+      assert.equal(session.resultReceivedAt.value, null)
+    }
+  })
+}
+
+test('trim-equivalent ID edits retain the result and receipt without reading the clock again', async (t) => {
+  let clockCalls = 0
+  const { session, calls } = setup(t, undefined, { getNow: () => { clockCalls++; return 0 } })
+  const pending = session.perform('read')
+  calls[0].resolve({ id: 'record-1', plaintext: 'loaded' })
+  await pending
+  const before = state(session)
+  session.recordId.value = ' \trecord-1\n '
+  assert.deepEqual(state(session), { ...before, recordId: ' \trecord-1\n ' })
+  assert.equal(clockCalls, 1)
+  assert.equal(calls.length, 1)
+})
+
+for (const cleanup of ['selective clear', 'ID edit', 'token clear', 'pagehide', 'dispose']) {
+  for (const settleFirst of ['stale', 'current']) {
+    test(`stale read after ${cleanup}, ${settleFirst} first, never reads the clock or replaces the receipt`, async (t) => {
+      let clockCalls = 0
+      const { session, calls, eventTarget } = setup(t, undefined, { getNow: () => ++clockCalls })
+      const stale = session.perform('read')
+      if (cleanup === 'selective clear') session.clearReadResult()
+      else if (cleanup === 'ID edit') session.recordId.value = 'next-id'
+      else if (cleanup === 'token clear') session.token.value = ''
+      else if (cleanup === 'pagehide') eventTarget.dispatchEvent(pageTransition('pagehide', true))
+      else session.dispose()
+      let current
+      if (cleanup !== 'dispose') {
+        session.token.value = 'new-token'
+        session.recordId.value = 'next-id'
+        current = session.perform('read')
+      }
+      if (settleFirst === 'current' && current) {
+        calls[1].resolve({ id: 'next-id', plaintext: 'current' })
+        await current
+      }
+      const before = state(session)
+      const count = clockCalls
+      calls[0].resolve({ id: 'old-id', plaintext: 'stale' })
+      await stale
+      assert.deepEqual(state(session), before)
+      assert.equal(clockCalls, count)
+      if (settleFirst === 'stale' && current) {
+        calls[1].resolve({ id: 'next-id', plaintext: 'current' })
+        await current
+      }
+      assert.equal(clockCalls, current ? 1 : 0)
+      assert.equal(session.resultReceivedAt.value, current ? 1 : null)
+    })
+  }
+}
+
+for (const cleanup of ['session clear', 'selective clear', 'token clear', 'ID edit', 'pagehide', 'dispose']) {
+  for (const throws of [false, true]) {
+    test(`reentrant clock ${cleanup}, throwing=${throws}, cannot resurrect read state`, async (t) => {
+      let session, eventTarget, atClear
+      const fixture = setup(t, undefined, { getNow: () => {
+        if (cleanup === 'session clear') session.clearSession()
+        else if (cleanup === 'selective clear') session.clearReadResult()
+        else if (cleanup === 'token clear') session.token.value = ''
+        else if (cleanup === 'ID edit') session.recordId.value = 'next-id'
+        else if (cleanup === 'pagehide') eventTarget.dispatchEvent(pageTransition('pagehide', true))
+        else session.dispose()
+        atClear = state(session)
+        if (throws) throw new Error('clock failed after clear')
+        return 123
+      } })
+      session = fixture.session
+      eventTarget = fixture.eventTarget
+      const pending = session.perform('read')
+      fixture.calls[0].resolve({ id: 'record-1', plaintext: 'must not return' })
+      await pending
+      assert.deepEqual(state(session), atClear)
+      assert.equal(session.result.value, null)
+      assert.equal(session.resultReceivedAt.value, null)
+      assert.equal(session.message.value, '')
+      assert.equal(session.error.value, '')
+      assert.equal(fixture.calls[0].signal.aborted, true)
+    })
+  }
+}
+
+test('receipt UI formats epoch zero and maximum Date safely and explains local-only manual refresh', async () => {
+  const source = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const expression = source.match(/const resultReceivedAtIso = (computed\([^\n]+\))/)?.[1]
+  assert.ok(expression)
+  const resultReceivedAt = ref(null)
+  const formatted = new Function('computed', 'resultReceivedAt', `return ${expression}`)(computed, resultReceivedAt)
+  assert.equal(formatted.value, null)
+  resultReceivedAt.value = 0
+  assert.equal(formatted.value, '1970-01-01T00:00:00.000Z')
+  resultReceivedAt.value = 8640000000000000
+  assert.equal(formatted.value, '+275760-09-13T00:00:00.000Z')
+  resultReceivedAt.value = null
+  assert.equal(formatted.value, null)
+  assert.match(source, /<div v-if="result" class="result">[\s\S]*Lokaal ontvangen:[\s\S]*<time v-if="resultReceivedAtIso !== null" :datetime="resultReceivedAtIso">\{\{ resultReceivedAtIso \}\}<\/time>\s*<span v-else>Niet beschikbaar<\/span>[\s\S]*<\/div>/)
+  assert.match(source, /lokale klok, niet van de server/)
+  assert.match(source, /geen audit- of aanmaaktijd en geen garantie dat de inhoud actueel is/)
+  assert.match(source, /Geen timers of automatische verversing; haal het record zelf opnieuw op/)
+  assert.doesNotMatch(source, /setInterval|setTimeout|v-html/)
+})
 
 for (const cleanup of ['clear', 'empty-token clear', 'pagehide', 'persisted pagehide', 'token replacement']) {
   for (const action of ['read', 'create']) {
@@ -45,6 +259,7 @@ for (const cleanup of ['clear', 'empty-token clear', 'pagehide', 'persisted page
           session.lastCreatedId.value = 'old-confirmed'
           const stale = session.perform(action)
           session.result.value = { id: 'old-id', plaintext: 'old result' }
+          session.resultReceivedAt.value = 42
           session.message.value = 'old message'
           session.error.value = 'old error'
           const next = action === 'read' ? 'create' : 'read'
@@ -280,7 +495,7 @@ test('changing the loaded result ID clears only read state synchronously without
   const before = state(session)
   session.recordId.value = '  record-2  '
   assert.deepEqual(state(session), {
-    ...before, recordId: '  record-2  ', result: null, message: '', error: '',
+    ...before, recordId: '  record-2  ', result: null, resultReceivedAt: null, message: '', error: '',
   })
   assert.equal(calls.length, 1)
   assert.equal(calls[0].signal.aborted, false)
@@ -431,7 +646,7 @@ test('clearing a loaded read retains credentials, both IDs and unsaved input; re
   await loaded
   const before = state(session)
   session.clearReadResult()
-  const cleared = { ...before, result: null, message: '', error: '' }
+  const cleared = { ...before, result: null, resultReceivedAt: null, message: '', error: '' }
   assert.deepEqual(state(session), cleared)
   session.clearReadResult()
   assert.deepEqual(state(session), cleared)
@@ -527,6 +742,7 @@ for (const guard of ['create', 'disposed']) {
     const pending = session.perform('create')
     if (guard === 'disposed') session.dispose()
     session.result.value = { plaintext: 'unchanged content' }
+    session.resultReceivedAt.value = 42
     session.message.value = 'unchanged message'
     session.error.value = 'unchanged error'
     session.lastCreatedId.value = 'unchanged-id'
@@ -560,7 +776,7 @@ test('read-result clear UI is local, explicitly typed, and enabled only for a re
   assert.match(source, /<input id="record-id"[^>]*aria-describedby="record-id-help"/)
   assert.match(source, /id="record-id-help"[^>]*>Een ander record-ID wist alleen het lokale leesresultaat en stopt lokaal wachten/)
   assert.match(source, /Verwijdert niets uit de database; haalt niet automatisch een record op/)
-  assert.match(source, /<div v-if="result" class="result"><h3>Leesbare inhoud<\/h3><p>Record-ID: \{\{ result\.id \}\}<\/p><pre>\{\{ result\.plaintext \}\}<\/pre><\/div>/)
+  assert.match(source, /<div v-if="result" class="result">\s*<h3>Leesbare inhoud<\/h3><p>Record-ID: \{\{ result\.id \}\}<\/p><pre>\{\{ result\.plaintext \}\}<\/pre>/)
 })
 
 for (const action of ['read', 'create']) {

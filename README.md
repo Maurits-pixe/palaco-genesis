@@ -141,6 +141,13 @@ vertraagde antwoord wordt genegeerd. Tijdens opslaan is deze knop
 uitgeschakeld. Om de inhoud opnieuw te zien moet je het record weer ophalen.
 Dit verwijdert geen serverrecords en garandeert geen veilige overschrijving
 van browsergeheugen.
+Bij gelezen inhoud toont AETHER het lokale ontvangsttijdstip van het
+succesvolle leesantwoord. Dit is geen server-, opslag- of audittijd en
+garandeert niet dat het record actueel is. Een ongeldige of onbeschikbare
+lokale klok toont geen tijdstip, maar verbergt het ontvangen record niet.
+Het tijdstip wordt samen met de inhoud gewist bij een nieuw verzoek,
+een ander record-ID of sessiewissen; equivalente omringende spaties in
+het record-ID veranderen het bestaande leesresultaat niet.
 Met **Wis sessie en tekst** kun je ook tijdens
 een lopend AETHER-verzoek direct token, tekst en resultaten uit de interface
 wissen. Vertraagde antwoorden uit die sessie worden niet opnieuw getoond.

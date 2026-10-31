@@ -1,8 +1,10 @@
 <script setup>
+import { computed } from 'vue'
 import { MAX_PLAINTEXT_BYTES, plaintextBytes } from './api.js'
 import { useRecordSession } from './session.js'
 
-const { token, plaintext, recordId, lastCreatedId, result, busy, message, error, perform, readLastCreated, clearReadResult, clearSession } = useRecordSession()
+const { token, plaintext, recordId, lastCreatedId, result, resultReceivedAt, busy, message, error, perform, readLastCreated, clearReadResult, clearSession } = useRecordSession()
+const resultReceivedAtIso = computed(() => resultReceivedAt.value === null ? null : new Date(resultReceivedAt.value).toISOString())
 </script>
 
 <template>
@@ -56,7 +58,16 @@ const { token, plaintext, recordId, lastCreatedId, result, busy, message, error,
         <p id="clear-read-help" class="muted">Wist alleen het lokale leesresultaat en stopt lokaal wachten op een leesverzoek.
           Verwijdert niets uit de database en garandeert geen veilige geheugenwissing.
           Haal het record opnieuw op om de inhoud weer te bekijken. Token, record-ID's en niet-opgeslagen tekst blijven behouden.</p>
-        <div v-if="result" class="result"><h3>Leesbare inhoud</h3><p>Record-ID: {{ result.id }}</p><pre>{{ result.plaintext }}</pre></div>
+        <div v-if="result" class="result">
+          <h3>Leesbare inhoud</h3><p>Record-ID: {{ result.id }}</p><pre>{{ result.plaintext }}</pre>
+          <p>Lokaal ontvangen:
+            <time v-if="resultReceivedAtIso !== null" :datetime="resultReceivedAtIso">{{ resultReceivedAtIso }}</time>
+            <span v-else>Niet beschikbaar</span>
+          </p>
+          <p class="muted">Dit ontvangsttijdstip komt van de lokale klok, niet van de server.
+            Het is geen audit- of aanmaaktijd en geen garantie dat de inhoud actueel is.
+            Geen timers of automatische verversing; haal het record zelf opnieuw op.</p>
+        </div>
       </section>
     </div>
     <footer>API: 127.0.0.1:8787 · Start met <code>npm run dev</code> op 127.0.0.1:5174.
