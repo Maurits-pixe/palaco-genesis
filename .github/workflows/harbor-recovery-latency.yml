@@ -8,6 +8,7 @@ on:
       - ".github/scripts/test_validate_harbor_latency.py"
       - ".github/scripts/verify_harbor_pr_head.py"
       - ".github/scripts/test_verify_harbor_pr_head.py"
+      - ".github/scripts/test_harbor_guard_boundary.py"
 
 permissions:
   contents: read
@@ -42,6 +43,10 @@ jobs:
       - name: Verify guard accepts exact SHA and rejects mismatches
         shell: bash
         run: python3 -m unittest discover -s .github/scripts -p 'test_verify_harbor_pr_head.py' -v
+
+      - name: Verify guard blocks subsequent shell execution on SHA mismatch
+        shell: bash
+        run: python3 -m unittest discover -s .github/scripts -p 'test_harbor_guard_boundary.py' -v
 
       - name: Capture host and source envelope
         shell: bash
