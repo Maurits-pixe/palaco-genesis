@@ -54,6 +54,26 @@ class GuardBoundaryTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertFalse(reached)
 
+    def test_uppercase_actual_blocks_following_step(self):
+        result, reached = self.run_boundary(A, A.upper())
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(reached)
+
+    def test_non_hex_actual_blocks_following_step(self):
+        result, reached = self.run_boundary(A, "z" + A[1:])
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(reached)
+
+    def test_unicode_lookalike_actual_blocks_following_step(self):
+        result, reached = self.run_boundary(A, "\u0430" + A[1:])
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(reached)
+
+    def test_embedded_whitespace_actual_blocks_following_step(self):
+        result, reached = self.run_boundary(A, A[:20] + " " + A[20:])
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(reached)
+
     def test_correct_commit_allows_following_step(self):
         result, reached = self.run_boundary(A, A)
         self.assertEqual(result.returncode, 0)
