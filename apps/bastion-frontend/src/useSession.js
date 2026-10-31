@@ -115,9 +115,9 @@ export function useSession({
     session++
     const previous = pending
     pending = null
-    previous?.abort()
     busy.value = ''
     disconnect()
+    journalRequest = null
     ticket.value = null
     revocationUncertain.value = false
     commands.value = []
@@ -131,6 +131,7 @@ export function useSession({
     lookupId.value = ''
     resetOutcome()
     lastSubmissionId.value = ''
+    previous?.abort()
   }
   watch(token, resetSession, { flush: 'sync' })
 
@@ -183,9 +184,9 @@ export function useSession({
     eventTarget?.removeEventListener('pagehide', clearSession)
     disposed = true
     stopLookupWatch()
-    resetSession()
-    token.value = ''
     scheduler.clearInterval(clock)
+    token.value = ''
+    resetSession()
   })
 
   function checkCurrentTicket() {

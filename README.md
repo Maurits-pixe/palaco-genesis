@@ -257,6 +257,10 @@ de interface. De realtimeverbinding wordt verbroken en lopende HTTP-verzoeken
 worden lokaal geannuleerd. Vertraagde antwoorden herstellen de gewiste
 sessie niet. Dit trekt geen server-side ticket in en draait geen mutatie
 terug; een al verstuurd verzoek kan alsnog worden verwerkt.
+Bij volledig wissen of tokenwisseling wordt de oude sessiestaat verwijderd
+voordat het lopende verzoek een abortmelding ontvangt. Ook directe
+abortcallbacks kunnen daardoor geen halfgewiste staat waarnemen; oude
+verzoekantwoorden beïnvloeden een daarna expliciet gestarte actie niet.
 Kopieer het ticket-ID vóór het wissen als je een onzekere uitkomst later
 handmatig wilt controleren. Wissen verwijdert ook de lokale blokkering
 bij een onzekere intrekking, maar bewijst niet dat het ticket is ingetrokken.

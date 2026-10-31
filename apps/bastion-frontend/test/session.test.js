@@ -1040,6 +1040,94 @@ test('session help describes browser lifecycle limits and explicit restoration w
   assert.match(app, /geen intrekking van servertickets of terugdraaien/)
 })
 
+for (const reset of ['token', 'pagehide']) {
+  for (const settlement of ['resolve', 'reject']) {
+    for (const newerCompleted of [false, true]) {
+      test(`${reset}: synchronous abort can explicitly start a new session; stale ${settlement}, newer completed=${newerCompleted}`, async t => {
+        const { state, calls, sockets, eventTarget } = fixture(t)
+        state.realtime.connect(state.token.value)
+        sockets[0].handlers.connect()
+        prepare(state, 'list')
+        state.revocationUncertain.value = true
+        const old = state.perform('list')
+        sockets[0].handlers['command:committed'](record('old-buffer'))
+        let newer
+        let aborts = 0
+        calls[0].signal.addEventListener('abort', () => {
+          aborts++
+          assertEmpty(state, reset === 'token' ? 'replacement-token' : '')
+          assertDisconnected(sockets[0])
+          assert.equal(calls.length, 1)
+          if (reset === 'pagehide') state.token.value = 'replacement-token'
+          state.realtime.connect(state.token.value)
+          sockets[1].handlers.connect()
+          state.command.value = 'new draft'
+          state.ttlMs.value = 60
+          state.ticket.value = { ...held(), id: 'new-ticket', command: 'new draft' }
+          state.lookupId.value = 'new-ticket'
+          state.lastSubmissionId.value = 'new-submission'
+          newer = state.perform('list')
+          state.outcome.value = snapshot({ id: 'new-ticket', command: 'new draft' })
+          state.outcomeReceivedAt.value = 1050
+          state.message.value = 'new feedback'
+          state.error.value = 'new warning'
+          state.search.value = 'new'
+          sockets[1].handlers['command:committed'](record('new-buffer'))
+        })
+        if (reset === 'token') state.token.value = 'replacement-token'
+        else eventTarget.dispatchEvent(pageTransition('pagehide', true))
+        assert.equal(aborts, 1)
+        assert.equal(calls.length, 2)
+        assert.equal(state.busy.value, 'list')
+        assert.equal(state.message.value, 'new feedback')
+        assert.equal(state.error.value, 'new warning')
+        assert.equal(state.ticket.value.id, 'new-ticket')
+        assert.equal(state.lookupId.value, 'new-ticket')
+        assert.equal(state.lastSubmissionId.value, 'new-submission')
+        assert.equal(state.outcome.value.id, 'new-ticket')
+        assert.equal(state.outcomeReceivedAt.value, 1050)
+        assert.equal(state.command.value, 'new draft')
+        assert.equal(state.ttlMs.value, 60)
+        assert.equal(state.search.value, 'new')
+        assert.equal(state.token.value, 'replacement-token')
+        assert.ok(calls[1].args.includes('replacement-token'))
+        assert.notEqual(calls[1].signal, calls[0].signal)
+        assert.equal(calls[1].signal.aborted, false)
+        const loaded = [record('new-snapshot')]
+        if (newerCompleted) {
+          calls[1].resolve(loaded)
+          await newer
+        }
+        const before = retainedOutcomeState(state)
+        const feedback = [state.busy.value, state.message.value, state.error.value, state.outcome.value, state.outcomeReceivedAt.value]
+        if (settlement === 'resolve') calls[0].resolve([record('stale-snapshot')])
+        else calls[0].reject(new Error('stale private failure'))
+        await old
+        sockets[0].handlers['command:committed'](record('stale-event'))
+        sockets[0].handlers.connect_error()
+        assert.deepEqual(retainedOutcomeState(state), before)
+        assert.deepEqual([state.busy.value, state.message.value, state.error.value, state.outcome.value, state.outcomeReceivedAt.value], feedback)
+        assert.equal(calls[1].signal.aborted, false)
+        if (!newerCompleted) {
+          sockets[1].handlers['command:committed'](record('after-stale-finally'))
+          calls[1].resolve(loaded)
+          await newer
+        }
+        assert.deepEqual(state.commands.value.map(entry => entry.id),
+          newerCompleted ? ['new-buffer', 'new-snapshot'] : ['after-stale-finally', 'new-buffer', 'new-snapshot'])
+        assert.equal(state.busy.value, '')
+        assert.equal(state.hasLoaded.value, true)
+        assert.equal(state.lastJournalRefreshAt.value, 1050)
+        assert.equal(state.message.value, 'Logboek bijgewerkt.')
+        assert.equal(state.error.value, 'new warning')
+        assert.equal(state.ticket.value.id, 'new-ticket')
+        assert.equal(state.outcome.value.id, 'new-ticket')
+        assert.equal(calls.length, 2)
+      })
+    }
+  }
+}
+
 for (const action of Object.keys(actions)) {
   for (const settlement of ['resolve', 'reject']) {
     for (const reset of ['clear', 'token']) {
@@ -1053,8 +1141,15 @@ for (const action of Object.keys(actions)) {
         assert.equal(calls[0].action, action)
         assert.equal(calls[0].signal.aborted, false)
         assert.equal(state.busy.value, action)
+        let aborts = 0
+        calls[0].signal.addEventListener('abort', () => {
+          aborts++
+          assertEmpty(state, reset === 'clear' ? '' : 'replacement-token')
+          assertDisconnected(socket)
+        })
         if (reset === 'clear') state.clearSession()
         else state.token.value = 'replacement-token'
+        assert.equal(aborts, 1)
         assert.equal(calls[0].signal.aborted, true)
         assertEmpty(state, reset === 'clear' ? '' : 'replacement-token')
         assertDisconnected(socket)
@@ -1103,7 +1198,22 @@ for (const action of Object.keys(actions)) {
       clock.time = 1060
       clock.tick()
       assert.equal(state.now.value, 1060)
+      let aborts = 0
+      calls[0].signal.addEventListener('abort', () => {
+        aborts++
+        assertEmpty(state)
+        assertDisconnected(socket)
+        assert.deepEqual(clock.cleared, [42])
+        state.perform('list')
+        state.checkCurrentTicket()
+        state.checkLastSubmission()
+        state.realtime.connect('not-allowed-during-disposal')
+        assert.equal(calls.length, 1)
+        assert.equal(sockets.length, 1)
+        assertEmpty(state)
+      })
       scope.stop()
+      assert.equal(aborts, 1)
       assertEmpty(state)
       assert.equal(calls[0].signal.aborted, true)
       assert.deepEqual(clock.cleared, [42])
