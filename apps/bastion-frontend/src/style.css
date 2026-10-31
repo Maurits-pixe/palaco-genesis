@@ -1,0 +1,30 @@
+:root { font-family: system-ui, sans-serif; color: #192b36; background: #f3f5f6; line-height: 1.6; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 1060px; margin: auto; padding: 3rem 1.25rem; }
+header { margin-bottom: 2rem; }
+h1 { font-size: clamp(2.5rem, 7vw, 4rem); line-height: 1.1; letter-spacing: -.04em; margin: .5rem 0; }
+h2 { font-size: 1.25rem; margin: 1rem 0; }
+p { margin: .7rem 0; }
+.eyebrow { font-size: .75rem; font-weight: 750; letter-spacing: .16em; color: #496675; }
+.notice { border-left: 3px solid #31756f; padding: 1rem 1.2rem; background: #e6eeec; margin: 1.5rem 0; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.3rem; margin: 1.5rem 0; align-items: start; }
+section { min-width: 0; background: white; border: 1px solid #d7dfe3; padding: 1.5rem; border-radius: .65rem; }
+form { display: grid; gap: .65rem; align-content: start; }
+label { display: block; font-weight: 650; }
+input, textarea { display: block; width: 100%; padding: .65rem; font: inherit; color: inherit; background: #fbfcfc; border: 1px solid #8498a3; border-radius: .3rem; }
+textarea { resize: vertical; }
+button { justify-self: start; font: inherit; font-weight: 650; background: #215a56; color: white; border: 1px solid transparent; border-radius: .35rem; padding: .65rem .9rem; cursor: pointer; margin: .35rem 0; }
+button:hover:not(:disabled) { background: #173e3b; }
+button:disabled { background: #e5e9eb; color: #53626a; cursor: not-allowed; }
+.secondary { background: white; border-color: #8498a3; color: #24444e; }
+.secondary:hover:not(:disabled) { background: #e6eeec; }
+:focus-visible { outline: 3px solid #b76a15; outline-offset: 4px; }
+.muted, footer, small { color: #52656f; font-size: .85rem; }
+.error { color: #8e2525; background: #faeeee; border-left: 3px solid #a33030; padding: 1rem; }
+.result { margin: 1.2rem 0; padding: 1rem; background: #edf3f2; border-radius: .35rem; overflow-wrap: anywhere; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.journal { padding-left: 1.3rem; }
+.journal li { padding: .6rem 0; border-bottom: 1px solid #d7dfe3; overflow-wrap: anywhere; }
+footer { border-top: 1px solid #d7dfe3; padding-top: 1.3rem; margin-top: 2rem; }
+@media (max-width: 650px) { .grid { grid-template-columns: 1fr; } main { padding-top: 2rem; } }
