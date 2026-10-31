@@ -45,6 +45,21 @@ The envelope still does not:
 
 A successful result remains verification evidence only.
 
+## v0.26 hardening slice
+
+The follow-up hardening keeps the envelope draft-only and adds explicit
+boundary evidence:
+
+- malformed key identifiers are rejected before registry access;
+- the registry is resolved exactly once and the returned record is pinned for
+  both the governed and key-bound checks;
+- the key-bound domain is tested as distinct from the inner floor-signature
+  domain.
+
+These checks reduce lookup ambiguity and prevent an invalid identifier from
+being treated as an authority lookup request. They still do not replace an
+independent human security review.
+
 ## Tests
 
 The reference tests cover:

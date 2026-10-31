@@ -111,6 +111,11 @@ pub fn verify_key_bound_floor<R: KeyRegistry>(
             GovernedFloorError::MissingKeyId,
         ));
     }
+    if !id_valid(&candidate.key_id) {
+        return Err(KeyBoundFloorError::Governed(
+            GovernedFloorError::InvalidPolicy,
+        ));
+    }
 
     let record = match registry.resolve(&candidate.key_id) {
         Ok(Some(record)) => record,
@@ -173,6 +178,7 @@ mod tests {
     };
     use crate::trust_registry::{KeyRecord, KeyRegistry, RegistryError, TrustedTimeSnapshot};
     use ed25519_dalek::{Signer, SigningKey};
+    use std::cell::Cell;
     use std::collections::BTreeSet;
 
     struct ScriptedRegistry(Result<Option<KeyRecord>, RegistryError>);
@@ -247,6 +253,60 @@ mod tests {
 
     fn registry() -> ScriptedRegistry {
         ScriptedRegistry(Ok(Some(record())))
+    }
+
+    struct CountingRegistry {
+        record: KeyRecord,
+        resolves: Cell<u32>,
+    }
+
+    impl KeyRegistry for CountingRegistry {
+        fn resolve(&self, key_id: &str) -> Result<Option<KeyRecord>, RegistryError> {
+            self.resolves.set(self.resolves.get() + 1);
+            if self.record.key_id == key_id {
+                Ok(Some(self.record.clone()))
+            } else {
+                Ok(None)
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_key_identifier_fails_before_registry_lookup() {
+        let mut invalid = candidate(1, 1, 180);
+        invalid.key_id = "../escape".to_owned();
+        let registry = CountingRegistry {
+            record: record(),
+            resolves: Cell::new(0),
+        };
+        assert_eq!(
+            verify_key_bound_floor(&registry, &policy(), &invalid, None),
+            Err(KeyBoundFloorError::Governed(
+                GovernedFloorError::InvalidPolicy
+            ))
+        );
+        assert_eq!(registry.resolves.get(), 0);
+    }
+
+    #[test]
+    fn registry_record_is_resolved_once_and_then_pinned() {
+        let registry = CountingRegistry {
+            record: record(),
+            resolves: Cell::new(0),
+        };
+        let result = verify_key_bound_floor(&registry, &policy(), &candidate(1, 1, 180), None);
+        assert!(result.is_ok());
+        assert_eq!(registry.resolves.get(), 1);
+    }
+
+    #[test]
+    fn key_bound_domain_is_distinct_from_inner_floor_domain() {
+        let signed = candidate(1, 1, 180).signed;
+        let inner = signed_floor_bytes(&signed).unwrap_or_else(|_| panic!("floor bytes"));
+        let bound = key_bound_floor_bytes("checkpoint-key-1", &signed)
+            .unwrap_or_else(|_| panic!("bound bytes"));
+        assert_ne!(bound, inner);
+        assert!(bound.starts_with(b"PALACO-HARBOR-KEY-BOUND-FLOOR-v1\0"));
     }
 
     #[test]
