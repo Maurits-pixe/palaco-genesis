@@ -21,6 +21,7 @@ export function useModuleVerification({
     eventTarget?.removeEventListener('pagehide', reset)
     disposed = true
     unschedule(clock)
+    states.value = Object.fromEntries(TRUSTED_MODULES.map(({ id }) => [id, { status: 'idle' }]))
     abortAttempts()
   })
 

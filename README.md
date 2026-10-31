@@ -98,6 +98,10 @@ handmatig opnieuw; oude antwoorden herstellen geen startlinks. Alleen van
 tabblad wisselen wist niets. Browsers leveren `pagehide` niet gegarandeerd,
 bijvoorbeeld bij een procescrash; de bestaande geldigheidscontrole blijft
 onafhankelijk daarvan gelden.
+Bij het opruimen van de NEO-component worden alle goedkeuringen gewist
+voordat lopende verzoeken hun abortmelding ontvangen. Achtergebleven
+sessiereferenties leveren daardoor geen bruikbare startlink meer; late
+antwoorden herstellen de controles niet. Dit is geen server-side intrekking.
 NEO activeert een link alleen na een passend manifest én een gezond
 `/health`-antwoord van dezelfde geconfigureerde backend. Bij onbeschikbaarheid,
 een ongeldig antwoord of een timeout blijft de link uitgeschakeld. De controle

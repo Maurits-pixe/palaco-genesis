@@ -264,17 +264,108 @@ test('scope disposal clears the timer and ignores late successes, failures, and 
   scope.stop()
   assert.ok(signals.every((signal) => signal.aborted))
   assert.deepEqual(cleared, [timer])
+  assert.deepEqual(Object.values(model.states.value), [{ status: 'idle' }, { status: 'idle' }])
+  assert.equal(model.isVerifying.value, false)
+  assertRemaining(model, [null, null])
   const before = structuredClone(JSON.parse(JSON.stringify(model.states.value)))
   setTime(200_000)
   tick()
   pending[0].resolve(evidence(aether, 200_000))
   pending[1].reject(new Error('Late failure'))
   await batch
-  await Promise.all([model.verifyAll(), model.verify(aether), model.reset()])
+  await Promise.all([model.verifyAll(), model.verify(aether), model.reset(), model.resetModule(aether)])
+  scope.stop()
   assert.deepEqual(model.states.value, before)
   assert.equal(model.now.value, 100_000)
   assert.equal(calls.length, 2)
   assert.deepEqual(cleared, [timer])
+})
+
+test('scope disposal removes completed approvals and errors from the retained composable', async (t) => {
+  for (const outcome of ['verified', 'error']) {
+    const { model, calls, pending, scope, timer, cleared } = setup(t)
+    const batch = model.verifyAll()
+    pending[0].resolve(evidence(aether, 100_000))
+    if (outcome === 'verified') pending[1].resolve(evidence(bastion, 100_000))
+    else pending[1].reject(new Error('Offline'))
+    await batch
+    assert.equal(model.states.value.bastion.status, outcome)
+    assert.equal(model.launchableCount.value, outcome === 'verified' ? 2 : 1)
+    const states = model.states
+    scope.stop()
+    assert.equal(model.states, states)
+    assert.deepEqual(Object.values(states.value), [{ status: 'idle' }, { status: 'idle' }])
+    assert.equal(model.launchableCount.value, 0)
+    assert.equal(model.isVerifying.value, false)
+    assertRemaining(model, [null, null])
+    for (const module of TRUSTED_MODULES) {
+      assert.equal(launchUrl(module, states.value[module.id], model.now.value), null)
+    }
+    const idle = states.value
+    model.reset()
+    for (const module of TRUSTED_MODULES) model.resetModule(module)
+    await Promise.all([model.verifyAll(), ...TRUSTED_MODULES.map(model.verify)])
+    scope.stop()
+    assert.equal(states.value, idle)
+    assert.deepEqual(calls, TRUSTED_MODULES)
+    assert.ok(pending.every(({ signal }) => !signal.aborted))
+    assert.deepEqual(cleared, [timer])
+  }
+})
+
+test('partial batch disposal clears every state before abort callbacks and fences stale settlements', async (t) => {
+  for (const settledOutcome of ['verified', 'error']) {
+    for (const lateOutcome of ['success', 'error']) {
+      const { model, calls, pending, scope, timer, cleared, setTime, tick } = setup(t)
+      const batch = model.verifyAll()
+      if (settledOutcome === 'verified') pending[0].resolve(evidence(aether, 100_000))
+      else pending[0].reject(new Error('Offline'))
+      await Promise.resolve()
+      assert.equal(model.states.value.aether.status, settledOutcome)
+      assert.equal(model.isVerifying.value, true)
+      assert.equal(model.launchableCount.value, settledOutcome === 'verified' ? 1 : 0)
+      let observed
+      let reentrant
+      let aborts = 0
+      pending[1].signal.addEventListener('abort', () => {
+        aborts++
+        observed = {
+          states: JSON.parse(JSON.stringify(model.states.value)),
+          count: model.launchableCount.value,
+          verifying: model.isVerifying.value,
+          cleared: [...cleared],
+        }
+        const idle = model.states.value
+        model.reset()
+        for (const module of TRUSTED_MODULES) model.resetModule(module)
+        reentrant = Promise.all([model.verifyAll(), ...TRUSTED_MODULES.map(model.verify)])
+        observed.unchanged = model.states.value === idle
+        observed.requests = calls.length
+      })
+      scope.stop()
+      assert.deepEqual(observed, {
+        states: { aether: { status: 'idle' }, bastion: { status: 'idle' } },
+        count: 0, verifying: false, cleared: [timer], unchanged: true, requests: 2,
+      })
+      assert.equal(pending[0].signal.aborted, false)
+      assert.equal(pending[1].signal.aborted, true)
+      const idle = model.states.value
+      setTime(200_000)
+      tick()
+      if (lateOutcome === 'success') pending[1].resolve(evidence(bastion, 200_000))
+      else pending[1].reject(new Error('Late failure'))
+      await Promise.all([batch, reentrant])
+      scope.stop()
+      assert.equal(model.states.value, idle)
+      assert.deepEqual(Object.values(idle), [{ status: 'idle' }, { status: 'idle' }])
+      assert.equal(model.now.value, 100_000)
+      assert.equal(model.isVerifying.value, false)
+      assertRemaining(model, [null, null])
+      assert.deepEqual(calls, TRUSTED_MODULES)
+      assert.equal(aborts, 1)
+      assert.deepEqual(cleared, [timer])
+    }
+  }
 })
 
 test('module reset removes only its approval and preserves the other approval lifetime and timer', async (t) => {
@@ -438,18 +529,19 @@ test('module reset rejects same-id clones and is a no-op for idle, invalid, and 
   }
   assert.equal(calls.length, 2)
   scope.stop()
+  const disposedStates = model.states.value
   model.resetModule(aether)
   model.resetModule(bastion)
   model.resetModule(aether)
   model.reset()
-  assert.equal(model.states.value, states)
-  assert.equal(states.aether, selected)
+  assert.equal(model.states.value, disposedStates)
+  assert.deepEqual(Object.values(disposedStates), [{ status: 'idle' }, { status: 'idle' }])
   assert.equal(model.now.value, 100_000)
   assert.deepEqual(cleared, [timer])
   pending[0].resolve(evidence(aether, 100_000))
   pending[1].reject(new Error('Disposed'))
   await batch
-  assert.equal(states.aether, selected)
+  assert.equal(model.states.value, disposedStates)
 })
 
 test('module reset invalidates identity and sets idle before synchronous abort callbacks start a fresh attempt', async (t) => {
@@ -573,7 +665,7 @@ test('old finally cannot remove a newer attempt from subsequent reset or disposa
     await fresh
     assert.equal(model.launchableCount.value, 0)
     assertRemaining(model, [null, null])
-    if (!dispose) assert.equal(model.states.value.aether.status, 'idle')
+    assert.equal(model.states.value.aether.status, 'idle')
   }
 })
 
@@ -708,15 +800,22 @@ test('scope disposal removes the exact pagehide listener before timer and reques
     signal.addEventListener('abort', () => {
       assert.deepEqual(removed, listeners)
       assert.equal(cleared.length, 1)
+      assert.deepEqual(Object.values(model.states.value), [{ status: 'idle' }, { status: 'idle' }])
+      assert.equal(model.isVerifying.value, false)
+      assertRemaining(model, [null, null])
     })
   }
   scope.stop()
   assert.deepEqual(removed, listeners)
   eventTarget.dispatchEvent(pageEvent('pagehide', true))
-  assert.ok(Object.values(model.states.value).every(({ status }) => status === 'verifying'))
+  assert.deepEqual(Object.values(model.states.value), [{ status: 'idle' }, { status: 'idle' }])
   pending[0].resolve(evidence(aether, 100_000))
   pending[1].reject(new Error('Disposed'))
   await batch
+  scope.stop()
+  assert.deepEqual(removed, listeners)
+  assert.equal(cleared.length, 1)
+  assert.deepEqual(Object.values(model.states.value), [{ status: 'idle' }, { status: 'idle' }])
 })
 
 test('the default event target is safe without a browser window', () => {
