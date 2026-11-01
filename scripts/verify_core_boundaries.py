@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""FCP-002-CORE-001: enforce the dependency-free PALACO foundational boundaries.
-
-Reads Cargo manifests only; no network, build artifacts, or authorization effects.
-"""
+"""FCP-002-CORE-001: verify protected Cargo workspace dependency boundaries."""
 from __future__ import annotations
 
 import argparse
@@ -15,32 +12,43 @@ DEPENDENCY_SECTIONS = ("dependencies", "dev-dependencies", "build-dependencies")
 
 
 def check_boundaries(root: Path) -> list[str]:
+    root = root.resolve()
     workspace = tomllib.loads((root / "Cargo.toml").read_text(encoding="utf-8"))
     members = workspace["workspace"]["members"]
     manifests = []
     for member in members:
-        path = root / member / "Cargo.toml"
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
-        manifests.append((member, data))
-    internal = {data["package"]["name"] for _, data in manifests}
+        directory = (root / member).resolve()
+        data = tomllib.loads((directory / "Cargo.toml").read_text(encoding="utf-8"))
+        manifests.append((member, directory, data))
+
+    internal_names = {data["package"]["name"] for _, _, data in manifests}
+    internal_dirs = {directory for _, directory, _ in manifests}
+    missing = PROTECTED - internal_names
+    if missing:
+        raise ValueError(f"protected crates missing from workspace: {', '.join(sorted(missing))}")
+
     errors = []
-    for member, data in manifests:
-        name = data["package"]["name"]
-        if name not in PROTECTED:
+    for member, directory, data in manifests:
+        if data["package"]["name"] not in PROTECTED:
             continue
-        for section in DEPENDENCY_SECTIONS:
-            for alias, config in data.get(section, {}).items():
-                actual = config.get("package", alias) if isinstance(config, dict) else alias
-                if actual in internal:
-                    errors.append(f"{member}: {section} references internal crate {actual}")
+        scopes = [(section, data.get(section, {})) for section in DEPENDENCY_SECTIONS]
         for target, target_data in data.get("target", {}).items():
-            for section in DEPENDENCY_SECTIONS:
-                for alias, config in target_data.get(section, {}).items():
-                    actual = config.get("package", alias) if isinstance(config, dict) else alias
-                    if actual in internal:
-                        errors.append(
-                            f"{member}: target {target} {section} references internal crate {actual}"
-                        )
+            scopes.extend(
+                (f"target {target} {section}", target_data.get(section, {}))
+                for section in DEPENDENCY_SECTIONS
+            )
+        for scope, dependencies in scopes:
+            for alias, config in dependencies.items():
+                actual = config.get("package", alias) if isinstance(config, dict) else alias
+                resolved_path = (
+                    (directory / config["path"]).resolve()
+                    if isinstance(config, dict) and "path" in config
+                    else None
+                )
+                if actual in internal_names or resolved_path in internal_dirs:
+                    errors.append(
+                        f"{member}: {scope} references internal crate {actual}"
+                    )
     return sorted(errors)
 
 
@@ -50,7 +58,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         violations = check_boundaries(args.root)
-    except (OSError, KeyError, ValueError, tomllib.TOMLDecodeError) as exc:
+    except (OSError, KeyError, ValueError, TypeError, tomllib.TOMLDecodeError) as exc:
         print(f"FCP-002-CORE-001 ERROR: {exc}", file=sys.stderr)
         return 2
     if violations:
