@@ -34,5 +34,11 @@ jobs:
       - name: cargo test
         run: cargo test --workspace
 
-      - name: Architecture Validation
+      - name: Architecture Validation — workspace
         run: cargo metadata --no-deps --format-version 1 > /dev/null
+
+      - name: Architecture Validation — foundational boundaries
+        run: python3 scripts/verify_core_boundaries.py
+
+      - name: Architecture Validation — negative tests
+        run: python3 -m unittest discover -s tests -p 'test_architecture_boundaries.py'
