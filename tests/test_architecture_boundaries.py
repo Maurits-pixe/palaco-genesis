@@ -1,4 +1,4 @@
-"""Negative and positive tests for FCP-002-CORE-001."""
+"""Positive and negative tests for FCP-002-CORE-001."""
 from pathlib import Path
 import tempfile
 import unittest
@@ -47,6 +47,21 @@ class BoundaryTests(unittest.TestCase):
             foundation_extra="[target.'cfg(unix)'.dev-dependencies]\npalaco-runtime = \"0.1\"\n"
         )
         self.assertTrue(check_boundaries(root))
+
+    def test_path_alias_without_package_fails(self):
+        root = self.make_workspace(
+            foundation_extra='[dependencies]\nobscured = { path = "../palaco-runtime" }\n'
+        )
+        self.assertTrue(check_boundaries(root))
+
+    def test_missing_protected_workspace_member_fails_closed(self):
+        root = self.make_workspace()
+        (root / "Cargo.toml").write_text(
+            '[workspace]\nmembers = ["crates/palaco-foundation", "crates/palaco-runtime"]\n',
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "protected crates missing"):
+            check_boundaries(root)
 
 
 if __name__ == "__main__":
