@@ -5,9 +5,9 @@
 use sha2::{Digest, Sha256};
 
 use crate::{
+    offline_orphan::OrphanState,
     offline_recovery_receipt::{RecoveryIntent, RecoveryIntentReceipt},
     offline_recovery_review::{RecoveryReview, RecoveryReviewState},
-    offline_orphan::OrphanState,
 };
 
 /// Signature evidence, opaque until checked by an approved crypto implementation.
