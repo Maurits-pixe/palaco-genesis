@@ -10,6 +10,8 @@ pub mod vacation_mode;
 pub mod offline_catalog;
 /// Offline generation selection with an explicit confirmation boundary.
 pub mod offline_generation;
+/// Offline chunk integrity verification without disk or network access.
+pub mod offline_integrity;
 
 use palaco_citadel::{BoundaryDisposition, ExecutionBoundary};
 use palaco_foundation::{
