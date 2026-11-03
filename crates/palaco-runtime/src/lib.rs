@@ -14,6 +14,8 @@ pub mod offline_generation;
 pub mod offline_integrity;
 /// Deterministic public offline manifest root, without signature authority.
 pub mod offline_manifest;
+/// Publisher revocation, epoch and trusted-time preflight for offline content.
+pub mod offline_publisher;
 /// Fail-closed candidate signature verification boundary.
 pub mod offline_signature;
 
