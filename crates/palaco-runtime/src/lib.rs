@@ -16,6 +16,8 @@ pub mod offline_integrity;
 pub mod offline_manifest;
 /// Fail-closed candidate signature verification boundary.
 pub mod offline_signature;
+/// Publisher revocation, epoch and trusted-time preflight for offline content.
+pub mod offline_publisher;
 
 use palaco_citadel::{BoundaryDisposition, ExecutionBoundary};
 use palaco_foundation::{
