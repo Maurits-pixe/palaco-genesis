@@ -314,6 +314,14 @@ impl Validatable for ExecutionBoundary {
                 message: "boundary disposition disagrees with governance scope".to_string(),
             });
         }
+        if self.authorization.authorization_id != self.decision.id.0.to_string()
+            || self.authorization.scope != self.decision.authority
+            || self.authorization.provenance != self.decision.provenance
+        {
+            return Err(palaco_foundation::errors::ValidationError::Message {
+                message: "authorization grant disagrees with governance decision".to_string(),
+            });
+        }
         Ok(())
     }
 }
@@ -376,6 +384,15 @@ mod tests {
         BoundaryDisposition, CommitDenialReason, CommitOutcome, ExecutionBoundary,
         InMemoryCommitGate,
     };
+
+    #[test]
+    fn boundary_rejects_tampered_authorization_grant() -> Result<(), &'static str> {
+        let mut boundary = ExecutionBoundary::new(decision(AuthorizationScope::Execute)?);
+        boundary.authorization.scope.capability = "palaco.observe".to_string();
+        assert!(boundary.validate().is_err());
+        assert!(boundary.revalidate(&boundary.decision.context).is_err());
+        Ok(())
+    }
 
     #[test]
     fn boundary_rejects_forged_execute_disposition() -> Result<(), &'static str> {
