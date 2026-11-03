@@ -73,7 +73,7 @@ pub fn verify_staged_public_chunk(
     if !metadata.file_type().is_file() || metadata.len() != expected.bytes as u64 {
         return Err(StagingError::IntegrityFailed);
     }
-    let mut file = File::open(&path).map_err(StagingError::Io)?;
+    let file = File::open(&path).map_err(StagingError::Io)?;
     let mut content = Vec::new();
     file.take((MAX_VERIFIED_CHUNK_BYTES + 1) as u64)
         .read_to_end(&mut content)
