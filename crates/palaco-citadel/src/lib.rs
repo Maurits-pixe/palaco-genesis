@@ -302,7 +302,19 @@ impl ExecutionBoundary {
 
 impl Validatable for ExecutionBoundary {
     fn validate(&self) -> Result<(), palaco_foundation::errors::ValidationError> {
-        self.decision.validate()
+        self.decision.validate()?;
+        let expected = match self.decision.scope {
+            AuthorizationScope::Execute => BoundaryDisposition::Execute,
+            AuthorizationScope::Observe | AuthorizationScope::Advise => {
+                BoundaryDisposition::Escalate
+            }
+        };
+        if self.disposition != expected {
+            return Err(palaco_foundation::errors::ValidationError::Message {
+                message: "boundary disposition disagrees with governance scope".to_string(),
+            });
+        }
+        Ok(())
     }
 }
 
@@ -351,7 +363,7 @@ mod tests {
     use palaco_foundation::{
         evidence::Evidence,
         identity::{NodeId, PolicyVersionId, StateSnapshotId},
-        traits::{CurrentlyAssessable, FailClosed, Revalidatable},
+        traits::{CurrentlyAssessable, FailClosed, Revalidatable, Validatable},
         types::{
             CurrentValidity, DecisionContext, RevalidationOutcome, TrustLevel, ValidityWindow,
         },
@@ -364,6 +376,15 @@ mod tests {
         BoundaryDisposition, CommitDenialReason, CommitOutcome, ExecutionBoundary,
         InMemoryCommitGate,
     };
+
+    #[test]
+    fn boundary_rejects_forged_execute_disposition() -> Result<(), &'static str> {
+        let mut boundary = ExecutionBoundary::new(decision(AuthorizationScope::Observe)?);
+        boundary.disposition = BoundaryDisposition::Execute;
+        assert!(boundary.validate().is_err());
+        assert!(boundary.revalidate(&boundary.decision.context).is_err());
+        Ok(())
+    }
 
     fn grant() -> AuthorizationGrant {
         AuthorizationGrant {
