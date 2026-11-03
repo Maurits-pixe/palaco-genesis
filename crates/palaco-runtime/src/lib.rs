@@ -30,6 +30,8 @@ pub mod offline_recovery_approval;
 pub mod offline_recovery_receipt;
 /// Pure, non-executing orphan recovery review and evidence classification.
 pub mod offline_recovery_review;
+/// Non-authorizing recovery statement and signature-byte binding.
+pub mod offline_recovery_signed;
 /// Fail-closed candidate signature verification boundary.
 pub mod offline_signature;
 /// Create-only local staging for public offline chunk fixtures.
