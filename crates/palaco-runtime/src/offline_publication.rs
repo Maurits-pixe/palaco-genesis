@@ -82,10 +82,7 @@ pub fn publish_test_marker(
 /// Reopen and validate the marker frame after restart.
 ///
 /// Does not establish that the external manifest or content is authentic.
-pub fn read_test_marker(
-    root: &Path,
-    sequence: u64,
-) -> Result<PublicCandidateMarker, MarkerError> {
+pub fn read_test_marker(root: &Path, sequence: u64) -> Result<PublicCandidateMarker, MarkerError> {
     if sequence == 0 {
         return Err(MarkerError::InvalidMarker);
     }
