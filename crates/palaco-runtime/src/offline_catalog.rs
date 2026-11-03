@@ -148,7 +148,10 @@ mod tests {
         let results = catalog.search("palaco");
         assert!(results.is_ok());
         assert_eq!(
-            results.map(|values| values.into_iter().map(|item| item.id.as_str()).collect::<Vec<_>>()),
+            results.map(|values| values
+                .into_iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>()),
             Ok(vec!["a", "b"])
         );
     }
