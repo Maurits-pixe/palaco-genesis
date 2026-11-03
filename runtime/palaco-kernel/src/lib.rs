@@ -53,12 +53,26 @@ impl KernelCycle {
 
 impl Validatable for KernelCycle {
     fn validate(&self) -> Result<(), palaco_foundation::errors::ValidationError> {
-        self.runtime_plan.validate()
+        self.runtime_plan.validate()?;
+        let expected = match self.runtime_plan.disposition {
+            RuntimeDisposition::Execute => KernelDisposition::Execute,
+            RuntimeDisposition::Escalate => KernelDisposition::Escalate,
+            RuntimeDisposition::SafeState => KernelDisposition::SafeState,
+        };
+        if self.disposition != expected {
+            return Err(palaco_foundation::errors::ValidationError::Message {
+                message: "kernel disposition disagrees with runtime plan".to_string(),
+            });
+        }
+        Ok(())
     }
 }
 
 impl CurrentlyAssessable for KernelCycle {
     fn current_validity(&self, at: Timestamp) -> CurrentValidity {
+        if self.validate().is_err() {
+            return CurrentValidity::SafeStateRequired;
+        }
         match self.disposition {
             KernelDisposition::Execute => self.runtime_plan.current_validity(at),
             KernelDisposition::Escalate => CurrentValidity::InsufficientEvidence,
@@ -91,7 +105,7 @@ mod tests {
     use palaco_foundation::{
         evidence::Evidence,
         identity::{NodeId, PolicyVersionId, StateSnapshotId},
-        traits::{CurrentlyAssessable, Revalidatable},
+        traits::{CurrentlyAssessable, Revalidatable, Validatable},
         types::{
             CurrentValidity, DecisionContext, RevalidationOutcome, TrustLevel, ValidityWindow,
         },
@@ -175,6 +189,21 @@ mod tests {
             Ok(RevalidationOutcome::Confirmed)
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn kernel_rejects_forged_execute_disposition() -> Result<(), &'static str> {
+        let mut cycle = kernel_cycle(AuthorizationScope::Observe)?;
+        cycle.disposition = KernelDisposition::Execute;
+        assert!(cycle.validate().is_err());
+        assert_eq!(
+            cycle.current_validity(cycle.runtime_plan.boundary.decision.context.observed_at),
+            CurrentValidity::SafeStateRequired
+        );
+        assert!(cycle
+            .revalidate(&cycle.runtime_plan.boundary.decision.context)
+            .is_err());
         Ok(())
     }
 

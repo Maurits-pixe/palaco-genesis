@@ -50,12 +50,26 @@ impl RuntimePlan {
 
 impl Validatable for RuntimePlan {
     fn validate(&self) -> Result<(), palaco_foundation::errors::ValidationError> {
-        self.boundary.validate()
+        self.boundary.validate()?;
+        let expected = match self.boundary.disposition {
+            BoundaryDisposition::Execute => RuntimeDisposition::Execute,
+            BoundaryDisposition::Escalate => RuntimeDisposition::Escalate,
+            BoundaryDisposition::SafeState => RuntimeDisposition::SafeState,
+        };
+        if self.disposition != expected {
+            return Err(palaco_foundation::errors::ValidationError::Message {
+                message: "runtime disposition disagrees with execution boundary".to_string(),
+            });
+        }
+        Ok(())
     }
 }
 
 impl CurrentlyAssessable for RuntimePlan {
     fn current_validity(&self, at: Timestamp) -> CurrentValidity {
+        if self.validate().is_err() {
+            return CurrentValidity::SafeStateRequired;
+        }
         match self.disposition {
             RuntimeDisposition::Execute => self.boundary.current_validity(at),
             RuntimeDisposition::Escalate => CurrentValidity::InsufficientEvidence,
@@ -88,7 +102,7 @@ mod tests {
     use palaco_foundation::{
         evidence::Evidence,
         identity::{NodeId, PolicyVersionId, StateSnapshotId},
-        traits::{CurrentlyAssessable, Revalidatable},
+        traits::{CurrentlyAssessable, Revalidatable, Validatable},
         types::{
             CurrentValidity, DecisionContext, RevalidationOutcome, TrustLevel, ValidityWindow,
         },
@@ -171,6 +185,19 @@ mod tests {
             Ok(RevalidationOutcome::Confirmed)
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn runtime_rejects_forged_execute_disposition() -> Result<(), &'static str> {
+        let mut plan = plan(AuthorizationScope::Observe)?;
+        plan.disposition = RuntimeDisposition::Execute;
+        assert!(plan.validate().is_err());
+        assert_eq!(
+            plan.current_validity(plan.boundary.decision.context.observed_at),
+            CurrentValidity::SafeStateRequired
+        );
+        assert!(plan.revalidate(&plan.boundary.decision.context).is_err());
         Ok(())
     }
 

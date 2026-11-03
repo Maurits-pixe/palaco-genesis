@@ -302,12 +302,35 @@ impl ExecutionBoundary {
 
 impl Validatable for ExecutionBoundary {
     fn validate(&self) -> Result<(), palaco_foundation::errors::ValidationError> {
-        self.decision.validate()
+        self.decision.validate()?;
+        let expected = match self.decision.scope {
+            AuthorizationScope::Execute => BoundaryDisposition::Execute,
+            AuthorizationScope::Observe | AuthorizationScope::Advise => {
+                BoundaryDisposition::Escalate
+            }
+        };
+        if self.disposition != expected {
+            return Err(palaco_foundation::errors::ValidationError::Message {
+                message: "boundary disposition disagrees with governance scope".to_string(),
+            });
+        }
+        if self.authorization.authorization_id != self.decision.id.0.to_string()
+            || self.authorization.scope != self.decision.authority
+            || self.authorization.provenance != self.decision.provenance
+        {
+            return Err(palaco_foundation::errors::ValidationError::Message {
+                message: "authorization grant disagrees with governance decision".to_string(),
+            });
+        }
+        Ok(())
     }
 }
 
 impl CurrentlyAssessable for ExecutionBoundary {
     fn current_validity(&self, at: Timestamp) -> CurrentValidity {
+        if self.validate().is_err() {
+            return CurrentValidity::SafeStateRequired;
+        }
         match self.disposition {
             BoundaryDisposition::Execute => self.decision.current_validity(at),
             BoundaryDisposition::Escalate => CurrentValidity::InsufficientEvidence,
@@ -351,7 +374,7 @@ mod tests {
     use palaco_foundation::{
         evidence::Evidence,
         identity::{NodeId, PolicyVersionId, StateSnapshotId},
-        traits::{CurrentlyAssessable, FailClosed, Revalidatable},
+        traits::{CurrentlyAssessable, FailClosed, Revalidatable, Validatable},
         types::{
             CurrentValidity, DecisionContext, RevalidationOutcome, TrustLevel, ValidityWindow,
         },
@@ -364,6 +387,40 @@ mod tests {
         BoundaryDisposition, CommitDenialReason, CommitOutcome, ExecutionBoundary,
         InMemoryCommitGate,
     };
+
+    #[test]
+    fn boundary_rejects_substituted_grant_evidence() -> Result<(), &'static str> {
+        let mut boundary = ExecutionBoundary::new(decision(AuthorizationScope::Execute)?);
+        boundary.authorization.authorization_id = "substituted-decision".to_string();
+        assert!(boundary.validate().is_err());
+
+        let mut boundary = ExecutionBoundary::new(decision(AuthorizationScope::Execute)?);
+        boundary.authorization.provenance.record_locator = "substituted-proof".to_string();
+        assert!(boundary.validate().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn boundary_rejects_tampered_authorization_grant() -> Result<(), &'static str> {
+        let mut boundary = ExecutionBoundary::new(decision(AuthorizationScope::Execute)?);
+        boundary.authorization.scope.capability = "palaco.observe".to_string();
+        assert!(boundary.validate().is_err());
+        assert_eq!(
+            boundary.current_validity(boundary.decision.context.observed_at),
+            CurrentValidity::SafeStateRequired
+        );
+        assert!(boundary.revalidate(&boundary.decision.context).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn boundary_rejects_forged_execute_disposition() -> Result<(), &'static str> {
+        let mut boundary = ExecutionBoundary::new(decision(AuthorizationScope::Observe)?);
+        boundary.disposition = BoundaryDisposition::Execute;
+        assert!(boundary.validate().is_err());
+        assert!(boundary.revalidate(&boundary.decision.context).is_err());
+        Ok(())
+    }
 
     fn grant() -> AuthorizationGrant {
         AuthorizationGrant {
