@@ -16,6 +16,8 @@ pub mod offline_integrity;
 pub mod offline_manifest;
 /// Publisher revocation, epoch and trusted-time preflight for offline content.
 pub mod offline_publisher;
+/// Read-only inspection of incomplete offline staging after restart.
+pub mod offline_recovery;
 /// Fail-closed candidate signature verification boundary.
 pub mod offline_signature;
 /// Create-only local staging for public offline chunk fixtures.
