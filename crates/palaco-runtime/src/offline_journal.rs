@@ -107,11 +107,13 @@ fn journal_path(root: &Path, id: &str) -> Result<std::path::PathBuf, JournalErro
 fn valid_sequence(steps: &[JournalStep]) -> bool {
     !steps.is_empty()
         && steps.len() <= 3
-        && steps.iter().enumerate().all(|(i, step)| match (i, step) {
-            (0, JournalStep::Started)
-            | (1, JournalStep::DataSynced)
-            | (2, JournalStep::HashInspected) => true,
-            _ => false,
+        && steps.iter().enumerate().all(|(i, step)| {
+            matches!(
+                (i, step),
+                (0, JournalStep::Started)
+                    | (1, JournalStep::DataSynced)
+                    | (2, JournalStep::HashInspected)
+            )
         })
 }
 
