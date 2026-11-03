@@ -150,29 +150,33 @@ mod tests {
     }
 
     #[test]
-    fn tampered_statement_is_refused_even_by_mock() {
-        let value = receipt();
-        assert!(matches!(value, Ok(mut value) if {
-            value.statement_sha256 = [9; 32];
-            verify_signed_review(&review(), &value, &signature(), &Fixture(true))
-                == SignedReviewState::Hold
-        }));
+    fn tampered_statement_is_refused_even_by_mock(
+    ) -> Result<(), crate::offline_recovery_receipt::ReceiptError> {
+        let mut value = receipt()?;
+        value.statement_sha256 = [9; 32];
+        assert_eq!(
+            verify_signed_review(&review(), &value, &signature(), &Fixture(true)),
+            SignedReviewState::Hold
+        );
+        Ok(())
     }
 
     #[test]
-    fn modified_sequence_or_execution_flag_is_refused() {
-        let value = receipt();
-        assert!(matches!(value, Ok(mut value) if {
-            value.sequence = 8;
-            verify_signed_review(&review(), &value, &signature(), &Fixture(true))
-                == SignedReviewState::Hold
-        }));
-        let value = receipt();
-        assert!(matches!(value, Ok(mut value) if {
-            value.execution_allowed = true;
-            verify_signed_review(&review(), &value, &signature(), &Fixture(true))
-                == SignedReviewState::Hold
-        }));
+    fn modified_sequence_or_execution_flag_is_refused(
+    ) -> Result<(), crate::offline_recovery_receipt::ReceiptError> {
+        let mut value = receipt()?;
+        value.sequence = 8;
+        assert_eq!(
+            verify_signed_review(&review(), &value, &signature(), &Fixture(true)),
+            SignedReviewState::Hold
+        );
+        value = receipt()?;
+        value.execution_allowed = true;
+        assert_eq!(
+            verify_signed_review(&review(), &value, &signature(), &Fixture(true)),
+            SignedReviewState::Hold
+        );
+        Ok(())
     }
 
     #[test]
