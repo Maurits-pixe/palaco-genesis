@@ -61,6 +61,54 @@ pub fn store_new_draft(
     Ok(())
 }
 
+/// Observed state of a pending draft after an interrupted write.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PendingDraftState {
+    /// No pending file exists.
+    Absent,
+    /// A pending file exists and requires explicit operator review.
+    RequiresReview,
+}
+
+/// Inspects a pending file without publishing, replacing or deleting it.
+pub fn inspect_pending_draft(
+    root: &Path,
+    actor_id: &str,
+    draft_id: &str,
+) -> io::Result<PendingDraftState> {
+    validate_identifier(actor_id)?;
+    validate_identifier(draft_id)?;
+    let actor_dir = root.join(actor_id);
+    match fs::symlink_metadata(&actor_dir) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok(PendingDraftState::Absent);
+        }
+        Err(error) => return Err(error),
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "symbolic link forbidden",
+            ));
+        }
+        Ok(_) => {}
+    }
+
+    let pending = actor_dir.join(format!("{draft_id}.pending"));
+    match fs::symlink_metadata(&pending) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            Ok(PendingDraftState::Absent)
+        }
+        Err(error) => Err(error),
+        Ok(metadata) if metadata.file_type().is_file() => {
+            Ok(PendingDraftState::RequiresReview)
+        }
+        Ok(_) => Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "pending path is not a regular file",
+        )),
+    }
+}
+
 /// Reads a local draft only if its header, size and SHA-256 digest agree.
 ///
 /// SHA-256 detects accidental corruption, but is not an authenticity proof.
@@ -135,7 +183,7 @@ fn reject_symlink(path: &Path) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{load_draft, store_new_draft};
+    use super::{inspect_pending_draft, load_draft, store_new_draft, PendingDraftState};
     use std::{fs, io, path::PathBuf};
 
     fn temporary_root() -> PathBuf {
@@ -181,6 +229,34 @@ mod tests {
         }
         fs::write(path, encoded)?;
         assert!(load_draft(&root, "actor_1", "draft_1").is_err());
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn pending_file_requires_review_and_is_preserved() -> io::Result<()> {
+        let root = temporary_root();
+        let actor_dir = root.join("actor_1");
+        fs::create_dir_all(&actor_dir)?;
+        let pending = actor_dir.join("draft_1.pending");
+        fs::write(&pending, b"incomplete")?;
+        assert_eq!(
+            inspect_pending_draft(&root, "actor_1", "draft_1")?,
+            PendingDraftState::RequiresReview
+        );
+        assert_eq!(fs::read(pending)?, b"incomplete");
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn successful_publication_has_no_pending_file() -> io::Result<()> {
+        let root = temporary_root();
+        store_new_draft(&root, "actor_1", "draft_1", b"fixture")?;
+        assert_eq!(
+            inspect_pending_draft(&root, "actor_1", "draft_1")?,
+            PendingDraftState::Absent
+        );
         fs::remove_dir_all(root)?;
         Ok(())
     }
