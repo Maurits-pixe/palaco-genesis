@@ -3,6 +3,9 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+/// Declared actor and grant identity consistency checks.
+pub mod identity_binding;
+
 use palaco_constitution::{AuthorizationGrant, IdentityHandle};
 use palaco_foundation::{
     errors::RevalidationError,
