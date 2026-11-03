@@ -21,12 +21,7 @@ pub struct ApprovalEvidence {
 /// signature, and reject revoked keys. This crate supplies only a deny-all default.
 pub trait ApprovalSignatureVerifier {
     /// Return true only for a genuinely authenticated and authorized reviewer.
-    fn verify(
-        &self,
-        statement_sha256: &[u8; 32],
-        key_id: &[u8; 32],
-        policy_epoch: u64,
-    ) -> bool;
+    fn verify(&self, statement_sha256: &[u8; 32], key_id: &[u8; 32], policy_epoch: u64) -> bool;
 }
 
 /// External durable, crash-safe nonce checking boundary.
@@ -108,8 +103,8 @@ pub fn verify_recovery_review<V: ApprovalSignatureVerifier, R: DurableReplayVeri
 #[cfg(test)]
 mod tests {
     use super::{
-        verify_recovery_review, ApprovalEvidence, ApprovalPreflight,
-        ApprovalSignatureVerifier, DenyAllApprovalVerifier, DurableReplayVerifier,
+        verify_recovery_review, ApprovalEvidence, ApprovalPreflight, ApprovalSignatureVerifier,
+        DenyAllApprovalVerifier, DurableReplayVerifier,
     };
     use crate::offline_recovery_receipt::{
         RecoveryIntent, RecoveryIntentReceipt, ReviewAttribution,
@@ -153,7 +148,14 @@ mod tests {
     #[test]
     fn deny_all_default_blocks_quarantine_review() {
         assert_eq!(
-            verify_recovery_review(&receipt(), &evidence(), Some(90), 8, &DenyAllApprovalVerifier, &DenyAllApprovalVerifier),
+            verify_recovery_review(
+                &receipt(),
+                &evidence(),
+                Some(90),
+                8,
+                &DenyAllApprovalVerifier,
+                &DenyAllApprovalVerifier
+            ),
             ApprovalPreflight::Hold
         );
     }
@@ -161,11 +163,25 @@ mod tests {
     #[test]
     fn missing_or_expired_trusted_time_fails_closed() {
         assert_eq!(
-            verify_recovery_review(&receipt(), &evidence(), None, 8, &FixtureVerifier(true), &FixtureVerifier(true)),
+            verify_recovery_review(
+                &receipt(),
+                &evidence(),
+                None,
+                8,
+                &FixtureVerifier(true),
+                &FixtureVerifier(true)
+            ),
             ApprovalPreflight::Hold
         );
         assert_eq!(
-            verify_recovery_review(&receipt(), &evidence(), Some(101), 8, &FixtureVerifier(true), &FixtureVerifier(true)),
+            verify_recovery_review(
+                &receipt(),
+                &evidence(),
+                Some(101),
+                8,
+                &FixtureVerifier(true),
+                &FixtureVerifier(true)
+            ),
             ApprovalPreflight::Hold
         );
     }
@@ -173,11 +189,25 @@ mod tests {
     #[test]
     fn stale_epoch_and_replay_rejection_fail_closed() {
         assert_eq!(
-            verify_recovery_review(&receipt(), &evidence(), Some(90), 9, &FixtureVerifier(true), &FixtureVerifier(true)),
+            verify_recovery_review(
+                &receipt(),
+                &evidence(),
+                Some(90),
+                9,
+                &FixtureVerifier(true),
+                &FixtureVerifier(true)
+            ),
             ApprovalPreflight::Hold
         );
         assert_eq!(
-            verify_recovery_review(&receipt(), &evidence(), Some(90), 8, &FixtureVerifier(true), &FixtureVerifier(false)),
+            verify_recovery_review(
+                &receipt(),
+                &evidence(),
+                Some(90),
+                8,
+                &FixtureVerifier(true),
+                &FixtureVerifier(false)
+            ),
             ApprovalPreflight::Hold
         );
     }
@@ -187,13 +217,27 @@ mod tests {
         let mut value = receipt();
         value.execution_allowed = true;
         assert_eq!(
-            verify_recovery_review(&value, &evidence(), Some(90), 8, &FixtureVerifier(true), &FixtureVerifier(true)),
+            verify_recovery_review(
+                &value,
+                &evidence(),
+                Some(90),
+                8,
+                &FixtureVerifier(true),
+                &FixtureVerifier(true)
+            ),
             ApprovalPreflight::Hold
         );
         value.execution_allowed = false;
         value.intent = RecoveryIntent::Defer;
         assert_eq!(
-            verify_recovery_review(&value, &evidence(), Some(90), 8, &FixtureVerifier(true), &FixtureVerifier(true)),
+            verify_recovery_review(
+                &value,
+                &evidence(),
+                Some(90),
+                8,
+                &FixtureVerifier(true),
+                &FixtureVerifier(true)
+            ),
             ApprovalPreflight::Hold
         );
     }
@@ -201,7 +245,14 @@ mod tests {
     #[test]
     fn fixture_success_is_review_only() {
         assert_eq!(
-            verify_recovery_review(&receipt(), &evidence(), Some(90), 8, &FixtureVerifier(true), &FixtureVerifier(true)),
+            verify_recovery_review(
+                &receipt(),
+                &evidence(),
+                Some(90),
+                8,
+                &FixtureVerifier(true),
+                &FixtureVerifier(true)
+            ),
             ApprovalPreflight::ReadyForSeparateHumanReview
         );
     }
