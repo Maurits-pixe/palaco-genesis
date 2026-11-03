@@ -160,7 +160,10 @@ mod tests {
     fn long_duration_is_bounded() {
         let mut input = request();
         input.days = 181;
-        assert_eq!(plan_vacation_pack(&input), Err(VacationPlanError::InvalidDuration));
+        assert_eq!(
+            plan_vacation_pack(&input),
+            Err(VacationPlanError::InvalidDuration)
+        );
     }
 
     #[test]
@@ -197,7 +200,10 @@ mod tests {
     fn duplicate_pack_identifier_is_rejected() {
         let mut input = request();
         input.packs.push(input.packs[0].clone());
-        assert_eq!(plan_vacation_pack(&input), Err(VacationPlanError::InvalidPack));
+        assert_eq!(
+            plan_vacation_pack(&input),
+            Err(VacationPlanError::InvalidPack)
+        );
     }
 
     #[test]
@@ -209,6 +215,9 @@ mod tests {
             estimated_bytes: 1,
             class: OfflinePackClass::SyntheticFixture,
         });
-        assert_eq!(plan_vacation_pack(&input), Err(VacationPlanError::InvalidSize));
+        assert_eq!(
+            plan_vacation_pack(&input),
+            Err(VacationPlanError::InvalidSize)
+        );
     }
 }
