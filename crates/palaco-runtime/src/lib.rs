@@ -24,6 +24,8 @@ pub mod offline_recovery;
 pub mod offline_signature;
 /// Create-only local staging for public offline chunk fixtures.
 pub mod offline_staging;
+/// Read-only integration preflight for candidate offline transactions.
+pub mod offline_transaction;
 
 use palaco_citadel::{BoundaryDisposition, ExecutionBoundary};
 use palaco_foundation::{
