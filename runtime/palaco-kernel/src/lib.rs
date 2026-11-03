@@ -194,7 +194,9 @@ mod tests {
         let mut cycle = kernel_cycle(AuthorizationScope::Observe)?;
         cycle.disposition = KernelDisposition::Execute;
         assert!(cycle.validate().is_err());
-        assert!(cycle.revalidate(&cycle.runtime_plan.boundary.decision.context).is_err());
+        assert!(cycle
+            .revalidate(&cycle.runtime_plan.boundary.decision.context)
+            .is_err());
         Ok(())
     }
 
