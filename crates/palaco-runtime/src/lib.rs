@@ -18,6 +18,8 @@ pub mod offline_manifest;
 pub mod offline_publisher;
 /// Fail-closed candidate signature verification boundary.
 pub mod offline_signature;
+/// Create-only local staging for public offline chunk fixtures.
+pub mod offline_staging;
 
 use palaco_citadel::{BoundaryDisposition, ExecutionBoundary};
 use palaco_foundation::{
