@@ -61,7 +61,11 @@ pub fn prepare_recovery_review(
         }
         OrphanState::NoPending => RecoveryReviewState::InvalidInspectionHold,
         OrphanState::PendingOnly | OrphanState::PendingAndPublished => {
-            match (inspection.pending_bytes, inspection.pending_sha256, expected) {
+            match (
+                inspection.pending_bytes,
+                inspection.pending_sha256,
+                expected,
+            ) {
                 (Some(_), Some(_), None) => RecoveryReviewState::MissingExpectedEvidenceHold,
                 (Some(bytes), Some(digest), Some(evidence))
                     if evidence.sequence == inspection.sequence
@@ -130,7 +134,10 @@ mod tests {
     #[test]
     fn missing_manifest_is_a_hold() {
         let result = prepare_recovery_review(&pending(OrphanState::PendingOnly), None);
-        assert_eq!(result.state, RecoveryReviewState::MissingExpectedEvidenceHold);
+        assert_eq!(
+            result.state,
+            RecoveryReviewState::MissingExpectedEvidenceHold
+        );
         assert!(!result.execution_allowed);
     }
 
@@ -138,17 +145,11 @@ mod tests {
     fn mismatched_digest_or_sequence_is_a_hold() {
         let mut evidence = expected();
         evidence.sha256 = [8; 32];
-        let result = prepare_recovery_review(
-            &pending(OrphanState::PendingOnly),
-            Some(&evidence),
-        );
+        let result = prepare_recovery_review(&pending(OrphanState::PendingOnly), Some(&evidence));
         assert_eq!(result.state, RecoveryReviewState::EvidenceMismatchHold);
         evidence = expected();
         evidence.sequence = 8;
-        let result = prepare_recovery_review(
-            &pending(OrphanState::PendingOnly),
-            Some(&evidence),
-        );
+        let result = prepare_recovery_review(&pending(OrphanState::PendingOnly), Some(&evidence));
         assert_eq!(result.state, RecoveryReviewState::EvidenceMismatchHold);
     }
 
