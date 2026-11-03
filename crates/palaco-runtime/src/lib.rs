@@ -12,6 +12,8 @@ pub mod offline_catalog;
 pub mod offline_generation;
 /// Offline chunk integrity verification without disk or network access.
 pub mod offline_integrity;
+/// Deterministic public offline manifest root, without signature authority.
+pub mod offline_manifest;
 
 use palaco_citadel::{BoundaryDisposition, ExecutionBoundary};
 use palaco_foundation::{
