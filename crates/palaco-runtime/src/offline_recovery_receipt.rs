@@ -138,7 +138,10 @@ mod tests {
     #[test]
     fn matching_pending_records_request_but_never_executes() {
         let result = record_recovery_intent(
-            &review(RecoveryReviewState::MatchingPendingHold, OrphanState::PendingOnly),
+            &review(
+                RecoveryReviewState::MatchingPendingHold,
+                OrphanState::PendingOnly,
+            ),
             actor(),
             RecoveryIntent::RequestQuarantineReview,
         );
@@ -147,18 +150,26 @@ mod tests {
 
     #[test]
     fn checksum_is_deterministic_and_context_bound() {
-        let candidate = review(RecoveryReviewState::MatchingPendingHold, OrphanState::PendingOnly);
+        let candidate = review(
+            RecoveryReviewState::MatchingPendingHold,
+            OrphanState::PendingOnly,
+        );
         let first = record_recovery_intent(&candidate, actor(), RecoveryIntent::Defer);
         let second = record_recovery_intent(&candidate, actor(), RecoveryIntent::Defer);
         assert_eq!(first, second);
         let different = record_recovery_intent(&candidate, actor(), RecoveryIntent::Reject);
-        assert!(matches!((first, different), (Ok(a), Ok(b)) if a.statement_sha256 != b.statement_sha256));
+        assert!(
+            matches!((first, different), (Ok(a), Ok(b)) if a.statement_sha256 != b.statement_sha256)
+        );
     }
 
     #[test]
     fn mismatch_cannot_request_quarantine() {
         let result = record_recovery_intent(
-            &review(RecoveryReviewState::EvidenceMismatchHold, OrphanState::PendingOnly),
+            &review(
+                RecoveryReviewState::EvidenceMismatchHold,
+                OrphanState::PendingOnly,
+            ),
             actor(),
             RecoveryIntent::RequestQuarantineReview,
         );
@@ -168,7 +179,10 @@ mod tests {
     #[test]
     fn published_marker_cannot_request_quarantine() {
         let result = record_recovery_intent(
-            &review(RecoveryReviewState::MatchingPendingHold, OrphanState::PendingAndPublished),
+            &review(
+                RecoveryReviewState::MatchingPendingHold,
+                OrphanState::PendingAndPublished,
+            ),
             actor(),
             RecoveryIntent::RequestQuarantineReview,
         );
@@ -177,7 +191,10 @@ mod tests {
 
     #[test]
     fn forged_execution_flag_and_blank_attribution_fail_closed() {
-        let mut candidate = review(RecoveryReviewState::MatchingPendingHold, OrphanState::PendingOnly);
+        let mut candidate = review(
+            RecoveryReviewState::MatchingPendingHold,
+            OrphanState::PendingOnly,
+        );
         candidate.execution_allowed = true;
         assert_eq!(
             record_recovery_intent(&candidate, actor(), RecoveryIntent::Defer),
