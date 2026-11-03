@@ -4,7 +4,7 @@
 
 use std::{
     fs::{self, File},
-    io::{Read, ErrorKind},
+    io::{ErrorKind, Read},
     path::Path,
 };
 
@@ -52,10 +52,7 @@ pub enum OrphanError {
 ///
 /// The root must be owned exclusively by the calling application. Hostile
 /// concurrent mutations are out of scope until descriptor-based I/O exists.
-pub fn inspect_marker_orphan(
-    root: &Path,
-    sequence: u64,
-) -> Result<OrphanInspection, OrphanError> {
+pub fn inspect_marker_orphan(root: &Path, sequence: u64) -> Result<OrphanInspection, OrphanError> {
     if sequence == 0 {
         return Err(OrphanError::InvalidTarget);
     }
