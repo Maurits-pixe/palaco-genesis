@@ -95,13 +95,9 @@ pub fn inspect_pending_draft(
 
     let pending = actor_dir.join(format!("{draft_id}.pending"));
     match fs::symlink_metadata(&pending) {
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            Ok(PendingDraftState::Absent)
-        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(PendingDraftState::Absent),
         Err(error) => Err(error),
-        Ok(metadata) if metadata.file_type().is_file() => {
-            Ok(PendingDraftState::RequiresReview)
-        }
+        Ok(metadata) if metadata.file_type().is_file() => Ok(PendingDraftState::RequiresReview),
         Ok(_) => Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             "pending path is not a regular file",
