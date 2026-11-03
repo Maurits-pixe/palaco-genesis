@@ -203,7 +203,10 @@ mod tests {
         let root = temporary_root();
         store_new_draft(&root, "actor_1", "draft_1", b"fixture")?;
         let actor_dir = root.join("actor_1");
-        symlink(actor_dir.join("draft_1.draft"), actor_dir.join("linked.draft"))?;
+        symlink(
+            actor_dir.join("draft_1.draft"),
+            actor_dir.join("linked.draft"),
+        )?;
         assert!(load_draft(&root, "actor_1", "linked").is_err());
         fs::remove_dir_all(root)?;
         Ok(())
