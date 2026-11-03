@@ -245,16 +245,21 @@ mod tests {
             let handles: Vec<_> = (0..8)
                 .map(|_| scope.spawn(|| publish_test_marker(&path, marker())))
                 .collect();
-            handles.into_iter().map(|handle| handle.join()).collect::<Vec<_>>()
+            handles
+                .into_iter()
+                .map(|handle| handle.join())
+                .collect::<Vec<_>>()
         });
         assert_eq!(
-            outcomes.iter().filter(|outcome| matches!(outcome, Ok(Ok(_)))).count(),
+            outcomes
+                .iter()
+                .filter(|outcome| matches!(outcome, Ok(Ok(_))))
+                .count(),
             1
         );
-        assert!(outcomes.iter().all(|outcome| matches!(
-            outcome,
-            Ok(Ok(_)) | Ok(Err(MarkerError::AlreadyExists))
-        )));
+        assert!(outcomes
+            .iter()
+            .all(|outcome| matches!(outcome, Ok(Ok(_)) | Ok(Err(MarkerError::AlreadyExists)))));
         assert!(matches!(read_test_marker(&path, 7), Ok(value) if value == marker()));
         fs::remove_dir_all(&path)?;
         Ok(())
@@ -274,5 +279,4 @@ mod tests {
         fs::remove_dir_all(&path)?;
         Ok(())
     }
-
 }
