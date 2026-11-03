@@ -16,6 +16,8 @@ pub mod offline_integrity;
 pub mod offline_journal;
 /// Deterministic public offline manifest root, without signature authority.
 pub mod offline_manifest;
+/// Read-only detection of abandoned offline publication markers.
+pub mod offline_orphan;
 /// Non-overwriting local candidate marker publication for public fixtures.
 pub mod offline_publication;
 /// Publisher revocation, epoch and trusted-time preflight for offline content.
