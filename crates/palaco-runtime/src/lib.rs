@@ -8,6 +8,8 @@ pub mod vacation_mode;
 
 /// Unprivileged, network-free memory catalog preview.
 pub mod offline_catalog;
+/// Offline generation selection with an explicit confirmation boundary.
+pub mod offline_generation;
 
 use palaco_citadel::{BoundaryDisposition, ExecutionBoundary};
 use palaco_foundation::{
