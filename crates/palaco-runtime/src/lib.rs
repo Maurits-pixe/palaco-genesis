@@ -6,6 +6,9 @@
 /// Offline vacation-mode memory package planning and capacity guards.
 pub mod vacation_mode;
 
+/// Unprivileged, network-free memory catalog preview.
+pub mod offline_catalog;
+
 use palaco_citadel::{BoundaryDisposition, ExecutionBoundary};
 use palaco_foundation::{
     errors::RevalidationError,
