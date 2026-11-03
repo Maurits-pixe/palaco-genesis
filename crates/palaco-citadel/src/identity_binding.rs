@@ -115,6 +115,27 @@ mod tests {
     }
 
     #[test]
+    fn missing_grant_authorization_id_is_rejected() {
+        let (actor, mut grant, scope) = fixture();
+        grant.authorization_id.clear();
+        assert!(validate_actor_binding(&actor, &grant, &scope).is_err());
+    }
+
+    #[test]
+    fn missing_provenance_source_is_rejected() {
+        let (actor, mut grant, scope) = fixture();
+        grant.provenance.source.clear();
+        assert!(validate_actor_binding(&actor, &grant, &scope).is_err());
+    }
+
+    #[test]
+    fn empty_requested_scope_is_rejected() {
+        let (actor, grant, mut scope) = fixture();
+        scope.capability.clear();
+        assert!(validate_actor_binding(&actor, &grant, &scope).is_err());
+    }
+
+    #[test]
     fn missing_provenance_is_rejected() {
         let (actor, mut grant, scope) = fixture();
         grant.provenance.record_locator.clear();
