@@ -14,6 +14,8 @@ pub mod offline_generation;
 pub mod offline_integrity;
 /// Deterministic public offline manifest root, without signature authority.
 pub mod offline_manifest;
+/// Fail-closed candidate signature verification boundary.
+pub mod offline_signature;
 
 use palaco_citadel::{BoundaryDisposition, ExecutionBoundary};
 use palaco_foundation::{
