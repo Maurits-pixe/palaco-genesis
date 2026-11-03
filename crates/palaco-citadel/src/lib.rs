@@ -386,6 +386,19 @@ mod tests {
     };
 
     #[test]
+    fn boundary_rejects_tampered_authorization_identity_and_provenance(
+    ) -> Result<(), &'static str> {
+        let mut boundary = ExecutionBoundary::new(decision(AuthorizationScope::Execute)?);
+        boundary.authorization.authorization_id = "substituted-decision".to_string();
+        assert!(boundary.validate().is_err());
+
+        let mut boundary = ExecutionBoundary::new(decision(AuthorizationScope::Execute)?);
+        boundary.authorization.provenance.record_locator = "substituted-proof".to_string();
+        assert!(boundary.validate().is_err());
+        Ok(())
+    }
+
+    #[test]
     fn boundary_rejects_tampered_authorization_grant() -> Result<(), &'static str> {
         let mut boundary = ExecutionBoundary::new(decision(AuthorizationScope::Execute)?);
         boundary.authorization.scope.capability = "palaco.observe".to_string();
