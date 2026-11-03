@@ -199,6 +199,37 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_creates_never_overwrite_one_another() -> io::Result<()> {
+        use std::sync::{Arc, Barrier};
+
+        let root = temporary_root();
+        let barrier = Arc::new(Barrier::new(2));
+        let first_root = root.clone();
+        let second_root = root.clone();
+        let first_barrier = Arc::clone(&barrier);
+        let second_barrier = Arc::clone(&barrier);
+        let first = std::thread::spawn(move || {
+            first_barrier.wait();
+            store_new_draft(&first_root, "actor_1", "draft_1", b"first")
+        });
+        let second = std::thread::spawn(move || {
+            second_barrier.wait();
+            store_new_draft(&second_root, "actor_1", "draft_1", b"second")
+        });
+        let first_result = first
+            .join()
+            .map_err(|_| io::Error::other("first writer panicked"))?;
+        let second_result = second
+            .join()
+            .map_err(|_| io::Error::other("second writer panicked"))?;
+        assert_eq!(usize::from(first_result.is_ok()) + usize::from(second_result.is_ok()), 1);
+        let stored = load_draft(&root, "actor_1", "draft_1")?;
+        assert!(stored == b"first" || stored == b"second");
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
     fn duplicate_create_is_rejected() -> io::Result<()> {
         let root = temporary_root();
         store_new_draft(&root, "actor_1", "draft_1", b"fixture")?;
