@@ -40,6 +40,24 @@ Explicit non-guarantees until separately engineered:
 
 No cipher-suite, KDF parameter or key provider is approved by this design draft alone.
 
+## Candidate technology assessment (not approval)
+
+The following primary-source candidates are recorded for bounded prototype evaluation:
+
+| Layer | Candidate | Evidence / review condition |
+| --- | --- | --- |
+| Authenticated record encryption | RustCrypto `chacha20poly1305` with `XChaCha20Poly1305` | Official crate documents 24-byte extended nonce. Verify exact crate release, nonce uniqueness, key lifecycle and platform support. |
+| Portable passphrase recovery | RustCrypto `argon2` / Argon2id | Review password entropy, salt, memory/latency parameters and offline brute-force resistance. A password hash alone is not an encrypted vault. |
+| Windows local key wrapping | Microsoft DPAPI user scope | Windows documentation describes user-credential-bound protection. Test offline access, account recovery, roaming profiles and device loss explicitly. |
+| Other platforms | Platform keystore adapter undecided | No provider selected; fail closed until verified. |
+
+Primary references:
+- https://docs.rs/chacha20poly1305/latest/chacha20poly1305/
+- https://github.com/RustCrypto/password-hashes/blob/master/argon2/README.md
+- https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata
+
+Selection gates: source authenticity, maintenance, dependency/license audit, algorithm implementation review, RNG health, secret-memory handling, target-platform behavior and independent threat-model approval. No algorithm, DPAPI scope or KDF settings are committed for production by this document.
+
 ## Offline autonomy
 
 | Operation | Desired offline behavior |
