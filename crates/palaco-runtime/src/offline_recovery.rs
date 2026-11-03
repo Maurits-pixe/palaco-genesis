@@ -109,10 +109,7 @@ pub fn inspect_pending(
 #[cfg(test)]
 mod tests {
     use super::{inspect_pending, ExpectedPending, PendingState, RecoveryError};
-    use crate::{
-        offline_integrity::ExpectedChunk,
-        offline_staging::stage_public_chunk,
-    };
+    use crate::{offline_integrity::ExpectedChunk, offline_staging::stage_public_chunk};
     use sha2::{Digest, Sha256};
     use std::fs;
 
