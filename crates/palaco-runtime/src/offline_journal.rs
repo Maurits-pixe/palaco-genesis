@@ -183,10 +183,10 @@ mod tests {
     fn reopen_complete_snapshot() -> Result<(), std::io::Error> {
         let path = root()?;
         assert!(create_journal(&path, "fixture", &full()).is_ok());
-        assert_eq!(
-            read_journal(&path, "fixture").map(|value| value.steps),
-            Ok(full().steps)
-        );
+        assert!(matches!(
+            read_journal(&path, "fixture"),
+            Ok(value) if value.steps == full().steps
+        ));
         fs::remove_dir_all(&path)?;
         Ok(())
     }
