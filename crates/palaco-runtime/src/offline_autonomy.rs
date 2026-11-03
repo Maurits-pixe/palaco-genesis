@@ -37,9 +37,7 @@ pub enum OfflineDecision {
 #[must_use]
 pub fn classify_offline_action(action: OfflineAction) -> OfflineDecision {
     match action {
-        OfflineAction::ReadCached | OfflineAction::EditLocalDraft => {
-            OfflineDecision::AllowLocal
-        }
+        OfflineAction::ReadCached | OfflineAction::EditLocalDraft => OfflineDecision::AllowLocal,
         OfflineAction::StageIntent => OfflineDecision::StageWithoutAuthority,
         OfflineAction::ExecuteProtectedMutation | OfflineAction::IssueAuthority => {
             OfflineDecision::Hold
