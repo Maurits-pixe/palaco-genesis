@@ -328,6 +328,9 @@ impl Validatable for ExecutionBoundary {
 
 impl CurrentlyAssessable for ExecutionBoundary {
     fn current_validity(&self, at: Timestamp) -> CurrentValidity {
+        if self.validate().is_err() {
+            return CurrentValidity::SafeStateRequired;
+        }
         match self.disposition {
             BoundaryDisposition::Execute => self.decision.current_validity(at),
             BoundaryDisposition::Escalate => CurrentValidity::InsufficientEvidence,
@@ -402,6 +405,10 @@ mod tests {
         let mut boundary = ExecutionBoundary::new(decision(AuthorizationScope::Execute)?);
         boundary.authorization.scope.capability = "palaco.observe".to_string();
         assert!(boundary.validate().is_err());
+        assert_eq!(
+            boundary.current_validity(boundary.decision.context.observed_at),
+            CurrentValidity::SafeStateRequired
+        );
         assert!(boundary.revalidate(&boundary.decision.context).is_err());
         Ok(())
     }
