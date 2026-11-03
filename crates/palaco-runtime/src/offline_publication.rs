@@ -223,4 +223,56 @@ mod tests {
         fs::remove_dir_all(&path)?;
         Ok(())
     }
+    #[test]
+    fn abandoned_pending_marker_blocks_replacement() -> Result<(), std::io::Error> {
+        let path = root()?;
+        let pending = path.join("marker_7.pending");
+        fs::write(&pending, b"interrupted write")?;
+        assert!(matches!(
+            publish_test_marker(&path, marker()),
+            Err(MarkerError::AlreadyExists)
+        ));
+        assert_eq!(fs::read(&pending)?, b"interrupted write");
+        assert!(!path.join("marker_7.bin").exists());
+        fs::remove_dir_all(&path)?;
+        Ok(())
+    }
+
+    #[test]
+    fn concurrent_writers_never_replace_a_final_marker() -> Result<(), std::io::Error> {
+        let path = root()?;
+        let outcomes = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..8)
+                .map(|_| scope.spawn(|| publish_test_marker(&path, marker())))
+                .collect();
+            handles.into_iter().map(|handle| handle.join()).collect::<Vec<_>>()
+        });
+        assert_eq!(
+            outcomes.iter().filter(|outcome| matches!(outcome, Ok(Ok(_)))).count(),
+            1
+        );
+        assert!(outcomes.iter().all(|outcome| matches!(
+            outcome,
+            Ok(Ok(_)) | Ok(Err(MarkerError::AlreadyExists))
+        )));
+        assert!(matches!(read_test_marker(&path, 7), Ok(value) if value == marker()));
+        fs::remove_dir_all(&path)?;
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_root_is_rejected() -> Result<(), std::io::Error> {
+        let path = root()?;
+        let linked = path.with_extension("symlink");
+        std::os::unix::fs::symlink(&path, &linked)?;
+        assert!(matches!(
+            publish_test_marker(&linked, marker()),
+            Err(MarkerError::InvalidMarker)
+        ));
+        fs::remove_file(&linked)?;
+        fs::remove_dir_all(&path)?;
+        Ok(())
+    }
+
 }
