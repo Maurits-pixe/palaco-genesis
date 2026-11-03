@@ -176,6 +176,40 @@ mod tests {
     }
 
     #[test]
+    fn truncated_draft_is_rejected() -> io::Result<()> {
+        let root = temporary_root();
+        store_new_draft(&root, "actor_1", "draft_1", b"fixture")?;
+        let path = root.join("actor_1").join("draft_1.draft");
+        let file = fs::OpenOptions::new().write(true).open(path)?;
+        file.set_len(10)?;
+        assert!(load_draft(&root, "actor_1", "draft_1").is_err());
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn oversized_draft_is_rejected_before_write() {
+        let root = temporary_root();
+        let oversized = vec![0u8; 1024 * 1024 + 1];
+        assert!(store_new_draft(&root, "actor_1", "draft_1", &oversized).is_err());
+        assert!(!root.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_draft_is_rejected() -> io::Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let root = temporary_root();
+        store_new_draft(&root, "actor_1", "draft_1", b"fixture")?;
+        let actor_dir = root.join("actor_1");
+        symlink(actor_dir.join("draft_1.draft"), actor_dir.join("linked.draft"))?;
+        assert!(load_draft(&root, "actor_1", "linked").is_err());
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
     fn actor_namespaces_are_separate() -> io::Result<()> {
         let root = temporary_root();
         store_new_draft(&root, "actor_1", "draft_1", b"fixture")?;
