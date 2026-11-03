@@ -26,6 +26,8 @@ pub mod offline_publisher;
 pub mod offline_recovery;
 /// Pure, non-executing orphan recovery review and evidence classification.
 pub mod offline_recovery_review;
+/// Non-executing review intent receipt with deterministic statement digest.
+pub mod offline_recovery_receipt;
 /// Fail-closed candidate signature verification boundary.
 pub mod offline_signature;
 /// Create-only local staging for public offline chunk fixtures.
