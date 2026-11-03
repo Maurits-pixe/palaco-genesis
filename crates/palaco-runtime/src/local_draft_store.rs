@@ -30,7 +30,10 @@ pub fn store_new_draft(
     validate_identifier(actor_id)?;
     validate_identifier(draft_id)?;
     if payload.len() > MAX_DRAFT_BYTES {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "draft too large"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "draft too large",
+        ));
     }
 
     let actor_dir = root.join(actor_id);
@@ -60,13 +63,16 @@ pub fn load_draft(root: &Path, actor_id: &str, draft_id: &str) -> io::Result<Vec
     let path = actor_dir.join(format!("{draft_id}.draft"));
     reject_symlink(&path)?;
 
-    let mut file = OpenOptions::new().read(true).open(path)?;
+    let file = OpenOptions::new().read(true).open(path)?;
     let mut encoded = Vec::new();
     file.take((MAGIC.len() + LENGTH_BYTES + DIGEST_BYTES + MAX_DRAFT_BYTES + 1) as u64)
         .read_to_end(&mut encoded)?;
     let header_len = MAGIC.len() + LENGTH_BYTES + DIGEST_BYTES;
     if encoded.len() < header_len || !encoded.starts_with(MAGIC) {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid draft header"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid draft header",
+        ));
     }
     let length_end = MAGIC.len() + LENGTH_BYTES;
     let length_bytes: [u8; LENGTH_BYTES] = encoded[MAGIC.len()..length_end]
@@ -76,11 +82,18 @@ pub fn load_draft(root: &Path, actor_id: &str, draft_id: &str) -> io::Result<Vec
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "draft length overflow"))?;
     let payload = &encoded[header_len..];
     if expected_len > MAX_DRAFT_BYTES || payload.len() != expected_len {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "draft length mismatch"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "draft length mismatch",
+        ));
     }
     let expected_digest = &encoded[length_end..header_len];
-    if Sha256::digest(payload).as_slice() != expected_digest {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "draft digest mismatch"));
+    let actual_digest = Sha256::digest(payload);
+    if actual_digest[..] != expected_digest[..] {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "draft digest mismatch",
+        ));
     }
     Ok(payload.to_vec())
 }
@@ -88,16 +101,24 @@ pub fn load_draft(root: &Path, actor_id: &str, draft_id: &str) -> io::Result<Vec
 fn validate_identifier(value: &str) -> io::Result<()> {
     if value.is_empty()
         || value.len() > 64
-        || !value.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
     {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid draft identifier"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid draft identifier",
+        ));
     }
     Ok(())
 }
 
 fn reject_symlink(path: &Path) -> io::Result<()> {
     if fs::symlink_metadata(path)?.file_type().is_symlink() {
-        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "symbolic link forbidden"));
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "symbolic link forbidden",
+        ));
     }
     Ok(())
 }
@@ -115,7 +136,10 @@ mod tests {
     fn non_sensitive_draft_survives_reopen() -> io::Result<()> {
         let root = temporary_root();
         store_new_draft(&root, "actor_1", "draft_1", b"synthetic fixture")?;
-        assert_eq!(load_draft(&root, "actor_1", "draft_1")?, b"synthetic fixture");
+        assert_eq!(
+            load_draft(&root, "actor_1", "draft_1")?,
+            b"synthetic fixture"
+        );
         fs::remove_dir_all(root)?;
         Ok(())
     }
