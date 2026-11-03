@@ -428,6 +428,7 @@ dependencies = [
  "palaco-evidence",
  "palaco-foundation",
  "palaco-oracle",
+ "sha2",
  "palaco-trias",
  "palaco-types",
  "uuid",
