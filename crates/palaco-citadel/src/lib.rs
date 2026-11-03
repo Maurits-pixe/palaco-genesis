@@ -386,8 +386,7 @@ mod tests {
     };
 
     #[test]
-    fn boundary_rejects_tampered_authorization_identity_and_provenance(
-    ) -> Result<(), &'static str> {
+    fn boundary_rejects_substituted_grant_evidence() -> Result<(), &'static str> {
         let mut boundary = ExecutionBoundary::new(decision(AuthorizationScope::Execute)?);
         boundary.authorization.authorization_id = "substituted-decision".to_string();
         assert!(boundary.validate().is_err());
