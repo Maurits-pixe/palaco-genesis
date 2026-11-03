@@ -49,8 +49,8 @@ pub fn inspect_transaction_candidate(
         return Err(TransactionPreflightError::InvalidGeneration);
     }
 
-    let journal =
-        read_journal(root, journal_id).map_err(|_| TransactionPreflightError::JournalNotComplete)?;
+    let journal = read_journal(root, journal_id)
+        .map_err(|_| TransactionPreflightError::JournalNotComplete)?;
     if journal.steps
         != [
             JournalStep::Started,
