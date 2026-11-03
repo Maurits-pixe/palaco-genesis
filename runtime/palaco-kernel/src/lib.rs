@@ -70,6 +70,9 @@ impl Validatable for KernelCycle {
 
 impl CurrentlyAssessable for KernelCycle {
     fn current_validity(&self, at: Timestamp) -> CurrentValidity {
+        if self.validate().is_err() {
+            return CurrentValidity::SafeStateRequired;
+        }
         match self.disposition {
             KernelDisposition::Execute => self.runtime_plan.current_validity(at),
             KernelDisposition::Escalate => CurrentValidity::InsufficientEvidence,
@@ -194,6 +197,10 @@ mod tests {
         let mut cycle = kernel_cycle(AuthorizationScope::Observe)?;
         cycle.disposition = KernelDisposition::Execute;
         assert!(cycle.validate().is_err());
+        assert_eq!(
+            cycle.current_validity(cycle.runtime_plan.boundary.decision.context.observed_at),
+            CurrentValidity::SafeStateRequired
+        );
         assert!(cycle
             .revalidate(&cycle.runtime_plan.boundary.decision.context)
             .is_err());
