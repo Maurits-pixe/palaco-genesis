@@ -105,28 +105,40 @@ mod tests {
     fn incomplete_actor_is_held_before_adapter() {
         let mut input = request();
         input.actor.subject.clear();
-        assert_eq!(assess_identity_evidence(&TestVerifier, &input), IdentityAssessment::Hold);
+        assert_eq!(
+            assess_identity_evidence(&TestVerifier, &input),
+            IdentityAssessment::Hold
+        );
     }
 
     #[test]
     fn missing_credential_reference_is_held_before_adapter() {
         let mut input = request();
         input.credential_ref.clear();
-        assert_eq!(assess_identity_evidence(&TestVerifier, &input), IdentityAssessment::Hold);
+        assert_eq!(
+            assess_identity_evidence(&TestVerifier, &input),
+            IdentityAssessment::Hold
+        );
     }
 
     #[test]
     fn missing_issuer_is_held_before_adapter() {
         let mut input = request();
         input.expected_issuer.clear();
-        assert_eq!(assess_identity_evidence(&TestVerifier, &input), IdentityAssessment::Hold);
+        assert_eq!(
+            assess_identity_evidence(&TestVerifier, &input),
+            IdentityAssessment::Hold
+        );
     }
 
     #[test]
     fn missing_audience_is_held_before_adapter() {
         let mut input = request();
         input.expected_audience.clear();
-        assert_eq!(assess_identity_evidence(&TestVerifier, &input), IdentityAssessment::Hold);
+        assert_eq!(
+            assess_identity_evidence(&TestVerifier, &input),
+            IdentityAssessment::Hold
+        );
     }
 
     #[test]
