@@ -53,7 +53,18 @@ impl KernelCycle {
 
 impl Validatable for KernelCycle {
     fn validate(&self) -> Result<(), palaco_foundation::errors::ValidationError> {
-        self.runtime_plan.validate()
+        self.runtime_plan.validate()?;
+        let expected = match self.runtime_plan.disposition {
+            RuntimeDisposition::Execute => KernelDisposition::Execute,
+            RuntimeDisposition::Escalate => KernelDisposition::Escalate,
+            RuntimeDisposition::SafeState => KernelDisposition::SafeState,
+        };
+        if self.disposition != expected {
+            return Err(palaco_foundation::errors::ValidationError::Message {
+                message: "kernel disposition disagrees with runtime plan".to_string(),
+            });
+        }
+        Ok(())
     }
 }
 
@@ -91,7 +102,7 @@ mod tests {
     use palaco_foundation::{
         evidence::Evidence,
         identity::{NodeId, PolicyVersionId, StateSnapshotId},
-        traits::{CurrentlyAssessable, Revalidatable},
+        traits::{CurrentlyAssessable, Revalidatable, Validatable},
         types::{
             CurrentValidity, DecisionContext, RevalidationOutcome, TrustLevel, ValidityWindow,
         },
@@ -175,6 +186,15 @@ mod tests {
             Ok(RevalidationOutcome::Confirmed)
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn kernel_rejects_forged_execute_disposition() -> Result<(), &'static str> {
+        let mut cycle = kernel_cycle(AuthorizationScope::Observe)?;
+        cycle.disposition = KernelDisposition::Execute;
+        assert!(cycle.validate().is_err());
+        assert!(cycle.revalidate(&cycle.runtime_plan.boundary.decision.context).is_err());
         Ok(())
     }
 
