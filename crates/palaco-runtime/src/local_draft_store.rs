@@ -18,8 +18,8 @@ const LENGTH_BYTES: usize = 8;
 /// Stores a previously absent non-sensitive draft in an actor-specific folder.
 ///
 /// Each identifier is restricted to ASCII letters, digits, dash and underscore.
-/// A previously used identifier is never overwritten; a partial crash artifact
-/// remains detectable on the next read. The caller must supply a trusted root
+/// A previously used identifier is never overwritten. A partial write stays
+/// in a pending file that is never returned by the read API. The caller must supply a trusted root
 /// directory and restrict filesystem access independently.
 pub fn store_new_draft(
     root: &Path,
@@ -41,13 +41,23 @@ pub fn store_new_draft(
     reject_symlink(&actor_dir)?;
 
     let path = actor_dir.join(format!("{draft_id}.draft"));
-    let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
+    let pending = actor_dir.join(format!("{draft_id}.pending"));
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&pending)?;
     let digest = Sha256::digest(payload);
     file.write_all(MAGIC)?;
     file.write_all(&(payload.len() as u64).to_be_bytes())?;
     file.write_all(&digest)?;
     file.write_all(payload)?;
     file.sync_all()?;
+    drop(file);
+
+    // The hard link publishes a fully written inode without overwriting an
+    // existing draft. A failed link leaves the pending file for inspection.
+    fs::hard_link(&pending, &path)?;
+    fs::remove_file(&pending)?;
     Ok(())
 }
 
@@ -171,6 +181,18 @@ mod tests {
         }
         fs::write(path, encoded)?;
         assert!(load_draft(&root, "actor_1", "draft_1").is_err());
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn incomplete_pending_file_is_not_visible_as_draft() -> io::Result<()> {
+        let root = temporary_root();
+        let actor_dir = root.join("actor_1");
+        fs::create_dir_all(&actor_dir)?;
+        fs::write(actor_dir.join("draft_1.pending"), b"incomplete")?;
+        assert!(load_draft(&root, "actor_1", "draft_1").is_err());
+        assert!(store_new_draft(&root, "actor_1", "draft_1", b"fixture").is_err());
         fs::remove_dir_all(root)?;
         Ok(())
     }
