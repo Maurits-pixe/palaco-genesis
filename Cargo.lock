@@ -430,6 +430,7 @@ dependencies = [
  "palaco-oracle",
  "palaco-trias",
  "palaco-types",
+ "sha2",
  "uuid",
 ]
 
