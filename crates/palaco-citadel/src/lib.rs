@@ -3,6 +3,9 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+/// Trusted identity verifier interface and default-HOLD adapter.
+pub mod trusted_identity;
+
 use palaco_constitution::{AuthorizationGrant, IdentityHandle};
 use palaco_foundation::{
     errors::RevalidationError,
