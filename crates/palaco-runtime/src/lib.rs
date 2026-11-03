@@ -3,6 +3,9 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+/// Offline vacation-mode memory package planning and capacity guards.
+pub mod vacation_mode;
+
 use palaco_citadel::{BoundaryDisposition, ExecutionBoundary};
 use palaco_foundation::{
     errors::RevalidationError,
