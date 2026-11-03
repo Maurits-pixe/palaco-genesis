@@ -74,9 +74,8 @@ pub fn check_signed_manifest(
         return Err(SignatureGateError::InvalidEnvelope);
     }
 
-    let computed = manifest_root(entries).map_err(|_: ManifestError| {
-        SignatureGateError::ManifestInvalid
-    })?;
+    let computed =
+        manifest_root(entries).map_err(|_: ManifestError| SignatureGateError::ManifestInvalid)?;
     if computed != envelope.manifest_root {
         return Err(SignatureGateError::RootMismatch);
     }
