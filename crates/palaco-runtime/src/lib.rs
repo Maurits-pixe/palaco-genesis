@@ -24,6 +24,8 @@ pub mod offline_publication;
 pub mod offline_publisher;
 /// Read-only inspection of incomplete offline staging after restart.
 pub mod offline_recovery;
+/// Pure, non-executing orphan recovery review and evidence classification.
+pub mod offline_recovery_review;
 /// Fail-closed candidate signature verification boundary.
 pub mod offline_signature;
 /// Create-only local staging for public offline chunk fixtures.
