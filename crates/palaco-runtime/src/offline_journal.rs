@@ -107,15 +107,12 @@ fn journal_path(root: &Path, id: &str) -> Result<std::path::PathBuf, JournalErro
 fn valid_sequence(steps: &[JournalStep]) -> bool {
     !steps.is_empty()
         && steps.len() <= 3
-        && steps
-            .iter()
-            .enumerate()
-            .all(|(i, step)| match (i, step) {
-                (0, JournalStep::Started)
-                | (1, JournalStep::DataSynced)
-                | (2, JournalStep::HashInspected) => true,
-                _ => false,
-            })
+        && steps.iter().enumerate().all(|(i, step)| match (i, step) {
+            (0, JournalStep::Started)
+            | (1, JournalStep::DataSynced)
+            | (2, JournalStep::HashInspected) => true,
+            _ => false,
+        })
 }
 
 fn encode(steps: &[JournalStep]) -> Vec<u8> {
@@ -186,7 +183,10 @@ mod tests {
     fn reopen_complete_snapshot() -> Result<(), std::io::Error> {
         let path = root()?;
         assert!(create_journal(&path, "fixture", &full()).is_ok());
-        assert_eq!(read_journal(&path, "fixture").map(|value| value.steps), Ok(full().steps));
+        assert_eq!(
+            read_journal(&path, "fixture").map(|value| value.steps),
+            Ok(full().steps)
+        );
         fs::remove_dir_all(&path)?;
         Ok(())
     }
@@ -195,7 +195,10 @@ mod tests {
     fn truncated_frame_is_rejected() -> Result<(), std::io::Error> {
         let path = root()?;
         fs::write(path.join("journal_fixture.bin"), b"PLJ01\x03\x01")?;
-        assert!(matches!(read_journal(&path, "fixture"), Err(JournalError::CorruptFrame)));
+        assert!(matches!(
+            read_journal(&path, "fixture"),
+            Err(JournalError::CorruptFrame)
+        ));
         fs::remove_dir_all(&path)?;
         Ok(())
     }
@@ -208,7 +211,10 @@ mod tests {
         let mut bytes = fs::read(&file)?;
         bytes[6] = 3;
         fs::write(file, bytes)?;
-        assert!(matches!(read_journal(&path, "fixture"), Err(JournalError::CorruptFrame)));
+        assert!(matches!(
+            read_journal(&path, "fixture"),
+            Err(JournalError::CorruptFrame)
+        ));
         fs::remove_dir_all(&path)?;
         Ok(())
     }
