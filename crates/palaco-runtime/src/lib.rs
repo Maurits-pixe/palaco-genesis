@@ -67,6 +67,9 @@ impl Validatable for RuntimePlan {
 
 impl CurrentlyAssessable for RuntimePlan {
     fn current_validity(&self, at: Timestamp) -> CurrentValidity {
+        if self.validate().is_err() {
+            return CurrentValidity::SafeStateRequired;
+        }
         match self.disposition {
             RuntimeDisposition::Execute => self.boundary.current_validity(at),
             RuntimeDisposition::Escalate => CurrentValidity::InsufficientEvidence,
@@ -190,6 +193,10 @@ mod tests {
         let mut plan = plan(AuthorizationScope::Observe)?;
         plan.disposition = RuntimeDisposition::Execute;
         assert!(plan.validate().is_err());
+        assert_eq!(
+            plan.current_validity(plan.boundary.decision.context.observed_at),
+            CurrentValidity::SafeStateRequired
+        );
         assert!(plan.revalidate(&plan.boundary.decision.context).is_err());
         Ok(())
     }
