@@ -43,6 +43,26 @@ pub trait TrustedIdentityVerifier {
     fn assess(&self, request: &IdentityEvidenceRequest) -> IdentityAssessment;
 }
 
+/// Performs fail-closed structural checks before consulting an adapter.
+///
+/// This function reports identity evidence assessment only. A `Verified`
+/// result does not authorize an action and cannot substitute for independent
+/// trust configuration, revocation checks or a TRIAS decision.
+pub fn assess_identity_evidence(
+    verifier: &impl TrustedIdentityVerifier,
+    request: &IdentityEvidenceRequest,
+) -> IdentityAssessment {
+    if request.actor.subject.is_empty()
+        || request.actor.surface.is_empty()
+        || request.credential_ref.is_empty()
+        || request.expected_issuer.is_empty()
+        || request.expected_audience.is_empty()
+    {
+        return IdentityAssessment::Hold;
+    }
+    verifier.assess(request)
+}
+
 /// Safe default until a genuine trusted provider is selected and configured.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct UnconfiguredIdentityVerifier;
@@ -56,8 +76,8 @@ impl TrustedIdentityVerifier for UnconfiguredIdentityVerifier {
 #[cfg(test)]
 mod tests {
     use super::{
-        IdentityAssessment, IdentityEvidenceRequest, TrustedIdentityVerifier,
-        UnconfiguredIdentityVerifier,
+        assess_identity_evidence, IdentityAssessment, IdentityEvidenceRequest,
+        TrustedIdentityVerifier, UnconfiguredIdentityVerifier,
     };
     use palaco_constitution::IdentityHandle;
 
@@ -71,6 +91,42 @@ mod tests {
             expected_issuer: "configured-issuer".to_string(),
             expected_audience: "palaco-citadel".to_string(),
         }
+    }
+
+    struct TestVerifier;
+
+    impl TrustedIdentityVerifier for TestVerifier {
+        fn assess(&self, _request: &IdentityEvidenceRequest) -> IdentityAssessment {
+            IdentityAssessment::Verified
+        }
+    }
+
+    #[test]
+    fn incomplete_actor_is_held_before_adapter() {
+        let mut input = request();
+        input.actor.subject.clear();
+        assert_eq!(assess_identity_evidence(&TestVerifier, &input), IdentityAssessment::Hold);
+    }
+
+    #[test]
+    fn missing_credential_reference_is_held_before_adapter() {
+        let mut input = request();
+        input.credential_ref.clear();
+        assert_eq!(assess_identity_evidence(&TestVerifier, &input), IdentityAssessment::Hold);
+    }
+
+    #[test]
+    fn missing_issuer_is_held_before_adapter() {
+        let mut input = request();
+        input.expected_issuer.clear();
+        assert_eq!(assess_identity_evidence(&TestVerifier, &input), IdentityAssessment::Hold);
+    }
+
+    #[test]
+    fn missing_audience_is_held_before_adapter() {
+        let mut input = request();
+        input.expected_audience.clear();
+        assert_eq!(assess_identity_evidence(&TestVerifier, &input), IdentityAssessment::Hold);
     }
 
     #[test]
