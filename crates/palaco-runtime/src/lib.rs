@@ -12,6 +12,8 @@ pub mod offline_catalog;
 pub mod offline_generation;
 /// Offline chunk integrity verification without disk or network access.
 pub mod offline_integrity;
+/// Create-only recovery journal snapshots for non-sensitive fixtures.
+pub mod offline_journal;
 /// Deterministic public offline manifest root, without signature authority.
 pub mod offline_manifest;
 /// Publisher revocation, epoch and trusted-time preflight for offline content.
