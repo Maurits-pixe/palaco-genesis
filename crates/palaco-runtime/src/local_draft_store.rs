@@ -222,7 +222,10 @@ mod tests {
         let second_result = second
             .join()
             .map_err(|_| io::Error::other("second writer panicked"))?;
-        assert_eq!(usize::from(first_result.is_ok()) + usize::from(second_result.is_ok()), 1);
+        assert_eq!(
+            usize::from(first_result.is_ok()) + usize::from(second_result.is_ok()),
+            1
+        );
         let stored = load_draft(&root, "actor_1", "draft_1")?;
         assert!(stored == b"first" || stored == b"second");
         fs::remove_dir_all(root)?;
