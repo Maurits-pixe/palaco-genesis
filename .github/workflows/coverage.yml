@@ -13,10 +13,10 @@ jobs:
   coverage:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
-      - uses: taiki-e/install-action@d8b4ba921fd8c569ef8d639f6bc0e658768903a1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@cargo-tarpaulin
       - run: cargo tarpaulin --all --out Xml --timeout 300
-      - uses: codecov/codecov-action@ab904c41d6ece82784817410c45d8b8c02684457
+      - uses: codecov/codecov-action@v3
         with:
           files: ./cobertura.xml
