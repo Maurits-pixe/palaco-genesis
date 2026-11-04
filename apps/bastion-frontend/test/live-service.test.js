@@ -16,6 +16,7 @@ import { TRUSTED_MODULES, verifyModule, launchUrl } from '../../neo-launcher/src
 
 const token = 'test-only-live-service-operator-secret'
 const now = 1000
+const commitCaution = 'Vastlegging niet bevestigd. Controleer de laatste inzending via het ticket-ID. Dien niet automatisch opnieuw in.'
 
 async function bounded(pending, label) {
   let timer
@@ -673,6 +674,7 @@ test('live service: stale local time permits preflight but the server denies com
   await f.run('commit')
   assert.deepEqual(f.calls.at(-1), { path: '/v1/commands', method: 'POST', status: 403 })
   assert.match(s.error.value, /Geen toestemming/)
+  assert.equal(s.message.value, commitCaution)
   assert.equal(s.ticket.value, null)
   assert.equal(s.canCommit.value, false)
   assert.equal(s.lastSubmissionId.value, held.id)
@@ -689,6 +691,7 @@ test('live service: stale local time permits preflight but the server denies com
   assert.equal(s.lastSubmissionId.value, held.id)
   await bounded(s.checkLastSubmission(), 'expired submission status')
   assert.equal(s.error.value, '')
+  assert.match(s.message.value, /Ticketstatus opgehaald/)
   assert.equal(s.outcome.value.id, held.id)
   assert.equal(s.outcome.value.status, 'expired')
   assert.equal(s.outcome.value.checked_at, held.expires_at)
@@ -730,6 +733,7 @@ test('live service: external production revocation leaves stale local preflight 
   await f.run('commit')
   assert.deepEqual(f.calls.at(-1), { path: '/v1/commands', method: 'POST', status: 403 })
   assert.match(s.error.value, /Geen toestemming/)
+  assert.equal(s.message.value, commitCaution)
   assert.equal(s.ticket.value, null)
   assert.equal(s.canCommit.value, false)
   assert.equal(s.lastSubmissionId.value, held.id)
@@ -747,6 +751,7 @@ test('live service: external production revocation leaves stale local preflight 
   assert.equal(s.lastSubmissionId.value, held.id)
   await bounded(s.checkLastSubmission(), 'externally revoked submission status')
   assert.equal(s.error.value, '')
+  assert.match(s.message.value, /Ticketstatus opgehaald/)
   assert.equal(s.outcome.value.id, held.id)
   assert.equal(s.outcome.value.status, 'revoked')
   assert.equal(s.outcome.value.checked_at, now)
@@ -782,6 +787,7 @@ test('live service: a real commit 503 rolls back mutation without restoring loca
   assert.deepEqual(stages, ['after-begin', 'before-commit', 'before-watermark-commit'])
   assert.deepEqual(f.calls.at(-1), { path: '/v1/commands', method: 'POST', status: 503 })
   assert.match(s.error.value, /De service kan dit verzoek niet verwerken/)
+  assert.equal(s.message.value, commitCaution)
   assert.equal(s.ticket.value, null)
   assert.equal(s.canCommit.value, false)
   assert.equal(s.lastSubmissionId.value, held.id)
@@ -802,6 +808,7 @@ test('live service: a real commit 503 rolls back mutation without restoring loca
   await bounded(s.checkLastSubmission(), 'rolled back submission status')
   assert.deepEqual(f.calls.at(-1), { path: `/v1/tickets/${held.id}`, method: 'GET', status: 200 })
   assert.equal(s.error.value, '')
+  assert.match(s.message.value, /Ticketstatus opgehaald/)
   assert.equal(s.outcome.value.id, held.id)
   assert.equal(s.outcome.value.status, 'active')
   assert.equal(s.outcome.value.checked_at, now)
@@ -1192,6 +1199,7 @@ test('live service: a lost successful commit consumes local authority without re
   await f.run('commit')
   assert.equal(f.losses, 1)
   assert.match(s.error.value, /Geen geldig antwoord/)
+  assert.equal(s.message.value, commitCaution)
   assert.equal(s.ticket.value, null)
   assert.equal(s.canCommit.value, false)
   assert.equal(s.lastSubmissionId.value, id)
@@ -1209,6 +1217,7 @@ test('live service: a lost successful commit consumes local authority without re
   assert.equal(s.lastSubmissionId.value, id)
   await bounded(s.checkLastSubmission(), 'lost commit reconciliation')
   assert.equal(s.error.value, '')
+  assert.match(s.message.value, /Ticketstatus opgehaald/)
   assert.equal(s.outcome.value.id, id)
   assert.equal(s.outcome.value.status, 'committed')
   assert.deepEqual(s.outcome.value.record, persisted)
@@ -1234,6 +1243,7 @@ test('live service: explicit lookup finds a lost successful commit after service
   await f.run('commit')
   assert.equal(f.losses, 1)
   assert.match(s.error.value, /Geen geldig antwoord/)
+  assert.equal(s.message.value, commitCaution)
   assert.equal(s.ticket.value, null)
   assert.equal(s.canCommit.value, false)
   assert.equal(s.lastSubmissionId.value, held.id)
@@ -1278,10 +1288,12 @@ test('live service: explicit lookup finds a lost successful commit after service
   assert.equal(f.sockets.length, 0)
   assert.equal(f.witness, undefined)
   assert.equal(f.calls.length, 2, 'service recreation does not automatically request anything')
+  assert.equal(s.message.value, commitCaution)
   assertPersisted()
 
   await bounded(s.checkLastSubmission(), 'lost commit status after service recreation')
   assert.equal(s.error.value, '')
+  assert.match(s.message.value, /Ticketstatus opgehaald/)
   assert.equal(s.outcome.value.id, held.id)
   assert.equal(s.outcome.value.status, 'committed')
   assert.equal(s.outcome.value.checked_at, now)

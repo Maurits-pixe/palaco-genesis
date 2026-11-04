@@ -296,6 +296,9 @@ export function useSession({
     } catch (failure) {
       if (current() && (!refresh || refresh.generation === journalGeneration)) {
         error.value = failure.message
+        if (action === 'commit') {
+          message.value = 'Vastlegging niet bevestigd. Controleer de laatste inzending via het ticket-ID. Dien niet automatisch opnieuw in.'
+        }
         if (refresh) journalRefreshFailed.value = true
       }
     } finally {

@@ -245,6 +245,11 @@ sessiegeheugen; je kunt ook handmatig een ID invoeren.
 Met **Controleer laatste inzending** vraag je direct de status van dat
 bewaarde ID op, ook wanneer het lokale ticket na de inzendpoging al is
 verwijderd. Deze knop dient niets opnieuw in en herstelt geen toestemming.
+Bij een mislukte vastleggingsactie toont BASTION naast de fout **Vastlegging
+niet bevestigd**, met het advies de laatste inzending te controleren en niet
+automatisch opnieuw in te dienen. Dit bewijst geen commit of rollback.
+Het ingezonden ticket-ID blijft behouden; de melding verdwijnt bij een
+volgende expliciete actie of sessiewissing, zonder de serveruitkomst te wijzigen.
 De knop controleert uitsluitend de laatste inzending in de huidige sessie;
 oudere ID's kun je handmatig invoeren. De server rapporteert
 of het ticket wacht, actief, verlopen, ingetrokken of al gecommit is en levert

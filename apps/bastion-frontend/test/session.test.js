@@ -13,6 +13,7 @@ const snapshot = (changes = {}) => ({
 })
 const actions = { ticket: 'issueTicket', commit: 'commitCommand', revoke: 'revokeTicket', status: 'getTicketStatus', list: 'listCommands' }
 const results = { ticket: held(), commit: record(), revoke: undefined, status: snapshot(), list: [record()] }
+const commitCaution = 'Vastlegging niet bevestigd. Controleer de laatste inzending via het ticket-ID. Dien niet automatisch opnieuw in.'
 const deferred = () => {
   let resolve, reject
   const promise = new Promise((yes, no) => { resolve = yes; reject = no })
@@ -1696,6 +1697,7 @@ test('ticket gate, separate submission, uncertain outcome, and retained ID use t
   calls[1].reject(new Error('response lost'))
   await committing
   assert.equal(state.error.value, 'response lost')
+  assert.equal(state.message.value, commitCaution)
   assert.equal(state.busy.value, '')
   await state.perform('commit')
   assert.equal(calls.length, 2)
@@ -2180,6 +2182,70 @@ test('all current request failures release busy without retries', async t => {
     await operation
     assert.equal(state.busy.value, '')
     assert.equal(state.error.value, 'service failed')
+    assert.equal(state.message.value, action === 'commit' ? commitCaution : '')
+    assert.equal(calls.length, 1)
+  }
+})
+
+for (const nextAction of ['status', 'list']) {
+  test(`unconfirmed commit feedback survives local clears until explicit ${nextAction} starts`, async t => {
+    const { state, calls } = fixture(t)
+    prepare(state, 'commit')
+    const previousJournal = state.commands.value
+    const operation = state.perform('commit')
+    calls[0].reject(new Error('commit response lost'))
+    await operation
+    assert.equal(state.message.value, commitCaution)
+    assert.equal(state.error.value, 'commit response lost')
+    assert.equal(state.ticket.value, null)
+    assert.equal(state.canCommit.value, false)
+    assert.equal(state.revocationUncertain.value, false)
+    assert.equal(state.lastSubmissionId.value, held().id)
+    assert.equal(state.lookupId.value, held().id)
+    assert.equal(state.command.value, held().command)
+    assert.equal(state.commands.value, previousJournal)
+    assert.equal(state.outcome.value, null)
+    assert.equal(state.outcomeReceivedAt.value, null)
+
+    state.clearCommand()
+    state.clearOutcome()
+    assert.equal(state.commands.value, previousJournal)
+    state.clearJournal()
+    assert.equal(state.command.value, '')
+    assert.deepEqual(state.commands.value, [])
+    assert.equal(state.message.value, commitCaution)
+    assert.equal(state.error.value, 'commit response lost')
+    assert.equal(state.ticket.value, null)
+    assert.equal(state.lastSubmissionId.value, held().id)
+    assert.equal(state.lookupId.value, held().id)
+    assert.equal(calls.length, 1, 'local clears do not reconcile or resubmit')
+
+    const next = nextAction === 'status' ? state.checkLastSubmission() : state.perform('list')
+    assert.equal(state.busy.value, nextAction)
+    assert.equal(state.message.value, '', 'clear caution before awaiting the explicit request')
+    assert.equal(state.error.value, '')
+    calls[1].resolve(results[nextAction])
+    await next
+    assert.equal(state.ticket.value, null)
+    assert.equal(state.canCommit.value, false)
+    assert.equal(calls.length, 2)
+    assert.deepEqual(calls.map(call => call.action), ['commit', nextAction])
+  })
+}
+
+test('session reset, pagehide and disposal clear settled unconfirmed commit feedback', async t => {
+  for (const reset of ['clearSession', 'pagehide', 'dispose']) {
+    const { state, calls, scope, eventTarget } = fixture(t)
+    prepare(state, 'commit')
+    const operation = state.perform('commit')
+    calls[0].reject(new Error('commit response lost'))
+    await operation
+    assert.equal(state.message.value, commitCaution)
+    assert.equal(state.error.value, 'commit response lost')
+    if (reset === 'pagehide') eventTarget.dispatchEvent(pageTransition('pagehide', true))
+    else if (reset === 'dispose') scope.stop()
+    else state.clearSession()
+    assertEmpty(state)
     assert.equal(calls.length, 1)
   }
 })
