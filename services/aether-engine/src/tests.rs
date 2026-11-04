@@ -529,6 +529,207 @@ async fn http_wrong_key_restart_is_generic_and_preserves_encrypted_records() {
 }
 
 #[tokio::test]
+async fn http_ciphertext_tampering_is_isolated_and_preserves_encrypted_records() {
+    let key = [0x6d; 32];
+    let plaintexts = [
+        "PRIVATE tamper target 世界 🦀",
+        "Unaffected ciphertext neighbor 🌱",
+    ];
+    let server = Server::start_with(Database::temporary(), key).await;
+    let mut ids = Vec::new();
+    for plaintext in plaintexts {
+        let body = serde_json::json!({"plaintext": plaintext}).to_string();
+        let (status, response) = server
+            .request("POST", "/v1/records", AUTH_JSON, &body)
+            .await;
+        assert_eq!(status, 201);
+        ids.push(json_body(&response)["id"].as_str().unwrap().to_owned());
+    }
+    assert_ne!(ids[0], ids[1]);
+    let database = server.stop().await;
+    let original = database.encrypted_records();
+    assert_eq!(original.len(), 2);
+    let target = original.iter().find(|row| row.0 == ids[0]).unwrap();
+    let mut ciphertext = target.2.clone();
+    ciphertext[0] ^= 1;
+    {
+        let connection = Connection::open(&database.0).unwrap();
+        assert_eq!(
+            connection
+                .execute(
+                    "UPDATE records SET ciphertext = ?1 WHERE id = ?2",
+                    params![ciphertext, ids[0]],
+                )
+                .unwrap(),
+            1
+        );
+    }
+    let tampered = database.encrypted_records();
+    let mut expected = original.clone();
+    expected.iter_mut().find(|row| row.0 == ids[0]).unwrap().2 = ciphertext;
+    assert_eq!(tampered, expected);
+
+    let server = Server::start_with(database, key).await;
+    let (status, response) = server
+        .request("GET", &format!("/v1/records/{}", ids[0]), AUTH, "")
+        .await;
+    assert_eq!(status, 500);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"error": "record operation failed"})
+    );
+    for secret_or_detail in [
+        plaintexts[0],
+        plaintexts[1],
+        "SQLite",
+        "decrypt",
+        "ciphertext",
+        "nonce",
+        "aead",
+    ] {
+        assert!(!response.contains(secret_or_detail));
+    }
+    let (status, response) = server
+        .request("GET", &format!("/v1/records/{}", ids[1]), AUTH, "")
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"id": ids[1], "plaintext": plaintexts[1]})
+    );
+    let database = server.stop().await;
+    assert_eq!(database.encrypted_records(), tampered);
+
+    {
+        let connection = Connection::open(&database.0).unwrap();
+        assert_eq!(
+            connection
+                .execute(
+                    "UPDATE records SET ciphertext = ?1 WHERE id = ?2",
+                    params![target.2, ids[0]],
+                )
+                .unwrap(),
+            1
+        );
+    }
+    let server = Server::start_with(database, key).await;
+    let (status, response) = server
+        .request("GET", &format!("/v1/records/{}", ids[0]), AUTH, "")
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"id": ids[0], "plaintext": plaintexts[0]})
+    );
+    let database = server.stop().await;
+    assert_eq!(database.encrypted_records(), original);
+}
+
+#[tokio::test]
+async fn http_record_id_relocation_rejects_aad_mismatch_and_preserves_encrypted_records() {
+    let key = [0x6d; 32];
+    let plaintexts = ["PRIVATE AAD target 世界 🦀", "Unaffected AAD neighbor 🌱"];
+    let server = Server::start_with(Database::temporary(), key).await;
+    let mut ids = Vec::new();
+    for plaintext in plaintexts {
+        let body = serde_json::json!({"plaintext": plaintext}).to_string();
+        let (status, response) = server
+            .request("POST", "/v1/records", AUTH_JSON, &body)
+            .await;
+        assert_eq!(status, 201);
+        ids.push(json_body(&response)["id"].as_str().unwrap().to_owned());
+    }
+    assert_ne!(ids[0], ids[1]);
+    let database = server.stop().await;
+    let original = database.encrypted_records();
+    assert_eq!(original.len(), 2);
+    let replacement = ["0".repeat(32), "1".repeat(32), "2".repeat(32)]
+        .into_iter()
+        .find(|id| !ids.contains(id))
+        .unwrap();
+    {
+        let connection = Connection::open(&database.0).unwrap();
+        assert_eq!(
+            connection
+                .execute(
+                    "UPDATE records SET id = ?1 WHERE id = ?2",
+                    params![replacement, ids[0]],
+                )
+                .unwrap(),
+            1
+        );
+    }
+    let relocated = database.encrypted_records();
+    let mut expected = original.clone();
+    expected.iter_mut().find(|row| row.0 == ids[0]).unwrap().0 = replacement.clone();
+    expected.sort_by(|left, right| left.0.cmp(&right.0));
+    assert_eq!(relocated, expected);
+
+    let server = Server::start_with(database, key).await;
+    let (status, response) = server
+        .request("GET", &format!("/v1/records/{replacement}"), AUTH, "")
+        .await;
+    assert_eq!(status, 500);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"error": "record operation failed"})
+    );
+    for secret_or_detail in [
+        plaintexts[0],
+        plaintexts[1],
+        "SQLite",
+        "decrypt",
+        "ciphertext",
+        "nonce",
+        "aead",
+    ] {
+        assert!(!response.contains(secret_or_detail));
+    }
+    let (status, response) = server
+        .request("GET", &format!("/v1/records/{}", ids[0]), AUTH, "")
+        .await;
+    assert_eq!(status, 404);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"error": "record not found"})
+    );
+    let (status, response) = server
+        .request("GET", &format!("/v1/records/{}", ids[1]), AUTH, "")
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"id": ids[1], "plaintext": plaintexts[1]})
+    );
+    let database = server.stop().await;
+    assert_eq!(database.encrypted_records(), relocated);
+
+    {
+        let connection = Connection::open(&database.0).unwrap();
+        assert_eq!(
+            connection
+                .execute(
+                    "UPDATE records SET id = ?1 WHERE id = ?2",
+                    params![ids[0], replacement],
+                )
+                .unwrap(),
+            1
+        );
+    }
+    let server = Server::start_with(database, key).await;
+    let (status, response) = server
+        .request("GET", &format!("/v1/records/{}", ids[0]), AUTH, "")
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"id": ids[0], "plaintext": plaintexts[0]})
+    );
+    let database = server.stop().await;
+    assert_eq!(database.encrypted_records(), original);
+}
+
+#[tokio::test]
 async fn http_auth_rejects_missing_wrong_and_duplicate_tokens() {
     let server = Server::start().await;
     for headers in [

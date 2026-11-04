@@ -436,6 +436,12 @@ stoppen en heropenen van dezelfde tijdelijke SQLite-database. Met dezelfde
 sleutel blijft het opgeslagen record leesbaar. Een verkeerde sleutel geeft
 een generieke fout zonder de opgeslagen recorddata te veranderen; opnieuw
 openen met de oorspronkelijke sleutel maakt het record weer leesbaar.
+Aanvullende HTTP-tests wijzigen offline de ciphertext of verplaatsen een
+versleuteld record naar een ander ID. Na heropenen weigert de engine het
+gewijzigde record met een generieke fout, terwijl een onaangetast record
+leesbaar blijft. De leesverzoeken veranderen de opgeslagen versleutelde rijen
+niet. Dit controleert ook de cryptografische binding aan het record-ID;
+het voorkomt geen verwijdering of manipulatie van het databasebestand.
 Dit test de Rust-engine en SQLite, niet de frontend, een procescrash of
 duurzaamheid bij stroomuitval.
 
