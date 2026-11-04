@@ -13,6 +13,10 @@ env:
 permissions:
   contents: read
 
+concurrency:
+  group: palaco-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
     name: Validate & Verify

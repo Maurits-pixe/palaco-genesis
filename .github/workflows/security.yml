@@ -15,6 +15,10 @@ env:
 permissions:
   contents: read
 
+concurrency:
+  group: palaco-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   audit:
     name: Dependency vulnerability audit
