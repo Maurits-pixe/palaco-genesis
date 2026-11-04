@@ -56,10 +56,12 @@ pub fn persist_checkpoint(
     frame.extend_from_slice(&checkpoint.policy_epoch.to_be_bytes());
     frame.extend_from_slice(&checkpoint.registry_digest);
     frame.extend_from_slice(&checkpoint.commitment);
-    file.write_all(&frame[..24]).map_err(CheckpointStoreError::Io)?;
+    file.write_all(&frame[..24])
+        .map_err(CheckpointStoreError::Io)?;
     #[cfg(test)]
     checkpoint_crash_hook(root, "partial");
-    file.write_all(&frame[24..]).map_err(CheckpointStoreError::Io)?;
+    file.write_all(&frame[24..])
+        .map_err(CheckpointStoreError::Io)?;
     file.sync_all().map_err(CheckpointStoreError::Io)?;
     File::open(root)
         .and_then(|directory| directory.sync_all())
@@ -128,8 +130,7 @@ fn validate_root(root: &Path) -> Result<(), CheckpointStoreError> {
 fn checkpoint_crash_hook(root: &Path, phase: &str) {
     let selected_root = std::env::var_os("PALACO_CHECKPOINT_CRASH_ROOT");
     let selected_phase = std::env::var("PALACO_CHECKPOINT_CRASH_PHASE");
-    if selected_root.as_deref() != Some(root.as_os_str())
-        || selected_phase.as_deref() != Ok(phase)
+    if selected_root.as_deref() != Some(root.as_os_str()) || selected_phase.as_deref() != Ok(phase)
     {
         return;
     }
@@ -284,8 +285,7 @@ mod tests {
         let root = std::env::var_os("PALACO_CHECKPOINT_CRASH_ROOT")
             .map(PathBuf::from)
             .ok_or_else(|| std::io::Error::other("missing child root"))?;
-        let mode = std::env::var("PALACO_CHECKPOINT_CHILD_MODE")
-            .map_err(std::io::Error::other)?;
+        let mode = std::env::var("PALACO_CHECKPOINT_CHILD_MODE").map_err(std::io::Error::other)?;
         let expected = RevocationCheckpoint::new(1, 2, [3; 32]);
         match mode.as_str() {
             "write" => {
