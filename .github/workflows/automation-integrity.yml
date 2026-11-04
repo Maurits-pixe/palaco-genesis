@@ -52,6 +52,16 @@ jobs:
                       errors.append(f"{path}: concurrency.group is missing or empty")
                   if cancel is not True:
                       errors.append(f"{path}: concurrency.cancel-in-progress must be true")
+
+              permissions = data.get("permissions")
+              if not isinstance(permissions, dict):
+                  errors.append(f"{path}: missing top-level permissions mapping")
+              else:
+                  contents_permission = permissions.get("contents")
+                  if contents_permission != "read":
+                      errors.append(
+                          f"{path}: permissions.contents must be explicitly set to 'read'"
+                      )
           
               jobs = data.get("jobs")
               if not isinstance(jobs, dict) or not jobs:
