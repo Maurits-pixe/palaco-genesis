@@ -57,6 +57,16 @@ export function useSession({
     outcomeReceivedAt.value = null
   }
 
+  function sampleReceiptTime() {
+    try {
+      const receivedAt = scheduler.now()
+      return Number.isSafeInteger(receivedAt) && receivedAt >= 0 &&
+        Number.isFinite(new Date(receivedAt).getTime()) ? receivedAt : null
+    } catch {
+      return null
+    }
+  }
+
   function resetJournal() {
     journalGeneration++
     if (journalRequest) journalRequest.entries = []
@@ -256,10 +266,10 @@ export function useSession({
         resetOutcome()
         const checked = await api.getTicketStatus(lookupId.value, token.value, undefined, controller.signal)
         if (!current()) return
+        const receivedAt = sampleReceiptTime()
+        if (!current()) return
         outcome.value = checked
-        const receivedAt = scheduler.now()
-        outcomeReceivedAt.value = Number.isSafeInteger(receivedAt) && receivedAt >= 0 &&
-          Number.isFinite(new Date(receivedAt).getTime()) ? receivedAt : null
+        outcomeReceivedAt.value = receivedAt
         const reconciled = defaultApi.reconcileTicketStatus(ticket.value, revocationUncertain.value, commands.value, checked)
         ticket.value = reconciled.ticket
         revocationUncertain.value = reconciled.revocationUncertain
@@ -267,11 +277,11 @@ export function useSession({
       } else {
         const loaded = await api.listCommands(token.value, undefined, controller.signal)
         if (!current() || refresh.generation !== journalGeneration) return
+        const receivedAt = sampleReceiptTime()
+        if (!current() || refresh.generation !== journalGeneration) return
         // Alleen events uit deze verversing aanvullen, nooit de oude snapshot.
         commands.value = [...refresh.entries].reverse().reduce(defaultApi.mergeCommands, loaded)
-        const receivedAt = scheduler.now()
-        lastJournalRefreshAt.value = Number.isSafeInteger(receivedAt) && receivedAt >= 0 &&
-          Number.isFinite(new Date(receivedAt).getTime()) ? receivedAt : null
+        lastJournalRefreshAt.value = receivedAt
         hasLoaded.value = true
         journalRefreshFailed.value = false
         message.value = 'Logboek bijgewerkt.'

@@ -245,7 +245,8 @@ Naast de servercontroletijd toont de uitkomst wanneer de interface het
 antwoord lokaal heeft ontvangen. Dit ontvangsttijdstip hoort uitsluitend bij
 de zichtbare uitkomst en verdwijnt bij wissen of een nieuwe statuscontrole,
 ook als die controle mislukt. Andere acties en realtime-events vernieuwen het
-niet. Bij een ongeldige lokale klokwaarde is geen ontvangsttijdstip beschikbaar.
+niet. Bij een ongeldige of falende lokale klok is geen ontvangsttijdstip
+beschikbaar, maar blijft een geldig serverantwoord bruikbaar.
 Dit is geen server- of audittijd, garantie op actuele status of nieuwe
 toestemming; vraag voor een nieuwe momentopname de status handmatig op.
 Ook bij statusantwoorden moeten alle tijdstippen, inclusief de eventuele
@@ -338,6 +339,10 @@ ontvangen. Dat tijdstip blijft staan tijdens vernieuwen en bij een fout;
 realtime-events en afzonderlijke commits werken het niet bij.
 Dit is de lokale klok, geen server- of audittijd en geen garantie dat het
 logboek nog actueel is.
+Ook hier laat een ongeldige of falende lokale klok het geldige antwoord intact,
+zonder ontvangsttijdstip. Wordt de sessie of de betreffende leesactie tijdens
+de kloklezing gewist of vervangen, dan mag het oude antwoord geen gegevens,
+meldingen of ontvangsttijdstip terugzetten.
 Sessiewissen en het resetten van de realtimeverbinding blijven de lokale
 logboekgegevens en dit ontvangsttijdstip wissen.
 Met **Zoek in geladen logboek** filter je lokaal op commandotekst of

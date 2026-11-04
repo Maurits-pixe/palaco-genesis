@@ -34,7 +34,7 @@ function fixture(t, eventTarget = new EventTarget(), apiOverrides = {}) {
     api,
     eventTarget,
     scheduler: {
-      now: () => { clock.reads++; return clock.time },
+      now: () => { clock.reads++; return clock.now ? clock.now() : clock.time },
       setInterval(callback, interval) { clock.tick = callback; clock.interval = interval; return 42 },
       clearInterval(id) { clock.cleared.push(id) },
     },
@@ -2516,6 +2516,148 @@ test('outcome receipt samples successful current status once, accepting epoch ze
     assert.deepEqual(state.outcome.value, snapshot())
     assert.equal(clock.reads, reads + 1)
   }
+})
+
+for (const action of ['status', 'list']) {
+  for (const clockFailure of ['invalid', 'throw']) {
+    test(`${action}: ${clockFailure} receipt clock preserves successful result without a receipt`, async t => {
+      const { state, calls, clock } = fixture(t)
+      prepare(state, action)
+      state.revocationUncertain.value = true
+      const operation = state.perform(action)
+      const checked = snapshot({ status: 'revoked', revoked: true })
+      clock.now = () => {
+        if (clockFailure === 'throw') throw new Error('receipt clock unavailable')
+        return NaN
+      }
+      calls[0].resolve(action === 'status' ? checked : [record('fresh-record')])
+      await operation
+      if (action === 'status') {
+        assert.deepEqual(state.outcome.value, checked)
+        assert.equal(state.outcomeReceivedAt.value, null)
+        assert.equal(state.ticket.value, null)
+        assert.equal(state.revocationUncertain.value, false)
+        assert.match(state.message.value, /Ticketstatus opgehaald/)
+      } else {
+        assert.deepEqual(state.commands.value, [record('fresh-record')])
+        assert.equal(state.lastJournalRefreshAt.value, null)
+        assert.equal(state.hasLoaded.value, true)
+        assert.equal(state.journalRefreshFailed.value, false)
+        assert.equal(state.message.value, 'Logboek bijgewerkt.')
+      }
+      assert.equal(state.error.value, '')
+      assert.equal(state.busy.value, '')
+      assert.equal(calls.length, 1)
+    })
+  }
+
+  for (const reset of ['clearSession', 'pagehide', 'token', 'dispose', action === 'status' ? 'clearOutcome' : 'clearJournal']) {
+    test(`${action}: receipt clock ${reset} prevents stale result and feedback publication`, async t => {
+      const { state, calls, clock, eventTarget, scope } = fixture(t)
+      prepare(state, action)
+      state.revocationUncertain.value = true
+      const operation = state.perform(action)
+      let retainedTicket
+      let beforeReset
+      clock.now = () => {
+        beforeReset = action === 'status' ? state.outcome.value : [...state.commands.value]
+        if (reset === 'pagehide') eventTarget.dispatchEvent(pageTransition('pagehide', true))
+        else if (reset === 'token') state.token.value = 'replacement-token'
+        else if (reset === 'dispose') scope.stop()
+        else state[reset]()
+        retainedTicket = state.ticket.value
+        return 1090
+      }
+      calls[0].resolve(action === 'status'
+        ? snapshot({ status: 'revoked', revoked: true })
+        : [record('stale-record')])
+      await operation
+      assert.deepEqual(beforeReset, action === 'status' ? null : [record()])
+      assert.equal(calls[0].signal.aborted, true)
+      assert.equal(state.busy.value, '')
+      assert.equal(state.message.value, '')
+      assert.equal(state.error.value, '')
+      assert.equal(state.ticket.value, retainedTicket)
+      if (action === 'status') {
+        assert.equal(state.outcome.value, null)
+        assert.equal(state.outcomeReceivedAt.value, null)
+        assert.equal(state.revocationUncertain.value, reset === 'clearOutcome')
+      } else {
+        assert.deepEqual(state.commands.value, [])
+        assert.equal(state.lastJournalRefreshAt.value, null)
+        assert.equal(state.hasLoaded.value, false)
+        assert.equal(state.journalRefreshFailed.value, false)
+      }
+    })
+  }
+
+  test(`${action}: receipt clock starts a new request that stale completion cannot finish or overwrite`, async t => {
+    const { state, calls, clock } = fixture(t)
+    prepare(state, action)
+    const old = state.perform(action)
+    let newer
+    clock.now = () => {
+      clock.now = null
+      if (action === 'status') state.clearOutcome()
+      else state.clearJournal()
+      newer = state.perform(action)
+      return 1060
+    }
+    calls[0].resolve(action === 'status'
+      ? snapshot({ status: 'revoked', revoked: true })
+      : [record('stale-record')])
+    await old
+    assert.equal(calls.length, 2)
+    assert.equal(calls[0].signal.aborted, true)
+    assert.equal(calls[1].signal.aborted, false)
+    assert.equal(state.busy.value, action)
+    assert.equal(state.message.value, '')
+    assert.equal(state.error.value, '')
+    assert.deepEqual(state.ticket.value, held())
+    if (action === 'status') {
+      assert.equal(state.outcome.value, null)
+      assert.equal(state.outcomeReceivedAt.value, null)
+    } else {
+      assert.deepEqual(state.commands.value, [])
+      assert.equal(state.lastJournalRefreshAt.value, null)
+      assert.equal(state.hasLoaded.value, false)
+    }
+    clock.time = 1080
+    const fresh = snapshot({ checked_at: 1080 })
+    calls[1].resolve(action === 'status' ? fresh : [record('fresh-record')])
+    await newer
+    assert.equal(state.busy.value, '')
+    if (action === 'status') {
+      assert.deepEqual(state.outcome.value, fresh)
+      assert.equal(state.outcomeReceivedAt.value, 1080)
+    } else {
+      assert.deepEqual(state.commands.value, [record('fresh-record')])
+      assert.equal(state.lastJournalRefreshAt.value, 1080)
+      assert.equal(state.hasLoaded.value, true)
+    }
+  })
+}
+
+test('list: realtime generation reset during receipt sampling rejects the stale snapshot', async t => {
+  const { state, calls, clock, realtimeCallbacks } = fixture(t)
+  state.realtime.connect(state.token.value)
+  prepare(state, 'list')
+  const operation = state.perform('list')
+  clock.now = () => {
+    realtimeCallbacks[0].onReset()
+    realtimeCallbacks[0].onEntry(record('after-reset'))
+    return 1090
+  }
+  calls[0].resolve([record('stale-record')])
+  await operation
+  assert.deepEqual(state.commands.value, [record('after-reset')])
+  assert.equal(state.lastJournalRefreshAt.value, null)
+  assert.equal(state.hasLoaded.value, false)
+  assert.equal(state.journalRefreshFailed.value, false)
+  assert.equal(state.message.value, '')
+  assert.equal(state.error.value, '')
+  assert.equal(state.busy.value, '')
+  assert.equal(calls[0].signal.aborted, false)
 })
 
 test('status retry clears the previous receipt immediately and failure leaves no receipt', async t => {
