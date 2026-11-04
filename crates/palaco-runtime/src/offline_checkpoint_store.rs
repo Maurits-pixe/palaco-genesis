@@ -48,17 +48,24 @@ pub fn persist_checkpoint(
                 CheckpointStoreError::Io(error)
             }
         })?;
+    #[cfg(test)]
+    checkpoint_crash_hook(root, "created");
     let mut frame = Vec::with_capacity(FRAME_BYTES);
     frame.extend_from_slice(MAGIC);
     frame.extend_from_slice(&checkpoint.revision.to_be_bytes());
     frame.extend_from_slice(&checkpoint.policy_epoch.to_be_bytes());
     frame.extend_from_slice(&checkpoint.registry_digest);
     frame.extend_from_slice(&checkpoint.commitment);
-    file.write_all(&frame).map_err(CheckpointStoreError::Io)?;
+    file.write_all(&frame[..24]).map_err(CheckpointStoreError::Io)?;
+    #[cfg(test)]
+    checkpoint_crash_hook(root, "partial");
+    file.write_all(&frame[24..]).map_err(CheckpointStoreError::Io)?;
     file.sync_all().map_err(CheckpointStoreError::Io)?;
     File::open(root)
         .and_then(|directory| directory.sync_all())
         .map_err(CheckpointStoreError::Io)?;
+    #[cfg(test)]
+    checkpoint_crash_hook(root, "synced");
     Ok(path)
 }
 
@@ -114,6 +121,24 @@ fn validate_root(root: &Path) -> Result<(), CheckpointStoreError> {
         return Err(CheckpointStoreError::Invalid);
     }
     Ok(())
+}
+
+// Test-only barrier: parent kills the child after the requested write boundary.
+#[cfg(test)]
+fn checkpoint_crash_hook(root: &Path, phase: &str) {
+    let selected_root = std::env::var_os("PALACO_CHECKPOINT_CRASH_ROOT");
+    let selected_phase = std::env::var("PALACO_CHECKPOINT_CRASH_PHASE");
+    if selected_root.as_deref() != Some(root.as_os_str())
+        || selected_phase.as_deref() != Ok(phase)
+    {
+        return;
+    }
+    if fs::write(root.join("child.ready"), phase).is_err() {
+        std::process::exit(91);
+    }
+    loop {
+        std::thread::park();
+    }
 }
 
 #[cfg(test)]
@@ -250,5 +275,128 @@ mod tests {
         ));
         fs::remove_dir_all(root)?;
         Ok(())
+    }
+
+    // This entry point runs only in explicitly spawned child test processes.
+    #[test]
+    #[ignore = "subprocess helper, invoked by crash boundary tests"]
+    fn checkpoint_crash_child() -> Result<(), std::io::Error> {
+        let root = std::env::var_os("PALACO_CHECKPOINT_CRASH_ROOT")
+            .map(PathBuf::from)
+            .ok_or_else(|| std::io::Error::other("missing child root"))?;
+        let mode = std::env::var("PALACO_CHECKPOINT_CHILD_MODE")
+            .map_err(std::io::Error::other)?;
+        let expected = RevocationCheckpoint::new(1, 2, [3; 32]);
+        match mode.as_str() {
+            "write" => {
+                assert!(persist_checkpoint(&root, &expected).is_ok());
+            }
+            "read-valid" => {
+                let loaded = read_checkpoint(&root, 1)
+                    .map_err(|_| std::io::Error::other("checkpoint did not reopen"))?;
+                assert_eq!(loaded, expected);
+                assert_eq!(
+                    assess_checkpoint(&loaded, None),
+                    CheckpointAssessment::MissingAnchor
+                );
+                let anchor = propose_anchor(&RevocationCheckpoint::new(2, 2, [4; 32]));
+                assert_eq!(
+                    assess_checkpoint(&loaded, anchor.as_ref()),
+                    CheckpointAssessment::RollbackDetected
+                );
+            }
+            "read-invalid" => {
+                assert!(matches!(
+                    read_checkpoint(&root, 1),
+                    Err(CheckpointStoreError::Invalid)
+                ));
+            }
+            _ => return Err(std::io::Error::other("invalid child mode")),
+        }
+        Ok(())
+    }
+
+    struct ChildGuard(std::process::Child);
+
+    impl Drop for ChildGuard {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    fn child(root: &Path, mode: &str, phase: &str) -> Result<ChildGuard, std::io::Error> {
+        let process = std::process::Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "offline_checkpoint_store::tests::checkpoint_crash_child",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env("PALACO_CHECKPOINT_CRASH_ROOT", root)
+            .env("PALACO_CHECKPOINT_CHILD_MODE", mode)
+            .env("PALACO_CHECKPOINT_CRASH_PHASE", phase)
+            .stdout(std::process::Stdio::null())
+            .spawn()?;
+        Ok(ChildGuard(process))
+    }
+
+    fn crash_and_reopen(phase: &str, expected_bytes: u64) -> Result<(), std::io::Error> {
+        let root = root()?;
+        let mut writer = child(&root, "write", phase)?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !root.join("child.ready").exists() {
+            if writer.0.try_wait()?.is_some() {
+                return Err(std::io::Error::other("writer exited before crash barrier"));
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(std::io::Error::other("writer barrier timeout"));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        writer.0.kill()?;
+        assert!(!writer.0.wait()?.success());
+        let path = checkpoint_path(&root, 1);
+        assert_eq!(fs::metadata(&path)?.len(), expected_bytes);
+        let original = fs::read(&path)?;
+        let mode = if phase == "synced" {
+            "read-valid"
+        } else {
+            "read-invalid"
+        };
+        let mut reader = child(&root, mode, "")?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            if let Some(status) = reader.0.try_wait()? {
+                assert!(status.success());
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(std::io::Error::other("reader timeout"));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(matches!(
+            persist_checkpoint(&root, &RevocationCheckpoint::new(1, 2, [3; 32])),
+            Err(CheckpointStoreError::AlreadyExists)
+        ));
+        assert_eq!(fs::read(path)?, original);
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn killed_after_create_is_denied_on_process_restart() -> Result<(), std::io::Error> {
+        crash_and_reopen("created", 0)
+    }
+
+    #[test]
+    fn killed_after_partial_write_is_denied_on_process_restart() -> Result<(), std::io::Error> {
+        crash_and_reopen("partial", 24)
+    }
+
+    #[test]
+    fn killed_after_sync_reopens_without_trust_promotion() -> Result<(), std::io::Error> {
+        crash_and_reopen("synced", FRAME_BYTES as u64)
     }
 }
