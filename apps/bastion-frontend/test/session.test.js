@@ -20,12 +20,12 @@ const deferred = () => {
   return { promise, resolve, reject }
 }
 
-function fixture(t, eventTarget = new EventTarget(), apiOverrides = {}) {
+function fixture(t, eventTarget = new EventTarget(), apiOverrides = {}, clockOverrides = {}) {
   const scope = effectScope()
   const calls = []
   const sockets = []
   const realtimeCallbacks = []
-  const clock = { time: 1050, reads: 0, tick: null, cleared: [], interval: null }
+  const clock = { time: 1050, reads: 0, tick: null, cleared: [], interval: null, ...clockOverrides }
   const api = { ...Object.fromEntries(Object.entries(actions).map(([action, name]) => [name, (...args) => {
     const call = { action, args, signal: args.at(-1), ...deferred() }
     calls.push(call)
@@ -126,6 +126,131 @@ function commandState(state, excluded = []) {
     .filter(([key, value]) => isRef(value) && !excluded.includes(key))
     .map(([key, value]) => [key, value.value]))
 }
+
+for (const value of [0, 1050, 8_640_000_000_000_000]) {
+  test(`startup preserves valid clock ${value}`, t => {
+    const { state, clock } = fixture(t, undefined, {}, { time: value })
+    assert.equal(state.now.value, value)
+    assert.equal(clock.reads, 1)
+  })
+}
+
+for (const value of [null, '1050', NaN, 8_640_000_000_000_001, 'throw']) {
+  test(`startup clock ${String(value)} fails closed without throwing`, t => {
+    const { state, clock } = fixture(t, undefined, {}, {
+      now: () => {
+        if (value === 'throw') throw new Error('startup clock unavailable')
+        return value
+      },
+    })
+    assert.equal(state.now.value, null)
+    assert.equal(clock.reads, 1)
+    state.command.value = held().command
+    state.ticket.value = held()
+    assert.equal(state.canCommit.value, false)
+    assert.equal(state.remaining.value, null)
+    assert.equal(state.error.value, '')
+  })
+}
+
+test('throwing startup clock still registers and cleans up lifecycle hooks', t => {
+  class TrackedTarget extends EventTarget {
+    added = []
+    removed = []
+    addEventListener(...args) { this.added.push(args); super.addEventListener(...args) }
+    removeEventListener(...args) { this.removed.push(args); super.removeEventListener(...args) }
+  }
+  const eventTarget = new TrackedTarget()
+  const { state, clock, scope, calls } = fixture(t, eventTarget, {}, {
+    now: () => { throw new Error('startup clock unavailable') },
+  })
+  assert.equal(clock.interval, 100)
+  assert.equal(typeof clock.tick, 'function')
+  assert.equal(eventTarget.added.length, 1)
+  assert.equal(eventTarget.added[0][0], 'pagehide')
+  state.command.value = held().command
+  eventTarget.dispatchEvent(pageTransition('pagehide', true))
+  assertEmpty(state)
+  scope.stop()
+  assert.deepEqual(eventTarget.removed, eventTarget.added)
+  assert.deepEqual(clock.cleared, [42])
+  const reads = clock.reads
+  clock.tick()
+  assert.equal(clock.reads, reads)
+  assert.equal(calls.length, 0)
+})
+
+test('clock outage from startup through issuance retains a ticket for explicit status and revoke', async t => {
+  const { state, calls, clock } = fixture(t, undefined, {}, {
+    now: () => { throw new Error('clock unavailable') },
+  })
+  state.command.value = held().command
+  const issuing = state.perform('ticket')
+  calls[0].resolve(held())
+  await issuing
+  assert.deepEqual(state.ticket.value, held())
+  assert.equal(state.now.value, null)
+  assert.equal(state.canCommit.value, false)
+  assert.equal(state.remaining.value, null)
+  assert.equal(state.error.value, '')
+  assert.equal(state.busy.value, '')
+  assert.doesNotThrow(() => clock.tick())
+  await state.perform('commit')
+  assert.equal(calls.length, 1, 'no submission during the outage')
+  const checking = state.checkCurrentTicket()
+  assert.equal(calls[1].action, 'status')
+  assert.equal(calls[1].args[0], held().id)
+  calls[1].resolve(snapshot())
+  await checking
+  assert.deepEqual(state.ticket.value, held())
+  assert.equal(state.outcomeReceivedAt.value, null)
+  assert.equal(state.canCommit.value, false)
+  assert.equal(state.remaining.value, null)
+  const revoking = state.perform('revoke')
+  assert.equal(calls[2].action, 'revoke')
+  assert.deepEqual(calls[2].args[0], held())
+  calls[2].resolve()
+  await revoking
+  assert.equal(state.ticket.value, null)
+  assert.equal(state.revocationUncertain.value, false)
+  assert.equal(state.error.value, '')
+  assert.equal(state.busy.value, '')
+})
+
+test('explicit recovery after startup outage permits only a fresh valid commit preflight', async t => {
+  const { state, calls, clock } = fixture(t, undefined, {}, { time: null })
+  state.command.value = held().command
+  const issuing = state.perform('ticket')
+  calls[0].resolve(held())
+  await issuing
+  assert.equal(state.canCommit.value, false)
+  clock.time = 1050
+  clock.tick()
+  assert.equal(state.canCommit.value, true)
+  assert.equal(state.remaining.value, 1)
+  assert.equal(calls.length, 1, 'clock recovery does not submit automatically')
+  clock.time = null
+  await state.perform('commit')
+  assert.equal(state.now.value, null)
+  assert.equal(state.canCommit.value, false)
+  assert.deepEqual(state.ticket.value, held())
+  assert.equal(calls.length, 1, 'fresh preflight rejects a renewed outage')
+  clock.time = 1050
+  const reads = clock.reads
+  const committing = state.perform('commit')
+  assert.equal(clock.reads, reads + 1)
+  assert.equal(state.now.value, 1050)
+  assert.equal(calls[1].action, 'commit')
+  assert.deepEqual(calls[1].args[0], held())
+  assert.equal(state.ticket.value, null)
+  calls[1].resolve(record())
+  await committing
+  assert.equal(state.lastSubmissionId.value, held().id)
+  assert.deepEqual(state.commands.value, [record()])
+  assert.equal(state.error.value, '')
+  await state.perform('commit')
+  assert.equal(calls.length, 2, 'consumed ticket cannot be submitted twice')
+})
 
 for (const value of [
   1100, null, undefined, '', '1050', true, {}, [], -1, 0.5, NaN, Infinity, -Infinity,

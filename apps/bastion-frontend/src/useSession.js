@@ -42,7 +42,7 @@ export function useSession({
   })
   const lastSubmissionId = ref('')
   const realtimeStatus = ref('disconnected')
-  const now = ref(scheduler.now())
+  const now = ref(sampleReceiptTime())
   let session = 0
   let disposed = false
   let pending = null

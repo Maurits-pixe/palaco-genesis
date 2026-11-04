@@ -217,6 +217,10 @@ Vlak vóór vastleggen leest BASTION de lokale klok opnieuw, onafhankelijk van
 de laatste afteltick. Is het ticket dan verlopen of de klok ongeldig, dan
 volgt geen commitverzoek en wordt het lokale ticket niet verbruikt.
 Een geldige lokale controle vervangt de servercontrole niet.
+Een falende of ongeldige klok bij het openen van de interface verhindert
+het opbouwen van de sessie niet: er is dan geen bruikbare lokale tijd.
+Statuscontrole en intrekking blijven expliciete acties; klokherstel verstuurt
+zelf geen verzoek.
 Een falende of ongeldige klok bij ticketontvangst of een afteltick geeft
 geen lokale toestemming om vast te leggen. Het ontvangen ticket blijft
 beschikbaar voor expliciete statuscontrole of intrekking; dit betekent niet
