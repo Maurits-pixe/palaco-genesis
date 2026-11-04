@@ -5,6 +5,8 @@
 //! A matching signature or active entry never grants recovery authority.
 
 use crate::offline_ed25519::Ed25519ReviewVerifier;
+use crate::offline_revocation_checkpoint::RevocationCheckpoint;
+use sha2::{Digest, Sha256};
 
 /// Maximum number of public keys retained in one offline review registry.
 pub const MAX_REVIEW_KEYS: usize = 32;
@@ -68,6 +70,41 @@ impl OfflineReviewKeyRegistry {
             keys: Vec::new(),
             minimum_epoch,
         }
+    }
+
+    /// Commit the complete local registry in key-ID order, independent of insertion order.
+    ///
+    /// Binds the registry floor, entry count, exact public bytes, key reference,
+    /// registration epoch and revocation state. This digest is not authentication
+    /// or durable rollback protection.
+    #[must_use]
+    pub fn state_digest(&self) -> [u8; 32] {
+        let mut keys: Vec<_> = self.keys.iter().collect();
+        keys.sort_by_key(|key| key.entry.key_id);
+        let mut hasher = Sha256::new();
+        hasher.update(b"PALACO-ORCH-053-OFFLINE-REGISTRY-v1");
+        hasher.update(self.minimum_epoch.to_be_bytes());
+        // The registry is bounded to 32 entries; encode count at a fixed width.
+        hasher.update((keys.len() as u64).to_be_bytes());
+        for key in keys {
+            hasher.update(key.entry.key_id);
+            hasher.update(key.public_key);
+            hasher.update(key.entry.epoch.to_be_bytes());
+            hasher.update([match key.entry.state {
+                KeyState::Active => 0,
+                KeyState::Revoked => 1,
+            }]);
+        }
+        hasher.finalize().into()
+    }
+
+    /// Produce review evidence directly from this registry, without a supplied digest.
+    ///
+    /// The revision is caller supplied; creating a checkpoint neither persists an
+    /// anchor nor authenticates registry policy or grants execution authority.
+    #[must_use]
+    pub fn checkpoint(&self, revision: u64) -> RevocationCheckpoint {
+        RevocationCheckpoint::new(revision, self.minimum_epoch, self.state_digest())
     }
 
     /// Raise (never lower) the local minimum acceptable epoch.
@@ -157,6 +194,7 @@ impl OfflineReviewKeyRegistry {
 mod tests {
     use super::{KeyState, OfflineReviewKeyRegistry, RegistryError, MAX_REVIEW_KEYS};
     use crate::offline_recovery_signed::SignedReceiptVerifier;
+    use crate::offline_revocation_checkpoint::RevocationCheckpoint;
     use ed25519_dalek::{Signer, SigningKey};
 
     fn public_key(seed: u8) -> [u8; 32] {
@@ -259,5 +297,77 @@ mod tests {
         // instance still accepts the key. Production MUST remain HOLD.
         assert!(old_snapshot.review_verifier(&id, 1).is_some());
         Ok(())
+    }
+
+    #[test]
+    fn digest_is_independent_of_registration_order() -> Result<(), RegistryError> {
+        let mut first = OfflineReviewKeyRegistry::new(1);
+        let mut second = OfflineReviewKeyRegistry::new(1);
+        first.register(public_key(1), 2)?;
+        first.register(public_key(2), 3)?;
+        second.register(public_key(2), 3)?;
+        second.register(public_key(1), 2)?;
+        assert_eq!(first.state_digest(), second.state_digest());
+        assert_eq!(first.checkpoint(7), second.checkpoint(7));
+        Ok(())
+    }
+
+    #[test]
+    fn digest_binds_floor_epoch_membership_and_revocation() -> Result<(), RegistryError> {
+        let mut registry = OfflineReviewKeyRegistry::new(1);
+        let empty = registry.state_digest();
+        let id = registry.register(public_key(1), 2)?;
+        let active = registry.state_digest();
+        assert_ne!(empty, active);
+        let mut other_epoch = OfflineReviewKeyRegistry::new(1);
+        other_epoch.register(public_key(1), 3)?;
+        assert_ne!(active, other_epoch.state_digest());
+        registry.revoke(&id)?;
+        let revoked = registry.state_digest();
+        assert_ne!(active, revoked);
+        registry.advance_minimum_epoch(2)?;
+        assert_ne!(revoked, registry.state_digest());
+        Ok(())
+    }
+
+    #[test]
+    fn registry_checkpoint_exposes_stale_and_forked_snapshots() -> Result<(), RegistryError> {
+        use crate::offline_revocation_checkpoint::{
+            assess_checkpoint, propose_anchor, CheckpointAssessment,
+        };
+        let mut registry = OfflineReviewKeyRegistry::new(1);
+        let id = registry.register(public_key(1), 1)?;
+        let old = registry.checkpoint(4);
+        registry.revoke(&id)?;
+        let current = registry.checkpoint(5);
+        let anchor = propose_anchor(&current).ok_or(RegistryError::UnknownKey)?;
+        assert_eq!(
+            assess_checkpoint(&old, Some(&anchor)),
+            CheckpointAssessment::RollbackDetected
+        );
+        let fork = RevocationCheckpoint::new(5, 1, old.registry_digest);
+        assert_eq!(
+            assess_checkpoint(&fork, Some(&anchor)),
+            CheckpointAssessment::ForkDetected
+        );
+        assert_eq!(
+            assess_checkpoint(&current, Some(&anchor)),
+            CheckpointAssessment::MatchesAnchor
+        );
+        assert!(registry.review_verifier(&id, 1).is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn checkpoint_without_anchor_still_fails_closed() {
+        use crate::offline_revocation_checkpoint::{assess_checkpoint, CheckpointAssessment};
+        let registry = OfflineReviewKeyRegistry::new(9);
+        let checkpoint = registry.checkpoint(1);
+        assert!(checkpoint.is_well_formed());
+        assert_eq!(checkpoint.policy_epoch, 9);
+        assert_eq!(
+            assess_checkpoint(&checkpoint, None),
+            CheckpointAssessment::MissingAnchor
+        );
     }
 }
