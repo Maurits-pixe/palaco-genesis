@@ -27,5 +27,11 @@
     "palaco-trias",
     "palaco-types"
   ],
+  "graph_inventory_approval": {
+    "status": "unapproved",
+    "graph_revision": null,
+    "approved_by": null,
+    "decision_ref": null
+  },
   "excluded_paths": []
 }

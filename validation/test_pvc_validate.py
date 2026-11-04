@@ -65,6 +65,12 @@ class G1Tests(unittest.TestCase):
             "required_graph_relations": [
                 {"source": "foundation", "target": "runtime", "kind": "supports"}
             ],
+            "graph_inventory_approval": {
+                "status": "approved",
+                "graph_revision": "abc123",
+                "approved_by": "reviewer",
+                "decision_ref": "decision-1",
+            },
         }
         self.graph = {
             "schema_version": 1,
@@ -90,6 +96,16 @@ class G1Tests(unittest.TestCase):
     def test_missing_approved_inventory_is_hold(self):
         result = evaluate_g1(self.graph, {}, "abc123")
         self.assertEqual(result["result"], "HOLD")
+
+    def test_inventory_without_approval_is_hold(self):
+        scope = {**self.scope, "graph_inventory_approval": {"status": "unapproved"}}
+        result = evaluate_g1(self.graph, scope, "abc123")
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_approval_must_bind_graph_revision(self):
+        self.scope["graph_inventory_approval"]["graph_revision"] = "approved-v2"
+        result = evaluate_g1(self.graph, self.scope, "abc123")
+        self.assertEqual(result["result"], "INCONCLUSIVE")
 
     def test_valid_graph_passes_for_bound_revision(self):
         result = evaluate_g1(self.graph, self.scope, "abc123")

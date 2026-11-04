@@ -134,6 +134,7 @@ def evaluate_g1(
 
     required_nodes = scope.get("required_graph_nodes")
     required_relations = scope.get("required_graph_relations")
+    approval = scope.get("graph_inventory_approval")
     inventory_ready = (
         _is_string_list(required_nodes, nonempty=True)
         and isinstance(required_relations, list)
@@ -146,6 +147,16 @@ def evaluate_g1(
             )
             for relation in required_relations
         )
+    )
+    approval_ready = (
+        isinstance(approval, dict)
+        and approval.get("status") == "approved"
+        and isinstance(approval.get("graph_revision"), str)
+        and bool(approval["graph_revision"])
+        and isinstance(approval.get("approved_by"), str)
+        and bool(approval["approved_by"])
+        and isinstance(approval.get("decision_ref"), str)
+        and bool(approval["decision_ref"])
     )
 
     if type(graph.get("schema_version")) is not int or graph.get("schema_version") != 1:
@@ -284,6 +295,23 @@ def evaluate_g1(
                 "Approved required_graph_nodes and required_graph_relations inventories are not defined."
             ],
         }
+    if not approval_ready:
+        return {
+            "gate": "G1",
+            "result": "HOLD",
+            "findings": [
+                "SystemGraph inventory lacks a recorded approval, approver, or decision reference."
+            ],
+        }
+    if graph_revision != approval["graph_revision"]:
+        return {
+            "gate": "G1",
+            "result": "INCONCLUSIVE",
+            "findings": [
+                f"SystemGraph revision {graph_revision} does not match approved graph revision "
+                f"{approval['graph_revision']}."
+            ],
+        }
     if graph_revision != revision:
         return {
             "gate": "G1",
@@ -293,7 +321,9 @@ def evaluate_g1(
     return {
         "gate": "G1",
         "result": "PASS",
-        "findings": ["SystemGraph structure, declared inventory, relations, and source revision are valid."],
+        "findings": [
+            "SystemGraph structure, approved inventory, relations, and source revision are valid."
+        ],
     }
 
 
