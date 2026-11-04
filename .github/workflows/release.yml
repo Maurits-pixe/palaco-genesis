@@ -1,0 +1,59 @@
+name: PALACO Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag (bijv. v0.1.0)"
+        required: false
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  release-readiness:
+    name: Release readiness checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Validate Cargo Metadata
+        run: cargo metadata --format-version=1 --no-deps > /dev/null
+
+      - name: Check Formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy Lints
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run Tests
+        run: cargo test --workspace --all-features
+
+      - name: Capture release context
+        run: |
+          mkdir -p release-evidence
+          {
+            echo "release_tag=${{ github.event.inputs.release_tag }}"
+            echo "commit=${{ github.sha }}"
+            echo "run_id=${{ github.run_id }}"
+          } > release-evidence/context.txt
+
+      - name: Upload release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-evidence
+          path: release-evidence/

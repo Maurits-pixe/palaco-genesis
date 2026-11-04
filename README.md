@@ -82,3 +82,14 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
+
+## CI Workflows
+
+- `ci.yml` — standaard validatie op push/PR
+- `benchmark.yml` — benchmark target validatie
+- `security.yml` — dependency audit checks
+- `coverage.yml` — coverage artefact generatie
+- `release.yml` — handmatige release-readiness checks + evidence artifact
+- `palaco-ci.yml` — uitgebreide PALACO baseline pipeline
+- `citadel-a1.yml` — Citadel A1 contractverificatie
+- `registry-contract.yml` — registry contract checks
