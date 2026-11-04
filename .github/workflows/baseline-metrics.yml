@@ -1,0 +1,41 @@
+name: PALACO Baseline Metrics
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * 1"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  baseline:
+    name: Generate baseline + comparison artifacts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Generate baseline and report
+        run: |
+          chmod +x .github/scripts/update-baselines.sh .github/scripts/compare-metrics.sh
+          .github/scripts/update-baselines.sh metrics/baseline.json
+          .github/scripts/compare-metrics.sh metrics/baseline.json metrics/metrics-report.md
+
+      - name: Upload metrics artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: baseline-metrics
+          path: |
+            metrics/baseline.json
+            metrics/metrics-report.md

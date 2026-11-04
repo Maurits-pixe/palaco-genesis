@@ -93,6 +93,7 @@ cargo test --workspace
 - `document-exchange.yml` — validatie van relatieve documentatielinks
 - `pages.yml` — GitHub Pages deployment (optioneel met custom domain via `PAGES_CUSTOM_DOMAIN`)
 - `metrics.yml` — dependency metrics vergelijking met artifact output
+- `baseline-metrics.yml` — periodieke baseline + metrics report artifact generatie
 - `palaco-ci.yml` — uitgebreide PALACO baseline pipeline
 - `citadel-a1.yml` — Citadel A1 contractverificatie
 - `registry-contract.yml` — registry contract checks
