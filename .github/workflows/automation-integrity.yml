@@ -43,3 +43,9 @@ jobs:
             bash -n "$script"
             echo "OK $script"
           done
+
+      - name: Run shellcheck for workflow scripts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          shellcheck .github/scripts/*.sh
