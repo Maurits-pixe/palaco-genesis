@@ -163,6 +163,12 @@ Dit stopt alleen het lokale wachten: een al verstuurd opslagverzoek kan
 server-side toch zijn uitgevoerd, zonder dat je het record-ID hebt ontvangen.
 Wissen verwijdert geen opgeslagen records. Dien een onzekere opslag niet
 automatisch opnieuw in; een nieuwe inzending kan een tweede record maken.
+Bij een mislukte opslagactie toont AETHER naast de fout expliciet **Opslag
+niet bevestigd** met een waarschuwing voor mogelijke duplicaten. Dit bewijst
+niet dat het verzoek de server heeft bereikt of dat er een record is opgeslagen.
+Concepttekst en het vorige bevestigde ID blijven behouden. De melding is
+actiegebonden: een volgende expliciete actie of sessiewissing wist haar;
+dit lost de onbekende serveruitkomst niet op. Er volgt geen automatische retry.
 Wanneer de browser bij het verlaten van de AETHER-pagina `pagehide` meldt,
 wordt dezelfde volledige sessiewissing uitgevoerd, ook bij opname in de
 terug-/vooruitcache. Na terugnavigeren moet je het token opnieuw invoeren en

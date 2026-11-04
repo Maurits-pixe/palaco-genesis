@@ -111,7 +111,12 @@ export function useRecordSession({ create = createRecord, read = readRecord, eve
         message.value = 'Record opgehaald.'
       }
     } catch (failure) {
-      if (isCurrent()) error.value = failure.message
+      if (isCurrent()) {
+        error.value = failure.message
+        if (action === 'create') {
+          message.value = 'Opslag niet bevestigd. Het record kan al zijn opgeslagen. Opnieuw opslaan kan een duplicaat maken.'
+        }
+      }
     } finally {
       if (isCurrent()) {
         activeRequest = null

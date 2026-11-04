@@ -32,6 +32,67 @@ function state(session) {
 }
 
 const empty = { token: '', plaintext: '', recordId: '', lastCreatedId: '', result: null, resultReceivedAt: null, busy: '', message: '', error: '' }
+const saveWarning = 'Opslag niet bevestigd. Het record kan al zijn opgeslagen. Opnieuw opslaan kan een duplicaat maken.'
+
+for (const action of ['create', 'read']) {
+  test(`current ${action} failure retains the original error and only create warns about uncertain storage`, async (t) => {
+    const { session, calls } = setup(t)
+    session.lastCreatedId.value = 'confirmed'
+    const before = state(session)
+    const pending = session.perform(action)
+    calls[0].reject(new Error('original failure'))
+    await pending
+    assert.deepEqual(state(session), {
+      ...before, error: 'original failure', message: action === 'create' ? saveWarning : '',
+    })
+    const failed = state(session)
+    session.clearDraft()
+    assert.deepEqual(state(session), { ...failed, plaintext: '' })
+    assert.equal(calls.length, 1)
+  })
+}
+
+for (const next of ['create', 'read', 'last confirmed read']) {
+  test(`explicit ${next} clears uncertain-save feedback before waiting for its own response`, async (t) => {
+    const { session, calls } = setup(t)
+    session.lastCreatedId.value = 'confirmed'
+    const failed = session.perform('create')
+    calls[0].reject(new Error('lost response'))
+    await failed
+    assert.equal(session.message.value, saveWarning)
+    const pending = next === 'last confirmed read' ? session.readLastCreated() : session.perform(next)
+    assert.equal(session.message.value, '')
+    assert.equal(session.error.value, '')
+    assert.equal(session.busy.value, next === 'create' ? 'create' : 'read')
+    assert.equal(session.plaintext.value, 'private text')
+    assert.equal(session.lastCreatedId.value, 'confirmed')
+    assert.equal(calls.length, 2)
+    calls[1].resolve({ id: 'confirmed', plaintext: 'loaded' })
+    await pending
+    assert.equal(session.error.value, '')
+    assert.equal(session.message.value, next === 'create'
+      ? 'Record opgeslagen. Bewaar het record-ID om het later terug te lezen.'
+      : 'Record opgehaald.')
+  })
+}
+
+for (const cleanup of ['clear', 'empty-token clear', 'token replacement', 'pagehide', 'persisted pagehide', 'dispose', 'scope']) {
+  test(`${cleanup} clears an actual uncertain-save warning without retrying`, async (t) => {
+    const { session, calls, eventTarget, scope } = setup(t)
+    if (cleanup === 'empty-token clear') session.token.value = ''
+    const pending = session.perform('create')
+    calls[0].reject(new Error('lost response'))
+    await pending
+    assert.equal(session.message.value, saveWarning)
+    if (cleanup === 'token replacement') session.token.value = 'replacement'
+    else if (cleanup.includes('pagehide')) eventTarget.dispatchEvent(pageTransition('pagehide', cleanup === 'persisted pagehide'))
+    else if (cleanup === 'dispose') session.dispose()
+    else if (cleanup === 'scope') scope.stop()
+    else session.clearSession()
+    assert.deepEqual(state(session), { ...empty, token: cleanup === 'token replacement' ? 'replacement' : '' })
+    assert.equal(calls.length, 1)
+  })
+}
 
 test('clearDraft only clears local input while retaining a loaded record, receipt and feedback', async (t) => {
   const { session, calls } = setup(t, undefined, { getNow: () => 123 })
@@ -96,7 +157,9 @@ for (const action of ['create', 'read']) {
       assert.equal(session.busy.value, '')
       assert.equal(session.token.value, before.token)
       if (outcome === 'failure') {
-        assert.deepEqual(state(session), { ...before, busy: '', error: `${action} failed` })
+        assert.deepEqual(state(session), {
+          ...before, busy: '', error: `${action} failed`, message: action === 'create' ? saveWarning : '',
+        })
       } else if (action === 'create') {
         assert.equal(session.plaintext.value, '')
         assert.equal(session.lastCreatedId.value, 'record-1')

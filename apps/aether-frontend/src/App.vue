@@ -22,7 +22,8 @@ const resultReceivedAtIso = computed(() => resultReceivedAt.value === null ? nul
         De browser levert pagehide niet gegarandeerd; dit garandeert geen veilige geheugenwissing.</p>
       <button class="secondary" @click="clearSession">Wis sessie en tekst</button>
       <p class="muted">Annuleren of de sessie wissen stopt alleen het lokale wachten. Een al verstuurd opslagverzoek
-        kan het record al hebben opgeslagen. Probeer niet automatisch opnieuw.</p>
+        kan het record al hebben opgeslagen. Probeer niet automatisch opnieuw.
+        Volg na onzekere opslag een algemene foutmelding om opnieuw te proberen niet blindelings op: dit kan een duplicaat maken.</p>
     </section>
     <div role="status" aria-live="polite"><p v-if="busy" class="notice">Even wachten…</p><p v-if="message" class="notice">{{ message }}</p></div>
     <p v-if="error" role="alert" class="error">{{ error }}</p>

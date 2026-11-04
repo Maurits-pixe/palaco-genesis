@@ -12,6 +12,7 @@ const receipt = 1700000000123
 const fields = ['token', 'plaintext', 'recordId', 'lastCreatedId', 'result', 'resultReceivedAt', 'busy', 'message', 'error']
 const state = session => Object.fromEntries(fields.map(key => [key, session[key].value]))
 const empty = { token: '', plaintext: '', recordId: '', lastCreatedId: '', result: null, resultReceivedAt: null, busy: '', message: '', error: '' }
+const saveWarning = 'Opslag niet bevestigd. Het record kan al zijn opgeslagen. Opnieuw opslaan kan een duplicaat maken.'
 
 function deferred() {
   let resolve
@@ -68,15 +69,16 @@ async function fixture(t, handle) {
 
 function setup(t, fetcher) {
   const scope = effectScope()
+  const eventTarget = new EventTarget()
   t.after(() => scope.stop())
   const session = scope.run(() => useRecordSession({
     create: (plaintext, token, _fetcher, signal) => createRecord(plaintext, token, fetcher, signal),
     read: (id, token, _fetcher, signal) => readRecord(id, token, fetcher, signal),
-    eventTarget: new EventTarget(),
+    eventTarget,
     getNow: () => receipt,
   }))
   session.token.value = inputToken
-  return { session, scope }
+  return { session, scope, eventTarget }
 }
 
 test('HTTP fixture: explicit create/read preserve the wire contract and receipt; clearDraft is local', { timeout: 5000 }, async (t) => {
@@ -166,11 +168,22 @@ test('HTTP fixture: an accepted create with a lost response preserves the last c
     recordId: 'record-1',
     lastCreatedId: 'record-1',
     error: 'Geen geldig antwoord. Controleer de lokale service en probeer opnieuw.',
+    message: saveWarning,
   })
   assert.equal(requests.length, 2)
   assert.equal(network.mock.callCount(), 2)
 
-  await session.readLastCreated()
+  const failed = state(session)
+  session.clearDraft()
+  assert.deepEqual(state(session), { ...failed, plaintext: '' })
+  assert.equal(requests.length, 2)
+  assert.equal(network.mock.callCount(), 2)
+  session.plaintext.value = uncertainDraft
+  const reading = session.readLastCreated()
+  assert.equal(session.message.value, '')
+  assert.equal(session.error.value, '')
+  assert.equal(session.busy.value, 'read')
+  await reading
   assert.deepEqual(session.result.value, { id: 'record-1', plaintext: 'first confirmed text' })
   assert.equal(session.plaintext.value, uncertainDraft)
   assert.equal(session.lastCreatedId.value, 'record-1')
@@ -193,8 +206,88 @@ test('HTTP fixture: an accepted create with a lost response preserves the last c
   ])
 })
 
-for (const newerCreate of [false, true]) {
-  test(`HTTP fixture: a delayed create confirmation cannot restore ${newerCreate ? 'or overwrite a newer explicit create' : 'a cleared session'}`, { timeout: 5000 }, async (t) => {
+for (const next of ['create', 'read']) {
+  test(`HTTP fixture: explicit ${next} clears the lost-POST warning before waiting and still accepts exact success`, { timeout: 5000 }, async (t) => {
+    const arrived = deferred()
+    const { requests, fetcher } = await fixture(t, (_request, response) => {
+      if (requests.length === 1) response.destroy()
+      else arrived.resolve(response)
+    })
+    const network = t.mock.fn(fetcher)
+    const { session } = setup(t, network)
+    session.plaintext.value = 'unconfirmed text'
+    session.recordId.value = 'record-1'
+    await session.perform('create')
+    assert.equal(session.message.value, saveWarning)
+    assert.equal(session.error.value, 'Geen geldig antwoord. Controleer de lokale service en probeer opnieuw.')
+
+    const pending = session.perform(next)
+    assert.equal(session.message.value, '')
+    assert.equal(session.error.value, '')
+    assert.equal(session.busy.value, next)
+    assert.equal(session.plaintext.value, 'unconfirmed text')
+    const response = await arrived.promise
+    assert.equal(session.message.value, '')
+    assert.equal(session.busy.value, next)
+    if (next === 'create') json(response, { id: 'record-2' }, 201)
+    else json(response, { id: 'record-1', plaintext: 'confirmed read' })
+    await pending
+    assert.equal(session.error.value, '')
+    assert.equal(session.busy.value, '')
+    if (next === 'create') {
+      assert.equal(session.lastCreatedId.value, 'record-2')
+      assert.equal(session.recordId.value, 'record-2')
+      assert.equal(session.plaintext.value, '')
+      assert.equal(session.message.value, 'Record opgeslagen. Bewaar het record-ID om het later terug te lezen.')
+    } else {
+      assert.deepEqual(session.result.value, { id: 'record-1', plaintext: 'confirmed read' })
+      assert.equal(session.resultReceivedAt.value, receipt)
+      assert.equal(session.plaintext.value, 'unconfirmed text')
+      assert.equal(session.message.value, 'Record opgehaald.')
+    }
+    assert.deepEqual(requests.map(request => request.method), ['POST', next === 'create' ? 'POST' : 'GET'])
+    assert.equal(network.mock.callCount(), 2)
+  })
+}
+
+test('HTTP fixture: a lost GET response reports its original error without a save warning', { timeout: 5000 }, async (t) => {
+  const { requests, fetcher } = await fixture(t, (_request, response) => response.destroy())
+  const { session } = setup(t, fetcher)
+  session.recordId.value = 'record-1'
+  await session.perform('read')
+  assert.equal(session.error.value, 'Geen geldig antwoord. Controleer de lokale service en probeer opnieuw.')
+  assert.equal(session.message.value, '')
+  assert.equal(session.busy.value, '')
+  assert.equal(session.result.value, null)
+  assert.equal(session.resultReceivedAt.value, null)
+  assert.equal(requests.length, 1)
+  assert.equal(requests[0].method, 'GET')
+})
+
+for (const cleanup of ['clear', 'token replacement', 'pagehide', 'persisted pagehide', 'dispose', 'scope']) {
+  test(`HTTP fixture: ${cleanup} clears the lost-POST warning without retrying`, { timeout: 5000 }, async (t) => {
+    const { requests, fetcher } = await fixture(t, (_request, response) => response.destroy())
+    const network = t.mock.fn(fetcher)
+    const { session, eventTarget, scope } = setup(t, network)
+    session.plaintext.value = 'unconfirmed text'
+    await session.perform('create')
+    assert.equal(session.message.value, saveWarning)
+    if (cleanup === 'token replacement') session.token.value = 'replacement'
+    else if (cleanup.includes('pagehide')) {
+      const event = new Event('pagehide')
+      Object.defineProperty(event, 'persisted', { value: cleanup === 'persisted pagehide' })
+      eventTarget.dispatchEvent(event)
+    } else if (cleanup === 'dispose') session.dispose()
+    else if (cleanup === 'scope') scope.stop()
+    else session.clearSession()
+    assert.deepEqual(state(session), { ...empty, token: cleanup === 'token replacement' ? 'replacement' : '' })
+    assert.equal(requests.length, 1)
+    assert.equal(network.mock.callCount(), 1)
+  })
+}
+
+for (const [newerCreate, outcome] of [[false, 'success'], [true, 'success'], [false, 'failure'], [true, 'failure']]) {
+  test(`HTTP fixture: a delayed create ${outcome} cannot restore ${newerCreate ? 'or overwrite a newer explicit create' : 'a cleared session'}`, { timeout: 5000 }, async (t) => {
     const arrived = deferred()
     const discarded = deferred()
     const { requests, fetcher } = await fixture(t, (request, response) => {
@@ -202,12 +295,13 @@ for (const newerCreate of [false, true]) {
       if (requests.length === 1) arrived.resolve(response)
       else json(response, { id: 'new-confirmed' }, 201)
     })
-    let oldSignal
+    let oldSignal, oldNetwork
     const { session } = setup(t, async (path, options) => {
       if (oldSignal) return fetcher(path, options)
       oldSignal = options.signal
       // Keep the accepted POST alive despite cancellation, as with delayed reads.
-      const response = await fetcher(path, { ...options, signal: undefined })
+      oldNetwork = fetcher(path, { ...options, signal: undefined })
+      const response = await oldNetwork
       const cancel = response.body.cancel.bind(response.body)
       t.mock.method(response.body, 'cancel', (...args) => {
         const pending = cancel(...args)
@@ -243,9 +337,14 @@ for (const newerCreate of [false, true]) {
       session.plaintext.value = 'fresh unsaved draft'
     }
     const current = state(session)
-    json(oldResponse, { id: 'old-unconfirmed' }, 201)
-    // Wait until the production API discards the late real fetch response.
-    await discarded.promise
+    if (outcome === 'failure') {
+      oldResponse.destroy()
+      await assert.rejects(oldNetwork)
+    } else {
+      json(oldResponse, { id: 'old-unconfirmed' }, 201)
+      // Wait until the production API discards the late real fetch response.
+      await discarded.promise
+    }
     assert.deepEqual(state(session), current)
     assert.deepEqual(requests.map(({ method, url, body }) => ({ method, url, body })), [
       { method: 'POST', url: '/v1/records', body: JSON.stringify({ plaintext: 'old accepted draft' }) },
