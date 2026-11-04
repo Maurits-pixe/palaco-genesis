@@ -286,6 +286,193 @@ for (const uncertain of [false, true]) {
   })
 }
 
+for (const value of [
+  null, undefined, '', '1050', true, {}, [], -1, 0.5, NaN, Infinity, -Infinity,
+  8_640_000_000_000_001, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER + 1, 'throw',
+]) {
+  test(`ticket issuance with unavailable clock ${String(value)} retains the server ticket without local authority`, async t => {
+    const { state, calls, clock } = fixture(t)
+    prepare(state, 'ticket')
+    const operation = state.perform('ticket')
+    const reads = clock.reads
+    clock.now = () => {
+      assert.equal(state.ticket.value, null, 'do not publish before sampling')
+      if (value === 'throw') throw new Error('local clock unavailable')
+      return value
+    }
+    calls[0].resolve(held())
+    await operation
+    assert.equal(clock.reads, reads + 1)
+    assert.deepEqual(state.ticket.value, held())
+    assert.equal(state.now.value, null)
+    assert.equal(state.canCommit.value, false)
+    assert.equal(state.remaining.value, null)
+    assert.equal(state.error.value, '')
+    assert.equal(state.message.value, 'Ticket ontvangen. Bevestig het commando in een aparte stap.')
+    assert.equal(state.busy.value, '')
+    await state.perform('commit')
+    assert.equal(calls.length, 1, 'invalid local clock cannot submit')
+    assert.deepEqual(state.ticket.value, held())
+
+    await t.test('retained ticket remains available for manual status and revoke', async () => {
+      clock.now = () => null
+      const checking = state.checkCurrentTicket()
+      assert.equal(calls[1].action, 'status')
+      assert.equal(calls[1].args[0], held().id)
+      calls[1].resolve(snapshot())
+      await checking
+      assert.deepEqual(state.ticket.value, held())
+      assert.equal(state.canCommit.value, false)
+      const revoking = state.perform('revoke')
+      assert.equal(calls[2].action, 'revoke')
+      assert.deepEqual(calls[2].args[0], held())
+      calls[2].resolve()
+      await revoking
+      assert.equal(state.ticket.value, null)
+      assert.equal(state.error.value, '')
+    })
+  })
+}
+
+test('ticket issuance preserves epoch zero and half-open Date-limit boundaries', async t => {
+  const { state, calls, clock } = fixture(t)
+  const maxDate = 8_640_000_000_000_000
+  for (const [notBefore, expiresAt] of [[0, 1], [1000, 1100], [maxDate - 1, maxDate]]) {
+    for (const time of [Math.max(0, notBefore - 1), notBefore, expiresAt - 1, expiresAt]) {
+      state.command.value = held().command
+      const operation = state.perform('ticket')
+      clock.time = time
+      const issued = { ...held(), not_before: notBefore, expires_at: expiresAt }
+      calls.at(-1).resolve(issued)
+      await operation
+      assert.deepEqual(state.ticket.value, issued)
+      assert.equal(state.now.value, time)
+      assert.equal(state.canCommit.value, time >= notBefore && time < expiresAt)
+      assert.equal(state.remaining.value, Math.max(0, Math.ceil((expiresAt - time) / 1000)))
+      assert.equal(state.error.value, '')
+      assert.equal(state.busy.value, '')
+    }
+  }
+})
+
+for (const reset of ['clearSession', 'pagehide', 'token', 'dispose']) {
+  for (const throws of [false, true]) {
+    test(`ticket clock ${reset}, throws=${throws}: stale issuance cannot publish ticket, time or feedback`, async t => {
+      const { state, calls, clock, eventTarget, scope } = fixture(t)
+      prepare(state, 'ticket')
+      const operation = state.perform('ticket')
+      let retained
+      clock.now = () => {
+        assert.equal(state.ticket.value, null)
+        if (reset === 'pagehide') eventTarget.dispatchEvent(pageTransition('pagehide', true))
+        else if (reset === 'token') state.token.value = 'replacement-token'
+        else if (reset === 'dispose') scope.stop()
+        else state.clearSession()
+        retained = commandState(state)
+        if (throws) throw new Error('clock failed after reset')
+        return 1090
+      }
+      calls[0].resolve(held())
+      await operation
+      assert.equal(calls[0].signal.aborted, true)
+      assertEmpty(state, reset === 'token' ? 'replacement-token' : '')
+      assert.deepEqual(commandState(state), retained)
+      assert.equal(state.now.value, 1050)
+    })
+  }
+}
+
+for (const throws of [false, true]) {
+  test(`ticket clock starts a new action, throws=${throws}: stale completion cannot overwrite or finish it`, async t => {
+    const { state, calls, clock } = fixture(t)
+    prepare(state, 'ticket')
+    const old = state.perform('ticket')
+    let newer
+    let retained
+    clock.now = () => {
+      assert.equal(state.ticket.value, null)
+      clock.now = null
+      state.clearSession()
+      state.token.value = 'replacement-token'
+      prepare(state, 'status')
+      state.now.value = 1070
+      newer = state.perform('status')
+      retained = commandState(state)
+      if (throws) throw new Error('old clock unavailable')
+      return 1060
+    }
+    calls[0].resolve({ ...held(), id: 'stale-ticket' })
+    await old
+    assert.equal(calls.length, 2)
+    assert.equal(calls[0].signal.aborted, true)
+    assert.equal(calls[1].signal.aborted, false)
+    assert.deepEqual(commandState(state), retained)
+    assert.deepEqual(state.ticket.value, held())
+    assert.equal(state.now.value, 1070)
+    assert.equal(state.busy.value, 'status')
+    assert.equal(state.message.value, '')
+    assert.equal(state.error.value, '')
+    clock.time = 1080
+    calls[1].resolve(snapshot({ checked_at: 1080 }))
+    await newer
+    assert.equal(state.outcomeReceivedAt.value, 1080)
+    assert.equal(state.busy.value, '')
+    assert.match(state.message.value, /Ticketstatus opgehaald/)
+    assert.equal(state.error.value, '')
+  })
+}
+
+test('interval clock exceptions and invalid samples fail closed without losing the ticket or feedback', async t => {
+  const { state, calls, clock } = fixture(t)
+  prepare(state, 'ticket')
+  const operation = state.perform('ticket')
+  calls[0].resolve(held())
+  await operation
+  const retained = commandState(state, ['now', 'canCommit', 'remaining'])
+  for (const value of ['throw', null, undefined, '1050', -1, 0.5, NaN, Infinity, 8_640_000_000_000_001]) {
+    clock.now = null
+    clock.time = 1050
+    clock.tick()
+    assert.equal(state.canCommit.value, true)
+    assert.equal(state.remaining.value, 1)
+    clock.now = () => {
+      if (value === 'throw') throw new Error('interval clock unavailable')
+      return value
+    }
+    assert.doesNotThrow(() => clock.tick())
+    assert.equal(state.now.value, null)
+    assert.equal(state.canCommit.value, false)
+    assert.equal(state.remaining.value, null)
+    assert.deepEqual(commandState(state, ['now', 'canCommit', 'remaining']), retained)
+  }
+  await state.perform('commit')
+  assert.equal(calls.length, 1)
+  assert.equal(state.error.value, '')
+})
+
+for (const throws of [false, true]) {
+  test(`interval clock disposal, throws=${throws}: sampled time and later callbacks stay inert`, t => {
+    const { state, clock, scope } = fixture(t)
+    prepare(state, 'ticket')
+    let retained
+    clock.now = () => {
+      scope.stop()
+      retained = commandState(state)
+      if (throws) throw new Error('clock failed after disposal')
+      return 1090
+    }
+    assert.doesNotThrow(() => clock.tick())
+    assertEmpty(state)
+    assert.deepEqual(commandState(state), retained)
+    assert.equal(state.now.value, 1050)
+    assert.deepEqual(clock.cleared, [42])
+    const reads = clock.reads
+    clock.tick()
+    assert.equal(clock.reads, reads)
+    assert.deepEqual(commandState(state), retained)
+  })
+}
+
 test('session countdown preserves valid numeric and ISO windows through pending, active and expired times', t => {
   const { state, calls, clock } = fixture(t)
   prepare(state, 'commit')

@@ -111,7 +111,9 @@ export function useSession({
     },
   }
   const clock = scheduler.setInterval(() => {
-    if (!disposed) now.value = scheduler.now()
+    if (disposed) return
+    const sampledAt = sampleReceiptTime()
+    if (!disposed) now.value = sampledAt
   }, 100)
   const canCommit = computed(() => !revocationUncertain.value &&
     defaultApi.ticketUsable(ticket.value, command.value, now.value ?? null))
@@ -237,8 +239,10 @@ export function useSession({
         ticket.value = null
         const issued = await api.issueTicket(command.value, Number(ttlMs.value), token.value, undefined, controller.signal)
         if (!current()) return
+        const receivedAt = sampleReceiptTime()
+        if (!current()) return
         ticket.value = issued
-        now.value = scheduler.now()
+        now.value = receivedAt
         message.value = 'Ticket ontvangen. Bevestig het commando in een aparte stap.'
       } else if (action === 'revoke') {
         // Een onzekere intrekking blokkeert nieuwe toestemming tot bevestiging.
