@@ -1,0 +1,40 @@
+name: PALACO Automation Integrity
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+    branches: ["main", "master"]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-automation-files:
+    name: Validate workflows and scripts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate workflow YAML files
+        run: |
+          python - <<'PY'
+          import glob
+          import yaml
+
+          files = glob.glob(".github/workflows/*.yml")
+          for path in files:
+              with open(path, "r", encoding="utf-8") as fh:
+                  yaml.safe_load(fh)
+              print(f"OK {path}")
+          PY
+
+      - name: Validate shell script syntax
+        run: |
+          for script in .github/scripts/*.sh; do
+            bash -n "$script"
+            echo "OK $script"
+          done
