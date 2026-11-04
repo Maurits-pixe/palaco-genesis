@@ -28,6 +28,7 @@ jobs:
         run: |
           python - <<'PY'
           import glob
+          import os
           import sys
           import yaml
           
@@ -50,6 +51,17 @@ jobs:
                   cancel = concurrency.get("cancel-in-progress")
                   if not group:
                       errors.append(f"{path}: concurrency.group is missing or empty")
+                  else:
+                      filename = os.path.basename(path)
+                      if filename == "pages.yml":
+                          if group != "pages":
+                              errors.append(
+                                  f"{path}: pages workflow must use concurrency.group 'pages'"
+                              )
+                      elif "${{ github.workflow }}" not in group or "${{ github.ref }}" not in group:
+                          errors.append(
+                              f"{path}: concurrency.group must include '${{ github.workflow }}' and '${{ github.ref }}'"
+                          )
                   if cancel is not True:
                       errors.append(f"{path}: concurrency.cancel-in-progress must be true")
 
