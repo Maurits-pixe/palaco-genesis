@@ -8,6 +8,8 @@ pub mod vacation_mode;
 
 /// Unprivileged, network-free memory catalog preview.
 pub mod offline_catalog;
+/// Create-only public checkpoint persistence without trusted anchor promotion.
+pub mod offline_checkpoint_store;
 /// Strict Ed25519 byte verification without authority or recovery execution.
 pub mod offline_ed25519;
 /// Offline generation selection with an explicit confirmation boundary.
