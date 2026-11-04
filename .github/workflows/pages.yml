@@ -2,6 +2,11 @@ name: PALACO Pages
 
 on:
   workflow_dispatch:
+    inputs:
+      custom_domain:
+        description: "Optional custom domain override for this run (e.g. docs.example.com)"
+        required: false
+        type: string
   push:
     branches: ["main", "master"]
 
@@ -52,9 +57,24 @@ jobs:
           </html>
           HTML
 
+      - name: Resolve custom domain
+        id: custom_domain
+        shell: bash
+        env:
+          INPUT_CUSTOM_DOMAIN: ${{ github.event.inputs.custom_domain }}
+          REPO_CUSTOM_DOMAIN: ${{ vars.PAGES_CUSTOM_DOMAIN }}
+        run: |
+          domain="${INPUT_CUSTOM_DOMAIN:-$REPO_CUSTOM_DOMAIN}"
+          domain="$(echo "$domain" | xargs)"
+          if [ -n "$domain" ] && [[ ! "$domain" =~ ^[A-Za-z0-9.-]+$ ]]; then
+            echo "Invalid custom domain value: $domain"
+            exit 1
+          fi
+          echo "custom_domain=$domain" >> "$GITHUB_OUTPUT"
+
       - name: Apply custom domain (optional)
-        if: ${{ vars.PAGES_CUSTOM_DOMAIN != '' }}
-        run: echo "${{ vars.PAGES_CUSTOM_DOMAIN }}" > _site/CNAME
+        if: ${{ steps.custom_domain.outputs.custom_domain != '' }}
+        run: echo "${{ steps.custom_domain.outputs.custom_domain }}" > _site/CNAME
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
