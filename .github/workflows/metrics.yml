@@ -1,0 +1,40 @@
+name: PALACO Metrics
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+    branches: ["main", "master"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  dependency-metrics:
+    name: Compare dependency metrics
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Run metrics comparison
+        run: |
+          chmod +x .github/scripts/compare-metrics.sh
+          .github/scripts/compare-metrics.sh metrics/baseline.json metrics/metrics-report.md
+
+      - name: Upload metrics artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrics-report
+          path: metrics/metrics-report.md

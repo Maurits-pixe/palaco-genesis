@@ -92,6 +92,7 @@ cargo test --workspace
 - `release.yml` — handmatige release-readiness checks + evidence artifact
 - `document-exchange.yml` — validatie van relatieve documentatielinks
 - `pages.yml` — GitHub Pages deployment (optioneel met custom domain via `PAGES_CUSTOM_DOMAIN`)
+- `metrics.yml` — dependency metrics vergelijking met artifact output
 - `palaco-ci.yml` — uitgebreide PALACO baseline pipeline
 - `citadel-a1.yml` — Citadel A1 contractverificatie
 - `registry-contract.yml` — registry contract checks
@@ -108,3 +109,7 @@ De `pages.yml` workflow publiceert `docs/` naar GitHub Pages en maakt een option
 2. (Optioneel) Voeg repository variable `PAGES_CUSTOM_DOMAIN` toe met je domeinnaam.
 3. (Optioneel) Overschrijf voor één handmatige run via workflow input `custom_domain`.
 4. Trigger `pages.yml` via **Run workflow** of push naar `main`/`master`.
+
+## CI metrics
+
+De `metrics.yml` workflow draait `.github/scripts/compare-metrics.sh` en publiceert `metrics/metrics-report.md` als artifact.
