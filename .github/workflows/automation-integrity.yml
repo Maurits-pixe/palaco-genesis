@@ -23,6 +23,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Validate workflow YAML files and CI policy guardrails
         run: |
@@ -94,6 +96,22 @@ jobs:
                       errors.append(
                           f"{path}: job '{job_name}' timeout-minutes must be <= 60"
                       )
+
+                  steps = job.get("steps", [])
+                  if not isinstance(steps, list):
+                      errors.append(f"{path}: job '{job_name}' steps must be a list")
+                      continue
+
+                  for step_index, step in enumerate(steps):
+                      if not isinstance(step, dict):
+                          continue
+                      if step.get("uses") == "actions/checkout@v4":
+                          with_cfg = step.get("with")
+                          persist = with_cfg.get("persist-credentials") if isinstance(with_cfg, dict) else None
+                          if persist is not False:
+                              errors.append(
+                                  f"{path}: job '{job_name}' checkout step #{step_index} must set with.persist-credentials to false"
+                              )
           
               print(f"OK {path}")
           
