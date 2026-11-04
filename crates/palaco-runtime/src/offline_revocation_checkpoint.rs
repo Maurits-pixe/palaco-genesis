@@ -126,9 +126,7 @@ pub fn propose_anchor(candidate: &RevocationCheckpoint) -> Option<ExternalAnchor
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        assess_checkpoint, propose_anchor, CheckpointAssessment, RevocationCheckpoint,
-    };
+    use super::{assess_checkpoint, propose_anchor, CheckpointAssessment, RevocationCheckpoint};
 
     #[test]
     fn no_anchor_fails_closed() {
@@ -165,8 +163,8 @@ mod tests {
     #[test]
     fn epoch_rollback_is_refused_even_when_revision_increases() -> Result<(), &'static str> {
         let candidate = RevocationCheckpoint::new(5, 2, [3; 32]);
-        let external = propose_anchor(&RevocationCheckpoint::new(4, 3, [4; 32]))
-            .ok_or("valid checkpoint")?;
+        let external =
+            propose_anchor(&RevocationCheckpoint::new(4, 3, [4; 32])).ok_or("valid checkpoint")?;
         assert_eq!(
             assess_checkpoint(&candidate, Some(&external)),
             CheckpointAssessment::RollbackDetected
@@ -177,8 +175,8 @@ mod tests {
     #[test]
     fn same_revision_with_different_state_is_a_fork() -> Result<(), &'static str> {
         let candidate = RevocationCheckpoint::new(4, 3, [8; 32]);
-        let external = propose_anchor(&RevocationCheckpoint::new(4, 3, [9; 32]))
-            .ok_or("valid checkpoint")?;
+        let external =
+            propose_anchor(&RevocationCheckpoint::new(4, 3, [9; 32])).ok_or("valid checkpoint")?;
         assert_eq!(
             assess_checkpoint(&candidate, Some(&external)),
             CheckpointAssessment::ForkDetected
@@ -200,8 +198,8 @@ mod tests {
     #[test]
     fn new_revision_requires_independent_anchor_update() -> Result<(), &'static str> {
         let candidate = RevocationCheckpoint::new(5, 3, [7; 32]);
-        let external = propose_anchor(&RevocationCheckpoint::new(4, 3, [8; 32]))
-            .ok_or("valid checkpoint")?;
+        let external =
+            propose_anchor(&RevocationCheckpoint::new(4, 3, [8; 32])).ok_or("valid checkpoint")?;
         assert_eq!(
             assess_checkpoint(&candidate, Some(&external)),
             CheckpointAssessment::RequiresAnchorUpdate
