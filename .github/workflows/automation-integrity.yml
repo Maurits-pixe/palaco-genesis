@@ -105,7 +105,12 @@ jobs:
                   for step_index, step in enumerate(steps):
                       if not isinstance(step, dict):
                           continue
-                      if step.get("uses") == "actions/checkout@v4":
+                      step_uses = step.get("uses")
+                      if isinstance(step_uses, str) and step_uses.startswith("actions/checkout@"):
+                          if step_uses != "actions/checkout@v4":
+                              errors.append(
+                                  f"{path}: job '{job_name}' checkout step #{step_index} must use actions/checkout@v4"
+                              )
                           with_cfg = step.get("with")
                           persist = with_cfg.get("persist-credentials") if isinstance(with_cfg, dict) else None
                           if persist is not False:
