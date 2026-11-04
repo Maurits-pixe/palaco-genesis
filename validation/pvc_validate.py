@@ -19,7 +19,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SCOPE_PATH = ROOT / "validation/core-alpha-scope.json"
 GRAPH_PATH = ROOT / "validation/system-graph.json"
 GRAPH_SCHEMA_PATH = ROOT / "validation/system-graph.schema.json"
-VALIDATOR_VERSION = "0.1.0"
+ORDERING_PATH = ROOT / "validation/dependency-ordering.json"
+VALIDATOR_VERSION = "0.2.0"
 NODE_KINDS = {"service", "capability", "resource", "lifecycle", "event"}
 
 
@@ -327,6 +328,223 @@ def evaluate_g1(
     }
 
 
+def _topological_order(
+    nodes: list[str], edges: list[tuple[str, str]]
+) -> tuple[list[str] | None, list[str] | None]:
+    dependencies = {node: set() for node in nodes}
+    dependents = {node: set() for node in nodes}
+    for source, target in edges:
+        if source not in dependencies or target not in dependencies:
+            return None, [f"Dependency edge references an unknown node: {source} -> {target}."]
+        if source == target:
+            return None, [f"Self-dependency is prohibited: {source} -> {target}."]
+        dependencies[source].add(target)
+        dependents[target].add(source)
+
+    ready = sorted(node for node, deps in dependencies.items() if not deps)
+    order: list[str] = []
+    while ready:
+        node = ready.pop(0)
+        order.append(node)
+        for dependent in sorted(dependents[node]):
+            dependencies[dependent].discard(node)
+            if not dependencies[dependent] and dependent not in order and dependent not in ready:
+                ready.append(dependent)
+        ready.sort()
+
+    remaining = sorted(node for node, deps in dependencies.items() if deps)
+    if remaining:
+        return None, [f"Dependency cycle detected among: {', '.join(remaining)}."]
+    return order, None
+
+
+def _dependency_graph_digest(graph: dict[str, Any]) -> str:
+    canonical = json.dumps(graph, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _ordering_approval_digest(
+    graph_sha256: str,
+    startup_constraints: list[Any],
+    shutdown_constraints: list[Any],
+    approved_by: str,
+    decision_ref: str,
+) -> str:
+    payload = {
+        "graph_sha256": graph_sha256,
+        "startup_constraints": startup_constraints,
+        "shutdown_constraints": shutdown_constraints,
+        "approved_by": approved_by,
+        "decision_ref": decision_ref,
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def evaluate_g2(
+    nodes: Any,
+    edges: Any,
+    ordering: Any,
+    ordering_error: str | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    findings: list[str] = []
+    graph: dict[str, Any] = {
+        "dependency_scope": "workspace-local dependencies across normal, build, and dev kinds",
+        "nodes": [],
+        "edges": [],
+    }
+
+    if not isinstance(nodes, list) or not nodes or any(
+        not isinstance(node, str) or not node for node in nodes
+    ):
+        return (
+            {"gate": "G2", "result": "HOLD", "findings": ["Cargo workspace dependency inventory is unavailable."]},
+            graph,
+        )
+    if len(set(nodes)) != len(nodes):
+        return (
+            {"gate": "G2", "result": "FAIL", "findings": ["Cargo workspace dependency inventory contains duplicate package names."]},
+            graph,
+        )
+    graph["nodes"] = sorted(nodes)
+
+    if not isinstance(edges, list):
+        return (
+            {"gate": "G2", "result": "HOLD", "findings": ["Cargo workspace dependency edges are unavailable."]},
+            graph,
+        )
+    normalized_edges: list[tuple[str, str]] = []
+    for edge in edges:
+        if (
+            not isinstance(edge, (list, tuple))
+            or len(edge) != 2
+            or not all(isinstance(item, str) and item for item in edge)
+        ):
+            findings.append(f"Invalid Cargo dependency edge: {edge!r}.")
+            continue
+        normalized_edges.append((edge[0], edge[1]))
+    graph["edges"] = [
+        {"package": source, "depends_on": target}
+        for source, target in sorted(set(normalized_edges))
+    ]
+    if len(set(normalized_edges)) != len(normalized_edges):
+        findings.append("Cargo dependency graph contains duplicate edges.")
+    order, cycle_error = _topological_order(nodes, normalized_edges)
+    if cycle_error:
+        findings.extend(cycle_error)
+    else:
+        graph["topological_order"] = order
+    graph_digest = _dependency_graph_digest(graph)
+    graph["sha256"] = graph_digest
+
+    if findings:
+        return {"gate": "G2", "result": "FAIL", "findings": findings}, graph
+
+    if ordering_error == "missing":
+        return (
+            {"gate": "G2", "result": "HOLD", "findings": ["Startup/shutdown ordering evidence is not present."]},
+            graph,
+        )
+    if ordering_error:
+        return (
+            {"gate": "G2", "result": "FAIL", "findings": [f"Dependency ordering input is invalid: {ordering_error}"]},
+            graph,
+        )
+    if not isinstance(ordering, dict):
+        return (
+            {"gate": "G2", "result": "HOLD", "findings": ["Startup/shutdown ordering constraints are not defined."]},
+            graph,
+        )
+    if type(ordering.get("schema_version")) is not int or ordering["schema_version"] != 1:
+        return (
+            {"gate": "G2", "result": "FAIL", "findings": ["Dependency ordering schema_version must be 1."]},
+            graph,
+        )
+    expected_ordering_fields = {
+        "schema_version",
+        "status",
+        "graph_sha256",
+        "approval_sha256",
+        "startup_constraints",
+        "shutdown_constraints",
+        "approved_by",
+        "decision_ref",
+    }
+    if set(ordering) != expected_ordering_fields:
+        return (
+            {"gate": "G2", "result": "FAIL", "findings": ["Dependency ordering input has unexpected or missing fields."]},
+            graph,
+        )
+
+    for field in ("startup_constraints", "shutdown_constraints"):
+        value = ordering.get(field)
+        if not isinstance(value, list):
+            return (
+                {"gate": "G2", "result": "HOLD", "findings": [f"{field} are not explicitly defined."]},
+                graph,
+            )
+        parsed: list[tuple[str, str]] = []
+        for item in value:
+            if (
+                not isinstance(item, dict)
+                or set(item) != {"before", "after"}
+                or not all(isinstance(item.get(key), str) and item[key] for key in ("before", "after"))
+            ):
+                findings.append(f"{field} contains an invalid ordering constraint: {item!r}.")
+                continue
+            parsed.append((item["before"], item["after"]))
+        _, constraint_error = _topological_order(nodes, parsed)
+        if constraint_error:
+            findings.extend(f"{field}: {error}" for error in constraint_error)
+    if findings:
+        return {"gate": "G2", "result": "FAIL", "findings": findings}, graph
+
+    approval = {
+        "status": ordering.get("status"),
+        "graph_sha256": ordering.get("graph_sha256"),
+        "approval_sha256": ordering.get("approval_sha256"),
+        "approved_by": ordering.get("approved_by"),
+        "decision_ref": ordering.get("decision_ref"),
+    }
+    expected_approval_digest = _ordering_approval_digest(
+        graph_digest,
+        ordering["startup_constraints"],
+        ordering["shutdown_constraints"],
+        approval["approved_by"] if isinstance(approval["approved_by"], str) else "",
+        approval["decision_ref"] if isinstance(approval["decision_ref"], str) else "",
+    )
+    if (
+        approval["status"] != "approved"
+        or approval["graph_sha256"] != graph_digest
+        or approval["approval_sha256"] != expected_approval_digest
+        or not isinstance(approval["approved_by"], str)
+        or not approval["approved_by"]
+        or not isinstance(approval["decision_ref"], str)
+        or not approval["decision_ref"]
+    ):
+        return (
+            {
+                "gate": "G2",
+                "result": "HOLD",
+                "findings": [
+                    "Cargo dependency graph is acyclic, but startup/shutdown constraints lack "
+                    "an approval bound to the current graph digest."
+                ],
+            },
+            graph,
+        )
+    return (
+        {
+            "gate": "G2",
+            "result": "PASS",
+            "findings": [
+                f"Cargo dependency graph is acyclic and approved startup/shutdown constraints are valid ({graph_digest})."
+            ],
+        },
+        graph,
+    )
+
+
 def _git(*args: str) -> str | None:
     completed = subprocess.run(
         ["git", *args],
@@ -370,6 +588,43 @@ def _workspace_components() -> set[str] | None:
         return None
 
 
+def _workspace_dependency_graph() -> tuple[list[str] | None, list[tuple[str, str]] | None, str | None]:
+    completed = subprocess.run(
+        ["cargo", "metadata", "--no-deps", "--format-version", "1"],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        return None, None, completed.stderr.strip() or "cargo metadata failed"
+    try:
+        metadata = json.loads(completed.stdout)
+        members = set(metadata["workspace_members"])
+        packages = [package for package in metadata["packages"] if package["id"] in members]
+        package_by_path = {
+            str(Path(package["manifest_path"]).parent.resolve()): package["name"]
+            for package in packages
+        }
+        edges: set[tuple[str, str]] = set()
+        for package in packages:
+            for dependency in package["dependencies"]:
+                dependency_path = dependency.get("path")
+                if dependency_path is None:
+                    continue
+                dependency_name = package_by_path.get(str(Path(dependency_path).resolve()))
+                if dependency_name is None:
+                    return (
+                        None,
+                        None,
+                        f"Local dependency {dependency['name']} of {package['name']} is outside workspace inventory.",
+                    )
+                edges.add((package["name"], dependency_name))
+        return sorted(package["name"] for package in packages), sorted(edges), None
+    except (KeyError, TypeError, json.JSONDecodeError) as error:
+        return None, None, f"Could not parse cargo metadata: {error}"
+
+
 def _artifact(path: Path) -> dict[str, str] | None:
     if not path.is_file():
         return None
@@ -398,10 +653,24 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
     if not graph_path.is_file():
         graph_error = "missing"
     g1 = evaluate_g1(graph, scope if scope_error is None else None, revision, graph_error)
+    ordering, ordering_error = read_json(ORDERING_PATH)
+    if not ORDERING_PATH.is_file():
+        ordering_error = "missing"
+    dependency_nodes, dependency_edges, dependency_error = _workspace_dependency_graph()
+    if dependency_error:
+        g2, dependency_graph = evaluate_g2(None, None, ordering, ordering_error)
+        g2["findings"] = [f"Cargo dependency inventory is unavailable: {dependency_error}"]
+    else:
+        g2, dependency_graph = evaluate_g2(
+            dependency_nodes,
+            dependency_edges,
+            ordering if ordering_error is None else None,
+            ordering_error,
+        )
 
     report: dict[str, Any] = {
         "format_version": 1,
-        "validator": {"name": "PVC-001 G0/G1 validator", "version": VALIDATOR_VERSION},
+        "validator": {"name": "PVC-001 G0-G2 validator", "version": VALIDATOR_VERSION},
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "repository": _repository_identity(),
         "revision": revision or None,
@@ -410,8 +679,10 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
             "scope": _artifact(scope_path),
             "system_graph": _artifact(graph_path),
             "system_graph_schema": _artifact(GRAPH_SCHEMA_PATH),
+            "dependency_ordering": _artifact(ORDERING_PATH),
         },
-        "gates": [g0, g1],
+        "dependency_graph": dependency_graph,
+        "gates": [g0, g1, g2],
     }
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path = output_dir / "pvc-001-evidence.json"
@@ -423,12 +694,13 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
 
 def render_markdown(report: dict[str, Any]) -> str:
     lines = [
-        "# PVC-001 G0/G1 Evidence",
+        "# PVC-001 G0-G2 Evidence",
         "",
         f"- Repository: `{report['repository'] or 'unknown'}`",
         f"- Revision: `{report['revision'] or 'unknown'}`",
         f"- Validator: `{report['validator']['name']} {report['validator']['version']}`",
         f"- Generated: `{report['generated_at']}`",
+        f"- Cargo dependency graph SHA-256: `{report['dependency_graph'].get('sha256', 'unavailable')}`",
         "",
         "| Gate | Result | Findings |",
         "|---|---|---|",
