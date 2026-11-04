@@ -20,7 +20,9 @@ SCOPE_PATH = ROOT / "validation/core-alpha-scope.json"
 GRAPH_PATH = ROOT / "validation/system-graph.json"
 GRAPH_SCHEMA_PATH = ROOT / "validation/system-graph.schema.json"
 ORDERING_PATH = ROOT / "validation/dependency-ordering.json"
-VALIDATOR_VERSION = "0.2.0"
+PLAN_PATH = ROOT / "validation/execution-plan.json"
+PLAN_SCHEMA_PATH = ROOT / "validation/execution-plan.schema.json"
+VALIDATOR_VERSION = "0.4.0"
 NODE_KINDS = {"service", "capability", "resource", "lifecycle", "event"}
 
 
@@ -476,6 +478,7 @@ def evaluate_g2(
             graph,
         )
 
+    ordering_constraints: dict[str, list[tuple[str, str]]] = {}
     for field in ("startup_constraints", "shutdown_constraints"):
         value = ordering.get(field)
         if not isinstance(value, list):
@@ -492,10 +495,16 @@ def evaluate_g2(
             ):
                 findings.append(f"{field} contains an invalid ordering constraint: {item!r}.")
                 continue
-            parsed.append((item["before"], item["after"]))
-        _, constraint_error = _topological_order(nodes, parsed)
+            parsed.append((item["after"], item["before"]))
+        ordering_constraints[field] = parsed
+        dependency_edges = (
+            normalized_edges
+            if field == "startup_constraints"
+            else [(dependency, package) for package, dependency in normalized_edges]
+        )
+        _, constraint_error = _topological_order(nodes, dependency_edges + parsed)
         if constraint_error:
-            findings.extend(f"{field}: {error}" for error in constraint_error)
+            findings.extend(f"{field} conflicts with dependency ordering: {error}" for error in constraint_error)
     if findings:
         return {"gate": "G2", "result": "FAIL", "findings": findings}, graph
 
@@ -542,6 +551,261 @@ def evaluate_g2(
             ],
         },
         graph,
+    )
+
+
+def _canonical_sha256(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def evaluate_g3(
+    graph: Any,
+    plan: Any,
+    revision: str,
+    g1_result: str,
+    g2_result: str,
+    plan_error: str | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    empty_schedule: dict[str, Any] = {"execution_layers": [], "plan_sha256": None}
+    if plan_error == "missing":
+        return (
+            {"gate": "G3", "result": "HOLD", "findings": ["ExecutionPlan artifact is not present."]},
+            empty_schedule,
+        )
+    if plan_error is not None:
+        return (
+            {"gate": "G3", "result": "FAIL", "findings": [f"ExecutionPlan could not be parsed: {plan_error}"]},
+            empty_schedule,
+        )
+    if not isinstance(plan, dict):
+        return (
+            {"gate": "G3", "result": "FAIL", "findings": ["ExecutionPlan must be a JSON object."]},
+            empty_schedule,
+        )
+
+    required_fields = {
+        "schema_version",
+        "source_revision",
+        "system_graph_sha256",
+        "planner",
+        "dependency_relation_kinds",
+        "steps",
+    }
+    if set(plan) != required_fields:
+        return (
+            {"gate": "G3", "result": "FAIL", "findings": ["ExecutionPlan has unexpected or missing fields."]},
+            empty_schedule,
+        )
+    findings: list[str] = []
+    if type(plan["schema_version"]) is not int or plan["schema_version"] != 1:
+        findings.append("ExecutionPlan schema_version must be 1.")
+    if not isinstance(plan["source_revision"], str) or not plan["source_revision"]:
+        findings.append("ExecutionPlan must identify its source revision.")
+    if not isinstance(plan["system_graph_sha256"], str) or not re.fullmatch(
+        r"[0-9a-f]{64}", plan["system_graph_sha256"]
+    ):
+        findings.append("ExecutionPlan must identify the SystemGraph SHA-256.")
+    planner = plan["planner"]
+    if (
+        not isinstance(planner, dict)
+        or set(planner) != {"name", "version"}
+        or not all(isinstance(planner.get(key), str) and planner[key] for key in ("name", "version"))
+    ):
+        findings.append("ExecutionPlan planner must identify a name and version.")
+    relation_kinds = plan["dependency_relation_kinds"]
+    if not _is_string_list(relation_kinds, nonempty=True):
+        findings.append("ExecutionPlan must declare dependency_relation_kinds.")
+    elif len(set(relation_kinds)) != len(relation_kinds):
+        findings.append("ExecutionPlan dependency_relation_kinds contains duplicates.")
+    steps = plan["steps"]
+    if not isinstance(steps, list) or not steps:
+        findings.append("ExecutionPlan must contain at least one step.")
+        steps = []
+
+    step_by_id: dict[str, dict[str, Any]] = {}
+    step_by_graph_node: dict[str, str] = {}
+    for index, step in enumerate(steps):
+        if not isinstance(step, dict):
+            findings.append(f"ExecutionPlan step at index {index} must be an object.")
+            continue
+        if set(step) != {"id", "graph_node", "depends_on", "recovery_point"}:
+            findings.append(
+                f"ExecutionPlan step at index {index} must contain only id, graph_node, depends_on, and recovery_point."
+            )
+        step_id = step.get("id")
+        graph_node = step.get("graph_node")
+        depends_on = step.get("depends_on")
+        recovery_point = step.get("recovery_point")
+        if not isinstance(step_id, str) or not step_id:
+            findings.append(f"ExecutionPlan step at index {index} has no valid id.")
+            continue
+        if step_id in step_by_id:
+            findings.append(f"Duplicate ExecutionPlan step id: {step_id}.")
+        if not isinstance(graph_node, str) or not graph_node:
+            findings.append(f"ExecutionPlan step {step_id} has no SystemGraph node.")
+        elif graph_node in step_by_graph_node:
+            findings.append(f"Multiple ExecutionPlan steps map to SystemGraph node {graph_node}.")
+        else:
+            step_by_graph_node[graph_node] = step_id
+        if not _is_string_list(depends_on):
+            findings.append(f"ExecutionPlan step {step_id} depends_on must be a string list.")
+        if not isinstance(recovery_point, str) or not recovery_point.strip():
+            findings.append(f"ExecutionPlan step {step_id} must declare a recovery point.")
+        step_by_id[step_id] = step
+
+    normalized_dependencies: list[tuple[str, str]] = []
+    for step_id, step in step_by_id.items():
+        depends_on = step.get("depends_on")
+        if not _is_string_list(depends_on):
+            continue
+        if len(set(depends_on)) != len(depends_on):
+            findings.append(f"ExecutionPlan step {step_id} has duplicate dependencies.")
+        for dependency in depends_on:
+            if dependency not in step_by_id:
+                findings.append(f"ExecutionPlan step {step_id} depends on unknown step {dependency}.")
+            elif dependency == step_id:
+                findings.append(f"ExecutionPlan step {step_id} depends on itself.")
+            else:
+                normalized_dependencies.append((step_id, dependency))
+
+    schedule: dict[str, Any] = {"execution_layers": [], "plan_sha256": _canonical_sha256(plan)}
+    if findings:
+        return {"gate": "G3", "result": "FAIL", "findings": findings}, schedule
+    plan_order, plan_cycle = _topological_order(list(step_by_id), normalized_dependencies)
+    if plan_cycle:
+        return {"gate": "G3", "result": "FAIL", "findings": plan_cycle}, schedule
+
+    if plan["source_revision"] != revision:
+        return (
+            {
+                "gate": "G3",
+                "result": "INCONCLUSIVE",
+                "findings": [
+                    f"ExecutionPlan revision {plan['source_revision']} does not match evaluated revision {revision}."
+                ],
+            },
+            schedule,
+        )
+    if not isinstance(graph, dict):
+        return (
+            {"gate": "G3", "result": "HOLD", "findings": ["SystemGraph is unavailable for plan conformance."]},
+            schedule,
+        )
+    if plan["system_graph_sha256"] != _canonical_sha256(graph):
+        return (
+            {"gate": "G3", "result": "INCONCLUSIVE", "findings": ["ExecutionPlan is not bound to the supplied SystemGraph digest."]},
+            schedule,
+        )
+    if graph.get("revision") != revision:
+        return (
+            {
+                "gate": "G3",
+                "result": "INCONCLUSIVE",
+                "findings": [
+                    f"SystemGraph revision {graph.get('revision')} does not match evaluated revision {revision}."
+                ],
+            },
+            schedule,
+        )
+    if g1_result != "PASS" or g2_result != "PASS":
+        return (
+            {
+                "gate": "G3",
+                "result": "HOLD",
+                "findings": [f"G3 prerequisites are not PASS (G1={g1_result}, G2={g2_result})."],
+            },
+            schedule,
+        )
+
+    nodes = graph.get("nodes")
+    relations = graph.get("relations")
+    if not isinstance(nodes, list) or not isinstance(relations, list):
+        return (
+            {"gate": "G3", "result": "FAIL", "findings": ["SystemGraph nodes and relations must be arrays."]},
+            schedule,
+        )
+    graph_nodes = {
+        node.get("id"): node for node in nodes if isinstance(node, dict) and isinstance(node.get("id"), str)
+    }
+    required_services = {
+        node_id for node_id, node in graph_nodes.items() if node.get("kind") == "service"
+    }
+    missing_services = sorted(required_services - set(step_by_graph_node))
+    unknown_nodes = sorted(set(step_by_graph_node) - set(graph_nodes))
+    non_service_nodes = sorted(
+        graph_node
+        for graph_node in step_by_graph_node
+        if graph_node in graph_nodes and graph_nodes[graph_node].get("kind") != "service"
+    )
+    if missing_services:
+        findings.append(f"ExecutionPlan omits service nodes: {missing_services}.")
+    if unknown_nodes:
+        findings.append(f"ExecutionPlan references unknown SystemGraph nodes: {unknown_nodes}.")
+    if non_service_nodes:
+        findings.append(f"ExecutionPlan steps must map to service nodes, not {non_service_nodes}.")
+
+    dependency_relation_kinds = set(plan["dependency_relation_kinds"])
+    graph_relation_kinds = graph.get("relation_kinds")
+    if not isinstance(graph_relation_kinds, dict):
+        findings.append("SystemGraph relation_kinds must be an object.")
+        graph_relation_kinds = {}
+    undeclared_kinds = sorted(dependency_relation_kinds - set(graph_relation_kinds))
+    if undeclared_kinds:
+        findings.append(f"ExecutionPlan declares unknown dependency relation kinds: {undeclared_kinds}.")
+    expected_dependencies: set[tuple[str, str]] = set()
+    for relation in relations:
+        if not isinstance(relation, dict):
+            continue
+        if relation.get("kind") not in dependency_relation_kinds:
+            continue
+        source_step = step_by_graph_node.get(relation.get("source"))
+        target_step = step_by_graph_node.get(relation.get("target"))
+        if source_step is None or target_step is None:
+            findings.append(
+                f"Dependency relation {relation.get('source')} -[{relation.get('kind')}]-> "
+                f"{relation.get('target')} is not represented by service steps."
+            )
+        else:
+            expected_dependencies.add((source_step, target_step))
+    actual_dependencies = set(normalized_dependencies)
+    if actual_dependencies != expected_dependencies:
+        findings.append(
+            "ExecutionPlan dependencies do not exactly match the declared SystemGraph dependency relations."
+        )
+
+    if findings:
+        return {"gate": "G3", "result": "FAIL", "findings": findings}, schedule
+
+    remaining = {
+        step_id: set(step.get("depends_on", []))
+        for step_id, step in step_by_id.items()
+    }
+    layers: list[list[str]] = []
+    while remaining:
+        ready = sorted(step_id for step_id, dependencies in remaining.items() if not dependencies)
+        if not ready:
+            return (
+                {"gate": "G3", "result": "FAIL", "findings": ["ExecutionPlan has no safe next execution layer."]},
+                schedule,
+            )
+        layers.append(ready)
+        for step_id in ready:
+            del remaining[step_id]
+        for dependencies in remaining.values():
+            dependencies.difference_update(ready)
+    schedule["execution_layers"] = layers
+    schedule["topological_order"] = plan_order
+    return (
+        {
+            "gate": "G3",
+            "result": "PASS",
+            "findings": [
+                f"Plan covers every graph service, preserves declared dependencies, and defines recovery for every step ({schedule['plan_sha256']})."
+            ],
+        },
+        schedule,
     )
 
 
@@ -667,10 +931,21 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
             ordering if ordering_error is None else None,
             ordering_error,
         )
+    plan, plan_error = read_json(PLAN_PATH)
+    if not PLAN_PATH.is_file():
+        plan_error = "missing"
+    g3, execution_schedule = evaluate_g3(
+        graph,
+        plan,
+        revision,
+        g1["result"],
+        g2["result"],
+        plan_error,
+    )
 
     report: dict[str, Any] = {
         "format_version": 1,
-        "validator": {"name": "PVC-001 G0-G2 validator", "version": VALIDATOR_VERSION},
+        "validator": {"name": "PVC-001 G0-G3 validator", "version": VALIDATOR_VERSION},
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "repository": _repository_identity(),
         "revision": revision or None,
@@ -680,9 +955,12 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
             "system_graph": _artifact(graph_path),
             "system_graph_schema": _artifact(GRAPH_SCHEMA_PATH),
             "dependency_ordering": _artifact(ORDERING_PATH),
+            "execution_plan": _artifact(PLAN_PATH),
+            "execution_plan_schema": _artifact(PLAN_SCHEMA_PATH),
         },
         "dependency_graph": dependency_graph,
-        "gates": [g0, g1, g2],
+        "execution_schedule": execution_schedule,
+        "gates": [g0, g1, g2, g3],
     }
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path = output_dir / "pvc-001-evidence.json"
@@ -693,14 +971,17 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
 
 
 def render_markdown(report: dict[str, Any]) -> str:
+    dependency_sha256 = report["dependency_graph"].get("sha256") or "unavailable"
+    plan_sha256 = report["execution_schedule"].get("plan_sha256") or "unavailable"
     lines = [
-        "# PVC-001 G0-G2 Evidence",
+        "# PVC-001 G0-G3 Evidence",
         "",
         f"- Repository: `{report['repository'] or 'unknown'}`",
         f"- Revision: `{report['revision'] or 'unknown'}`",
         f"- Validator: `{report['validator']['name']} {report['validator']['version']}`",
         f"- Generated: `{report['generated_at']}`",
-        f"- Cargo dependency graph SHA-256: `{report['dependency_graph'].get('sha256', 'unavailable')}`",
+        f"- Cargo dependency graph SHA-256: `{dependency_sha256}`",
+        f"- ExecutionPlan SHA-256: `{plan_sha256}`",
         "",
         "| Gate | Result | Findings |",
         "|---|---|---|",
@@ -708,6 +989,15 @@ def render_markdown(report: dict[str, Any]) -> str:
     for gate in report["gates"]:
         findings = "; ".join(gate["findings"]).replace("|", "\\|")
         lines.append(f"| {gate['gate']} | **{gate['result']}** | {findings} |")
+    layers = report["execution_schedule"].get("execution_layers", [])
+    lines.extend(["", "## Deterministic execution layers", ""])
+    if layers:
+        lines.extend(
+            f"{index}. " + ", ".join(f"`{step}`" for step in layer)
+            for index, layer in enumerate(layers, 1)
+        )
+    else:
+        lines.append("Unavailable until a valid, revision-bound ExecutionPlan is supplied.")
     lines.extend(["", "This report records validation evidence only; it grants no authority."])
     return "\n".join(lines) + "\n"
 

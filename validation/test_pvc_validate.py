@@ -2,12 +2,14 @@ import unittest
 from unittest.mock import patch
 
 from pvc_validate import (
+    _canonical_sha256,
     _dependency_graph_digest,
     _ordering_approval_digest,
     _repository_identity,
     evaluate_g0,
     evaluate_g1,
     evaluate_g2,
+    evaluate_g3,
 )
 
 
@@ -194,6 +196,18 @@ class G2Tests(unittest.TestCase):
         result, _ = evaluate_g2(self.nodes, self.edges, ordering)
         self.assertEqual(result["result"], "FAIL")
 
+    def test_startup_order_is_interpreted_before_then_after(self):
+        ordering = {
+            **self.ordering,
+            "startup_constraints": [{"before": "foundation", "after": "runtime"}],
+            "shutdown_constraints": [],
+        }
+        result, _ = evaluate_g2(self.nodes, self.edges, ordering)
+        self.assertEqual(result["result"], "HOLD")
+        ordering["startup_constraints"] = [{"before": "runtime", "after": "foundation"}]
+        result, _ = evaluate_g2(self.nodes, self.edges, ordering)
+        self.assertEqual(result["result"], "FAIL")
+
     def test_approved_constraints_must_bind_dependency_graph_digest(self):
         _, graph = evaluate_g2(self.nodes, self.edges, self.ordering)
         ordering = {
@@ -252,6 +266,141 @@ class G2Tests(unittest.TestCase):
         ordering["decision_ref"] = "decision-3"
         result, _ = evaluate_g2(self.nodes, self.edges, ordering)
         self.assertEqual(result["result"], "HOLD")
+
+
+class G3Tests(unittest.TestCase):
+    def setUp(self):
+        self.graph = {
+            "schema_version": 1,
+            "revision": "abc123",
+            "nodes": [
+                {"id": "foundation", "kind": "service", "source_paths": ["crates/palaco-foundation"]},
+                {"id": "runtime", "kind": "service", "source_paths": ["crates/palaco-runtime"]},
+                {"id": "capability", "kind": "capability", "source_paths": ["crates/palaco-types"]},
+            ],
+            "relation_kinds": {
+                "depends_on": {
+                    "meaning": "requires successful startup of target before source",
+                    "source_kinds": ["service"],
+                    "target_kinds": ["service"],
+                }
+            },
+            "relations": [
+                {"source": "runtime", "target": "foundation", "kind": "depends_on"}
+            ],
+        }
+        self.plan = {
+            "schema_version": 1,
+            "source_revision": "abc123",
+            "system_graph_sha256": _canonical_sha256(self.graph),
+            "planner": {"name": "test-planner", "version": "1"},
+            "dependency_relation_kinds": ["depends_on"],
+            "steps": [
+                {
+                    "id": "foundation-start",
+                    "graph_node": "foundation",
+                    "depends_on": [],
+                    "recovery_point": "restore foundation snapshot",
+                },
+                {
+                    "id": "runtime-start",
+                    "graph_node": "runtime",
+                    "depends_on": ["foundation-start"],
+                    "recovery_point": "restore runtime snapshot",
+                },
+            ],
+        }
+
+    def evaluate(self, plan=None, graph=None, g1="PASS", g2="PASS", revision="abc123", error=None):
+        return evaluate_g3(
+            self.graph if graph is None else graph,
+            self.plan if plan is None else plan,
+            revision,
+            g1,
+            g2,
+            error,
+        )
+
+    def test_valid_plan_passes_and_emits_deterministic_parallel_layers(self):
+        first_result, first_schedule = self.evaluate()
+        second_result, second_schedule = self.evaluate()
+        self.assertEqual(first_result["result"], "PASS")
+        self.assertEqual(first_schedule, second_schedule)
+        self.assertEqual(
+            first_schedule["execution_layers"],
+            [["foundation-start"], ["runtime-start"]],
+        )
+
+    def test_independent_steps_share_parallel_layer(self):
+        graph = {**self.graph, "relations": []}
+        plan = {
+            **self.plan,
+            "system_graph_sha256": _canonical_sha256(graph),
+            "steps": [
+                {**self.plan["steps"][0], "depends_on": []},
+                {**self.plan["steps"][1], "depends_on": []},
+            ],
+        }
+        result, schedule = self.evaluate(plan=plan, graph=graph)
+        self.assertEqual(result["result"], "PASS")
+        self.assertEqual(schedule["execution_layers"], [["foundation-start", "runtime-start"]])
+
+    def test_missing_plan_is_hold(self):
+        result, _ = self.evaluate(plan=None, error="missing")
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_failed_prerequisites_hold_valid_plan(self):
+        result, _ = self.evaluate(g1="HOLD")
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_missing_service_is_failure(self):
+        plan = {**self.plan, "steps": self.plan["steps"][:1]}
+        result, _ = self.evaluate(plan=plan)
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_dependency_mismatch_is_failure(self):
+        plan = {**self.plan, "steps": [{**self.plan["steps"][0]}, {**self.plan["steps"][1], "depends_on": []}]}
+        result, _ = self.evaluate(plan=plan)
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_plan_cycle_is_failure(self):
+        plan = {
+            **self.plan,
+            "steps": [
+                {**self.plan["steps"][0], "depends_on": ["runtime-start"]},
+                {**self.plan["steps"][1], "depends_on": ["foundation-start"]},
+            ],
+        }
+        result, _ = self.evaluate(plan=plan)
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_missing_recovery_point_is_failure(self):
+        plan = {
+            **self.plan,
+            "steps": [{**self.plan["steps"][0], "recovery_point": ""}, self.plan["steps"][1]],
+        }
+        result, _ = self.evaluate(plan=plan)
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_plan_cannot_smuggle_authority_fields(self):
+        plan = {**self.plan, "authorization": "approved"}
+        result, _ = self.evaluate(plan=plan)
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_plan_revision_mismatch_is_inconclusive(self):
+        result, _ = self.evaluate(revision="different")
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
+    def test_graph_revision_mismatch_is_inconclusive(self):
+        graph = {**self.graph, "revision": "stale"}
+        plan = {**self.plan, "system_graph_sha256": _canonical_sha256(graph)}
+        result, _ = self.evaluate(plan=plan, graph=graph)
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
+    def test_graph_digest_mismatch_is_inconclusive(self):
+        plan = {**self.plan, "system_graph_sha256": "0" * 64}
+        result, _ = self.evaluate(plan=plan)
+        self.assertEqual(result["result"], "INCONCLUSIVE")
 
 
 if __name__ == "__main__":
