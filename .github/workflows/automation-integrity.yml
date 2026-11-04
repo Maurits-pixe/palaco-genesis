@@ -90,6 +90,10 @@ jobs:
                       errors.append(
                           f"{path}: job '{job_name}' must define positive timeout-minutes"
                       )
+                  elif timeout > 60:
+                      errors.append(
+                          f"{path}: job '{job_name}' timeout-minutes must be <= 60"
+                      )
           
               print(f"OK {path}")
           
