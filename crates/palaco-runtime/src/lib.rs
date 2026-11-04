@@ -16,6 +16,8 @@ pub mod offline_generation;
 pub mod offline_integrity;
 /// Create-only recovery journal snapshots for non-sensitive fixtures.
 pub mod offline_journal;
+/// Bounded offline public-key preflight and terminal local revocation.
+pub mod offline_key_registry;
 /// Deterministic public offline manifest root, without signature authority.
 pub mod offline_manifest;
 /// Read-only detection of abandoned offline publication markers.
