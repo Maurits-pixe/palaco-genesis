@@ -2,6 +2,8 @@ name: ORCH-050A lockfile evidence (temporary)
 on:
   push:
     branches: [orch-050a-lockfile-evidence]
+  pull_request:
+    branches: [orch-050-ed25519-review-verifier]
 permissions:
   contents: read
 jobs:
