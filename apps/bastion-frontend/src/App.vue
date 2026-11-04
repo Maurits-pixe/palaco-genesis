@@ -5,7 +5,7 @@ import { realtimeLabels, useSession } from './useSession.js'
 const {
   token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, lastJournalRefreshAt, busy,
   message, error, lookupId, outcome, outcomeReceivedAt, outcomeMismatch, lastSubmissionId, realtimeStatus,
-  canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearSession, clearOutcome, clearJournal,
+  canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearCommand, clearSession, clearOutcome, clearJournal,
 } = useSession()
 
 function date(value) {
@@ -48,6 +48,10 @@ function receiptIso(value) {
           <label for="ttl">Geldigheidsduur (milliseconden)</label>
           <input id="ttl" v-model="ttlMs" type="number" min="1" max="60000" step="1" required :disabled="!!busy" />
           <button :disabled="!!busy || revocationUncertain || !token.trim() || !command.trim() || commandLength(command) > MAX_COMMAND_LENGTH">Ticket aanvragen</button>
+          <button type="button" class="secondary" :disabled="!!busy || !command" aria-describedby="clear-command-help" @click="clearCommand">Wis commandotekst</button>
+          <p id="clear-command-help" class="muted">Wist alleen lokaal de concepttekst en maakt een normaal lokaal ticket ongeldig; geen intrekking op de server.
+            Een onzekere intrekking behoudt het oorspronkelijke ticket en blijft vastleggen en nieuwe tickets blokkeren.
+            Geen verzoeken, verbreking van realtime of veilige geheugenwissing. Logboek en ticketuitkomst kunnen commandotekst behouden.</p>
         </form>
         <h2>2. Apart bevestigen</h2>
         <div v-if="ticket" class="result">

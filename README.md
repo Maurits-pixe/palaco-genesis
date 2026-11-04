@@ -187,6 +187,14 @@ een opslagverzoek server-side is teruggedraaid.
 
 BASTION geeft eerst een kortlevend ticket uit;
 pas de afzonderlijke commitactie schrijft het commando in het logboek.
+Met **Wis commandotekst** wis je alleen de lokale invoer. Zoals bij iedere
+tekstwijziging vervalt een normaal lokaal ticket, zonder het serverticket
+in te trekken. Bij een onzekere intrekking blijven het bewaarde ticket en
+de blokkering behouden; controleer de status of trek het ticket expliciet in.
+De knop is tijdens verzoeken geblokkeerd en verstuurt zelf geen verzoek.
+Token, duur, logboek, ticketuitkomst, ID's en meldingen blijven behouden.
+Die andere weergaven kunnen de oorspronkelijke commandotekst nog bevatten;
+dit is geen volledige sessiewissing of veilige geheugenwissing.
 Bij uitgifte controleert de interface dat het ticket-ID maximaal 128
 tekens bevat en de tijdstippen niet-negatieve, veilige gehele
 epochmilliseconden zijn die als datum kunnen worden weergegeven.

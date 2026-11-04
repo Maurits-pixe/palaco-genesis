@@ -135,6 +135,11 @@ export function useSession({
   }
   watch(token, resetSession, { flush: 'sync' })
 
+  function clearCommand() {
+    if (disposed || busy.value) return
+    command.value = ''
+  }
+
   function clearSession() {
     if (token.value) token.value = ''
     else resetSession()
@@ -288,6 +293,6 @@ export function useSession({
   return {
     token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, lastJournalRefreshAt, busy,
     message, error, lookupId, outcome, outcomeReceivedAt, outcomeMismatch, lastSubmissionId, realtimeStatus, now,
-    canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearSession, clearOutcome, clearJournal,
+    canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearCommand, clearSession, clearOutcome, clearJournal,
   }
 }

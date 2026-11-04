@@ -120,6 +120,117 @@ function retainedOutcomeState(state) {
     .map(([key, value]) => [key, JSON.parse(JSON.stringify(value.value))])))
 }
 
+function commandState(state, excluded = []) {
+  return Object.fromEntries(Object.entries(state)
+    .filter(([key, value]) => isRef(value) && !excluded.includes(key))
+    .map(([key, value]) => [key, value.value]))
+}
+
+for (const uncertain of [false, true]) {
+  test(`clearing command only clears draft and normal authority, uncertainty=${uncertain}`, async t => {
+    const { state, calls, sockets, clock, realtimeCallbacks } = fixture(t)
+    prepare(state, uncertain ? 'revoke' : 'commit')
+    state.realtime.connect(state.token.value)
+    sockets[0].handlers.connect()
+    // Connecting intentionally resets the journal; seed retained data afterwards.
+    prepare(state, uncertain ? 'revoke' : 'commit')
+    const originalTicket = state.ticket.value
+    const retained = commandState(state, ['command', 'ticket', 'canCommit', 'remaining'])
+    const reads = clock.reads
+    assert.equal(state.canCommit.value, !uncertain)
+
+    state.clearCommand()
+    assert.equal(state.command.value, '')
+    assert.equal(state.ticket.value, uncertain ? originalTicket : null)
+    assert.equal(state.canCommit.value, false)
+    assert.deepEqual(commandState(state, ['command', 'ticket', 'canCommit', 'remaining']), retained)
+    for (const [key, value] of Object.entries(retained)) assert.equal(state[key].value, value, key)
+    const cleared = commandState(state)
+    state.clearCommand()
+    assert.deepEqual(commandState(state), cleared)
+    assert.equal(clock.reads, reads)
+    assert.equal(calls.length, 0)
+    assert.equal(sockets.length, 1)
+    assert.equal(sockets[0].disconnects, 0)
+    assert.equal(sockets[0].connects, 1)
+    realtimeCallbacks[0].onEntry(record('still-connected'))
+    assert.equal(state.commands.value[0].id, 'still-connected')
+
+    state.command.value = originalTicket.command
+    assert.equal(state.canCommit.value, false, 'restoring text cannot restore normal authority or bypass uncertainty')
+    await state.perform('commit')
+    if (uncertain) await state.perform('ticket')
+    assert.equal(calls.length, 0)
+    assert.equal(state.ticket.value, uncertain ? originalTicket : null)
+    assert.equal(state.revocationUncertain.value, uncertain)
+  })
+}
+
+test('clearing whitespace is allowed and clearing an empty draft is idempotent', t => {
+  const { state, calls } = fixture(t)
+  prepare(state, 'commit')
+  state.command.value = ' \t\n '
+  const retained = commandState(state, ['command'])
+  state.clearCommand()
+  assert.equal(state.command.value, '')
+  assert.deepEqual(commandState(state, ['command']), retained)
+  state.clearCommand()
+  assert.deepEqual(commandState(state, ['command']), retained)
+  assert.equal(calls.length, 0)
+})
+
+for (const action of Object.keys(actions)) {
+  test(`clearing command is a no-op during pending ${action}`, async t => {
+    const { state, calls, sockets } = fixture(t)
+    prepare(state, action)
+    state.realtime.connect(state.token.value)
+    sockets[0].handlers.connect()
+    prepare(state, action)
+    const pending = state.perform(action)
+    assert.equal(state.busy.value, action)
+    const retained = commandState(state)
+    state.clearCommand()
+    assert.deepEqual(commandState(state), retained)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].signal.aborted, false)
+    assert.equal(sockets[0].disconnects, 0)
+    calls[0].resolve(results[action])
+    await pending
+    assert.equal(state.busy.value, '')
+    assert.equal(state.command.value, 'journal only')
+  })
+}
+
+test('clearing command after disposal is a no-op even if refs are subsequently populated', t => {
+  const { state, scope, calls } = fixture(t)
+  scope.stop()
+  prepare(state, 'revoke')
+  const retained = commandState(state)
+  state.clearCommand()
+  assert.deepEqual(commandState(state), retained)
+  assert.equal(calls.length, 0)
+})
+
+test('command clear UI is an explicit local-only secondary action inside the issue form', () => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  assert.match(app, /checkCurrentTicket, clearCommand, clearSession/)
+  const form = app.match(/<form @submit.prevent="perform\('ticket'\)">([\s\S]*?)<\/form>/)[1]
+  const button = form.match(/<button[^>]*@click="clearCommand"[^>]*>Wis commandotekst<\/button>/)?.[0]
+  assert.ok(button)
+  assert.match(button, /type="button"/)
+  assert.match(button, /class="secondary"/)
+  assert.match(button, /:disabled="!!busy \|\| !command"/)
+  assert.match(button, /aria-describedby="clear-command-help"/)
+  assert.ok(form.indexOf('@click="clearCommand"') > form.indexOf('Ticket aanvragen</button>'))
+  const help = form.match(/<p id="clear-command-help" class="muted">([\s\S]*?)<\/p>/)[1]
+  assert.match(help, /alleen lokaal de concepttekst/)
+  assert.match(help, /normaal lokaal ticket ongeldig; geen intrekking op de server/)
+  assert.match(help, /onzekere intrekking behoudt het oorspronkelijke ticket/)
+  assert.match(help, /blijft vastleggen en nieuwe tickets blokkeren/)
+  assert.match(help, /Geen verzoeken, verbreking van realtime of veilige geheugenwissing/)
+  assert.match(help, /Logboek en ticketuitkomst kunnen commandotekst behouden/)
+})
+
 for (const uncertain of [false, true]) {
   test(`malformed injected ticket windows or clocks cannot count down or submit, uncertainty=${uncertain}`, async t => {
     const { state, calls, clock } = fixture(t)
@@ -1532,7 +1643,7 @@ for (const reset of ['clear', 'token', 'dispose']) {
 
 test('current-ticket button delegates to the composable without gating on expiry or uncertainty; manual lookup remains', () => {
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
-  assert.match(app, /checkCurrentTicket, clearSession,[\s\S]*} = useSession\(\)/)
+  assert.match(app, /checkCurrentTicket, clearCommand, clearSession,[\s\S]*} = useSession\(\)/)
   assert.match(app, /Ticket intrekken<\/button>\s*<button class="secondary" :disabled="!!busy \|\| !ticket \|\| !token.trim\(\)" @click="checkCurrentTicket">Controleer huidig ticket<\/button>/)
   assert.match(app, /<form @submit.prevent="perform\('status'\)">/)
   assert.match(app, /<input id="lookup-id" v-model="lookupId"/)

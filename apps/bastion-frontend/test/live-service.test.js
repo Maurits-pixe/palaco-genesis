@@ -272,6 +272,123 @@ async function fixture(t, { realtime = false, fault = () => {} } = {}) {
   }
 }
 
+test('live service: clearing a draft leaves server authority active but requires a new explicit local ticket', { timeout: 15000 }, async t => {
+  const f = await fixture(t, { realtime: true })
+  const s = f.session
+  const socket = await f.connect()
+  await f.run('ticket')
+  const held = { ...s.ticket.value }
+  await bounded(s.checkCurrentTicket(), 'status before draft clear')
+  const outcome = s.outcome.value
+  const message = s.message.value
+  const requests = f.calls.length
+  const audit = f.db.prepare('SELECT * FROM audit').all()
+
+  s.clearCommand()
+  assert.equal(s.command.value, '')
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.outcome.value, outcome)
+  assert.equal(s.outcomeReceivedAt.value, now)
+  assert.equal(s.lookupId.value, held.id)
+  assert.equal(s.message.value, message)
+  assert.equal(s.token.value, token)
+  assert.equal(s.ttlMs.value, 10000)
+  assert.equal(s.realtimeStatus.value, 'connected')
+  assert.equal(socket.connected, true)
+  assert.equal(f.sockets.length, 1)
+  assert.equal(f.calls.length, requests)
+  assert.deepEqual(f.db.prepare('SELECT * FROM audit').all(), audit)
+  assert.deepEqual({ ...f.db.prepare('SELECT consumed, revoked FROM tickets WHERE id = ?').get(held.id) },
+    { consumed: 0, revoked: 0 })
+  assert.equal((await f.statusExternal(held.id)).status, 'active')
+
+  // A real emission is a deterministic barrier proving clearing did not disconnect.
+  const received = nextCommit(socket, 'after draft clear')
+  const external = await f.commitExternal('after draft clear')
+  assert.deepEqual(await received, external)
+  assert.deepEqual(s.commands.value, [external])
+  assert.equal(f.calls.length, requests, 'clearing and realtime reception send no session requests')
+  await f.run('commit')
+  s.command.value = held.command
+  await f.run('commit')
+  assert.equal(s.canCommit.value, false)
+  assert.equal(f.calls.length, requests, 'restoring text does not restore discarded local authority')
+  await f.run('ticket')
+  assert.notEqual(s.ticket.value.id, held.id)
+  assert.equal(s.canCommit.value, true)
+  const committed = nextCommit(socket, held.command)
+  await f.run('commit')
+  assert.equal((await committed).command, held.command)
+  assert.equal(f.count('POST', '/v1/tickets'), 2)
+  assert.equal(f.count('POST', '/v1/commands'), 1)
+  assert.equal(f.count('DELETE', `/v1/tickets/${held.id}`), 0)
+  assert.equal(f.calls.length, requests + 2)
+  assert.equal((await f.statusExternal(held.id)).status, 'active')
+})
+
+for (const resolution of ['status', 'revoke']) {
+  test(`live service: draft clear retains uncertain revocation until explicit matching ${resolution}`, { timeout: 15000 }, async t => {
+    const f = await fixture(t, { realtime: true })
+    const s = f.session
+    const socket = await f.connect()
+    await f.run('ticket')
+    const held = s.ticket.value
+    const path = `/v1/tickets/${held.id}`
+    f.loseNext('DELETE', path)
+    await f.run('revoke')
+    assert.equal(f.losses, 1)
+    assert.match(s.error.value, /Geen geldig antwoord/)
+    const error = s.error.value
+    const requests = f.calls.length
+    const audit = f.db.prepare('SELECT * FROM audit').all()
+
+    s.clearCommand()
+    assert.equal(s.command.value, '')
+    assert.equal(s.ticket.value, held, 'retain original exact command and ticket identity for reconciliation')
+    assert.equal(s.ticket.value.command, held.command)
+    assert.equal(s.revocationUncertain.value, true)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.error.value, error)
+    assert.equal(socket.connected, true)
+    assert.equal(s.realtimeStatus.value, 'connected')
+    assert.equal(f.sockets.length, 1)
+    assert.equal(f.calls.length, requests)
+    assert.deepEqual(f.db.prepare('SELECT * FROM audit').all(), audit)
+    const received = nextCommit(socket, `barrier after uncertain draft clear: ${resolution}`)
+    const external = await f.commitExternal(`barrier after uncertain draft clear: ${resolution}`)
+    assert.deepEqual(await received, external)
+    assert.deepEqual(s.commands.value, [external])
+    assert.equal(f.calls.length, requests, 'no automatic requests or disconnect after draft clear')
+    s.command.value = held.command
+    await f.run('ticket')
+    await f.run('commit')
+    assert.equal(f.calls.length, requests, 'restoring text cannot bypass retained uncertainty')
+    assert.equal(s.ticket.value, held)
+    s.clearCommand()
+    if (resolution === 'status') {
+      await bounded(s.checkCurrentTicket(), 'explicit matching status after draft clear')
+      assert.equal(s.outcome.value.id, held.id)
+      assert.equal(s.outcome.value.command, held.command)
+      assert.equal(s.outcome.value.status, 'revoked')
+      assert.deepEqual(f.calls.at(-1), { path, method: 'GET', status: 200 })
+    } else {
+      await f.run('revoke')
+      assert.deepEqual(f.calls.at(-1), { path, method: 'DELETE', status: 200 })
+    }
+    assert.equal(s.error.value, '')
+    assert.equal(s.ticket.value, null)
+    assert.equal(s.revocationUncertain.value, false)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.command.value, '')
+    assert.equal(socket.connected, true)
+    assert.equal(f.calls.length, requests + 1, 'only explicit matching reconciliation sends another request')
+    assert.equal(f.count('POST', '/v1/tickets'), 1)
+    assert.equal(f.count('POST', '/v1/commands'), 0)
+    assert.equal(f.db.prepare('SELECT revoked FROM tickets WHERE id = ?').get(held.id).revoked, 1)
+  })
+}
+
 test('live service: ticket, commit, explicit status and journal use the same persisted record', { timeout: 15000 }, async t => {
   const f = await fixture(t)
   const s = f.session
