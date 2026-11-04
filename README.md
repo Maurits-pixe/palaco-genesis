@@ -87,7 +87,7 @@ cargo test --workspace
 
 - `ci.yml` — standaard validatie op push/PR
 - `benchmark.yml` — benchmark target validatie
-- `security.yml` — dependency audit checks
+- `security.yml` — dependency audit + cargo-deny policy checks
 - `coverage.yml` — coverage artefact generatie
 - `release.yml` — handmatige release-readiness checks + evidence artifact
 - `document-exchange.yml` — validatie van relatieve documentatielinks
