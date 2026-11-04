@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { MAX_PLAINTEXT_BYTES, plaintextBytes } from './api.js'
 import { useRecordSession } from './session.js'
 
-const { token, plaintext, recordId, lastCreatedId, result, resultReceivedAt, busy, message, error, perform, readLastCreated, clearReadResult, clearSession } = useRecordSession()
+const { token, plaintext, recordId, lastCreatedId, result, resultReceivedAt, busy, message, error, perform, readLastCreated, clearDraft, clearReadResult, clearSession } = useRecordSession()
 const resultReceivedAtIso = computed(() => resultReceivedAt.value === null ? null : new Date(resultReceivedAt.value).toISOString())
 </script>
 
@@ -34,7 +34,11 @@ const resultReceivedAtIso = computed(() => resultReceivedAt.value === null ? nul
           <textarea id="plaintext" v-model="plaintext" rows="7" required :maxlength="MAX_PLAINTEXT_BYTES" :disabled="!!busy" aria-describedby="plaintext-limit" />
           <p id="plaintext-limit" class="muted">{{ plaintextBytes(plaintext) }} / {{ MAX_PLAINTEXT_BYTES }} UTF-8-bytes</p>
           <button :disabled="!!busy || !token.trim() || !plaintext.trim() || plaintextBytes(plaintext) > MAX_PLAINTEXT_BYTES">Versleuteld opslaan</button>
+          <button type="button" class="secondary" :disabled="!!busy || !plaintext" aria-describedby="clear-draft-help" @click="clearDraft">Wis invoertekst</button>
         </form>
+        <p id="clear-draft-help" class="muted">Wist alleen de niet-opgeslagen lokale invoertekst. Verwijdert niets uit de database
+          en garandeert geen veilige geheugenwissing. Token, record-ID's en ontvangen inhoud blijven behouden.
+          Verstuurt geen verzoeken.</p>
       </section>
       <section aria-labelledby="read-title" :aria-busy="busy === 'read'">
         <h2 id="read-title">Record teruglezen</h2>

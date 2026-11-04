@@ -49,6 +49,11 @@ export function useRecordSession({ create = createRecord, read = readRecord, eve
     }
   }
 
+  function clearDraft() {
+    if (disposed || busy.value) return
+    plaintext.value = ''
+  }
+
   function clearReadResult() {
     if (disposed || busy.value === 'create') return
     const previous = activeRequest
@@ -121,5 +126,5 @@ export function useRecordSession({ create = createRecord, read = readRecord, eve
     return perform('read')
   }
 
-  return { token, plaintext, recordId, lastCreatedId, result, resultReceivedAt, busy, message, error, perform, readLastCreated, clearReadResult, clearSession, dispose }
+  return { token, plaintext, recordId, lastCreatedId, result, resultReceivedAt, busy, message, error, perform, readLastCreated, clearDraft, clearReadResult, clearSession, dispose }
 }

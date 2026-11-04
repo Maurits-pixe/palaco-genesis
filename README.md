@@ -134,6 +134,11 @@ een eventueel lopend leesverzoek lokaal geannuleerd. Alleen omringende spaties
 wijzigen telt niet als een ander ID. Er wordt niets automatisch opgehaald of
 uit de database verwijderd; token, invoertekst en laatst bevestigd opgeslagen
 ID blijven behouden.
+Met **Wis invoertekst** verwijder je alleen het niet-opgeslagen tekstconcept.
+Token, record-ID's, gelezen inhoud met ontvangsttijdstip en bestaande meldingen
+blijven behouden. Tijdens een lees- of opslagverzoek is deze knop geblokkeerd.
+Dit verstuurt geen verzoek, verwijdert geen opgeslagen records en garandeert
+geen veilige overschrijving van browsergeheugen.
 Met **Wis gelezen inhoud** verwijder je alleen het leesresultaat en de
 bijbehorende melding; token, record-ID's en nog niet opgeslagen invoertekst
 blijven behouden. Een lopend leesverzoek wordt lokaal geannuleerd en zijn

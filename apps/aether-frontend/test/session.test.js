@@ -33,6 +33,123 @@ function state(session) {
 
 const empty = { token: '', plaintext: '', recordId: '', lastCreatedId: '', result: null, resultReceivedAt: null, busy: '', message: '', error: '' }
 
+test('clearDraft only clears local input while retaining a loaded record, receipt and feedback', async (t) => {
+  const { session, calls } = setup(t, undefined, { getNow: () => 123 })
+  session.lastCreatedId.value = 'confirmed'
+  const pending = session.perform('read')
+  calls[0].resolve({ id: 'record-1', plaintext: 'received content' })
+  await pending
+  session.error.value = 'retained feedback'
+  const before = state(session)
+  const received = session.result.value
+  session.clearDraft()
+  assert.deepEqual(state(session), { ...before, plaintext: '' })
+  assert.equal(session.result.value, received)
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].signal.aborted, false)
+})
+
+test('clearDraft retains read feedback ownership so an ID edit still clears read errors', async (t) => {
+  const { session, calls } = setup(t)
+  const pending = session.perform('read')
+  calls[0].reject(new Error('read failed'))
+  await pending
+  const before = state(session)
+  session.clearDraft()
+  assert.deepEqual(state(session), { ...before, plaintext: '' })
+  session.recordId.value = 'other-record'
+  assert.equal(session.error.value, '')
+  assert.equal(calls.length, 1)
+})
+
+for (const draft of [' \t\n ', '']) {
+  test(`clearDraft clears ${draft ? 'whitespace-only input' : 'an empty draft idempotently'}`, (t) => {
+    const { session, calls } = setup(t)
+    session.plaintext.value = draft
+    session.message.value = 'retained message'
+    session.error.value = 'retained error'
+    const before = state(session)
+    session.clearDraft()
+    session.clearDraft()
+    assert.deepEqual(state(session), { ...before, plaintext: '' })
+    assert.equal(calls.length, 0)
+  })
+}
+
+for (const action of ['create', 'read']) {
+  for (const outcome of ['success', 'failure']) {
+    test(`clearDraft is a no-op during ${action} and leaves its ${outcome} completion unaffected`, async (t) => {
+      const { session, calls } = setup(t, undefined, { getNow: () => 123 })
+      session.lastCreatedId.value = 'confirmed'
+      const pending = session.perform(action)
+      const before = state(session)
+      const request = calls[0]
+      session.clearDraft()
+      session.clearDraft()
+      assert.deepEqual(state(session), before)
+      assert.equal(calls.length, 1)
+      assert.equal(request.signal.aborted, false)
+      if (outcome === 'failure') request.reject(new Error(`${action} failed`))
+      else request.resolve({ id: 'record-1', plaintext: 'received content' })
+      await pending
+      assert.equal(request.signal.aborted, false)
+      assert.equal(session.busy.value, '')
+      assert.equal(session.token.value, before.token)
+      if (outcome === 'failure') {
+        assert.deepEqual(state(session), { ...before, busy: '', error: `${action} failed` })
+      } else if (action === 'create') {
+        assert.equal(session.plaintext.value, '')
+        assert.equal(session.lastCreatedId.value, 'record-1')
+        assert.equal(session.message.value, 'Record opgeslagen. Bewaar het record-ID om het later terug te lezen.')
+      } else {
+        assert.equal(session.plaintext.value, before.plaintext)
+        assert.deepEqual(session.result.value, { id: 'record-1', plaintext: 'received content' })
+        assert.equal(session.resultReceivedAt.value, 123)
+        assert.equal(session.message.value, 'Record opgehaald.')
+      }
+    })
+  }
+}
+
+test('clearDraft is a no-op after disposal even with manually repopulated refs', (t) => {
+  const { session, calls } = setup(t)
+  session.dispose()
+  const repopulated = {
+    token: 'new token', plaintext: 'new draft', recordId: 'new-id', lastCreatedId: 'confirmed',
+    result: { id: 'new-id', plaintext: 'received' }, resultReceivedAt: 123,
+    busy: '', message: 'retained message', error: 'retained error',
+  }
+  for (const [key, value] of Object.entries(repopulated)) session[key].value = value
+  session.clearDraft()
+  assert.deepEqual(state(session), repopulated)
+  assert.equal(calls.length, 0)
+})
+
+test('a fresh explicit create still works after clearing a draft', async (t) => {
+  const { session, calls } = setup(t)
+  session.clearDraft()
+  assert.equal(calls.length, 0)
+  session.plaintext.value = 'fresh explicit input'
+  const pending = session.perform('create')
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].input, 'fresh explicit input')
+  assert.equal(calls[0].token, 'test-only-input')
+  calls[0].resolve({ id: 'fresh-record' })
+  await pending
+  assert.equal(session.lastCreatedId.value, 'fresh-record')
+  assert.equal(session.recordId.value, 'fresh-record')
+  assert.equal(session.plaintext.value, '')
+  assert.equal(session.error.value, '')
+  assert.equal(session.busy.value, '')
+})
+
+test('draft clear UI is an explicit non-submit local-only action with busy and empty guards', async () => {
+  const source = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
+  assert.match(source, /const \{[^}]*clearDraft[^}]*\} = useRecordSession\(\)/)
+  assert.match(source, /Versleuteld opslaan<\/button>\s*<button type="button" class="secondary" :disabled="!!busy \|\| !plaintext" aria-describedby="clear-draft-help" @click="clearDraft">Wis invoertekst<\/button>/)
+  assert.match(source, /id="clear-draft-help"[^>]*>Wist alleen de niet-opgeslagen lokale invoertekst\. Verwijdert niets uit de database\s+en garandeert geen veilige geheugenwissing\. Token, record-ID's en ontvangen inhoud blijven behouden\.\s+Verstuurt geen verzoeken\./)
+})
+
 test('default clock stamps a successful read only after it resolves, not create or failure', async (t) => {
   let now = 100
   let clockCalls = 0
