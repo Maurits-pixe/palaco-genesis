@@ -431,6 +431,14 @@ for project in services/bastion-core apps/neo-launcher apps/aether-frontend apps
 done
 ```
 
+De AETHER-frontendtests combineren de productie-sessie en APIhelpers met echte
+HTTP-verzoeken naar een tijdelijke loopback-testserver. Ze controleren expliciet
+opslaan en teruglezen, het lokale ontvangsttijdstip, selectief invoertekst wissen
+en het weigeren van afwijkende leesantwoorden. Vertraagde antwoorden uit een
+gewiste sessie mogen de nieuwe sessie niet veranderen. De server is een
+gecontroleerde testfixture, niet de Rust-engine: deze tests bewijzen geen
+versleuteling, databaseopslag, Vite-proxywerking of browserlevenscyclus.
+
 De BASTION-servicetests controleren ook de frontend-APIhelpers tegen een
 echte tijdelijke lokale HTTP-service: tickets aanvragen, vastleggen,
 intrekken, status opvragen en het logboek lezen. Ze testen ook een verloren
