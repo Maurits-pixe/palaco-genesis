@@ -91,6 +91,11 @@ cargo test --workspace
 - `coverage.yml` — coverage artefact generatie
 - `release.yml` — handmatige release-readiness checks + evidence artifact
 - `document-exchange.yml` — validatie van relatieve documentatielinks
+- `pages.yml` — GitHub Pages deployment (optioneel met custom domain via `PAGES_CUSTOM_DOMAIN`)
 - `palaco-ci.yml` — uitgebreide PALACO baseline pipeline
 - `citadel-a1.yml` — Citadel A1 contractverificatie
 - `registry-contract.yml` — registry contract checks
+
+## GitHub Pages + custom domain
+
+De `pages.yml` workflow publiceert `docs/` naar GitHub Pages en maakt een optionele `CNAME` aan wanneer repository variable `PAGES_CUSTOM_DOMAIN` is ingesteld.
