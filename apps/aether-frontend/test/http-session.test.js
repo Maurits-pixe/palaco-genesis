@@ -129,6 +129,131 @@ test('HTTP fixture: explicit create/read preserve the wire contract and receipt;
   assert.equal(requests.length, 2)
 })
 
+test('HTTP fixture: an accepted create with a lost response preserves the last confirmed ID without retrying', { timeout: 5000 }, async (t) => {
+  // This map is fixture memory, not evidence of persistence in the Rust database.
+  const records = new Map()
+  const { requests, fetcher } = await fixture(t, (request, response) => {
+    if (request.method === 'POST') {
+      const id = `record-${records.size + 1}`
+      records.set(id, JSON.parse(request.body).plaintext)
+      if (id === 'record-2') response.destroy()
+      else json(response, { id }, 201)
+    } else {
+      const id = request.url.split('/').at(-1)
+      assert.equal(id, 'record-1')
+      json(response, { id, plaintext: records.get(id) })
+    }
+  })
+  const network = t.mock.fn(fetcher)
+  const { session } = setup(t, network)
+  session.plaintext.value = 'first confirmed text'
+  await session.perform('create')
+  assert.equal(session.lastCreatedId.value, 'record-1')
+  assert.equal(session.recordId.value, 'record-1')
+  assert.equal(requests.length, 1)
+
+  const uncertainDraft = 'accepted but not confirmed 😀'
+  session.plaintext.value = uncertainDraft
+  await session.perform('create')
+  assert.deepEqual([...records], [
+    ['record-1', 'first confirmed text'],
+    ['record-2', uncertainDraft],
+  ])
+  assert.deepEqual(state(session), {
+    ...empty,
+    token: inputToken,
+    plaintext: uncertainDraft,
+    recordId: 'record-1',
+    lastCreatedId: 'record-1',
+    error: 'Geen geldig antwoord. Controleer de lokale service en probeer opnieuw.',
+  })
+  assert.equal(requests.length, 2)
+  assert.equal(network.mock.callCount(), 2)
+
+  await session.readLastCreated()
+  assert.deepEqual(session.result.value, { id: 'record-1', plaintext: 'first confirmed text' })
+  assert.equal(session.plaintext.value, uncertainDraft)
+  assert.equal(session.lastCreatedId.value, 'record-1')
+  assert.equal(requests.length, 3)
+
+  session.plaintext.value = 'explicit new create'
+  await session.perform('create')
+  assert.equal(session.recordId.value, 'record-3')
+  assert.equal(session.lastCreatedId.value, 'record-3')
+  assert.equal(session.plaintext.value, '')
+  assert.equal(session.error.value, '')
+  assert.equal(session.message.value, 'Record opgeslagen. Bewaar het record-ID om het later terug te lezen.')
+  assert.equal(records.get('record-3'), 'explicit new create')
+  assert.equal(network.mock.callCount(), 4)
+  assert.deepEqual(requests.map(({ method, url, body }) => ({ method, url, body })), [
+    { method: 'POST', url: '/v1/records', body: JSON.stringify({ plaintext: 'first confirmed text' }) },
+    { method: 'POST', url: '/v1/records', body: JSON.stringify({ plaintext: uncertainDraft }) },
+    { method: 'GET', url: '/v1/records/record-1', body: '' },
+    { method: 'POST', url: '/v1/records', body: JSON.stringify({ plaintext: 'explicit new create' }) },
+  ])
+})
+
+for (const newerCreate of [false, true]) {
+  test(`HTTP fixture: a delayed create confirmation cannot restore ${newerCreate ? 'or overwrite a newer explicit create' : 'a cleared session'}`, { timeout: 5000 }, async (t) => {
+    const arrived = deferred()
+    const discarded = deferred()
+    const { requests, fetcher } = await fixture(t, (request, response) => {
+      assert.equal(request.method, 'POST')
+      if (requests.length === 1) arrived.resolve(response)
+      else json(response, { id: 'new-confirmed' }, 201)
+    })
+    let oldSignal
+    const { session } = setup(t, async (path, options) => {
+      if (oldSignal) return fetcher(path, options)
+      oldSignal = options.signal
+      // Keep the accepted POST alive despite cancellation, as with delayed reads.
+      const response = await fetcher(path, { ...options, signal: undefined })
+      const cancel = response.body.cancel.bind(response.body)
+      t.mock.method(response.body, 'cancel', (...args) => {
+        const pending = cancel(...args)
+        discarded.resolve()
+        return pending
+      })
+      return response
+    })
+    session.plaintext.value = 'old accepted draft'
+    const oldPending = session.perform('create')
+    const oldResponse = await arrived.promise
+    assert.equal(requests.length, 1)
+    assert.equal(session.busy.value, 'create')
+    assert.equal(oldSignal.aborted, false)
+
+    session.clearSession()
+    assert.equal(oldSignal.aborted, true)
+    assert.deepEqual(state(session), empty)
+    // The session operation settles on abort, before the held HTTP response.
+    await oldPending
+    assert.equal(oldResponse.writableEnded, false)
+    assert.deepEqual(state(session), empty)
+    assert.equal(requests.length, 1)
+
+    if (newerCreate) {
+      session.token.value = inputToken
+      session.plaintext.value = 'fresh explicit create'
+      await session.perform('create')
+      assert.equal(session.lastCreatedId.value, 'new-confirmed')
+      assert.equal(session.recordId.value, 'new-confirmed')
+      assert.equal(session.message.value, 'Record opgeslagen. Bewaar het record-ID om het later terug te lezen.')
+      assert.equal(session.error.value, '')
+      session.plaintext.value = 'fresh unsaved draft'
+    }
+    const current = state(session)
+    json(oldResponse, { id: 'old-unconfirmed' }, 201)
+    // Wait until the production API discards the late real fetch response.
+    await discarded.promise
+    assert.deepEqual(state(session), current)
+    assert.deepEqual(requests.map(({ method, url, body }) => ({ method, url, body })), [
+      { method: 'POST', url: '/v1/records', body: JSON.stringify({ plaintext: 'old accepted draft' }) },
+      ...(newerCreate ? [{ method: 'POST', url: '/v1/records', body: JSON.stringify({ plaintext: 'fresh explicit create' }) }] : []),
+    ])
+  })
+}
+
 for (const invalid of ['mismatched ID', 'malformed JSON', 'wrong content type', 'unexpected status']) {
   test(`HTTP fixture: ${invalid} never publishes plaintext or a receipt`, { timeout: 5000 }, async (t) => {
     const secret = 'must never be published'

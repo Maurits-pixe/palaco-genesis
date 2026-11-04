@@ -435,8 +435,13 @@ De AETHER-frontendtests combineren de productie-sessie en APIhelpers met echte
 HTTP-verzoeken naar een tijdelijke loopback-testserver. Ze controleren expliciet
 opslaan en teruglezen, het lokale ontvangsttijdstip, selectief invoertekst wissen
 en het weigeren van afwijkende leesantwoorden. Vertraagde antwoorden uit een
-gewiste sessie mogen de nieuwe sessie niet veranderen. De server is een
-gecontroleerde testfixture, niet de Rust-engine: deze tests bewijzen geen
+gewiste sessie mogen de nieuwe sessie niet veranderen. Ook een ontvangen
+opslagverzoek zonder HTTP-bevestiging wordt getest: de interface verzendt het
+niet automatisch opnieuw en behoudt alleen het vorige bevestigde record-ID.
+Een laat opslagantwoord na sessiewissen mag geen oud ID of oude melding
+terugzetten. De fixture houdt ontvangen records alleen in testgeheugen bij;
+dit reconstrueert geen verloren record-ID voor de gebruiker.
+De server is een gecontroleerde testfixture, niet de Rust-engine: deze tests bewijzen geen
 versleuteling, databaseopslag, Vite-proxywerking of browserlevenscyclus.
 
 De BASTION-servicetests controleren ook de frontend-APIhelpers tegen een
