@@ -126,6 +126,125 @@ function commandState(state, excluded = []) {
     .map(([key, value]) => [key, value.value]))
 }
 
+for (const value of [
+  1100, null, undefined, '', '1050', true, {}, [], -1, 0.5, NaN, Infinity, -Infinity,
+  8_640_000_000_000_001, Number.MAX_SAFE_INTEGER, 'throw',
+]) {
+  test(`commit freshly rejects expiry or unavailable clock ${String(value)} without a countdown tick`, async t => {
+    const { state, calls, clock } = fixture(t)
+    prepare(state, 'commit')
+    const retained = commandState(state, ['now', 'canCommit', 'remaining', 'message', 'error'])
+    assert.equal(state.canCommit.value, true)
+    const reads = clock.reads
+    clock.now = () => {
+      assert.equal(state.ticket.value, retained.ticket)
+      assert.equal(state.lastSubmissionId.value, retained.lastSubmissionId)
+      assert.equal(state.outcome.value, retained.outcome)
+      assert.equal(calls.length, 0)
+      if (value === 'throw') throw new Error('commit clock unavailable')
+      return value
+    }
+
+    await state.perform('commit')
+    assert.equal(clock.reads, reads + 1)
+    assert.equal(state.now.value, value === 1100 ? 1100 : null)
+    assert.equal(state.canCommit.value, false)
+    assert.deepEqual(commandState(state, ['now', 'canCommit', 'remaining', 'message', 'error']), retained)
+    assert.equal(state.busy.value, '')
+    assert.equal(state.error.value, '')
+    assert.equal(calls.length, 0)
+    assert.equal(clock.interval, 100)
+  })
+}
+
+for (const cachedTime of [1050, null, 1100]) {
+  for (const uncertain of [false, true]) {
+    test(`commit samples valid fresh time before cached guard, cached=${cachedTime}, uncertainty=${uncertain}`, async t => {
+      const { state, calls, clock } = fixture(t)
+      prepare(state, 'commit')
+      state.now.value = cachedTime
+      state.revocationUncertain.value = uncertain
+      assert.equal(state.canCommit.value, !uncertain && cachedTime === 1050)
+      const heldTicket = state.ticket.value
+      const outcome = state.outcome.value
+      const reads = clock.reads
+      clock.time = 1099
+
+      const operation = state.perform('commit')
+      assert.equal(clock.reads, reads + 1)
+      assert.equal(state.now.value, 1099)
+      assert.equal(calls.length, uncertain ? 0 : 1)
+      if (uncertain) {
+        assert.equal(state.ticket.value, heldTicket)
+        assert.equal(state.lastSubmissionId.value, 'retained-id')
+        assert.equal(state.outcome.value, outcome)
+        assert.equal(state.revocationUncertain.value, true)
+      } else {
+        assert.equal(calls[0].action, 'commit')
+        assert.equal(calls[0].args[0], heldTicket)
+        assert.equal(state.ticket.value, null)
+        assert.equal(state.lastSubmissionId.value, heldTicket.id)
+        assert.equal(state.lookupId.value, heldTicket.id)
+        assert.equal(state.outcome.value, null)
+        calls[0].resolve(record())
+      }
+      await operation
+      await state.perform('commit')
+      assert.equal(calls.length, uncertain ? 0 : 1, 'no repeat submission')
+      assert.equal(state.busy.value, '')
+    })
+  }
+}
+
+for (const reset of ['clearSession', 'pagehide', 'token', 'dispose', 'new action']) {
+  for (const throws of [false, true]) {
+    test(`commit clock ${reset}, throws=${throws}: obsolete preflight cannot publish, consume or send`, async t => {
+      const { state, calls, clock, eventTarget, scope } = fixture(t)
+      prepare(state, 'commit')
+      let retained, newer
+      clock.now = () => {
+        assert.deepEqual(state.ticket.value, held())
+        assert.equal(state.lastSubmissionId.value, 'retained-id')
+        assert.deepEqual(state.outcome.value, snapshot())
+        assert.equal(calls.length, 0)
+        clock.now = null
+        if (reset === 'pagehide') eventTarget.dispatchEvent(pageTransition('pagehide', true))
+        else if (reset === 'token') state.token.value = 'replacement-token'
+        else if (reset === 'dispose') scope.stop()
+        else state.clearSession()
+        if (reset === 'new action') {
+          state.token.value = 'replacement-token'
+          prepare(state, 'status')
+          state.now.value = 1070
+          newer = state.perform('status')
+        }
+        retained = commandState(state)
+        if (throws) throw new Error('old commit clock unavailable')
+        return 1090
+      }
+
+      await state.perform('commit')
+      assert.deepEqual(commandState(state), retained)
+      assert.equal(calls.filter(call => call.action === 'commit').length, 0)
+      if (newer) {
+        assert.equal(calls.length, 1)
+        assert.equal(calls[0].signal.aborted, false)
+        assert.equal(state.busy.value, 'status')
+        assert.equal(state.now.value, 1070)
+        clock.time = 1080
+        calls[0].resolve(snapshot({ checked_at: 1080 }))
+        await newer
+        assert.equal(state.outcomeReceivedAt.value, 1080)
+        assert.equal(state.busy.value, '')
+      } else {
+        assertEmpty(state, reset === 'token' ? 'replacement-token' : '')
+        assert.equal(state.now.value, 1050)
+        assert.equal(calls.length, 0)
+      }
+    })
+  }
+}
+
 for (const uncertain of [false, true]) {
   test(`clearing command only clears draft and normal authority, uncertainty=${uncertain}`, async t => {
     const { state, calls, sockets, clock, realtimeCallbacks } = fixture(t)

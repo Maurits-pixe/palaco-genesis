@@ -253,6 +253,9 @@ export function useSession({
         revocationUncertain.value = false
         message.value = "Ticket door de server ingetrokken. Eerder vastgelegde commando's blijven behouden."
       } else if (action === 'commit') {
+        const sampledAt = sampleReceiptTime()
+        if (!current()) return
+        now.value = sampledAt
         if (!canCommit.value) return
         const currentTicket = ticket.value
         // Een onzekere netwerkuitkomst mag nooit een automatische tweede inzending veroorzaken.

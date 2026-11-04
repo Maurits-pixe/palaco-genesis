@@ -509,7 +509,65 @@ for (const clockFailure of ['invalid', 'throwing']) {
   })
 }
 
-test('live service: a throwing countdown tick fails closed, then a valid tick permits only one explicit commit', { timeout: 15000 }, async t => {
+for (const sample of ['expiry', 'invalid', 'throwing']) {
+  test(`live service: fresh commit clock rejects ${sample} without a tick or any persisted mutation`, { timeout: 15000 }, async t => {
+    const f = await fixture(t)
+    const s = f.session
+    await f.run('ticket')
+    await bounded(s.checkCurrentTicket(), 'status before commit preflight')
+    const held = s.ticket.value
+    const outcome = s.outcome.value
+    const receipt = s.outcomeReceivedAt.value
+    s.lastSubmissionId.value = 'retained-id'
+    const persisted = () => Object.fromEntries(['tickets', 'commands', 'audit', 'clock_state'].map(table =>
+      [table, f.db.prepare(`SELECT * FROM ${table}`).all()]))
+    const before = persisted()
+    const requests = f.calls.length
+    f.setLocalNow(sample === 'expiry' ? held.expires_at : sample === 'invalid' ? NaN
+      : () => { throw new Error('commit clock unavailable') })
+    assert.equal(s.now.value, now)
+    assert.equal(s.canCommit.value, true, 'cached countdown has not observed the clock change')
+
+    await f.run('commit')
+    assert.equal(s.now.value, sample === 'expiry' ? held.expires_at : null)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.ticket.value, held)
+    assert.equal(s.lastSubmissionId.value, 'retained-id')
+    assert.equal(s.lookupId.value, held.id)
+    assert.equal(s.outcome.value, outcome)
+    assert.equal(s.outcomeReceivedAt.value, receipt)
+    assert.equal(s.busy.value, '')
+    assert.equal(s.error.value, '')
+    assert.equal(f.calls.length, requests)
+    assert.equal(f.count('POST', '/v1/commands'), 0)
+    assert.deepEqual(persisted(), before, 'no ticket, journal, audit or watermark mutation')
+
+    if (sample !== 'expiry') {
+      f.setLocalNow(now + 100)
+      assert.equal(s.now.value, null, 'recovery has not had a tick')
+      assert.equal(s.canCommit.value, false)
+      assert.equal(f.calls.length, requests, 'clock recovery is not an automatic submission')
+      await f.run('commit')
+      assert.equal(s.now.value, now + 100)
+      assert.equal(s.error.value, '')
+      assert.equal(s.ticket.value, null)
+      assert.equal(s.lastSubmissionId.value, held.id)
+      assert.equal(s.outcome.value, null)
+      assert.equal(f.count('POST', '/v1/commands'), 1)
+      assert.equal(f.db.prepare('SELECT consumed FROM tickets WHERE id = ?').get(held.id).consumed, 1)
+      assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM commands WHERE ticket_id = ?').get(held.id).count, 1)
+      const audit = f.db.prepare('SELECT ticket_id, action FROM audit').all().map(row => ({ ...row }))
+      assert.deepEqual(audit, [{ ticket_id: held.id, action: 'journal:append' }])
+      const after = persisted()
+      await f.run('commit')
+      f.tick()
+      assert.equal(f.calls.length, requests + 1, 'explicit recovery submits exactly once without retry')
+      assert.deepEqual(persisted(), after)
+    }
+  })
+}
+
+test('live service: a throwing countdown tick fails closed, then fresh preflight permits only one explicit commit without a recovery tick', { timeout: 15000 }, async t => {
   const f = await fixture(t)
   const s = f.session
   await f.run('ticket')
@@ -534,10 +592,9 @@ test('live service: a throwing countdown tick fails closed, then a valid tick pe
   assert.deepEqual(f.calls, [{ path: '/v1/tickets', method: 'POST', status: 201 }])
 
   f.setLocalNow(now + 100)
-  assert.doesNotThrow(() => f.tick())
-  assert.equal(s.now.value, now + 100)
-  assert.equal(s.canCommit.value, true)
-  assert.equal(s.remaining.value, 10)
+  assert.equal(s.now.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.remaining.value, null)
   assert.equal(s.ticket.value, held)
   assert.equal(s.lastSubmissionId.value, '')
   assert.deepEqual(f.db.prepare('SELECT * FROM tickets').all(), persisted)
@@ -547,6 +604,7 @@ test('live service: a throwing countdown tick fails closed, then a valid tick pe
     'neither clock failure nor recovery sends an automatic request')
 
   await f.run('commit')
+  assert.equal(s.now.value, now + 100)
   assert.equal(s.error.value, '')
   assert.equal(s.ticket.value, null)
   assert.equal(s.canCommit.value, false)
@@ -883,7 +941,8 @@ test('live service: persisted watermark rejects a backwards clock after restart 
   assert.equal(f.calls.length, 6, 'new manual issuance does not automatically commit')
   // Advance local preflight only for the new ticket's later not-before boundary.
   t.mock.method(Date, 'now', () => 1100)
-  s.now.value = 1100
+  f.setLocalNow(1100)
+  f.tick()
   assert.equal(s.canCommit.value, true)
   await f.run('commit')
   assert.deepEqual(f.calls.at(-1), { path: '/v1/commands', method: 'POST', status: 201 })
