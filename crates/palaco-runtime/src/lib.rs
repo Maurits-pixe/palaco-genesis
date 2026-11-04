@@ -36,6 +36,8 @@ pub mod offline_recovery_receipt;
 pub mod offline_recovery_review;
 /// Non-authorizing recovery statement and signature-byte binding.
 pub mod offline_recovery_signed;
+/// Non-authorizing anti-rollback comparison against an external anchor.
+pub mod offline_revocation_checkpoint;
 /// Fail-closed candidate signature verification boundary.
 pub mod offline_signature;
 /// Create-only local staging for public offline chunk fixtures.
