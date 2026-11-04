@@ -431,6 +431,14 @@ for project in services/bastion-core apps/neo-launcher apps/aether-frontend apps
 done
 ```
 
+De AETHER-servicetests controleren via echte HTTP-verzoeken ook het ordelijk
+stoppen en heropenen van dezelfde tijdelijke SQLite-database. Met dezelfde
+sleutel blijft het opgeslagen record leesbaar. Een verkeerde sleutel geeft
+een generieke fout zonder de opgeslagen recorddata te veranderen; opnieuw
+openen met de oorspronkelijke sleutel maakt het record weer leesbaar.
+Dit test de Rust-engine en SQLite, niet de frontend, een procescrash of
+duurzaamheid bij stroomuitval.
+
 De AETHER-frontendtests combineren de productie-sessie en APIhelpers met echte
 HTTP-verzoeken naar een tijdelijke loopback-testserver. Ze controleren expliciet
 opslaan en teruglezen, het lokale ontvangsttijdstip, selectief invoertekst wissen

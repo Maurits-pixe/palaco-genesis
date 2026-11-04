@@ -13,8 +13,26 @@ impl Database {
         Self(directory.join(format!("{}.db", random_id(&SystemRandom::new()).unwrap())))
     }
 
+    fn temporary() -> Self {
+        Self(env::temp_dir().join(format!(
+            "aether-http-{}.db",
+            random_id(&SystemRandom::new()).unwrap()
+        )))
+    }
+
     fn store(&self, key: &[u8; 32]) -> Store {
         Store::open(&self.0, key).unwrap()
+    }
+
+    fn encrypted_records(&self) -> Vec<(String, Vec<u8>, Vec<u8>)> {
+        let connection = Connection::open(&self.0).unwrap();
+        connection
+            .prepare("SELECT id, nonce, ciphertext FROM records ORDER BY id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
     }
 }
 
@@ -272,44 +290,70 @@ fn storage_bounds_empty_and_missing_records() {
 struct Server {
     address: SocketAddr,
     task: tokio::task::JoinHandle<()>,
-    _database: Database,
+    shutdown: Option<tokio::sync::oneshot::Sender<()>>,
+    _database: Option<Database>,
 }
 
 impl Server {
     async fn start() -> Self {
-        let database = Database::new();
+        Self::start_with(Database::new(), [0; 32]).await
+    }
+
+    async fn start_with(database: Database, key: [u8; 32]) -> Self {
         let mut config = config();
         config.db = database.0.clone();
-        let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-            .await
-            .unwrap();
+        config.key = key;
+        let listener = tokio::time::timeout(
+            Duration::from_secs(5),
+            tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)),
+        )
+        .await
+        .unwrap()
+        .unwrap();
         let address = listener.local_addr().unwrap();
         let router = app(&config).unwrap();
+        let (shutdown, receiver) = tokio::sync::oneshot::channel();
         let task = tokio::spawn(async move {
-            axum::serve(listener, router).await.unwrap();
+            axum::serve(listener, router)
+                .with_graceful_shutdown(async {
+                    let _ = receiver.await;
+                })
+                .await
+                .unwrap();
         });
         Self {
             address,
             task,
-            _database: database,
+            shutdown: Some(shutdown),
+            _database: Some(database),
         }
     }
 
-    async fn request(&self, method: &str, path: &str, headers: &str, body: &str) -> (u16, String) {
-        let mut stream = tokio::net::TcpStream::connect(self.address).await.unwrap();
-        let request = format!(
-            "{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: {}\r\n{headers}\r\n{body}",
-            body.len()
-        );
-        stream.write_all(request.as_bytes()).await.unwrap();
-        let mut response = Vec::new();
-        tokio::time::timeout(Duration::from_secs(5), stream.read_to_end(&mut response))
+    async fn stop(mut self) -> Database {
+        self.shutdown.take().unwrap().send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), &mut self.task)
             .await
-            .unwrap()
-            .unwrap();
-        let response = String::from_utf8(response).unwrap();
-        let status = response.split_whitespace().nth(1).unwrap().parse().unwrap();
-        (status, response)
+            .expect("HTTP server did not shut down")
+            .expect("HTTP server task failed");
+        self._database.take().unwrap()
+    }
+
+    async fn request(&self, method: &str, path: &str, headers: &str, body: &str) -> (u16, String) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let mut stream = tokio::net::TcpStream::connect(self.address).await.unwrap();
+            let request = format!(
+                "{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: {}\r\n{headers}\r\n{body}",
+                body.len()
+            );
+            stream.write_all(request.as_bytes()).await.unwrap();
+            let mut response = Vec::new();
+            stream.read_to_end(&mut response).await.unwrap();
+            let response = String::from_utf8(response).unwrap();
+            let status = response.split_whitespace().nth(1).unwrap().parse().unwrap();
+            (status, response)
+        })
+        .await
+        .expect("HTTP request timed out")
     }
 }
 
@@ -380,6 +424,108 @@ async fn http_roundtrip_and_not_found() {
             .await;
         assert_eq!(status, 404);
     }
+}
+
+#[tokio::test]
+async fn http_records_survive_orderly_restart_and_allow_new_creates() {
+    let key = [0x6d; 32];
+    let server = Server::start_with(Database::temporary(), key).await;
+    let plaintext = "Hello, 世界 🦀 — café";
+    let body = serde_json::json!({"plaintext": plaintext}).to_string();
+    let (status, response) = server
+        .request("POST", "/v1/records", AUTH_JSON, &body)
+        .await;
+    assert_eq!(status, 201);
+    let id = json_body(&response)["id"].as_str().unwrap().to_owned();
+    let path = format!("/v1/records/{id}");
+    let expected = serde_json::json!({"id": id, "plaintext": plaintext});
+    let (status, response) = server.request("GET", &path, AUTH, "").await;
+    assert_eq!(status, 200);
+    assert_eq!(json_body(&response), expected);
+
+    let database = server.stop().await;
+    let server = Server::start_with(database, key).await;
+    let (status, response) = server.request("GET", &path, AUTH, "").await;
+    assert_eq!(status, 200);
+    assert_eq!(json_body(&response), expected);
+
+    let (status, response) = server
+        .request(
+            "POST",
+            "/v1/records",
+            AUTH_JSON,
+            r#"{"plaintext":"new after restart 🌱"}"#,
+        )
+        .await;
+    assert_eq!(status, 201);
+    let new_id = json_body(&response)["id"].as_str().unwrap().to_owned();
+    assert_ne!(new_id, id);
+    let (status, response) = server
+        .request("GET", &format!("/v1/records/{new_id}"), AUTH, "")
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"id": new_id, "plaintext": "new after restart 🌱"})
+    );
+    let (status, response) = server.request("GET", &path, AUTH, "").await;
+    assert_eq!(status, 200);
+    assert_eq!(json_body(&response), expected);
+    let database = server.stop().await;
+    assert_eq!(database.encrypted_records().len(), 2);
+}
+
+#[tokio::test]
+async fn http_wrong_key_restart_is_generic_and_preserves_encrypted_records() {
+    let key = [0x6d; 32];
+    let wrong_key = [0x7e; 32];
+    let plaintext = "PRIVATE HTTP restart marker 世界 🦀";
+    let server = Server::start_with(Database::temporary(), key).await;
+    let body = serde_json::json!({"plaintext": plaintext}).to_string();
+    let (status, response) = server
+        .request("POST", "/v1/records", AUTH_JSON, &body)
+        .await;
+    assert_eq!(status, 201);
+    let id = json_body(&response)["id"].as_str().unwrap().to_owned();
+    let path = format!("/v1/records/{id}");
+    let database = server.stop().await;
+    let before = database.encrypted_records();
+    assert_eq!(before.len(), 1);
+    assert_eq!(before[0].0, id);
+
+    let server = Server::start_with(database, wrong_key).await;
+    let (status, response) = server.request("GET", &path, AUTH, "").await;
+    assert_eq!(status, 500);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"error": "record operation failed"})
+    );
+    for secret_or_detail in [
+        plaintext,
+        &"6d".repeat(32),
+        &"7e".repeat(32),
+        &"m".repeat(32),
+        &"~".repeat(32),
+        "SQLite",
+        "decrypt",
+        "ciphertext",
+        "nonce",
+        "aead",
+    ] {
+        assert!(!response.contains(secret_or_detail));
+    }
+    let database = server.stop().await;
+    assert_eq!(database.encrypted_records(), before);
+
+    let server = Server::start_with(database, key).await;
+    let (status, response) = server.request("GET", &path, AUTH, "").await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"id": id, "plaintext": plaintext})
+    );
+    let database = server.stop().await;
+    assert_eq!(database.encrypted_records(), before);
 }
 
 #[tokio::test]
@@ -479,7 +625,7 @@ async fn http_chunked_body_limit() {
 #[tokio::test]
 async fn http_storage_errors_are_generic() {
     let server = Server::start().await;
-    let mut store = server._database.store(&[0; 32]);
+    let mut store = server._database.as_ref().unwrap().store(&[0; 32]);
     let id = store.insert("private").unwrap();
     store
         .connection
