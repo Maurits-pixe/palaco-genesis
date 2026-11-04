@@ -265,7 +265,8 @@ mod tests {
     }
 
     #[test]
-    fn persisted_candidate_uses_separately_supplied_signed_evidence() -> Result<(), std::io::Error> {
+    fn persisted_candidate_uses_separately_supplied_signed_evidence() -> Result<(), std::io::Error>
+    {
         let root = std::env::temp_dir().join(format!("palaco-orch056-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&root)?;
         let (_, receipt, policy) = fixture();
