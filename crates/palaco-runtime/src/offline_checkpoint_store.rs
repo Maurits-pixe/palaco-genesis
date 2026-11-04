@@ -228,9 +228,10 @@ mod tests {
                 .count(),
             1
         );
-        assert!(outcomes
-            .iter()
-            .all(|value| matches!(value, Ok(Ok(_)) | Ok(Err(CheckpointStoreError::AlreadyExists)))));
+        assert!(outcomes.iter().all(|value| matches!(
+            value,
+            Ok(Ok(_)) | Ok(Err(CheckpointStoreError::AlreadyExists))
+        )));
         assert!(matches!(read_checkpoint(&root, 1), Ok(value) if value == checkpoint));
         fs::remove_dir_all(root)?;
         Ok(())
