@@ -89,7 +89,7 @@ cargo test --workspace
 - `benchmark.yml` — benchmark target validatie
 - `security.yml` — dependency audit + cargo-deny policy checks
 - `coverage.yml` — coverage artefact generatie
-- `release.yml` — release-readiness, binary build (`palaco-citadel-contracts`) en optionele GitHub release-publicatie
+- `release.yml` — release-readiness, binary build (`palaco-citadel-contracts`), checksum/manifest generatie en optionele GitHub release-publicatie
 - `document-exchange.yml` — validatie van relatieve documentatielinks
 - `pages.yml` — GitHub Pages deployment (optioneel met custom domain via `PAGES_CUSTOM_DOMAIN`)
 - `metrics.yml` — dependency metrics vergelijking met artifact output

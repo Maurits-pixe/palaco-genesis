@@ -82,6 +82,22 @@ jobs:
           cp target/release/citadel-a1 release-binaries/
           cp target/release/citadel-a1-canonical release-binaries/
 
+      - name: Generate checksums and manifest
+        run: |
+          sha256sum release-binaries/citadel-a1 > release-binaries/SHA256SUMS
+          sha256sum release-binaries/citadel-a1-canonical >> release-binaries/SHA256SUMS
+          cat > release-binaries/release-manifest.json <<'JSON'
+          {
+            "artifacts": [
+              "citadel-a1",
+              "citadel-a1-canonical",
+              "SHA256SUMS"
+            ],
+            "source_package": "palaco-citadel-contracts",
+            "workflow": "release.yml"
+          }
+          JSON
+
       - name: Upload release binaries
         uses: actions/upload-artifact@v4
         with:
@@ -110,3 +126,5 @@ jobs:
           files: |
             release-binaries/citadel-a1
             release-binaries/citadel-a1-canonical
+            release-binaries/SHA256SUMS
+            release-binaries/release-manifest.json
