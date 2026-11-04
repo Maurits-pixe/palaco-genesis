@@ -32,6 +32,7 @@ jobs:
           mkdir -p _site/docs
           cp -R docs/. _site/docs/
           cp README.md _site/README.md
+          touch _site/.nojekyll
           cat > _site/index.html <<'HTML'
           <!doctype html>
           <html lang="en">

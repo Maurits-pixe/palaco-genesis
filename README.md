@@ -99,3 +99,9 @@ cargo test --workspace
 ## GitHub Pages + custom domain
 
 De `pages.yml` workflow publiceert `docs/` naar GitHub Pages en maakt een optionele `CNAME` aan wanneer repository variable `PAGES_CUSTOM_DOMAIN` is ingesteld.
+
+### Setup
+
+1. Zet in GitHub bij **Settings → Pages** de source op **GitHub Actions**.
+2. (Optioneel) Voeg repository variable `PAGES_CUSTOM_DOMAIN` toe met je domeinnaam.
+3. Trigger `pages.yml` via **Run workflow** of push naar `main`/`master`.
