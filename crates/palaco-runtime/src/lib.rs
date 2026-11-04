@@ -10,6 +10,8 @@ pub mod vacation_mode;
 pub mod offline_catalog;
 /// Strict Ed25519 byte verification without authority or recovery execution.
 pub mod offline_ed25519;
+/// Bounded offline public-key preflight and terminal local revocation.
+pub mod offline_key_registry;
 /// Offline generation selection with an explicit confirmation boundary.
 pub mod offline_generation;
 /// Offline chunk integrity verification without disk or network access.
