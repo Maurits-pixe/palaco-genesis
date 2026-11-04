@@ -523,6 +523,11 @@ geweigerd. Ook externe intrekking wordt bij de commit opnieuw gecontroleerd.
 Beide weigeringen maken geen commandorecord of succesvolle auditmutatie;
 expliciete statuscontrole verklaart de uitkomst zonder lokale toestemming
 te herstellen. De gesimuleerde klokafwijking bewijst geen kloksynchronisatie.
+Aanvullende live tests laten de lokale klok een ongeldige waarde geven of
+een fout werpen, terwijl de serverklok geldig blijft. Vastleggen is dan lokaal
+geblokkeerd zonder commitverzoek; expliciete statuscontrole en intrekking
+blijven via de echte service mogelijk. Een herstelde klok verstuurt zelf
+geen verzoek: vastleggen vereist nog steeds een expliciete actie.
 Live foutinjectietests laten de echte SQLite-transactie vlak voor de commit
 falen. Ze controleren rollback van commando, ticketmutatie en bijbehorende
 auditregel, zonder automatische herinzending door de sessie. Een actieve

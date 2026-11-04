@@ -76,7 +76,8 @@ async function fixture(t, { realtime = false, fault = () => {} } = {}) {
   const calls = []
   const sockets = []
   const listGates = []
-  let app, db, session, dropNext, witness, nextListGate
+  let app, db, session, dropNext, witness, nextListGate, tick
+  let localNow = now
   let serverNow = now
   let losses = 0
   t.after(async () => {
@@ -185,10 +186,11 @@ async function fixture(t, { realtime = false, fault = () => {} } = {}) {
     } : {}),
     eventTarget,
     scheduler: {
-      now: () => now,
+      now: () => typeof localNow === 'function' ? localNow() : localNow,
       setInterval(callback, milliseconds) {
         assert.equal(typeof callback, 'function')
         assert.equal(milliseconds, 100)
+        tick = callback
         const handle = Symbol('manual clock')
         intervals.add(handle)
         return handle
@@ -237,6 +239,8 @@ async function fixture(t, { realtime = false, fault = () => {} } = {}) {
       origin = `http://127.0.0.1:${app.port}`
     },
     setServerNow: value => { serverNow = value },
+    setLocalNow: value => { localNow = value },
+    tick: () => tick(),
     setFault: value => { fault = value },
     async commitExternal(command) {
       const ticket = await productionApi.issueTicket(command, 10000, token, externalFetch)
@@ -429,6 +433,168 @@ test('live service: ticket, commit, explicit status and journal use the same per
   assert.equal(f.count('GET', `/v1/tickets/${issued.id}`), 1)
   assert.equal(f.count('GET', '/v1/commands'), 1)
   assert.equal(f.calls.length, 4)
+})
+
+for (const clockFailure of ['invalid', 'throwing']) {
+  test(`live service: ${clockFailure} local receipt clock retains a real ticket for status and revocation, not commit`, { timeout: 15000 }, async t => {
+    const f = await fixture(t)
+    const s = f.session
+    f.setLocalNow(clockFailure === 'invalid' ? NaN : () => { throw new Error('local clock unavailable') })
+    await f.run('ticket')
+    assert.equal(s.error.value, '')
+    const held = s.ticket.value
+    assert.ok(held)
+    assert.equal(held.not_before, now)
+    assert.equal(held.expires_at, now + s.ttlMs.value)
+    assert.equal(s.now.value, null)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.remaining.value, null)
+    assert.equal(s.lastSubmissionId.value, '')
+    const persisted = f.db.prepare('SELECT * FROM tickets').all()
+    assert.equal(persisted.length, 1)
+    assert.equal(persisted[0].id, held.id)
+    assert.equal(persisted[0].command, held.command)
+    assert.equal(persisted[0].consumed, 0)
+    assert.equal(persisted[0].revoked, 0)
+    assert.deepEqual(f.calls, [{ path: '/v1/tickets', method: 'POST', status: 201 }])
+
+    await f.run('commit')
+    assert.equal(s.ticket.value, held)
+    assert.equal(s.lastSubmissionId.value, '')
+    assert.equal(f.count('POST', '/v1/commands'), 0)
+    assert.equal(f.calls.length, 1)
+    assert.deepEqual(f.db.prepare('SELECT * FROM tickets').all(), persisted)
+    assert.deepEqual(f.db.prepare('SELECT * FROM commands').all(), [])
+    assert.deepEqual(f.db.prepare('SELECT * FROM audit').all(), [])
+
+    const path = `/v1/tickets/${held.id}`
+    await bounded(s.checkCurrentTicket(), 'active status despite failed local clock')
+    assert.equal(s.error.value, '')
+    assert.equal(s.outcome.value.id, held.id)
+    assert.equal(s.outcome.value.command, held.command)
+    assert.equal(s.outcome.value.status, 'active')
+    assert.equal(s.outcome.value.checked_at, now)
+    assert.equal(s.outcome.value.revoked, false)
+    assert.equal(s.outcome.value.record, null)
+    assert.equal(s.outcomeReceivedAt.value, null)
+    assert.equal(s.ticket.value, held)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.remaining.value, null)
+    await f.run('commit')
+    assert.equal(s.lastSubmissionId.value, '')
+    assert.deepEqual(f.db.prepare('SELECT * FROM tickets').all(), persisted)
+    assert.deepEqual(f.db.prepare('SELECT * FROM commands').all(), [])
+    assert.deepEqual(f.db.prepare('SELECT * FROM audit').all(), [])
+    assert.deepEqual(f.calls, [
+      { path: '/v1/tickets', method: 'POST', status: 201 },
+      { path, method: 'GET', status: 200 },
+    ])
+
+    await f.run('revoke')
+    assert.equal(s.error.value, '')
+    assert.equal(s.ticket.value, null)
+    assert.equal(s.revocationUncertain.value, false)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.lastSubmissionId.value, '')
+    assert.deepEqual({ ...f.db.prepare('SELECT consumed, revoked FROM tickets WHERE id = ?').get(held.id) },
+      { consumed: 0, revoked: 1 })
+    assert.deepEqual(f.db.prepare('SELECT * FROM commands').all(), [])
+    assert.deepEqual(f.db.prepare('SELECT ticket_id, action FROM audit').all().map(row => ({ ...row })),
+      [{ ticket_id: held.id, action: 'ticket:revoke' }])
+    assert.deepEqual(f.calls, [
+      { path: '/v1/tickets', method: 'POST', status: 201 },
+      { path, method: 'GET', status: 200 },
+      { path, method: 'DELETE', status: 200 },
+    ])
+  })
+}
+
+test('live service: a throwing countdown tick fails closed, then a valid tick permits only one explicit commit', { timeout: 15000 }, async t => {
+  const f = await fixture(t)
+  const s = f.session
+  await f.run('ticket')
+  assert.equal(s.error.value, '')
+  const held = s.ticket.value
+  const persisted = f.db.prepare('SELECT * FROM tickets').all()
+  assert.equal(s.canCommit.value, true)
+  assert.equal(s.remaining.value, 10)
+
+  f.setLocalNow(() => { throw new Error('local tick clock unavailable') })
+  assert.doesNotThrow(() => f.tick())
+  assert.equal(s.now.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.remaining.value, null)
+  assert.equal(s.ticket.value, held)
+  await f.run('commit')
+  assert.equal(s.lastSubmissionId.value, '')
+  assert.equal(f.count('POST', '/v1/commands'), 0)
+  assert.deepEqual(f.db.prepare('SELECT * FROM tickets').all(), persisted)
+  assert.deepEqual(f.db.prepare('SELECT * FROM commands').all(), [])
+  assert.deepEqual(f.db.prepare('SELECT * FROM audit').all(), [])
+  assert.deepEqual(f.calls, [{ path: '/v1/tickets', method: 'POST', status: 201 }])
+
+  f.setLocalNow(now + 100)
+  assert.doesNotThrow(() => f.tick())
+  assert.equal(s.now.value, now + 100)
+  assert.equal(s.canCommit.value, true)
+  assert.equal(s.remaining.value, 10)
+  assert.equal(s.ticket.value, held)
+  assert.equal(s.lastSubmissionId.value, '')
+  assert.deepEqual(f.db.prepare('SELECT * FROM tickets').all(), persisted)
+  assert.deepEqual(f.db.prepare('SELECT * FROM commands').all(), [])
+  assert.deepEqual(f.db.prepare('SELECT * FROM audit').all(), [])
+  assert.deepEqual(f.calls, [{ path: '/v1/tickets', method: 'POST', status: 201 }],
+    'neither clock failure nor recovery sends an automatic request')
+
+  await f.run('commit')
+  assert.equal(s.error.value, '')
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, held.id)
+  assert.equal(s.lookupId.value, held.id)
+  assert.equal(s.commands.value.length, 1)
+  const record = { ...s.commands.value[0] }
+  assert.deepEqual(record, { id: record.id, command: held.command, committed_at: now })
+  assert.deepEqual({ ...f.db.prepare('SELECT id, command, committed_at FROM commands WHERE ticket_id = ?').get(held.id) }, record)
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM commands').get().count, 1)
+  assert.deepEqual({ ...f.db.prepare('SELECT consumed, revoked FROM tickets WHERE id = ?').get(held.id) },
+    { consumed: 1, revoked: 0 })
+  const audit = f.db.prepare('SELECT * FROM audit').all()
+  assert.equal(audit.length, 1)
+  assert.equal(audit[0].ticket_id, held.id)
+  assert.equal(audit[0].action, 'journal:append')
+  await f.run('commit')
+  f.tick()
+  assert.deepEqual(f.calls, [
+    { path: '/v1/tickets', method: 'POST', status: 201 },
+    { path: '/v1/commands', method: 'POST', status: 201 },
+  ], 'a consumed local ticket cannot be submitted again')
+
+  f.setLocalNow(() => { throw new Error('local receipt clock unavailable') })
+  await bounded(s.checkLastSubmission(), 'committed status despite failed receipt clock')
+  assert.equal(s.error.value, '')
+  assert.equal(s.outcome.value.id, held.id)
+  assert.equal(s.outcome.value.status, 'committed')
+  assert.equal(s.outcome.value.checked_at, now)
+  assert.deepEqual(s.outcome.value.record, record)
+  assert.equal(s.outcomeReceivedAt.value, null)
+  await f.run('list')
+  assert.equal(s.error.value, '')
+  assert.equal(s.hasLoaded.value, true)
+  assert.equal(s.journalRefreshFailed.value, false)
+  assert.equal(s.lastJournalRefreshAt.value, null)
+  assert.deepEqual(s.commands.value, [record])
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, held.id)
+  assert.deepEqual(f.db.prepare('SELECT * FROM audit').all(), audit)
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM commands').get().count, 1)
+  assert.deepEqual(f.calls, [
+    { path: '/v1/tickets', method: 'POST', status: 201 },
+    { path: '/v1/commands', method: 'POST', status: 201 },
+    { path: `/v1/tickets/${held.id}`, method: 'GET', status: 200 },
+    { path: '/v1/commands', method: 'GET', status: 200 },
+  ])
 })
 
 test('live service: stale local time permits preflight but the server denies commit exactly at expiry', { timeout: 15000 }, async t => {
