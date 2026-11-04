@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PVC-001 SystemGraph",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "revision", "nodes", "relation_kinds", "relations"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "revision": { "type": "string", "minLength": 1 },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "source_paths"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "kind": {
+            "enum": ["service", "capability", "resource", "lifecycle", "event"]
+          },
+          "source_paths": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "relation_kinds": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["meaning", "source_kinds", "target_kinds"],
+        "properties": {
+          "meaning": { "type": "string", "minLength": 1 },
+          "source_kinds": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "enum": ["service", "capability", "resource", "lifecycle", "event"] }
+          },
+          "target_kinds": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "enum": ["service", "capability", "resource", "lifecycle", "event"] }
+          }
+        }
+      }
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source", "target", "kind"],
+        "properties": {
+          "source": { "type": "string", "minLength": 1 },
+          "target": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

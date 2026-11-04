@@ -37,3 +37,17 @@ jobs:
 
       - name: Run Tests
         run: cargo test --workspace --all-features
+
+      - name: Test PVC-001 validator
+        run: python3 -m unittest discover -s validation -p 'test_*.py'
+
+      - name: Generate PVC-001 evidence
+        run: python3 validation/pvc_validate.py --output-dir "$RUNNER_TEMP/pvc-evidence"
+
+      - name: Upload PVC-001 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pvc-001-evidence
+          path: ${{ runner.temp }}/pvc-evidence/
+          if-no-files-found: warn
