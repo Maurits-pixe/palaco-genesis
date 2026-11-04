@@ -90,6 +90,7 @@ cargo test --workspace
 - `security.yml` — dependency audit checks
 - `coverage.yml` — coverage artefact generatie
 - `release.yml` — handmatige release-readiness checks + evidence artifact
+- `document-exchange.yml` — validatie van relatieve documentatielinks
 - `palaco-ci.yml` — uitgebreide PALACO baseline pipeline
 - `citadel-a1.yml` — Citadel A1 contractverificatie
 - `registry-contract.yml` — registry contract checks
