@@ -4,8 +4,10 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "warn"
 
 [licenses]
-allow = ["MIT", "Apache-2.0", "ISC", "OpenSSL"]
-deny = ["GPL-2.0", "GPL-3.0"]
+allow = ["MIT", "Apache-2.0", "ISC", "OpenSSL", "Unicode-3.0"]
+
+[licenses.private]
+ignore = true
 
 [bans]
 multiple-versions = "warn"
