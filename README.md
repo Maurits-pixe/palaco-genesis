@@ -95,6 +95,7 @@ cargo test --workspace
 - `metrics.yml` — dependency metrics vergelijking met artifact output
 - `baseline-metrics.yml` — periodieke baseline + metrics report artifact generatie
 - `automation-integrity.yml` — valideert workflow YAML en script syntax
+- `workflow-lint.yml` — lint alle GitHub workflow-definities met actionlint
 - `palaco-ci.yml` — uitgebreide PALACO baseline pipeline
 - `citadel-a1.yml` — Citadel A1 contractverificatie
 - `registry-contract.yml` — registry contract checks
