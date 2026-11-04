@@ -26,6 +26,8 @@ pub mod offline_key_registry;
 pub mod offline_manifest;
 /// Read-only detection of abandoned offline publication markers.
 pub mod offline_orphan;
+/// Exact-pin policy persistence with nondecreasing floor staging.
+pub mod offline_policy_store;
 /// Non-overwriting local candidate marker publication for public fixtures.
 pub mod offline_publication;
 /// Publisher revocation, epoch and trusted-time preflight for offline content.
