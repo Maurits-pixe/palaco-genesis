@@ -85,8 +85,8 @@ impl OfflineReviewKeyRegistry {
         public_key: [u8; 32],
         epoch: u64,
     ) -> Result<[u8; 32], RegistryError> {
-        let verifier = Ed25519ReviewVerifier::from_public_key(&public_key)
-            .ok_or(RegistryError::InvalidKey)?;
+        let verifier =
+            Ed25519ReviewVerifier::from_public_key(&public_key).ok_or(RegistryError::InvalidKey)?;
         let key_id = verifier.key_id();
         if self.keys.iter().any(|key| key.entry.key_id == key_id) {
             return Err(RegistryError::DuplicateKey);
@@ -176,7 +176,10 @@ mod tests {
         let digest = [11; 32];
         assert!(verifier.verify(&digest, &id, &signer.sign(&digest).to_bytes()));
         assert!(!verifier.verify(&[12; 32], &id, &signer.sign(&digest).to_bytes()));
-        assert_eq!(registry.entry(&id).map(|entry| entry.state), Some(KeyState::Active));
+        assert_eq!(
+            registry.entry(&id).map(|entry| entry.state),
+            Some(KeyState::Active)
+        );
         Ok(())
     }
 
@@ -189,20 +192,32 @@ mod tests {
         assert!(registry.review_verifier(&id, 1).is_none());
         assert_eq!(registry.revoke(&id), Err(RegistryError::RevokedKey));
         assert_eq!(registry.register(key, 9), Err(RegistryError::DuplicateKey));
-        assert_eq!(registry.entry(&id).map(|entry| entry.state), Some(KeyState::Revoked));
+        assert_eq!(
+            registry.entry(&id).map(|entry| entry.state),
+            Some(KeyState::Revoked)
+        );
         Ok(())
     }
 
     #[test]
     fn epoch_floor_cannot_be_lowered_or_bypassed() -> Result<(), RegistryError> {
         let mut registry = OfflineReviewKeyRegistry::new(4);
-        assert_eq!(registry.register(public_key(1), 3), Err(RegistryError::EpochRollback));
+        assert_eq!(
+            registry.register(public_key(1), 3),
+            Err(RegistryError::EpochRollback)
+        );
         let id = registry.register(public_key(2), 4)?;
         assert!(registry.review_verifier(&id, 5).is_none());
         registry.advance_minimum_epoch(5)?;
         assert!(registry.review_verifier(&id, 4).is_none());
-        assert_eq!(registry.advance_minimum_epoch(4), Err(RegistryError::EpochRollback));
-        assert_eq!(registry.register(public_key(3), 4), Err(RegistryError::EpochRollback));
+        assert_eq!(
+            registry.advance_minimum_epoch(4),
+            Err(RegistryError::EpochRollback)
+        );
+        assert_eq!(
+            registry.register(public_key(3), 4),
+            Err(RegistryError::EpochRollback)
+        );
         Ok(())
     }
 
@@ -220,8 +235,14 @@ mod tests {
             let seed = u8::try_from(seed).map_err(|_| RegistryError::CapacityExceeded)?;
             registry.register(public_key(seed), 0)?;
         }
-        assert_eq!(registry.register(public_key(1), 0), Err(RegistryError::DuplicateKey));
-        assert_eq!(registry.register(public_key(99), 0), Err(RegistryError::CapacityExceeded));
+        assert_eq!(
+            registry.register(public_key(1), 0),
+            Err(RegistryError::DuplicateKey)
+        );
+        assert_eq!(
+            registry.register(public_key(99), 0),
+            Err(RegistryError::CapacityExceeded)
+        );
         Ok(())
     }
 
