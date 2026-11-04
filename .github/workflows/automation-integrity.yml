@@ -24,17 +24,57 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Validate workflow YAML files
+      - name: Validate workflow YAML files and CI policy guardrails
         run: |
           python - <<'PY'
           import glob
+          import sys
           import yaml
-
-          files = glob.glob(".github/workflows/*.yml")
+          
+          files = sorted(glob.glob(".github/workflows/*.yml"))
+          errors = []
+          
           for path in files:
               with open(path, "r", encoding="utf-8") as fh:
-                  yaml.safe_load(fh)
+                  data = yaml.safe_load(fh)
+          
+              if not isinstance(data, dict):
+                  errors.append(f"{path}: workflow root must be a mapping")
+                  continue
+          
+              concurrency = data.get("concurrency")
+              if not isinstance(concurrency, dict):
+                  errors.append(f"{path}: missing top-level concurrency mapping")
+              else:
+                  group = concurrency.get("group")
+                  cancel = concurrency.get("cancel-in-progress")
+                  if not group:
+                      errors.append(f"{path}: concurrency.group is missing or empty")
+                  if cancel is not True:
+                      errors.append(f"{path}: concurrency.cancel-in-progress must be true")
+          
+              jobs = data.get("jobs")
+              if not isinstance(jobs, dict) or not jobs:
+                  errors.append(f"{path}: jobs mapping is missing or empty")
+                  continue
+          
+              for job_name, job in jobs.items():
+                  if not isinstance(job, dict):
+                      errors.append(f"{path}: job '{job_name}' must be a mapping")
+                      continue
+          
+                  timeout = job.get("timeout-minutes")
+                  if not isinstance(timeout, int) or timeout <= 0:
+                      errors.append(
+                          f"{path}: job '{job_name}' must define positive timeout-minutes"
+                      )
+          
               print(f"OK {path}")
+          
+          if errors:
+              for err in errors:
+                  print(err)
+              sys.exit(1)
           PY
 
       - name: Validate shell script syntax
