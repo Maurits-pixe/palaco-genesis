@@ -6,6 +6,8 @@
 /// Offline vacation-mode memory package planning and capacity guards.
 pub mod vacation_mode;
 
+/// Signature-checked anchor evidence under separately supplied review policy.
+pub mod offline_anchor_signature;
 /// Unprivileged, network-free memory catalog preview.
 pub mod offline_catalog;
 /// Create-only public checkpoint persistence without trusted anchor promotion.
