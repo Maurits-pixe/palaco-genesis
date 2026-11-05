@@ -43,13 +43,13 @@ def validate(path: Path) -> list[str]:
     permissions = data.get("permissions")
     if not isinstance(permissions, dict) or permissions.get("contents") != "read":
         errors.append(f"{path.name}: top-level permissions.contents must be read")
-    elif path.name != "pages.yml":
+    else:
         for perm_name, perm_value in permissions.items():
             if perm_value not in ALLOWED_PERMISSION_VALUES:
                 errors.append(
                     f"{path.name}: top-level permission {perm_name} must be one of {sorted(ALLOWED_PERMISSION_VALUES)}"
                 )
-            if perm_value == "write":
+            if path.name != "pages.yml" and perm_value == "write":
                 errors.append(
                     f"{path.name}: top-level write permission {perm_name}=write is not allowed"
                 )
