@@ -1033,6 +1033,10 @@ def main() -> int:
                     errors.append(
                         f"{path}: job '{job_name}' step #{step_index} working-directory must be a non-empty string when provided"
                     )
+                if step_working_directory is not None and step_run is None:
+                    errors.append(
+                        f"{path}: job '{job_name}' step #{step_index} working-directory is only allowed on run steps"
+                    )
                 if (
                     isinstance(step_uses, str)
                     and not step_uses.startswith("./")
