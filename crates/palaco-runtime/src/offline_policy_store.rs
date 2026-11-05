@@ -164,7 +164,10 @@ pub fn stage_policy_advance(
     {
         return Err(PolicyStoreError::InvalidAdvance);
     }
-    let version = current.version.checked_add(1).ok_or(PolicyStoreError::InvalidAdvance)?;
+    let version = current
+        .version
+        .checked_add(1)
+        .ok_or(PolicyStoreError::InvalidAdvance)?;
     stage_policy_record(root, version, next)
 }
 
@@ -232,7 +235,10 @@ mod tests {
         let root = root()?;
         let policy = policy();
         assert!(stage_policy_record(&root, 1, &policy).is_ok());
-        assert!(matches!(read_pinned_policy(&root, None), Err(PolicyStoreError::MissingPin)));
+        assert!(matches!(
+            read_pinned_policy(&root, None),
+            Err(PolicyStoreError::MissingPin)
+        ));
         assert!(matches!(
             read_pinned_policy(&root, Some(&policy_pin(1, &policy))),
             Ok(value) if value == policy
@@ -394,14 +400,16 @@ mod tests {
         let mut next = original;
         next.minimum_revision = 5;
         assert!(stage_policy_advance(&root, &policy_pin(1, &original), &next).is_ok());
-        let mut child = RestartChild(std::process::Command::new(std::env::current_exe()?)
-            .args([
-                "--exact",
-                "offline_policy_store::tests::policy_restart_child",
-                "--ignored",
-            ])
-            .env("PALACO_POLICY_RESTART_ROOT", &root)
-            .spawn()?);
+        let mut child = RestartChild(
+            std::process::Command::new(std::env::current_exe()?)
+                .args([
+                    "--exact",
+                    "offline_policy_store::tests::policy_restart_child",
+                    "--ignored",
+                ])
+                .env("PALACO_POLICY_RESTART_ROOT", &root)
+                .spawn()?,
+        );
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         loop {
             if let Some(status) = child.0.try_wait()? {
