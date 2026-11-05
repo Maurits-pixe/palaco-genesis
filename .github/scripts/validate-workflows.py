@@ -304,9 +304,15 @@ def validate(path: Path) -> list[str]:
                             f"{path.name}:{job_name}: write permission {perm_name}=write is not allowed"
                         )
 
-        steps = job.get("steps", [])
+        steps = job.get("steps")
+        if steps is None:
+            errors.append(f"{path.name}:{job_name}: steps are required")
+            continue
         if not isinstance(steps, list):
             errors.append(f"{path.name}:{job_name}: steps must be a list")
+            continue
+        if not steps:
+            errors.append(f"{path.name}:{job_name}: steps must be a non-empty list")
             continue
 
         uses_checkout = False
