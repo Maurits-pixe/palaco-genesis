@@ -1614,11 +1614,13 @@ def evaluate_g9(
     source_tree_clean: bool | None,
     prior_gates: list[dict[str, Any]],
     release_artifact: dict[str, str] | None,
+    release_evidence_root: Path,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     evidence: dict[str, Any] = {
         "repository": expected_repository,
         "source_revision": source_revision,
         "source_tree_clean": source_tree_clean,
+        "evidence_root": "repository" if release_evidence_root.resolve() == ROOT.resolve() else "external evidence bundle",
         "release_checklist": release_artifact,
         "artifact": None,
         "evidence_report": None,
@@ -1748,16 +1750,16 @@ def evaluate_g9(
         value = fields[field]
         match = re.fullmatch(r"([^@]+)@([0-9a-f]{64})", value)
         if not match:
-            return None, None, f"{label} must reference evidence as path@sha256."
+            return None, None, f"{label} must reference evidence as relative-path@sha256."
         path_text, expected_digest = match.groups()
         artifact_path = Path(path_text)
         if artifact_path.is_absolute() or "\\" in path_text or ".." in artifact_path.parts:
-            return None, None, f"{label} path must be repository-relative."
-        candidate = (ROOT / artifact_path).resolve()
+            return None, None, f"{label} path must be relative to the release evidence directory."
+        candidate = (release_evidence_root / artifact_path).resolve()
         try:
-            candidate.relative_to(ROOT.resolve())
+            candidate.relative_to(release_evidence_root.resolve())
         except ValueError:
-            return None, None, f"{label} path escapes the repository."
+            return None, None, f"{label} path escapes the release evidence directory."
         if not candidate.is_file():
             return None, f"{label} artifact is missing: {path_text}.", None
         try:
@@ -1791,7 +1793,7 @@ def evaluate_g9(
             {"gate": "G9", "result": "HOLD", "findings": ["G0-G8 evidence report is unavailable."]},
             evidence,
         )
-    evidence_path = ROOT / evidence["evidence_report"]["path"]
+    evidence_path = release_evidence_root / evidence["evidence_report"]["path"]
     report, report_error = read_json(evidence_path)
     if report_error or not isinstance(report, dict):
         return (
@@ -1838,7 +1840,7 @@ def evaluate_g9(
             {"gate": "G9", "result": "HOLD", "findings": [f"Referenced evidence report has non-PASS gates: {report_blockers}."]},
             evidence,
         )
-    attestation_path = ROOT / evidence["attestation"]["path"]
+    attestation_path = release_evidence_root / evidence["attestation"]["path"]
     attestation, attestation_error = read_json(attestation_path)
     if attestation_error or not isinstance(attestation, dict):
         return (
@@ -1848,6 +1850,11 @@ def evaluate_g9(
     if attestation.get("source_revision") != source_revision:
         return (
             {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Release attestation is for a different source revision."]},
+            evidence,
+        )
+    if attestation.get("repository") != expected_repository:
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Release attestation is for a different or unidentified repository."]},
             evidence,
         )
     if attestation.get("artifact_sha256") != evidence["artifact"]["sha256"]:
@@ -2143,7 +2150,12 @@ def _artifact(path: Path) -> dict[str, str] | None:
         return {"path": str(path), "sha256": "unavailable"}
 
 
-def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[str, Any]:
+def build_report(
+    scope_path: Path,
+    graph_path: Path,
+    output_dir: Path,
+    release_evidence_dir: Path = ROOT,
+) -> dict[str, Any]:
     scope, scope_error = read_json(scope_path)
     revision = _git("rev-parse", "HEAD") or ""
     dirty = bool(_git("status", "--porcelain"))
@@ -2262,10 +2274,28 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
         _security_environment(),
         dependency_audit,
     )
-    release_text, release_error = _read_artifact_text(G9_RELEASE_PATH)
-    if not G9_RELEASE_PATH.is_file():
-        release_error = "missing"
-    release_artifact = _artifact(G9_RELEASE_PATH)
+    release_evidence_dir = release_evidence_dir.resolve()
+    release_checklist_path = (
+        G9_RELEASE_PATH
+        if release_evidence_dir == ROOT.resolve()
+        else release_evidence_dir / "validation/release_validation.md"
+    )
+    if not release_checklist_path.is_file():
+        release_text, release_error = None, "missing"
+    else:
+        try:
+            release_checklist_path.resolve().relative_to(release_evidence_dir)
+        except ValueError:
+            release_text, release_error = None, "release checklist escapes the evidence directory"
+        else:
+            release_text, release_error = _read_artifact_text(release_checklist_path)
+    release_artifact = (
+        None
+        if release_error == "release checklist escapes the evidence directory"
+        else _artifact(release_checklist_path)
+    )
+    if release_artifact and release_evidence_dir != ROOT.resolve():
+        release_artifact["path"] = "validation/release_validation.md"
     g9, release_validation = evaluate_g9(
         release_text,
         release_error,
@@ -2274,6 +2304,7 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
         not dirty,
         [g0, g1, g2, g3, g4, g5, g6, g7, g8],
         release_artifact,
+        release_evidence_dir,
     )
 
     report: dict[str, Any] = {
@@ -2469,6 +2500,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             "",
             f"- Source revision: `{release['source_revision'] or 'unavailable'}`",
             f"- Source tree clean: `{release['source_tree_clean']}`",
+            f"- Evidence root: `{release['evidence_root']}`",
             f"- Release checklist: `{release['release_checklist']['path'] if release['release_checklist'] else 'unavailable'}`",
             f"- Release artifact: `{release['artifact']['path'] if release['artifact'] else 'unavailable'}`",
             f"- Artifact SHA-256: `{release['artifact']['sha256'] if release['artifact'] else 'unavailable'}`",
@@ -2501,9 +2533,19 @@ def main() -> int:
     parser.add_argument("--scope", type=Path, default=SCOPE_PATH)
     parser.add_argument("--graph", type=Path, default=GRAPH_PATH)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--release-evidence-dir",
+        type=Path,
+        help="directory containing validation/release_validation.md and the referenced release evidence files",
+    )
     args = parser.parse_args()
 
-    report = build_report(args.scope.resolve(), args.graph.resolve(), args.output_dir.resolve())
+    report = build_report(
+        args.scope.resolve(),
+        args.graph.resolve(),
+        args.output_dir.resolve(),
+        args.release_evidence_dir.resolve() if args.release_evidence_dir else ROOT,
+    )
     for gate in report["gates"]:
         print(f"{gate['gate']}: {gate['result']}")
         for finding in gate["findings"]:

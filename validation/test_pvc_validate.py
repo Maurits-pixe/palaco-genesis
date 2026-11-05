@@ -929,6 +929,7 @@ class G9Tests(unittest.TestCase):
         }
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
         attestation = {
+            "repository": self.repository,
             "source_revision": revision or self.source_revision,
             "artifact_sha256": hashlib.sha256((self.root / "dist/palaco.tar").read_bytes()).hexdigest(),
             "evidence_report_sha256": hashlib.sha256(self.report_path.read_bytes()).hexdigest(),
@@ -962,6 +963,7 @@ class G9Tests(unittest.TestCase):
             "source_tree_clean": True,
             "prior_gates": self.prior_gates,
             "release_artifact": self.artifact,
+            "release_evidence_root": self.root,
         }
         arguments.update(overrides)
         return evaluate_g9(**arguments)
@@ -1051,6 +1053,7 @@ class G9Tests(unittest.TestCase):
         report["repository"] = "different/project"
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
         attestation = {
+            "repository": self.repository,
             "source_revision": self.source_revision,
             "artifact_sha256": hashlib.sha256((self.root / "dist/palaco.tar").read_bytes()).hexdigest(),
             "evidence_report_sha256": hashlib.sha256(self.report_path.read_bytes()).hexdigest(),
@@ -1058,6 +1061,32 @@ class G9Tests(unittest.TestCase):
         (self.root / "dist/attestation.json").write_text(json.dumps(attestation), encoding="utf-8")
         result, _ = self.evaluate(release_text=self.checklist())
         self.assertEqual(result["result"], "INCONCLUSIVE")
+
+    def test_attestation_repository_mismatch_is_inconclusive(self):
+        attestation_path = self.root / "dist/attestation.json"
+        attestation = json.loads(attestation_path.read_text(encoding="utf-8"))
+        attestation["repository"] = "different/project"
+        attestation_path.write_text(json.dumps(attestation), encoding="utf-8")
+        result, _ = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
+    def test_release_evidence_can_be_supplied_from_external_bundle(self):
+        bundle = self.root / "external-bundle"
+        (bundle / "dist").mkdir(parents=True)
+        (bundle / "validation").mkdir()
+        for relative_path in (
+            "dist/palaco.tar",
+            "dist/attestation.json",
+            "validation/prior-evidence.json",
+        ):
+            target = bundle / relative_path
+            target.write_bytes((self.root / relative_path).read_bytes())
+        (bundle / "validation/release_validation.md").write_text(
+            self.checklist(), encoding="utf-8"
+        )
+        result, evidence = self.evaluate(release_evidence_root=bundle)
+        self.assertEqual(result["result"], "PASS")
+        self.assertTrue(evidence["release_eligible"])
 
     def test_attestation_artifact_mismatch_fails(self):
         attestation_path = self.root / "dist/attestation.json"
