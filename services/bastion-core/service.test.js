@@ -882,19 +882,75 @@ test('issuer, subject, action, resource, and command are server-authoritative', 
   assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM commands').get().n, 0);
 });
 
-test('revocation, retries, and concurrent requests cannot duplicate a command', async t => {
-  const f = await fixture(t);
+test('revocation, retries, and overlapping HTTP commits append and deliver one record',
+  { timeout: 20000 }, async t => {
+  const f = await frontendFixture(t);
+  const live = liveRealtime(t, f);
+  await live.connect();
+  assert.equal(live.sockets[0].connected, true);
   const revoked = await f.ticket();
   assert.equal((await f.request(`/v1/tickets/${revoked.id}`, { method: 'DELETE' })).status, 200);
   assert.equal((await f.commit(revoked.id)).status, 403);
   assert.equal((await f.request('/v1/tickets/missing', { method: 'DELETE' })).status, 404);
-  const ticket = await f.ticket();
-  const results = await Promise.all(Array.from({ length: 12 }, () => f.commit(ticket.id)));
+  const command = 'competing realtime journal <entry> \u0001';
+  const ticket = await f.ticket(command);
+  const received = live.next('entry');
+  // These clients overlap HTTP requests, not synchronous SQLite transaction execution.
+  const [results, [entry]] = await Promise.all([
+    Promise.all(Array.from({ length: 12 }, () => f.commit(ticket.id, command))),
+    received,
+  ]);
   assert.equal(results.filter(result => result.status === 201).length, 1);
   assert.equal(results.filter(result => result.status === 403).length, 11);
-  assert.equal((await f.commit(ticket.id)).status, 403);
+  const winner = results.find(result => result.status === 201).data;
+  assert.deepEqual(Object.keys(winner).sort(), ['command', 'committed_at', 'id']);
+  assert.equal(typeof winner.id, 'string');
+  assert.ok(winner.id.length > 0);
+  assert.equal(winner.command, command);
+  assert.equal(winner.committed_at, 1000);
+  assert.deepEqual(entry, winner);
+  assert.deepEqual(live.entries, [winner]);
+
+  const originalRows = () => ({
+    ticket: { ...f.db.prepare('SELECT * FROM tickets WHERE id = ?').get(ticket.id) },
+    commands: f.db.prepare('SELECT * FROM commands WHERE ticket_id = ? ORDER BY seq')
+      .all(ticket.id).map(row => ({ ...row })),
+    audit: f.db.prepare('SELECT * FROM audit WHERE ticket_id = ? ORDER BY id')
+      .all(ticket.id).map(row => ({ ...row })),
+  });
+  const original = originalRows();
+  assert.equal(original.ticket.command, command);
+  assert.equal(original.ticket.consumed, 1);
+  assert.equal(original.ticket.revoked, 0);
+  assert.deepEqual(original.commands, [{ seq: 1, ticket_id: ticket.id, ...winner }]);
+  assert.equal(original.audit.length, 1);
+  assert.deepEqual(original.audit[0], {
+    id: original.audit[0].id, ticket_id: ticket.id, subject: original.ticket.subject,
+    action: 'journal:append', checked_at: winner.committed_at,
+  });
   assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM commands').get().n, 1);
   assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM audit WHERE action = ?').get('journal:append').n, 1);
+  const status = await getTicketStatus(ticket.id, f.token, f.fetcher);
+  assert.equal(status.status, 'committed');
+  assert.deepEqual(status.record, winner);
+
+  const snapshot = () => Object.fromEntries(['tickets', 'commands', 'audit', 'clock_state'].map(table =>
+    [table, f.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all().map(row => ({ ...row }))]));
+  const beforeRetries = snapshot();
+  for (let retry = 0; retry < 3; retry++) {
+    assert.equal((await f.commit(ticket.id, command)).status, 403);
+    assert.deepEqual(snapshot(), beforeRetries);
+  }
+
+  // A later emission on this same connection orders all earlier deliveries before the barrier.
+  // This checks the controlled live transport, not exactly-once delivery across arbitrary failures.
+  const barrier = await live.commit('independent commit after denied retries');
+  assert.equal(live.sockets.length, 1);
+  assert.equal(live.sockets[0].connected, true);
+  assert.deepEqual(live.entries, [winner, barrier]);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM commands').get().n, 2);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM audit WHERE action = ?').get('journal:append').n, 2);
+  assert.deepEqual(originalRows(), original);
 });
 
 test('overlapping HTTP commit and revoke requests leave one consistent ticket outcome',

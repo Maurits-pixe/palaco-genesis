@@ -644,6 +644,12 @@ toegestaan: één behouden vastlegging vóór intrekking, of geweigerde
 vastlegging na intrekking. Status, recorddata en auditvolgorde moeten daarbij
 overeenkomen. Dit bewijst geen parallelle SQLite-uitvoering of dekking van
 alle mogelijke planningen.
+Een servicetest met twaalf overlappende vastleggingsverzoeken voor hetzelfde
+ticket controleert ook de productie-realtimeclient: één verzoek slaagt, met
+één bijbehorend record, auditmutatie en ontvangen event. Een later onafhankelijk
+event dient als volgordebarrière om dubbele events na geweigerde herhalingen
+te detecteren. Dit geldt voor de gecontroleerde verbinding in de test, niet
+als algemene exactly-once-netwerkgarantie.
 Live foutinjectietests laten de echte SQLite-transactie vlak voor de commit
 falen. Ze controleren rollback van commando, ticketmutatie en bijbehorende
 auditregel, zonder automatische herinzending door de sessie. Een actieve
