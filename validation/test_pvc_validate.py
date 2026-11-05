@@ -939,9 +939,28 @@ class G9Tests(unittest.TestCase):
             "repository": self.repository,
             "revision": revision or self.source_revision,
             "run_id": "run-1",
-            "runtime_kernel_tests": {"run_id": "run-1"},
-            "event_observability_tests": {"run_id": "run-1"},
-            "integrated_validation": {"run_id": "run-1"},
+            "runtime_kernel_tests": {
+                "run_id": "run-1",
+                "source_revision": revision or self.source_revision,
+                "source_tree_clean": True,
+                "exit_code": 0,
+                "output_sha256": "a" * 64,
+            },
+            "event_observability_tests": {
+                "run_id": "run-1",
+                "source_revision": revision or self.source_revision,
+                "source_tree_clean": True,
+                "exit_code": 0,
+                "output_sha256": "b" * 64,
+            },
+            "integrated_validation": {
+                "run_id": "run-1",
+                "source_revision": revision or self.source_revision,
+                "source_tree_clean": True,
+                "repository": self.repository,
+                "exit_code": 0,
+                "output_sha256": "c" * 64,
+            },
             "gates": report_gates,
         }
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
@@ -1132,6 +1151,31 @@ class G9Tests(unittest.TestCase):
     def test_evidence_report_requires_g4_g7_ci_run_ids(self):
         report = json.loads(self.report_path.read_text(encoding="utf-8"))
         del report["runtime_kernel_tests"]["run_id"]
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_requires_revision_bound_clean_test_evidence(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["event_observability_tests"]["source_revision"] = "stale"
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_requires_successful_tests_with_output_digests(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["integrated_validation"]["exit_code"] = 1
+        report["integrated_validation"]["output_sha256"] = "invalid"
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_integrated_test_repository_must_match(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["integrated_validation"]["repository"] = "different/project"
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
         result, evidence = self.evaluate(release_text=self.checklist())
         self.assertEqual(result["result"], "INCONCLUSIVE")

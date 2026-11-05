@@ -1916,17 +1916,17 @@ def evaluate_g9(
             {"gate": "G9", "result": "HOLD", "findings": [f"Current or referenced prior gates are not all PASS: {blocked_gates}."]},
             evidence,
         )
+    evidence_keys = (
+        "runtime_kernel_tests",
+        "event_observability_tests",
+        "integrated_validation",
+    )
+    integrated_evidence = [report.get(key) for key in evidence_keys]
     integrated_run_ids = [
         report.get("run_id"),
         *(
-            report.get(evidence_key, {}).get("run_id")
-            if isinstance(report.get(evidence_key), dict)
-            else None
-            for evidence_key in (
-                "runtime_kernel_tests",
-                "event_observability_tests",
-                "integrated_validation",
-            )
+            item.get("run_id") if isinstance(item, dict) else None
+            for item in integrated_evidence
         ),
     ]
     if any(not isinstance(run_id, str) or not run_id for run_id in integrated_run_ids) or len(
@@ -1934,6 +1934,20 @@ def evaluate_g9(
     ) != 1:
         return (
             {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced evidence report has missing or conflicting G4-G7 CI run IDs."]},
+            evidence,
+        )
+    if any(
+        not isinstance(item, dict)
+        or item.get("source_revision") != source_revision
+        or item.get("source_tree_clean") is not True
+        or type(item.get("exit_code")) is not int
+        or item["exit_code"] != 0
+        or not isinstance(item.get("output_sha256"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", item["output_sha256"])
+        for item in integrated_evidence
+    ) or integrated_evidence[2].get("repository") != expected_repository:
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G4-G7 test evidence has missing or conflicting revision, cleanliness, repository, exit-code or output-digest metadata."]},
             evidence,
         )
     attestation_path = release_evidence_root / evidence["attestation"]["path"]
