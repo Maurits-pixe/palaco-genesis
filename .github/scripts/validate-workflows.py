@@ -160,6 +160,15 @@ def main() -> int:
                 step_uses = step.get("uses")
                 if (
                     isinstance(step_uses, str)
+                    and not step_uses.startswith("./")
+                    and not step_uses.startswith("docker://")
+                    and "@" not in step_uses
+                ):
+                    errors.append(
+                        f"{path}: job '{job_name}' step #{step_index} external action uses must include an explicit '@ref'"
+                    )
+                if (
+                    isinstance(step_uses, str)
                     and "@" in step_uses
                     and not step_uses.startswith("./")
                 ):
