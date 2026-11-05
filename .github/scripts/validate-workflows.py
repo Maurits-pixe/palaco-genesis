@@ -45,12 +45,44 @@ def main() -> int:
             )
 
         if isinstance(trigger_config, str):
+            if trigger_config == "pull_request":
+                errors.append(
+                    f"{path}: pull_request trigger must be a mapping with explicit branches"
+                )
             if trigger_config == "pull_request_target":
                 errors.append(f"{path}: pull_request_target trigger is not allowed")
         elif isinstance(trigger_config, list):
+            if "pull_request" in trigger_config:
+                errors.append(
+                    f"{path}: pull_request trigger must be a mapping with explicit branches"
+                )
             if "pull_request_target" in trigger_config:
                 errors.append(f"{path}: pull_request_target trigger is not allowed")
         elif isinstance(trigger_config, dict):
+            if "pull_request" in trigger_config:
+                pr_trigger = trigger_config.get("pull_request")
+                if not isinstance(pr_trigger, dict):
+                    errors.append(
+                        f"{path}: pull_request trigger must be a mapping with explicit branches"
+                    )
+                else:
+                    branches = pr_trigger.get("branches")
+                    if not isinstance(branches, list) or not branches:
+                        errors.append(
+                            f"{path}: pull_request.branches must be a non-empty list"
+                        )
+                    else:
+                        normalized_branches = [
+                            b.strip() for b in branches if isinstance(b, str) and b.strip()
+                        ]
+                        if len(normalized_branches) != len(branches):
+                            errors.append(
+                                f"{path}: pull_request.branches must contain only non-empty strings"
+                            )
+                        elif not {"main", "master"} & set(normalized_branches):
+                            errors.append(
+                                f"{path}: pull_request.branches must include 'main' or 'master'"
+                            )
             if "pull_request_target" in trigger_config:
                 errors.append(f"{path}: pull_request_target trigger is not allowed")
 

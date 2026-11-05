@@ -1,6 +1,7 @@
 name: Draft registry contract checks
 on:
   pull_request:
+    branches: [main, master]
     paths:
       - 'release-registry/**'
       - '.github/workflows/registry-contract.yml'
