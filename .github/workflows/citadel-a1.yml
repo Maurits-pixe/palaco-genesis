@@ -13,12 +13,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
       - run: cargo test --locked -p palaco-citadel-contracts
       - run: cargo build --locked -p palaco-citadel-contracts --bins
       - name: Independent Python verification and cross-language mutation matrix

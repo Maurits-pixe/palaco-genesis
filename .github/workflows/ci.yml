@@ -24,15 +24,17 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
 
       - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: rustfmt, clippy
 
       - name: Cache Cargo Dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
 
       - name: Check Formatting
         run: cargo fmt --all -- --check
