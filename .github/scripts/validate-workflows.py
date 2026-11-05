@@ -263,6 +263,12 @@ def validate(path: Path) -> list[str]:
                                 f"{path.name}:{job_name}: strategy.matrix.{matrix_key} entries must be mappings"
                             )
                             break
+                        for entry_key in entry.keys():
+                            if not isinstance(entry_key, str) or not entry_key.strip():
+                                errors.append(
+                                    f"{path.name}:{job_name}: strategy.matrix.{matrix_key} entry keys must be non-empty strings"
+                                )
+                                break
                 for axis_name, axis_values in matrix.items():
                     if axis_name in ("include", "exclude"):
                         continue
