@@ -1003,6 +1003,10 @@ def main() -> int:
                     errors.append(
                         f"{path}: job '{job_name}' step #{step_index} must not define both 'uses' and 'run'"
                     )
+                if step_with is not None and step_uses is None:
+                    errors.append(
+                        f"{path}: job '{job_name}' step #{step_index} with is only allowed on uses steps"
+                    )
                 if step_uses is not None and (
                     not isinstance(step_uses, str) or not step_uses.strip()
                 ):
