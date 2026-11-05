@@ -146,7 +146,11 @@ function receiptIso(value) {
           <pre aria-labelledby="outcome-command-label" aria-describedby="outcome-command-help">{{ outcome.command }}</pre>
           <p id="outcome-command-help" class="muted">De exacte tekst uit de ontvangen statusmomentopname, niet de huidige concepttekst of het huidige ticket.
             Kan na Wis commandotekst zichtbaar blijven. Alleen tekst: geen uitvoering of nieuwe toestemming.</p>
-          <p v-if="outcome.record">Vastgelegd: {{ date(outcome.record.committed_at) }} · {{ outcome.record.id }}</p>
+          <p v-if="outcome.record" aria-describedby="outcome-record-help">Vastgelegd:
+            <time :datetime="receiptIso(outcome.record.committed_at)">{{ date(outcome.record.committed_at) }}</time> · Record-ID: <code>{{ outcome.record.id }}</code>
+          </p>
+          <p v-if="outcome.record" id="outcome-record-help" class="muted">Het record-ID identificeert het opgeslagen logboekrecord, niet het ticket-ID voor statuscontrole.
+            Alleen-lezen historie: herstelt geen toestemming en voegt niets toe aan het recente logboek.</p>
         </div>
         <button type="button" class="secondary" :disabled="!canClearOutcome" aria-describedby="clear-outcome-help" @click="clearOutcome">Wis ticketuitkomst</button>
         <p id="clear-outcome-help" class="muted">Wist alleen lokaal de getoonde uitkomst en statusmeldingen; breekt een lopende statuscontrole lokaal af.

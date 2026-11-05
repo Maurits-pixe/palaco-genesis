@@ -1230,9 +1230,12 @@ test('outcome explanations render the validated server status without restoring 
   assert.ok(panel)
   assert.ok(panel.includes("<p>Status: {{ outcome.status }} · ingetrokken: {{ outcome.revoked ? 'ja' : 'nee' }}</p>"))
   assert.match(panel, /<pre aria-labelledby="outcome-command-label" aria-describedby="outcome-command-help">{{ outcome\.command }}<\/pre>/)
-  for (const id of ['outcome-command-label', 'outcome-command-help']) {
+  for (const id of ['outcome-command-label', 'outcome-command-help', 'outcome-record-help']) {
     assert.equal(app.match(new RegExp(`\\bid="${id}"`, 'g')).length, 1)
   }
+  const helpers = app.match(/function date\(value\) \{[\s\S]*?\n\}[\s\S]*?function receiptIso\(value\) \{[\s\S]*?\n\}/)?.[0]
+  assert.ok(helpers)
+  const formatters = new Function('timestamp', `${helpers}; return { date, receiptIso }`)(timestamp)
   assert.doesNotMatch(panel, /v-html/)
   const { code } = compile(panel, { mode: 'function', prefixIdentifiers: true })
   const render = new Function('Vue', code)(Vue)
@@ -1247,6 +1250,7 @@ test('outcome explanations render the validated server status without restoring 
   const command = ' \n  één 🚀\n<script>alert("x")</script> & <b>tekst</b>\n  '
   const label = '<p id="outcome-command-label">Commandotekst van deze ticketuitkomst</p>'
   const help = '<p id="outcome-command-help" class="muted">De exacte tekst uit de ontvangen statusmomentopname, niet de huidige concepttekst of het huidige ticket. Kan na Wis commandotekst zichtbaar blijven. Alleen tekst: geen uitvoering of nieuwe toestemming.</p>'
+  const recordHelp = '<p id="outcome-record-help" class="muted">Het record-ID identificeert het opgeslagen logboekrecord, niet het ticket-ID voor statuscontrole. Alleen-lezen historie: herstelt geen toestemming en voegt niets toe aan het recente logboek.</p>'
   const cases = [
     { status: 'pending', checked_at: 999 },
     ...[1000, 1099].map(checked_at => ({ status: 'active', checked_at })),
@@ -1255,17 +1259,22 @@ test('outcome explanations render the validated server status without restoring 
     ...[false, true].flatMap(revoked => [1050, 1100, 1200].map(checked_at => ({
       status: 'committed', revoked, checked_at, record: { ...record(), command },
     }))),
+    ...[false, true].flatMap(revoked => [0, 8_640_000_000_000_000 - 1].map(committed_at => ({
+      status: 'committed', revoked, not_before: committed_at, expires_at: committed_at + 1,
+      checked_at: committed_at + 1, record: { ...record('distinct-record-id'), command, committed_at },
+    }))),
   ]
   for (const changes of cases) {
     await t.test(`${changes.status}, revoked ${changes.revoked ?? false}, checked at ${changes.checked_at}`, async () => {
       const outcome = snapshot({ command, ...changes })
       assert.equal(validateTicketStatus(outcome, outcome.id), outcome)
+      const before = structuredClone(outcome)
       const html = await renderToString(Vue.createSSRApp({
         data: () => ({
           outcome, outcomeMismatch: false, outcomeReceivedAt: null,
           command: 'different current draft', ticket: { ...held(), command: 'different held ticket' },
         }),
-        methods: { date: value => String(value) },
+        methods: formatters,
         render,
       }))
       assert.ok(html.includes(`Status: ${outcome.status} · ingetrokken: ${outcome.revoked ? 'ja' : 'nee'}`))
@@ -1276,7 +1285,20 @@ test('outcome explanations render the validated server status without restoring 
       assert.ok(html.includes('Geen uitvoering of automatische herinzending.'))
       assert.equal(html.includes('geen garantie dat het ticket nu nog bruikbaar is'), outcome.status === 'active')
       assert.equal(html.includes(laterRevocation), outcome.status === 'committed' && outcome.revoked)
-      assert.equal(html.includes('Vastgelegd: 1050 · record-1'), outcome.status === 'committed')
+      assert.equal(html.includes('Vastgelegd:'), outcome.status === 'committed')
+      assert.equal(html.includes('Record-ID:'), outcome.status === 'committed')
+      assert.equal(html.includes(recordHelp), outcome.status === 'committed')
+      assert.equal(html.match(/\bid="outcome-record-help"/g)?.length ?? 0, outcome.record ? 1 : 0)
+      assert.equal(html.match(/aria-describedby="outcome-record-help"/g)?.length ?? 0, outcome.record ? 1 : 0)
+      if (outcome.record) {
+        assert.notEqual(outcome.id, outcome.record.id)
+        assert.ok(html.includes(`id="outcome-ticket-id" value="${outcome.id}"`))
+        assert.ok(html.includes(`<time datetime="${new Date(outcome.record.committed_at).toISOString()}">${formatters.date(outcome.record.committed_at)}</time>`))
+        assert.ok(html.includes(`Record-ID: <code>${outcome.record.id}</code>`))
+        assert.ok(!html.includes(`Record-ID: <code>${outcome.id}</code>`))
+      } else {
+        assert.doesNotMatch(html, /outcome-record-help|<code\b|<time\b/)
+      }
       assert.equal(html.match(/<pre\b[^>]*>[\s\S]*?<\/pre>/)[0], '<pre aria-labelledby="outcome-command-label" aria-describedby="outcome-command-help"> \n  één 🚀\n&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &lt;b&gt;tekst&lt;/b&gt;\n  </pre>')
       assert.ok(html.includes(label))
       assert.ok(html.includes(help))
@@ -1285,12 +1307,26 @@ test('outcome explanations render the validated server status without restoring 
       }
       assert.doesNotMatch(html, /different current draft|different held ticket/)
       assert.doesNotMatch(html, /<script>|<b>|teruggedraaid|ongedaan gemaakt|geen (?:eerder |eerdere )?(?:logboekrecord|vastlegging)/i)
+      assert.deepEqual(outcome, before)
     })
   }
   await t.test('no outcome hides the panel and all explanations', async () => {
     const html = await renderToString(Vue.createSSRApp({ data: () => ({ outcome: null }), render }))
     assert.doesNotMatch(html, /Status:|statuscontrole|logboekrecord|servercontrole/)
-    assert.doesNotMatch(html, /outcome-command-label|outcome-command-help|Commandotekst van deze ticketuitkomst|exacte tekst uit de ontvangen statusmomentopname|<pre/)
+    assert.doesNotMatch(html, /outcome-command-label|outcome-command-help|outcome-record-help|Vastgelegd:|Record-ID:|<time\b|<code\b|Commandotekst van deze ticketuitkomst|exacte tekst uit de ontvangen statusmomentopname|<pre/)
+  })
+  await t.test('record IDs remain escaped text even outside validated server input', async () => {
+    const outcome = snapshot({ status: 'committed', record: record('<script>&"\'') })
+    assert.equal(validateTicketStatus(outcome, outcome.id), null)
+    const before = structuredClone(outcome)
+    const html = await renderToString(Vue.createSSRApp({
+      data: () => ({ outcome, outcomeMismatch: false, outcomeReceivedAt: null }),
+      methods: formatters,
+      render,
+    }))
+    assert.ok(html.includes('Record-ID: <code>&lt;script&gt;&amp;&quot;&#39;</code>'))
+    assert.doesNotMatch(html, /<script>/)
+    assert.deepEqual(outcome, before)
   })
 })
 
