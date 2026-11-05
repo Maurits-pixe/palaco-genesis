@@ -375,9 +375,19 @@ def main() -> int:
                     )
                 step_uses = step.get("uses")
                 step_run = step.get("run")
+                if step_uses is None and step_run is None:
+                    errors.append(
+                        f"{path}: job '{job_name}' step #{step_index} must define exactly one of 'uses' or 'run'"
+                    )
                 if step_uses is not None and step_run is not None:
                     errors.append(
                         f"{path}: job '{job_name}' step #{step_index} must not define both 'uses' and 'run'"
+                    )
+                if step_uses is not None and (
+                    not isinstance(step_uses, str) or not step_uses.strip()
+                ):
+                    errors.append(
+                        f"{path}: job '{job_name}' step #{step_index} uses must be a non-empty string when provided"
                     )
                 if step_run is not None and (
                     not isinstance(step_run, str) or not step_run.strip()
