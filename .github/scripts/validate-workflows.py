@@ -323,6 +323,12 @@ def validate(path: Path) -> list[str]:
                     f"{path.name}:{job_name}:step#{idx + 1}: step name must be a non-empty string when set"
                 )
 
+            step_id = step.get("id")
+            if step_id is not None and (not isinstance(step_id, str) or not step_id.strip()):
+                errors.append(
+                    f"{path.name}:{job_name}:step#{idx + 1}: step id must be a non-empty string when set"
+                )
+
             step_if = step.get("if")
             if step_if is not None and (not isinstance(step_if, str) or not step_if.strip()):
                 errors.append(
