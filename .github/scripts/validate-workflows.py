@@ -232,6 +232,16 @@ def main() -> int:
                                             errors.append(
                                                 f"{path}: workflow_dispatch choice input '{input_name}' options must contain only non-empty strings"
                                             )
+                                        elif len(set(normalized_options)) != len(
+                                            normalized_options
+                                        ):
+                                            errors.append(
+                                                f"{path}: workflow_dispatch choice input '{input_name}' options must be unique"
+                                            )
+                                elif "options" in input_config:
+                                    errors.append(
+                                        f"{path}: workflow_dispatch input '{input_name}' may define options only when type is 'choice'"
+                                    )
             if "push" in trigger_config:
                 push_trigger = trigger_config.get("push")
                 if not isinstance(push_trigger, dict):
