@@ -938,6 +938,10 @@ class G9Tests(unittest.TestCase):
             "generated_at": "2026-11-05T00:00:00+00:00",
             "repository": self.repository,
             "revision": revision or self.source_revision,
+            "run_id": "run-1",
+            "runtime_kernel_tests": {"run_id": "run-1"},
+            "event_observability_tests": {"run_id": "run-1"},
+            "integrated_validation": {"run_id": "run-1"},
             "gates": report_gates,
         }
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
@@ -1116,6 +1120,22 @@ class G9Tests(unittest.TestCase):
         result, evidence = self.evaluate()
         self.assertEqual(result["result"], "PASS")
         self.assertEqual(evidence["evidence_report_g9_result"], "HOLD")
+
+    def test_evidence_report_requires_consistent_integrated_ci_run_ids(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["integrated_validation"]["run_id"] = "different-run"
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_requires_g4_g7_ci_run_ids(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        del report["runtime_kernel_tests"]["run_id"]
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
 
     def test_evidence_report_g9_failure_does_not_override_g0_g8(self):
         gates = [*self.prior_gates, {"gate": "G9", "result": "FAIL"}]

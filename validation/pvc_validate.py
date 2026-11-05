@@ -1916,6 +1916,26 @@ def evaluate_g9(
             {"gate": "G9", "result": "HOLD", "findings": [f"Current or referenced prior gates are not all PASS: {blocked_gates}."]},
             evidence,
         )
+    integrated_run_ids = [
+        report.get("run_id"),
+        *(
+            report.get(evidence_key, {}).get("run_id")
+            if isinstance(report.get(evidence_key), dict)
+            else None
+            for evidence_key in (
+                "runtime_kernel_tests",
+                "event_observability_tests",
+                "integrated_validation",
+            )
+        ),
+    ]
+    if any(not isinstance(run_id, str) or not run_id for run_id in integrated_run_ids) or len(
+        set(integrated_run_ids)
+    ) != 1:
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced evidence report has missing or conflicting G4-G7 CI run IDs."]},
+            evidence,
+        )
     attestation_path = release_evidence_root / evidence["attestation"]["path"]
     attestation, attestation_error = read_json(attestation_path)
     if attestation_error or not isinstance(attestation, dict):
