@@ -395,6 +395,12 @@ zichtbare gegevens mogelijk verouderd zijn; er volgt geen automatische
 herhaling. Een geslaagde verversing vervangt de oude lijst door de nieuwe
 serversnapshot, aangevuld met realtime-records die tijdens die verversing
 binnenkwamen. Oude records buiten die snapshot worden niet teruggezet.
+Een live test laat een succesvol HTTP-logboekantwoord verloren gaan terwijl
+realtime verbonden blijft. Nieuwe realtime-records mogen daarna wel verschijnen,
+maar wissen de verversingswaarschuwing niet en vernieuwen het ontvangsttijdstip
+van de oude snapshot niet. Alleen een volgende expliciete geslaagde verversing
+herstelt die snapshotgegevens; de leesverzoeken veranderen geen ticket-,
+commandorecords of auditregels.
 Een logboekantwoord met dubbele record-ID's wordt volledig afgewezen, ook
 als de dubbele records dezelfde inhoud hebben. De eerdere lijst en het
 laatste geslaagde ontvangsttijdstip blijven dan staan, met de waarschuwing

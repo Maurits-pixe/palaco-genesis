@@ -147,8 +147,14 @@ async function fixture(t, { realtime = false, fault = () => {} } = {}) {
     if (`${options.method} ${path}` === dropNext) {
       dropNext = undefined
       assert.equal(response.status, options.method === 'POST' ? 201 : 200)
-      // The mutation really committed before its successful response is lost.
-      if (options.method === 'POST' && path === '/v1/tickets') {
+      if (options.method === 'GET' && path === '/v1/commands') {
+        const listed = await bounded(response.clone().json(), 'real lost journal response body')
+        const stored = db.prepare('SELECT id, command, committed_at FROM commands ORDER BY seq DESC LIMIT 100')
+          .all().map(row => ({ ...row }))
+        assert.deepEqual(listed, { commands: stored })
+        assert.equal(response.bodyUsed, false, 'inspect only a clone before dropping the original response')
+      } else if (options.method === 'POST' && path === '/v1/tickets') {
+        // The mutation really committed before its successful response is lost.
         const issued = await bounded(response.clone().json(), 'real issued ticket response body')
         const stored = db.prepare('SELECT * FROM tickets WHERE id = ?').get(issued.id)
         assert.ok(stored, 'the exact response ticket must already be persisted')
@@ -2465,6 +2471,112 @@ test('live realtime: replacing the token resets only local authority; explicit a
   assert.equal(s.outcomeReceivedAt.value, null)
   assert.equal((await f.statusExternal(held.id)).status, 'active', 'local credential changes do not revoke the shared operator ticket')
   assert.equal(f.calls.length, requests + 2)
+})
+
+test('live realtime: a lost successful refresh retains its receipt and failure until another explicit list', { timeout: 20000 }, async t => {
+  const f = await fixture(t, { realtime: true })
+  const s = f.session
+  const socket = await f.connect()
+  const baselineWitness = nextCommit(f.witness, 'refresh baseline')
+  const baselineEvent = nextCommit(socket, 'refresh baseline')
+  const baseline = await f.commitExternal('refresh baseline')
+  assert.deepEqual(await baselineWitness, baseline)
+  assert.deepEqual(await baselineEvent, baseline)
+  await waitFor(s.commands, rows => rows.some(row => row.id === baseline.id), 'baseline session record')
+  assert.equal(f.calls.length, 0)
+
+  await f.run('ticket')
+  const held = s.ticket.value
+  f.loseNext('DELETE', `/v1/tickets/${held.id}`)
+  await f.run('revoke')
+  assert.equal(f.losses, 1)
+  assert.equal(s.revocationUncertain.value, true)
+  const authority = () => ({
+    ticket: { ...s.ticket.value }, canCommit: s.canCommit.value,
+    revocationUncertain: s.revocationUncertain.value,
+    lastSubmissionId: s.lastSubmissionId.value, lookupId: s.lookupId.value,
+    outcome: s.outcome.value, outcomeReceivedAt: s.outcomeReceivedAt.value,
+    command: s.command.value, ttlMs: s.ttlMs.value,
+  })
+  const retainedAuthority = authority()
+  assert.equal(retainedAuthority.ticket.id, held.id)
+  assert.equal(retainedAuthority.canCommit, false)
+  // Reads may advance the server watermark, but must not mutate authority or journal/audit rows.
+  const database = () => Object.fromEntries(['tickets', 'commands', 'audit'].map(table =>
+    [table, f.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all().map(row => ({ ...row }))]))
+  const beforeLists = database()
+  await f.run('list')
+  assert.deepEqual(s.commands.value, [baseline])
+  assert.equal(s.hasLoaded.value, true)
+  assert.equal(s.lastJournalRefreshAt.value, now)
+  assert.equal(s.journalRefreshFailed.value, false)
+  assert.equal(s.error.value, '')
+  assert.deepEqual(database(), beforeLists)
+  assert.deepEqual(authority(), retainedAuthority)
+  assert.equal(s.ticket.value, held)
+  assert.equal(f.calls.length, 3)
+
+  f.setLocalNow(now + 100)
+  f.tick()
+  const previous = s.commands.value
+  f.loseNext('GET', '/v1/commands')
+  await f.run('list')
+  assert.equal(f.losses, 2)
+  assert.equal(s.commands.value, previous)
+  assert.deepEqual(s.commands.value, [baseline])
+  assert.equal(s.hasLoaded.value, true)
+  assert.equal(s.lastJournalRefreshAt.value, now)
+  assert.equal(s.journalRefreshFailed.value, true)
+  assert.match(s.error.value, /Geen geldig antwoord/)
+  const failedError = s.error.value
+  assert.equal(s.busy.value, '')
+  assert.deepEqual(database(), beforeLists)
+  assert.deepEqual(authority(), retainedAuthority)
+  assert.equal(s.ticket.value, held)
+  assert.equal(f.calls.length, 4)
+
+  const witnessed = nextCommit(f.witness, 'after lost refresh')
+  const received = nextCommit(socket, 'after lost refresh')
+  const external = await f.commitExternal('after lost refresh')
+  assert.deepEqual(await witnessed, external)
+  assert.deepEqual(await received, external)
+  await waitFor(s.commands, rows => rows.some(row => row.id === external.id), 'record after failed refresh')
+  assert.deepEqual(s.commands.value, [external, baseline])
+  assert.equal(s.hasLoaded.value, true)
+  assert.equal(s.journalRefreshFailed.value, true)
+  assert.equal(s.lastJournalRefreshAt.value, now)
+  assert.equal(s.error.value, failedError)
+  assert.deepEqual(authority(), retainedAuthority)
+  assert.equal(s.ticket.value, held)
+  assert.equal(s.realtimeStatus.value, 'connected')
+  assert.equal(f.calls.length, 4, 'realtime reception sends no HTTP request or automatic list retry')
+  assert.equal(f.count('GET', '/v1/commands'), 2)
+
+  const beforeRecovery = database()
+  f.setLocalNow(now + 200)
+  f.tick()
+  await f.run('list')
+  assert.equal(s.hasLoaded.value, true)
+  assert.equal(s.journalRefreshFailed.value, false)
+  assert.equal(s.lastJournalRefreshAt.value, now + 200)
+  assert.equal(s.error.value, '')
+  const newest = f.db.prepare('SELECT id, command, committed_at FROM commands ORDER BY seq DESC LIMIT 100')
+    .all().map(row => ({ ...row }))
+  assert.deepEqual(newest, [external, baseline])
+  assert.deepEqual(s.commands.value, newest)
+  assert.equal(new Set(s.commands.value.map(row => row.id)).size, s.commands.value.length)
+  assert.deepEqual(database(), beforeRecovery)
+  assert.deepEqual(authority(), retainedAuthority)
+  assert.equal(s.ticket.value, held)
+  assert.equal(f.losses, 2)
+  assert.equal(f.count('GET', '/v1/commands'), 3)
+  assert.deepEqual(f.calls, [
+    { path: '/v1/tickets', method: 'POST', status: 201 },
+    { path: `/v1/tickets/${held.id}`, method: 'DELETE', status: 200 },
+    { path: '/v1/commands', method: 'GET', status: 200 },
+    { path: '/v1/commands', method: 'GET', status: 200 },
+    { path: '/v1/commands', method: 'GET', status: 200 },
+  ])
 })
 
 test('live realtime: token replacement isolates a held real list from a newer explicit request', { timeout: 20000 }, async t => {
