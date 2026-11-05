@@ -1,4 +1,5 @@
 import hashlib
+import subprocess
 import unittest
 from unittest.mock import patch
 from pathlib import Path
@@ -8,6 +9,7 @@ from pvc_validate import (
     _dependency_graph_digest,
     _ordering_approval_digest,
     _repository_identity,
+    _run_dependency_audit,
     evaluate_g0,
     evaluate_g1,
     evaluate_g2,
@@ -772,6 +774,12 @@ class G8Tests(unittest.TestCase):
             "dependency_audit_config_present": True,
             "security_workflow_present": True,
         }
+        self.dependency_audit = {
+            "result": "PASS",
+            "source_revision": "abc123",
+            "source_tree_clean": True,
+            "output_sha256": "f" * 64,
+        }
 
     def checklist(self, status="PASS", evidence=None):
         reference = evidence or f"Cargo.lock@{hashlib.sha256(Path('Cargo.lock').read_bytes()).hexdigest()}"
@@ -790,6 +798,7 @@ class G8Tests(unittest.TestCase):
             "threat_model_artifact": self.threat_artifact,
             "prior_gates": self.prior_gates,
             "security_environment": self.environment,
+            "dependency_audit": self.dependency_audit,
         }
         arguments.update(overrides)
         return evaluate_g8(**arguments)
@@ -851,6 +860,43 @@ class G8Tests(unittest.TestCase):
         environment = {**self.environment, "dependency_audit_available": False}
         result, _ = self.evaluate(security_environment=environment)
         self.assertEqual(result["result"], "HOLD")
+
+    def test_dependency_audit_must_pass_for_current_revision(self):
+        audit = {**self.dependency_audit, "source_revision": "stale"}
+        result, _ = self.evaluate(dependency_audit=audit)
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
+    def test_dependency_audit_failure_fails_gate(self):
+        audit = {**self.dependency_audit, "result": "FAIL"}
+        result, _ = self.evaluate(dependency_audit=audit)
+        self.assertEqual(result["result"], "FAIL")
+
+    @patch("pvc_validate.shutil.which", return_value="/usr/bin/cargo-audit")
+    @patch(
+        "pvc_validate.subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            args=["cargo", "audit", "--locked"], returncode=0, stdout="clean\n", stderr=""
+        ),
+    )
+    def test_dependency_audit_runner_records_success_digest(self, _run, _which):
+        evidence = _run_dependency_audit("abc123", True, "run-1")
+        self.assertEqual(evidence["result"], "PASS")
+        self.assertEqual(evidence["source_revision"], "abc123")
+        self.assertTrue(evidence["output_sha256"])
+
+    @patch("pvc_validate.shutil.which", return_value="/usr/bin/cargo-audit")
+    @patch(
+        "pvc_validate.subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            args=["cargo", "audit", "--locked"],
+            returncode=1,
+            stdout="error: 1 vulnerability found\n",
+            stderr="",
+        ),
+    )
+    def test_dependency_audit_runner_fails_on_reported_vulnerability(self, _run, _which):
+        evidence = _run_dependency_audit("abc123", True, "run-1")
+        self.assertEqual(evidence["result"], "FAIL")
 
 
 if __name__ == "__main__":

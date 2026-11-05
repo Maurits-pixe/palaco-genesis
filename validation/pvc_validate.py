@@ -1391,6 +1391,7 @@ def evaluate_g8(
     threat_model_artifact: dict[str, str] | None,
     prior_gates: list[dict[str, Any]],
     security_environment: dict[str, Any],
+    dependency_audit: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     evidence: dict[str, Any] = {
         "source_revision": source_revision,
@@ -1398,6 +1399,7 @@ def evaluate_g8(
         "checklist": checklist_artifact,
         "threat_model": threat_model_artifact,
         "security_environment": security_environment,
+        "dependency_audit": dependency_audit,
         "controls": [],
     }
     if checklist_error == "missing":
@@ -1559,6 +1561,23 @@ def evaluate_g8(
             {"gate": "G8", "result": "HOLD", "findings": ["Cargo dependency-audit tooling is unavailable."]},
             evidence,
         )
+    if dependency_audit.get("result") != "PASS":
+        result = dependency_audit.get("result")
+        status = result if result in {"FAIL", "INCONCLUSIVE"} else "HOLD"
+        return (
+            {"gate": "G8", "result": status, "findings": [f"Cargo dependency audit is not PASS: {dependency_audit.get('finding', 'no successful audit evidence')}."]},
+            evidence,
+        )
+    if (
+        dependency_audit.get("source_revision") != source_revision
+        or dependency_audit.get("source_tree_clean") is not True
+        or not isinstance(dependency_audit.get("output_sha256"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", dependency_audit["output_sha256"])
+    ):
+        return (
+            {"gate": "G8", "result": "INCONCLUSIVE", "findings": ["Dependency-audit output is not bound to the clean evaluated revision."]},
+            evidence,
+        )
     if not security_environment.get("dependency_audit_config_present"):
         return (
             {"gate": "G8", "result": "HOLD", "findings": ["Dependency/supply-chain policy configuration is absent."]},
@@ -1598,6 +1617,64 @@ def _security_environment() -> dict[str, Any]:
         "dependency_audit_config_present": (ROOT / ".cargo-deny.toml").is_file(),
         "security_workflow_present": (ROOT / ".github/workflows/security.yml").is_file(),
     }
+
+
+def _run_dependency_audit(
+    source_revision: str | None,
+    source_tree_clean: bool,
+    run_id: str | None,
+) -> dict[str, Any]:
+    command = ["cargo", "audit", "--locked"]
+    evidence: dict[str, Any] = {
+        "command": command,
+        "result": "HOLD",
+        "exit_code": None,
+        "output_sha256": None,
+        "source_revision": source_revision,
+        "source_tree_clean": source_tree_clean,
+        "run_id": run_id,
+    }
+    if shutil.which("cargo-audit") is None:
+        evidence["finding"] = "cargo-audit is not installed"
+        return evidence
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except subprocess.TimeoutExpired as error:
+        output = error.stdout or ""
+        if isinstance(output, bytes):
+            output = output.decode("utf-8", errors="replace")
+        evidence["output_sha256"] = hashlib.sha256(output.encode("utf-8")).hexdigest()
+        evidence["result"] = "INCONCLUSIVE"
+        evidence["finding"] = "cargo audit exceeded 300 seconds"
+        return evidence
+    except OSError as error:
+        evidence["result"] = "INCONCLUSIVE"
+        evidence["finding"] = f"cargo audit could not run: {error}"
+        return evidence
+    output = completed.stdout + completed.stderr
+    evidence["exit_code"] = completed.returncode
+    evidence["output_sha256"] = hashlib.sha256(output.encode("utf-8")).hexdigest()
+    if completed.returncode == 0:
+        evidence["result"] = "PASS"
+        evidence["finding"] = "cargo audit completed successfully"
+    elif re.search(
+        r"\berror:\s*\d+\s+vulnerabilit(?:y|ies)\s+found\b",
+        output,
+        re.IGNORECASE,
+    ):
+        evidence["result"] = "FAIL"
+        evidence["finding"] = "cargo audit reported known vulnerabilities"
+    else:
+        evidence["result"] = "INCONCLUSIVE"
+        evidence["finding"] = f"cargo audit exited with {completed.returncode}"
+    return evidence
 
 
 def _read_artifact_text(path: Path) -> tuple[str | None, str | None]:
@@ -1898,6 +1975,11 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
     threat_model_text, threat_model_error = _read_artifact_text(G8_THREAT_MODEL_PATH)
     checklist_artifact = _artifact(G8_CHECKLIST_PATH)
     threat_model_artifact = _artifact(G8_THREAT_MODEL_PATH)
+    dependency_audit = _run_dependency_audit(
+        revision or None,
+        not dirty,
+        os.environ.get("GITHUB_RUN_ID"),
+    )
     g8, security_validation = evaluate_g8(
         checklist_text,
         threat_model_text,
@@ -1909,6 +1991,7 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
         threat_model_artifact,
         [g0, g1, g2, g3, g4, g5, g6, g7],
         _security_environment(),
+        dependency_audit,
     )
 
     report: dict[str, Any] = {
@@ -2081,6 +2164,10 @@ def render_markdown(report: dict[str, Any]) -> str:
             f"- Cargo audit available: `{environment['dependency_audit_available']}`",
             f"- Supply-chain config present: `{environment['dependency_audit_config_present']}`",
             f"- Dedicated security workflow present: `{environment['security_workflow_present']}`",
+            f"- Dependency audit: `{security['dependency_audit']['result']}`",
+            f"- Dependency audit command: `{' '.join(security['dependency_audit']['command'])}`",
+            f"- Dependency audit exit code: `{security['dependency_audit']['exit_code']}`",
+            f"- Dependency audit output SHA-256: `{security['dependency_audit']['output_sha256'] or 'unavailable'}`",
             "",
             "| Control | Status | Evidence | Verified digest |",
             "|---|---|---|---|",

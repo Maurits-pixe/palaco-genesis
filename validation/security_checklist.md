@@ -11,7 +11,7 @@ reviewer authentication.
 
 | Control | Status | Evidence |
 |---|---|---|
-| SEC-THREAT-MODEL | OPEN | release-registry/THREAT-MODEL.md |
+| SEC-THREAT-MODEL | OPEN | release-registry/THREAT-MODEL.md — does not explicitly identify PALACO Core Alpha scope |
 | SEC-SUPPLY-CHAIN | OPEN | - |
 | SEC-SECRETS-CONFIG | OPEN | - |
 | SEC-ADVERSARIAL | OPEN | - |
