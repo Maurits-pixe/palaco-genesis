@@ -37,6 +37,13 @@ jobs:
             echo "OK $script"
           done
 
+      - name: Validate Python script syntax
+        run: |
+          python -m py_compile .github/scripts/*.py
+          for script in .github/scripts/*.py; do
+            echo "OK $script"
+          done
+
       - name: Run shellcheck for workflow scripts
         run: |
           sudo apt-get update
