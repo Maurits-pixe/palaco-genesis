@@ -1711,9 +1711,14 @@ def evaluate_g9(
         )
     evidence["release_approval_claimed"] = fields["decision"] == "APPROVE"
 
-    if not source_revision or not expected_repository or source_tree_clean is not True:
+    if (
+        not source_revision
+        or not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", source_revision)
+        or not expected_repository
+        or source_tree_clean is not True
+    ):
         return (
-            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Release evidence is not bound to a clean repository and source revision."]},
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Release evidence is not bound to a clean repository and full immutable source object ID."]},
             evidence,
         )
     if fields["source_revision"] != source_revision:

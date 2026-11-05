@@ -914,7 +914,7 @@ class G9Tests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         self.addCleanup(self.temp_dir.cleanup)
-        self.source_revision = "abc123"
+        self.source_revision = "a" * 40
         self.repository = "Maurits-pixe/palaco-genesis"
         self.prior_gates = [{"gate": f"G{index}", "result": "PASS"} for index in range(9)]
         (self.root / "dist").mkdir()
@@ -1008,7 +1008,19 @@ class G9Tests(unittest.TestCase):
         self.assertEqual(result["result"], "FAIL")
 
     def test_stale_release_source_is_inconclusive(self):
-        result, _ = self.evaluate(release_text=self.checklist(source_revision="stale"))
+        result, _ = self.evaluate(release_text=self.checklist(source_revision="b" * 40))
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
+    def test_short_source_revision_is_not_immutable_evidence(self):
+        result, _ = self.evaluate(source_revision="abc123")
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
+    def test_uppercase_source_revision_is_not_canonical(self):
+        revision = "A" * 40
+        result, _ = self.evaluate(
+            source_revision=revision,
+            release_text=self.checklist(source_revision=revision),
+        )
         self.assertEqual(result["result"], "INCONCLUSIVE")
 
     def test_dirty_source_is_inconclusive(self):
