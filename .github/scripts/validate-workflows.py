@@ -110,6 +110,13 @@ def validate(path: Path) -> list[str]:
         errors.append(f"{path.name}: missing top-level on trigger block")
     elif isinstance(on_block, dict) and not on_block:
         errors.append(f"{path.name}: top-level on trigger mapping must not be empty")
+    elif isinstance(on_block, dict):
+        for trigger_name in on_block.keys():
+            if not isinstance(trigger_name, str) or not trigger_name.strip():
+                errors.append(
+                    f"{path.name}: top-level on trigger mapping keys must be non-empty strings"
+                )
+                break
     elif isinstance(on_block, list) and not on_block:
         errors.append(f"{path.name}: top-level on trigger list must not be empty")
     elif isinstance(on_block, list):
