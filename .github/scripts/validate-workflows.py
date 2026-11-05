@@ -53,6 +53,11 @@ def validate(path: Path) -> list[str]:
     top_env = data.get("env")
     if top_env is not None and not isinstance(top_env, dict):
         errors.append(f"{path.name}: top-level env must be a mapping when set")
+    elif isinstance(top_env, dict):
+        for env_key in top_env.keys():
+            if not isinstance(env_key, str) or not env_key.strip():
+                errors.append(f"{path.name}: top-level env keys must be non-empty strings")
+                break
 
     top_defaults = data.get("defaults")
     if top_defaults is not None and not isinstance(top_defaults, dict):
@@ -167,6 +172,11 @@ def validate(path: Path) -> list[str]:
         job_env = job.get("env")
         if job_env is not None and not isinstance(job_env, dict):
             errors.append(f"{path.name}:{job_name}: job env must be a mapping when set")
+        elif isinstance(job_env, dict):
+            for env_key in job_env.keys():
+                if not isinstance(env_key, str) or not env_key.strip():
+                    errors.append(f"{path.name}:{job_name}: job env keys must be non-empty strings")
+                    break
 
         job_defaults = job.get("defaults")
         if job_defaults is not None and not isinstance(job_defaults, dict):
@@ -362,6 +372,13 @@ def validate(path: Path) -> list[str]:
                 errors.append(
                     f"{path.name}:{job_name}:step#{idx + 1}: step env must be a mapping when set"
                 )
+            elif isinstance(step_env, dict):
+                for env_key in step_env.keys():
+                    if not isinstance(env_key, str) or not env_key.strip():
+                        errors.append(
+                            f"{path.name}:{job_name}:step#{idx + 1}: step env keys must be non-empty strings"
+                        )
+                        break
 
             step_with = step.get("with")
             if step_with is not None and not isinstance(step_with, dict):
