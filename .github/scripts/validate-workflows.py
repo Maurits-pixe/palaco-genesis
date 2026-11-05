@@ -783,6 +783,7 @@ def main() -> int:
                                             f"{path}: job '{job_name}' strategy.matrix.{matrix_list_key}[{matrix_index}]['{entry_key}'] must be a scalar (string, number, or boolean)"
                                         )
             job_needs = job.get("needs")
+            normalized_job_needs: set[str] = set()
             if isinstance(job_needs, str):
                 normalized_need = job_needs.strip()
                 if not normalized_need:
@@ -797,6 +798,8 @@ def main() -> int:
                     errors.append(
                         f"{path}: job '{job_name}' needs references unknown job '{normalized_need}'"
                     )
+                else:
+                    normalized_job_needs.add(normalized_need)
             elif isinstance(job_needs, list):
                 if not job_needs:
                     errors.append(
@@ -824,9 +827,18 @@ def main() -> int:
                         errors.append(
                             f"{path}: job '{job_name}' needs list must not contain duplicates"
                         )
+                    normalized_job_needs.update(normalized_needs)
             elif job_needs is not None:
                 errors.append(
                     f"{path}: job '{job_name}' needs must be a string or a list of strings"
+                )
+            if (
+                workflow_filename == "release.yml"
+                and job_name == "publish-release"
+                and "build-binaries" not in normalized_job_needs
+            ):
+                errors.append(
+                    f"{path}: job '{job_name}' must depend on 'build-binaries' via needs"
                 )
             job_if = job.get("if")
             if job_if is not None and (not isinstance(job_if, str) or not job_if.strip()):
