@@ -1737,7 +1737,8 @@ def evaluate_g9(
     invalid_gates = [
         gate["gate"]
         for gate in prior_gates
-        if gate.get("result") not in GATE_RESULTS
+        if not isinstance(gate.get("result"), str)
+        or gate["result"] not in GATE_RESULTS
     ]
     if invalid_gates:
         return (
@@ -1883,7 +1884,10 @@ def evaluate_g9(
         )
     if len(report_gates) == 10:
         report_g9 = report_gates[9]
-        if report_g9.get("result") not in GATE_RESULTS:
+        if (
+            not isinstance(report_g9.get("result"), str)
+            or report_g9["result"] not in GATE_RESULTS
+        ):
             return (
                 {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced evidence report has an unverifiable G9 result."]},
                 evidence,
@@ -1892,7 +1896,8 @@ def evaluate_g9(
     report_invalid = [
         gate["gate"]
         for gate in report_gates[:9]
-        if gate.get("result") not in GATE_RESULTS
+        if not isinstance(gate.get("result"), str)
+        or gate["result"] not in GATE_RESULTS
     ]
     if report_invalid:
         return (

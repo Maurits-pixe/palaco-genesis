@@ -1040,6 +1040,12 @@ class G9Tests(unittest.TestCase):
         result, _ = self.evaluate(prior_gates=gates)
         self.assertEqual(result["result"], "FAIL")
 
+    def test_unhashable_prior_gate_result_is_inconclusive(self):
+        gates = [*self.prior_gates]
+        gates[0] = {"gate": "G0", "result": []}
+        result, _ = self.evaluate(prior_gates=gates)
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
     def test_missing_artifact_holds(self):
         checklist = self.checklist().replace(
             self.file_reference("dist/palaco.tar"), f"dist/missing.tar@{'a' * 64}"
@@ -1104,9 +1110,22 @@ class G9Tests(unittest.TestCase):
         result, _ = self.evaluate(release_text=self.checklist())
         self.assertEqual(result["result"], "INCONCLUSIVE")
 
+    def test_evidence_report_g9_unhashable_result_is_inconclusive(self):
+        gates = [*self.prior_gates, {"gate": "G9", "result": []}]
+        self.write_report(gates=gates)
+        result, _ = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
     def test_unverifiable_evidence_report_gate_is_inconclusive(self):
         gates = [*self.prior_gates]
         gates[6] = {"gate": "G6", "result": "UNKNOWN"}
+        self.write_report(gates=gates)
+        result, _ = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
+    def test_evidence_report_unhashable_gate_result_is_inconclusive(self):
+        gates = [*self.prior_gates]
+        gates[6] = {"gate": "G6", "result": []}
         self.write_report(gates=gates)
         result, _ = self.evaluate(release_text=self.checklist())
         self.assertEqual(result["result"], "INCONCLUSIVE")
