@@ -2091,6 +2091,56 @@ def evaluate_g9(
             {"gate": "G9", "result": "HOLD", "findings": [f"Current or referenced prior gates are not all PASS: {blocked_gates}."]},
             evidence,
         )
+    current_scope_result = evaluate_g0(
+        scope_input,
+        expected_repository,
+        source_revision,
+        _workspace_components(),
+        not source_tree_clean,
+    )
+    current_graph_result = evaluate_g1(
+        graph_input, scope_input, source_revision
+    )
+    dependency_nodes, dependency_edges, dependency_error = _workspace_dependency_graph()
+    if dependency_error:
+        current_ordering_result, current_dependency_graph = evaluate_g2(
+            None, None, ordering_input
+        )
+    else:
+        current_ordering_result, current_dependency_graph = evaluate_g2(
+            dependency_nodes,
+            dependency_edges,
+            ordering_input,
+        )
+    current_plan_result, current_schedule = evaluate_g3(
+        graph_input,
+        plan_input,
+        source_revision,
+        current_graph_result["result"],
+        current_ordering_result["result"],
+    )
+    recomputed_gates = (
+        current_scope_result,
+        current_graph_result,
+        current_ordering_result,
+        current_plan_result,
+    )
+    if any(
+        report_gates[index].get("result") != recomputed["result"]
+        for index, recomputed in enumerate(recomputed_gates)
+    ):
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G0-G3 gate results do not match recomputation from the bound inputs and current workspace."]},
+            evidence,
+        )
+    if current_dependency_graph != dependency_graph or any(
+        schedule.get(key) != current_schedule.get(key)
+        for key in ("execution_layers", "topological_order", "plan_sha256")
+    ):
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G2/G3 derived evidence does not match recomputation from the bound inputs and current workspace."]},
+            evidence,
+        )
     evidence_keys = (
         "runtime_kernel_tests",
         "event_observability_tests",

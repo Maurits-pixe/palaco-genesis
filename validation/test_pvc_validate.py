@@ -943,17 +943,8 @@ class G9Tests(unittest.TestCase):
             "repository": self.repository,
             "revision": revision or self.source_revision,
             "artifacts": {},
-            "dependency_graph": {
-                "dependency_scope": "workspace-local dependencies across normal, build, and dev kinds",
-                "nodes": ["palaco-foundation"],
-                "edges": [],
-                "topological_order": ["palaco-foundation"],
-            },
-            "execution_schedule": {
-                "execution_layers": [["service"]],
-                "topological_order": ["service"],
-                "plan_sha256": "2" * 64,
-            },
+            "dependency_graph": {},
+            "execution_schedule": {},
             "architecture_compliance": {
                 "source_revision": revision or self.source_revision,
                 "system_graph_revision": revision or self.source_revision,
@@ -1036,13 +1027,13 @@ class G9Tests(unittest.TestCase):
             },
             "gates": report_gates,
         }
-        report["dependency_graph"]["sha256"] = _dependency_graph_digest(
-            report["dependency_graph"]
-        )
         graph_input = {
             "schema_version": 1,
             "revision": revision or self.source_revision,
-            "nodes": [],
+            "nodes": [
+                {"id": node, "kind": "service", "source_paths": ["validation/system_graph.json"]}
+                for node in ("service-a", "service-b")
+            ],
             "relation_kinds": {
                 "depends_on": {
                     "meaning": "dependency",
@@ -1050,17 +1041,31 @@ class G9Tests(unittest.TestCase):
                     "target_kinds": ["service"],
                 }
             },
-            "relations": [],
+            "relations": [
+                {"source": "service-b", "target": "service-a", "kind": "depends_on"}
+            ],
         }
         graph_input_digest = _canonical_sha256(graph_input)
-        plan_input = {
+        scope_input = {
             "schema_version": 1,
-            "source_revision": revision or self.source_revision,
-            "system_graph_sha256": graph_input_digest,
-            "planner": {"name": "fixture", "version": "1"},
-            "dependency_relation_kinds": ["depends_on"],
-            "steps": [],
+            "repository": self.repository,
+            "scope": "Test",
+            "required_components": ["palaco-foundation"],
+            "excluded_paths": [],
+            "required_graph_nodes": ["service-a", "service-b"],
+            "required_graph_relations": [
+                {"source": "service-b", "target": "service-a", "kind": "depends_on"}
+            ],
+            "graph_inventory_approval": {
+                "status": "approved",
+                "graph_revision": revision or self.source_revision,
+                "approved_by": "Graph Authority",
+                "decision_ref": "GRAPH-42",
+            },
         }
+        workspace_nodes = ["palaco-foundation"]
+        workspace_edges = []
+        _, dependency_graph = evaluate_g2(workspace_nodes, workspace_edges, None, "missing")
         startup_constraints = []
         shutdown_constraints = []
         approved_by = "Release Authority"
@@ -1068,9 +1073,9 @@ class G9Tests(unittest.TestCase):
         ordering_input = {
             "schema_version": 1,
             "status": "approved",
-            "graph_sha256": report["dependency_graph"]["sha256"],
+            "graph_sha256": dependency_graph["sha256"],
             "approval_sha256": _ordering_approval_digest(
-                report["dependency_graph"]["sha256"],
+                dependency_graph["sha256"],
                 startup_constraints,
                 shutdown_constraints,
                 approved_by,
@@ -1081,14 +1086,32 @@ class G9Tests(unittest.TestCase):
             "approved_by": approved_by,
             "decision_ref": decision_ref,
         }
+        _, dependency_graph = evaluate_g2(
+            workspace_nodes, workspace_edges, ordering_input
+        )
+        plan_input = {
+            "schema_version": 1,
+            "source_revision": revision or self.source_revision,
+            "system_graph_sha256": graph_input_digest,
+            "planner": {"name": "fixture", "version": "1"},
+            "dependency_relation_kinds": ["depends_on"],
+            "steps": [
+                {
+                    "id": "step-a",
+                    "graph_node": "service-a",
+                    "depends_on": [],
+                    "recovery_point": "recover-a",
+                },
+                {
+                    "id": "step-b",
+                    "graph_node": "service-b",
+                    "depends_on": ["step-a"],
+                    "recovery_point": "recover-b",
+                },
+            ],
+        }
         input_contents = {
-            "scope": {
-                "schema_version": 1,
-                "repository": self.repository,
-                "scope": "Test",
-                "required_components": ["palaco-foundation"],
-                "excluded_paths": [],
-            },
+            "scope": scope_input,
             "system_graph": graph_input,
             "system_graph_schema": {"type": "object"},
             "dependency_ordering": ordering_input,
@@ -1111,7 +1134,31 @@ class G9Tests(unittest.TestCase):
                 "path": f"validation/{key}.json",
                 "sha256": hashlib.sha256(artifact_path.read_bytes()).hexdigest(),
             }
+        report["dependency_graph"] = dependency_graph
         report["execution_schedule"]["plan_sha256"] = _canonical_sha256(plan_input)
+        g0_result = evaluate_g0(
+            scope_input,
+            self.repository,
+            revision or self.source_revision,
+            {"palaco-foundation"},
+            False,
+        )
+        g1_result = evaluate_g1(graph_input, scope_input, revision or self.source_revision)
+        g2_result, _ = evaluate_g2(workspace_nodes, workspace_edges, ordering_input)
+        g3_result, computed_schedule = evaluate_g3(
+            graph_input,
+            plan_input,
+            revision or self.source_revision,
+            g1_result["result"],
+            g2_result["result"],
+        )
+        report["execution_schedule"] = computed_schedule
+        report["gates"][:4] = [
+            g0_result,
+            g1_result,
+            g2_result,
+            g3_result,
+        ]
         report["architecture_compliance"]["system_graph_sha256"] = graph_input_digest
         report["integrated_validation"]["execution_plan_sha256"] = report[
             "execution_schedule"
@@ -1147,6 +1194,15 @@ class G9Tests(unittest.TestCase):
         }
         (self.root / "dist/attestation.json").write_text(json.dumps(attestation), encoding="utf-8")
 
+    def update_report(self, report):
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        attestation_path = self.root / "dist/attestation.json"
+        attestation = json.loads(attestation_path.read_text(encoding="utf-8"))
+        attestation["evidence_report_sha256"] = hashlib.sha256(
+            self.report_path.read_bytes()
+        ).hexdigest()
+        attestation_path.write_text(json.dumps(attestation), encoding="utf-8")
+
     def file_reference(self, relative_path):
         path = self.root / relative_path
         return f"{relative_path}@{hashlib.sha256(path.read_bytes()).hexdigest()}"
@@ -1177,7 +1233,20 @@ class G9Tests(unittest.TestCase):
             "release_evidence_root": self.root,
         }
         arguments.update(overrides)
-        return evaluate_g9(**arguments)
+        dependency_graph = arguments.pop(
+            "_dependency_graph", (["palaco-foundation"], [], None)
+        )
+        with (
+            patch(
+                "pvc_validate._workspace_components",
+                return_value={"palaco-foundation"},
+            ),
+            patch(
+                "pvc_validate._workspace_dependency_graph",
+                return_value=dependency_graph,
+            ),
+        ):
+            return evaluate_g9(**arguments)
 
     def test_release_eligibility_requires_bound_evidence_and_decision_claim(self):
         result, evidence = self.evaluate()
@@ -1409,25 +1478,58 @@ class G9Tests(unittest.TestCase):
         self.assertEqual(result["result"], "INCONCLUSIVE")
         self.assertFalse(evidence["release_eligible"])
 
-    def test_evidence_report_allows_valid_parallel_layer_ordering(self):
+    def test_evidence_report_schedule_must_match_bound_execution_plan(self):
         report = json.loads(self.report_path.read_text(encoding="utf-8"))
         report["execution_schedule"]["execution_layers"] = [["a", "z"], ["b"]]
         report["execution_schedule"]["topological_order"] = ["a", "b", "z"]
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
-        attestation_path = self.root / "dist/attestation.json"
-        attestation = json.loads(attestation_path.read_text(encoding="utf-8"))
-        attestation["evidence_report_sha256"] = hashlib.sha256(
-            self.report_path.read_bytes()
-        ).hexdigest()
-        attestation_path.write_text(json.dumps(attestation), encoding="utf-8")
         result, evidence = self.evaluate(release_text=self.checklist())
-        self.assertEqual(result["result"], "PASS")
-        self.assertTrue(evidence["release_eligible"])
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
 
     def test_evidence_report_architecture_revision_must_match(self):
         report = json.loads(self.report_path.read_text(encoding="utf-8"))
         report["architecture_compliance"]["system_graph_revision"] = "stale"
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_g1_result_is_recomputed_from_scope_inventory(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        scope_path = self.root / report["artifacts"]["scope"]["path"]
+        scope = json.loads(scope_path.read_text(encoding="utf-8"))
+        scope["required_graph_nodes"].append("unlisted-service")
+        scope_path.write_text(json.dumps(scope), encoding="utf-8")
+        scope_digest = hashlib.sha256(scope_path.read_bytes()).hexdigest()
+        report["artifacts"]["scope"]["sha256"] = scope_digest
+        report["integrated_validation"]["scope_sha256"] = scope_digest
+        self.update_report(report)
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_g2_result_is_recomputed_from_workspace(self):
+        result, evidence = self.evaluate(
+            release_text=self.checklist(),
+            _dependency_graph=(["different-package"], [], None),
+        )
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_g3_result_is_recomputed_from_execution_plan(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        plan_path = self.root / report["artifacts"]["execution_plan"]["path"]
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        plan["steps"].pop()
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        report["artifacts"]["execution_plan"]["sha256"] = hashlib.sha256(
+            plan_path.read_bytes()
+        ).hexdigest()
+        plan_digest = _canonical_sha256(plan)
+        report["execution_schedule"]["plan_sha256"] = plan_digest
+        report["integrated_validation"]["execution_plan_sha256"] = plan_digest
+        self.update_report(report)
         result, evidence = self.evaluate(release_text=self.checklist())
         self.assertEqual(result["result"], "INCONCLUSIVE")
         self.assertFalse(evidence["release_eligible"])
