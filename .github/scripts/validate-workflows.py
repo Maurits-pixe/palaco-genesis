@@ -29,6 +29,11 @@ def iter_uses(step: dict):
     return None
 
 
+def collect_workflow_files(path: Path) -> list[Path]:
+    workflow_files = {wf for pattern in ("*.yml", "*.yaml") for wf in path.glob(pattern)}
+    return sorted(workflow_files)
+
+
 def validate(path: Path) -> list[str]:
     errors: list[str] = []
     try:
@@ -221,13 +226,13 @@ def main() -> int:
     if target_path.is_file():
         workflow_files = [target_path]
     elif target_path.is_dir():
-        workflow_files = sorted(target_path.glob("*.yml"))
+        workflow_files = collect_workflow_files(target_path)
     else:
         print(f"Path not found: {target_path}")
         return 1
 
     if not workflow_files:
-        print("No workflow files found.")
+        print("No workflow files found (*.yml or *.yaml).")
         return 1
 
     all_errors: list[str] = []
