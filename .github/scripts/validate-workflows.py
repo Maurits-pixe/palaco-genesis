@@ -380,6 +380,15 @@ def main() -> int:
                         f"{path}: job '{job_name}' strategy must be a mapping when provided"
                     )
                 else:
+                    unsupported_strategy_keys = set(job_strategy.keys()) - {
+                        "fail-fast",
+                        "max-parallel",
+                        "matrix",
+                    }
+                    if unsupported_strategy_keys:
+                        errors.append(
+                            f"{path}: job '{job_name}' strategy has unsupported keys: {sorted(unsupported_strategy_keys)}"
+                        )
                     strategy_fail_fast = job_strategy.get("fail-fast")
                     if strategy_fail_fast is not None and type(strategy_fail_fast) is not bool:
                         errors.append(
