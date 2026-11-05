@@ -120,6 +120,23 @@ def validate(path: Path) -> list[str]:
         if job_env is not None and not isinstance(job_env, dict):
             errors.append(f"{path.name}:{job_name}: job env must be a mapping when set")
 
+        job_outputs = job.get("outputs")
+        if job_outputs is not None:
+            if not isinstance(job_outputs, dict):
+                errors.append(f"{path.name}:{job_name}: job outputs must be a mapping when set")
+            else:
+                for output_name, output_value in job_outputs.items():
+                    if not isinstance(output_name, str) or not output_name.strip():
+                        errors.append(
+                            f"{path.name}:{job_name}: output names must be non-empty strings"
+                        )
+                        break
+                    if not isinstance(output_value, str) or not output_value.strip():
+                        errors.append(
+                            f"{path.name}:{job_name}: output values must be non-empty strings"
+                        )
+                        break
+
         needs = job.get("needs")
         if needs is not None:
             if isinstance(needs, str):
