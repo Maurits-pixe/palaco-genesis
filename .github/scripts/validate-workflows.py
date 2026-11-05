@@ -22,6 +22,34 @@ def validate_env_mapping(
             errors.append(f"{path}: {scope} env value for '{key}' must be a string")
 
 
+def validate_defaults_run(
+    errors: list[str], path: str, scope: str, defaults_value: object
+) -> None:
+    if defaults_value is None:
+        return
+    if not isinstance(defaults_value, dict):
+        errors.append(f"{path}: {scope} defaults must be a mapping when provided")
+        return
+    run_defaults = defaults_value.get("run")
+    if run_defaults is None:
+        return
+    if not isinstance(run_defaults, dict):
+        errors.append(f"{path}: {scope} defaults.run must be a mapping when provided")
+        return
+    run_working_directory = run_defaults.get("working-directory")
+    if run_working_directory is not None and (
+        not isinstance(run_working_directory, str) or not run_working_directory.strip()
+    ):
+        errors.append(
+            f"{path}: {scope} defaults.run.working-directory must be a non-empty string when provided"
+        )
+    run_shell = run_defaults.get("shell")
+    if run_shell is not None and (not isinstance(run_shell, str) or not run_shell.strip()):
+        errors.append(
+            f"{path}: {scope} defaults.run.shell must be a non-empty string when provided"
+        )
+
+
 def main() -> int:
     files = sorted(glob.glob(".github/workflows/*.yml"))
     errors: list[str] = []
@@ -43,6 +71,7 @@ def main() -> int:
             workflow_name_to_paths.setdefault(normalized_name, []).append(path)
 
         validate_env_mapping(errors, path, "workflow", data.get("env"))
+        validate_defaults_run(errors, path, "workflow", data.get("defaults"))
 
         trigger_config = data.get("on", data.get(True))
         if trigger_config is None:
@@ -332,6 +361,7 @@ def main() -> int:
                 )
 
             validate_env_mapping(errors, path, f"job '{job_name}'", job.get("env"))
+            validate_defaults_run(errors, path, f"job '{job_name}'", job.get("defaults"))
 
             runs_on = job.get("runs-on")
             if runs_on != "ubuntu-latest":
