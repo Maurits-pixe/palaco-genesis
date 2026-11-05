@@ -324,6 +324,106 @@ async function fixture(t, { realtime = false, fault = () => {} } = {}) {
   }
 }
 
+for (const { label, command, length, error } of [
+  { label: 'whitespace-only', command: ' \t\n\u00a0', length: 4, error: /Vul een commando/ },
+  { label: 'ASCII 1025', command: 'a'.repeat(1025), length: 1025, error: /maximaal 1024 UTF-16/ },
+  { label: 'emoji 513', command: '😀'.repeat(513), length: 1026, error: /maximaal 1024 UTF-16/ },
+]) {
+  test(`live service: ${label} is rejected before HTTP without changing the draft`, { timeout: 15000 }, async t => {
+    const f = await fixture(t)
+    const s = f.session
+    assert.equal(command.length, length)
+    s.command.value = command
+    assert.equal(s.canRequestTicket.value, false)
+
+    await f.run('ticket')
+    assert.match(s.error.value, error)
+    const assertUnchanged = () => {
+      assert.equal(s.command.value, command)
+      assert.equal(s.ticket.value, null)
+      assert.equal(s.canRequestTicket.value, false)
+      assert.equal(s.canCommit.value, false)
+      assert.deepEqual(f.calls, [], 'production API validation must reject before HTTP')
+      for (const table of ['tickets', 'commands', 'audit']) {
+        assert.deepEqual(f.db.prepare(`SELECT * FROM ${table}`).all(), [])
+      }
+    }
+    assertUnchanged()
+    f.tick()
+    await Promise.resolve()
+    assertUnchanged()
+  })
+}
+
+for (const { label, command } of [
+  { label: 'ASCII 1024 with whitespace and markup', command: ` \t<note>${'a'.repeat(1007)}</note>\n ` },
+  { label: 'emoji 512', command: '😀'.repeat(512) },
+]) {
+  test(`live service: ${label} round trips exactly once through ticket, commit and status`, { timeout: 15000 }, async t => {
+    const f = await fixture(t)
+    const s = f.session
+    assert.equal(command.length, 1024)
+    s.command.value = command
+    assert.equal(s.canRequestTicket.value, true)
+    f.tick()
+    assert.deepEqual(f.calls, [], 'a valid draft does not automatically request a ticket')
+
+    await f.run('ticket')
+    assert.equal(s.error.value, '')
+    const issued = { ...s.ticket.value }
+    assert.equal(issued.command, command)
+    assert.equal(s.command.value, command)
+    assert.equal(s.canCommit.value, true)
+    assert.deepEqual(f.db.prepare('SELECT id, command, consumed FROM tickets').all().map(row => ({ ...row })), [
+      { id: issued.id, command, consumed: 0 },
+    ])
+
+    await f.run('commit')
+    assert.equal(s.error.value, '')
+    assert.equal(s.ticket.value, null)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.lastSubmissionId.value, issued.id)
+    assert.equal(s.commands.value.length, 1)
+    const record = { ...s.commands.value[0] }
+    assert.deepEqual(record, { id: record.id, command, committed_at: now })
+    const assertPersisted = () => {
+      assert.equal(s.command.value, command)
+      assert.deepEqual(s.commands.value, [record])
+      assert.deepEqual(f.db.prepare('SELECT * FROM commands').all().map(row => ({ ...row })), [
+        { seq: 1, ...record, ticket_id: issued.id },
+      ])
+      assert.deepEqual(f.db.prepare('SELECT id, command, consumed FROM tickets').all().map(row => ({ ...row })), [
+        { id: issued.id, command, consumed: 1 },
+      ])
+      assert.deepEqual(f.db.prepare('SELECT * FROM audit').all().map(row => ({ ...row })), [
+        { id: 1, ticket_id: issued.id, subject: 'local-admin', action: 'journal:append', checked_at: now },
+      ])
+    }
+    assertPersisted()
+    f.tick()
+    assert.deepEqual(f.calls, [
+      { path: '/v1/tickets', method: 'POST', status: 201 },
+      { path: '/v1/commands', method: 'POST', status: 201 },
+    ])
+
+    await bounded(s.checkLastSubmission(), 'boundary command committed status')
+    assert.equal(s.error.value, '')
+    assert.deepEqual(s.outcome.value, {
+      ...issued, checked_at: now, status: 'committed', revoked: false, record,
+    })
+    assert.equal(s.ticket.value, null)
+    assert.equal(s.canCommit.value, false)
+    f.tick()
+    await Promise.resolve()
+    assertPersisted()
+    assert.deepEqual(f.calls, [
+      { path: '/v1/tickets', method: 'POST', status: 201 },
+      { path: '/v1/commands', method: 'POST', status: 201 },
+      { path: `/v1/tickets/${issued.id}`, method: 'GET', status: 200 },
+    ], 'one issuance, one commit and one explicit status request; no automatic retry')
+  })
+}
+
 test('live service: lost issuance persists one active ticket but never grants local authority or retries', { timeout: 15000 }, async t => {
   const f = await fixture(t)
   const s = f.session

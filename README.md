@@ -202,6 +202,10 @@ meer dan 1024 UTF-16-tekeneenheden (een emoji telt meestal als twee).
 Een leeg veld blijft neutraal en verplicht. De interface past de tekst niet
 aan: geldige begin- en eindspaties blijven deel van de exacte ticketbinding.
 Invoerfeedback verstuurt geen verzoek en herstelt geen lokaal ticket.
+Live HTTP/SQLite-tests controleren ook de commandogrens: tekst van exact
+1024 UTF-16-eenheden, waaronder 512 emoji’s, wordt ongewijzigd vastgelegd
+en via de ticketstatus teruggelezen. Alleen witruimte en tekst boven die
+grens worden lokaal afgewezen zonder HTTP-verzoek of databasewijziging.
 Live HTTP/SQLite-tests controleren dat ongeldige duur lokaal wordt afgewezen
 zonder verzoek, en dat de grenzen van 1 en 60000 ms worden geaccepteerd.
 Op de exacte serververvaltijd wordt vastlegging geweigerd, ook wanneer de
