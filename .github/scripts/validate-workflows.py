@@ -355,7 +355,7 @@ def main() -> int:
             if not isinstance(steps, list):
                 errors.append(f"{path}: job '{job_name}' steps must be a list")
                 continue
-
+            step_display_name_to_indexes: dict[str, list[int]] = {}
             for step_index, step in enumerate(steps):
                 if not isinstance(step, dict):
                     continue
@@ -364,6 +364,11 @@ def main() -> int:
                     errors.append(
                         f"{path}: job '{job_name}' step #{step_index} must define a non-empty name"
                     )
+                else:
+                    normalized_step_name = step_name.strip()
+                    step_display_name_to_indexes.setdefault(
+                        normalized_step_name, []
+                    ).append(step_index)
                 if step.get("continue-on-error") is True:
                     errors.append(
                         f"{path}: job '{job_name}' step #{step_index} must not set continue-on-error to true"
@@ -405,6 +410,11 @@ def main() -> int:
                         errors.append(
                             f"{path}: job '{job_name}' checkout step #{step_index} must set with.persist-credentials to false"
                         )
+            for step_display_name, step_indexes in step_display_name_to_indexes.items():
+                if len(step_indexes) > 1:
+                    errors.append(
+                        f"{path}: job '{job_name}' step name '{step_display_name}' must be unique within the job (used at indexes: {step_indexes})"
+                    )
 
         for display_name, job_ids in job_display_name_to_ids.items():
             if len(job_ids) > 1:
