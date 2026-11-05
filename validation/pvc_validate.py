@@ -2208,22 +2208,40 @@ def _run_g7_integration_tests() -> tuple[str | None, int | None, str | None]:
 
 
 def _artifact(path: Path) -> dict[str, str] | None:
-    if not path.is_file():
-        return None
     try:
+        if not path.is_file():
+            return None
         return {"path": path.relative_to(ROOT).as_posix(), "sha256": digest(path)}
-    except (OSError, ValueError):
+    except (OSError, RuntimeError, ValueError):
         return {"path": str(path), "sha256": "unavailable"}
 
 
 def _artifact_in_directory(path: Path, directory: Path) -> dict[str, str] | None:
-    if not path.is_file():
-        return None
     try:
+        if not path.is_file():
+            return None
         relative_path = path.resolve().relative_to(directory.resolve()).as_posix()
         return {"path": relative_path, "sha256": digest(path)}
     except (OSError, RuntimeError, ValueError):
         return None
+
+
+def _resolve_release_evidence_dir(path: Path) -> tuple[Path | None, str | None]:
+    try:
+        evidence_root = path.resolve(strict=True)
+        repository_root = ROOT.resolve(strict=True)
+        if not evidence_root.is_dir():
+            return None, "release evidence path is not a directory"
+        if evidence_root != repository_root:
+            try:
+                repository_root.relative_to(evidence_root)
+            except ValueError:
+                pass
+            else:
+                return None, "release evidence directory must not contain the repository root"
+        return evidence_root, None
+    except (OSError, RuntimeError) as error:
+        return None, f"release evidence directory could not be resolved: {error}"
 
 
 def build_report(
@@ -2350,21 +2368,32 @@ def build_report(
         _security_environment(),
         dependency_audit,
     )
-    release_evidence_dir = release_evidence_dir.resolve()
+    resolved_release_evidence_dir, release_root_error = _resolve_release_evidence_dir(
+        release_evidence_dir
+    )
+    release_evidence_dir = resolved_release_evidence_dir or ROOT.resolve()
     release_checklist_path = (
         G9_RELEASE_PATH
         if release_evidence_dir == ROOT.resolve()
         else release_evidence_dir / "validation/release_validation.md"
     )
-    if not release_checklist_path.is_file():
-        release_text, release_error = None, "missing"
+    if release_root_error:
+        release_text, release_error = None, release_root_error
     else:
         try:
-            release_checklist_path.resolve().relative_to(release_evidence_dir)
-        except ValueError:
-            release_text, release_error = None, "release checklist escapes the evidence directory"
+            checklist_exists = release_checklist_path.is_file()
+        except (OSError, RuntimeError, ValueError) as error:
+            release_text, release_error = None, f"release checklist could not be inspected: {error}"
         else:
-            release_text, release_error = _read_artifact_text(release_checklist_path)
+            if not checklist_exists:
+                release_text, release_error = None, "missing"
+            else:
+                try:
+                    release_checklist_path.resolve().relative_to(release_evidence_dir)
+                except (OSError, RuntimeError, ValueError) as error:
+                    release_text, release_error = None, f"release checklist path is invalid: {error}"
+                else:
+                    release_text, release_error = _read_artifact_text(release_checklist_path)
     if release_evidence_dir == ROOT.resolve():
         release_artifact = _artifact(release_checklist_path)
     else:
@@ -2620,7 +2649,7 @@ def main() -> int:
         args.scope.resolve(),
         args.graph.resolve(),
         args.output_dir.resolve(),
-        args.release_evidence_dir.resolve() if args.release_evidence_dir else ROOT,
+        args.release_evidence_dir if args.release_evidence_dir else ROOT,
     )
     for gate in report["gates"]:
         print(f"{gate['gate']}: {gate['result']}")

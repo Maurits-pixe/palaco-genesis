@@ -13,6 +13,7 @@ from pvc_validate import (
     _dependency_graph_digest,
     _ordering_approval_digest,
     _repository_identity,
+    _resolve_release_evidence_dir,
     _run_dependency_audit,
     digest,
     evaluate_g0,
@@ -1171,6 +1172,35 @@ class G9Tests(unittest.TestCase):
         self.assertEqual(result["result"], "PASS")
         self.assertTrue(evidence["release_eligible"])
 
+    def test_release_evidence_root_must_be_a_directory(self):
+        file_path = self.root / "dist/palaco.tar"
+        resolved, error = _resolve_release_evidence_dir(file_path)
+        self.assertIsNone(resolved)
+        self.assertEqual(error, "release evidence path is not a directory")
+
+    def test_release_evidence_root_cannot_be_repository_ancestor(self):
+        with patch("pvc_validate.ROOT", self.root / "checkout"):
+            (self.root / "checkout").mkdir()
+            resolved, error = _resolve_release_evidence_dir(self.root)
+        self.assertIsNone(resolved)
+        self.assertEqual(
+            error, "release evidence directory must not contain the repository root"
+        )
+
+    def test_external_release_evidence_root_is_resolved(self):
+        bundle = self.root / "external-bundle"
+        bundle.mkdir()
+        resolved, error = _resolve_release_evidence_dir(bundle)
+        self.assertEqual(resolved, bundle.resolve())
+        self.assertIsNone(error)
+
+    def test_unresolvable_release_evidence_root_returns_error(self):
+        loop = self.root / "root-loop"
+        loop.symlink_to("root-loop")
+        resolved, error = _resolve_release_evidence_dir(loop)
+        self.assertIsNone(resolved)
+        self.assertIn("could not be resolved", error)
+
     def test_external_checklist_artifact_has_relative_path_and_digest(self):
         bundle = self.root / "external-bundle"
         checklist = bundle / "validation/release_validation.md"
@@ -1187,6 +1217,13 @@ class G9Tests(unittest.TestCase):
         outside.write_text(self.checklist(), encoding="utf-8")
         checklist = bundle / "validation/release_validation.md"
         checklist.symlink_to(outside)
+        self.assertIsNone(_artifact_in_directory(checklist, bundle))
+
+    def test_external_checklist_symlink_loop_is_ignored(self):
+        bundle = self.root / "external-bundle"
+        (bundle / "validation").mkdir(parents=True)
+        checklist = bundle / "validation/release_validation.md"
+        checklist.symlink_to("release_validation.md")
         self.assertIsNone(_artifact_in_directory(checklist, bundle))
 
     def test_attestation_artifact_mismatch_fails(self):
