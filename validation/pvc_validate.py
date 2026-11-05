@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate revision-bound G0-G6 evidence for PVC-001."""
+"""Generate revision-bound G0-G7 evidence for PVC-001."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ GRAPH_SCHEMA_PATH = ROOT / "validation/system-graph.schema.json"
 ORDERING_PATH = ROOT / "validation/dependency-ordering.json"
 PLAN_PATH = ROOT / "validation/execution-plan.json"
 PLAN_SCHEMA_PATH = ROOT / "validation/execution-plan.schema.json"
-VALIDATOR_VERSION = "0.7.0"
+VALIDATOR_VERSION = "0.8.0"
 G6_RULESET_VERSION = "1.0.0"
 NODE_KINDS = {"service", "capability", "resource", "lifecycle", "event"}
 G4_SCENARIOS = {
@@ -45,6 +45,7 @@ G5_SCENARIOS = {
     "observatory_snapshot_does_not_change_runtime_authority_state",
     "action_flow_requires_authorization",
 }
+G7_SCENARIOS = G4_SCENARIOS | G5_SCENARIOS
 
 
 def digest(path: Path) -> str:
@@ -1179,6 +1180,196 @@ def evaluate_g6(
     )
 
 
+def evaluate_g7(
+    test_output: str | None,
+    exit_code: int | None,
+    prior_gates: list[dict[str, Any]],
+    source_revision: str | None,
+    source_tree_clean: bool | None,
+    repository: str | None,
+    scope_manifest: dict[str, Any] | None,
+    scope_artifact: dict[str, str] | None,
+    g4_evidence: dict[str, Any],
+    g5_evidence: dict[str, Any],
+    g6_evidence: dict[str, Any],
+    system_graph_artifact: dict[str, str] | None,
+    dependency_graph: dict[str, Any],
+    execution_schedule: dict[str, Any],
+    error: str | None = None,
+    run_id: str | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    command = ["cargo", "test", "--locked", "--workspace"]
+    evidence: dict[str, Any] = {
+        "command": command,
+        "exit_code": exit_code,
+        "source_revision": source_revision,
+        "source_tree_clean": source_tree_clean,
+        "repository": repository,
+        "scope": scope_manifest.get("scope") if isinstance(scope_manifest, dict) else None,
+        "scope_sha256": scope_artifact.get("sha256") if scope_artifact else None,
+        "run_id": run_id,
+        "output_sha256": hashlib.sha256((test_output or "").encode("utf-8")).hexdigest()
+        if test_output is not None
+        else None,
+        "reconciled_gates": [],
+        "reconciliation": [],
+        "scenarios": [],
+    }
+
+    pattern = re.compile(
+        r"^test (?:[\w]+::)*tests::("
+        + "|".join(sorted(G7_SCENARIOS))
+        + r") \.\.\. (ok|FAILED)$",
+        re.MULTILINE,
+    )
+    observed = (
+        {match.group(1): match.group(2) for match in pattern.finditer(test_output)}
+        if test_output is not None
+        else {}
+    )
+    evidence["scenarios"] = [
+        {"name": name, "result": observed.get(name, "missing")}
+        for name in sorted(G7_SCENARIOS)
+    ]
+
+    failed_scenarios = sorted(name for name, result in observed.items() if result != "ok")
+    missing_scenarios = sorted(G7_SCENARIOS - observed.keys())
+    if error or (test_output is None or exit_code is None):
+        return (
+            {"gate": "G7", "result": "HOLD", "findings": [f"Integrated test evidence is unavailable: {error or 'no test output'}"]},
+            evidence,
+        )
+    if exit_code != 0 or failed_scenarios:
+        findings = [f"Integrated workspace tests failed (exit code {exit_code})."]
+        if failed_scenarios:
+            findings.append(f"Failed fail-closed scenarios: {failed_scenarios}.")
+        return {"gate": "G7", "result": "FAIL", "findings": findings}, evidence
+    if missing_scenarios:
+        return (
+            {"gate": "G7", "result": "HOLD", "findings": [f"Integrated fail-closed scenarios are missing: {missing_scenarios}."]},
+            evidence,
+        )
+
+    expected_names = [f"G{index}" for index in range(7)]
+    actual_names = [
+        gate.get("gate") if isinstance(gate, dict) else None for gate in prior_gates
+    ]
+    if actual_names != expected_names:
+        return (
+            {"gate": "G7", "result": "HOLD", "findings": ["Consolidated evidence must contain exactly one ordered result for every gate G0-G6."]},
+            evidence,
+        )
+    evidence["reconciled_gates"] = [
+        {"gate": gate["gate"], "result": gate.get("result")} for gate in prior_gates
+    ]
+    failed_gates = [
+        gate["gate"] for gate in prior_gates if gate.get("result") == "FAIL"
+    ]
+    if failed_gates:
+        return (
+            {"gate": "G7", "result": "FAIL", "findings": [f"Prior mandatory gates failed and remain unresolved: {failed_gates}."]},
+            evidence,
+        )
+    blocked_gates = [
+        gate["gate"] for gate in prior_gates if gate.get("result") != "PASS"
+    ]
+    if blocked_gates:
+        return (
+            {"gate": "G7", "result": "HOLD", "findings": [f"Prior gates are not all PASS: {blocked_gates}."]},
+            evidence,
+        )
+
+    if (
+        not source_revision
+        or not isinstance(repository, str)
+        or not repository
+        or not isinstance(scope_manifest, dict)
+        or not isinstance(scope_manifest.get("repository"), str)
+        or not scope_manifest["repository"]
+        or not isinstance(scope_manifest.get("scope"), str)
+        or not scope_manifest["scope"]
+        or scope_manifest["repository"].casefold() != repository.casefold()
+        or not isinstance(scope_artifact, dict)
+        or not isinstance(scope_artifact.get("sha256"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", scope_artifact["sha256"])
+    ):
+        return (
+            {"gate": "G7", "result": "HOLD", "findings": ["Repository, source revision, and scoped manifest digest are required."]},
+            evidence,
+        )
+    if source_tree_clean is not True:
+        return (
+            {"gate": "G7", "result": "INCONCLUSIVE", "findings": ["Integrated evidence was not produced from a clean source tree."]},
+            evidence,
+        )
+    if (
+        not isinstance(system_graph_artifact, dict)
+        or not isinstance(system_graph_artifact.get("sha256"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", system_graph_artifact["sha256"])
+    ):
+        return (
+            {"gate": "G7", "result": "HOLD", "findings": ["SystemGraph artifact digest is unavailable for reconciliation."]},
+            evidence,
+        )
+
+    reconciliation = [
+        ("G4 source revision", g4_evidence.get("source_revision"), source_revision),
+        ("G5 source revision", g5_evidence.get("source_revision"), source_revision),
+        ("G6 source revision", g6_evidence.get("source_revision"), source_revision),
+        ("G6 graph revision", g6_evidence.get("system_graph_revision"), source_revision),
+        ("G6 graph digest", g6_evidence.get("system_graph_artifact_sha256"), system_graph_artifact["sha256"]),
+    ]
+    evidence["reconciliation"] = [
+        {"item": label, "observed": observed_value, "expected": expected_value}
+        for label, observed_value, expected_value in reconciliation
+    ]
+    if any(not observed_value or observed_value != expected_value for _, observed_value, expected_value in reconciliation):
+        return (
+            {"gate": "G7", "result": "INCONCLUSIVE", "findings": ["G0-G6 evidence is missing or bound to conflicting revisions/artifacts."]},
+            evidence,
+        )
+    if g4_evidence.get("source_tree_clean") is not True or g5_evidence.get("source_tree_clean") is not True:
+        return (
+            {"gate": "G7", "result": "INCONCLUSIVE", "findings": ["Prior runtime/event evidence was not produced from a clean source tree."]},
+            evidence,
+        )
+    if not isinstance(run_id, str) or not run_id:
+        return (
+            {"gate": "G7", "result": "HOLD", "findings": ["A CI run ID is required for integrated evidence."]},
+            evidence,
+        )
+    prior_run_ids = [g4_evidence.get("run_id"), g5_evidence.get("run_id"), run_id]
+    if any(not isinstance(value, str) or not value for value in prior_run_ids) or len(set(prior_run_ids)) > 1:
+        return (
+            {"gate": "G7", "result": "INCONCLUSIVE", "findings": ["Integrated evidence spans conflicting CI run IDs."]},
+            evidence,
+        )
+    inventory_digest = g6_evidence.get("inventory_sha256")
+    if not isinstance(inventory_digest, str) or not re.fullmatch(r"[0-9a-f]{64}", inventory_digest):
+        return (
+            {"gate": "G7", "result": "INCONCLUSIVE", "findings": ["G6 implementation inventory digest is unavailable or malformed."]},
+            evidence,
+        )
+    if (
+        not isinstance(dependency_graph.get("sha256"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", dependency_graph["sha256"])
+        or not isinstance(execution_schedule.get("plan_sha256"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", execution_schedule["plan_sha256"])
+    ):
+        return (
+            {"gate": "G7", "result": "INCONCLUSIVE", "findings": ["Dependency or ExecutionPlan digest is unavailable for evidence reconciliation."]},
+            evidence,
+        )
+    return (
+        {
+            "gate": "G7",
+            "result": "PASS",
+            "findings": ["G0-G6 evidence reconciles to the same repository, scope, revision and CI run; integrated fail-closed scenarios passed."],
+        },
+        evidence,
+    )
+
+
 def _git(*args: str) -> str | None:
     completed = subprocess.run(
         ["git", *args],
@@ -1340,6 +1531,27 @@ def _run_g5_contract_tests() -> tuple[str | None, int | None, str | None]:
     return output, completed.returncode, None
 
 
+def _run_g7_integration_tests() -> tuple[str | None, int | None, str | None]:
+    try:
+        completed = subprocess.run(
+            ["cargo", "test", "--locked", "--workspace"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except FileNotFoundError as error:
+        return None, None, str(error)
+    except subprocess.TimeoutExpired as error:
+        output = error.stdout or ""
+        if isinstance(output, bytes):
+            output = output.decode("utf-8", errors="replace")
+        return output, None, "Integrated workspace tests exceeded 300 seconds."
+    output = completed.stdout + completed.stderr
+    return output, completed.returncode, None
+
+
 def _artifact(path: Path) -> dict[str, str] | None:
     if not path.is_file():
         return None
@@ -1422,10 +1634,34 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
         [gate["result"] for gate in (g0, g1, g2, g3, g4, g5)],
         revision or None,
     )
+    scope_artifact = _artifact(scope_path)
+    graph_artifact = _artifact(graph_path)
+    g7_output, g7_exit_code, g7_error = _run_g7_integration_tests()
+    g7, integrated_validation = evaluate_g7(
+        g7_output,
+        g7_exit_code,
+        [g0, g1, g2, g3, g4, g5, g6],
+        revision or None,
+        not dirty,
+        _repository_identity(),
+        scope if isinstance(scope, dict) else None,
+        scope_artifact,
+        g4_evidence,
+        g5_evidence,
+        {
+            **architecture_compliance,
+            "system_graph_artifact_sha256": graph_artifact.get("sha256") if graph_artifact else None,
+        },
+        graph_artifact,
+        dependency_graph,
+        execution_schedule,
+        g7_error,
+        os.environ.get("GITHUB_RUN_ID"),
+    )
 
     report: dict[str, Any] = {
         "format_version": 1,
-        "validator": {"name": "PVC-001 G0-G6 validator", "version": VALIDATOR_VERSION},
+        "validator": {"name": "PVC-001 G0-G7 validator", "version": VALIDATOR_VERSION},
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "repository": _repository_identity(),
         "revision": revision or None,
@@ -1443,7 +1679,8 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
         "runtime_kernel_tests": g4_evidence,
         "event_observability_tests": g5_evidence,
         "architecture_compliance": architecture_compliance,
-        "gates": [g0, g1, g2, g3, g4, g5, g6],
+        "integrated_validation": integrated_validation,
+        "gates": [g0, g1, g2, g3, g4, g5, g6, g7],
     }
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path = output_dir / "pvc-001-evidence.json"
@@ -1457,7 +1694,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     dependency_sha256 = report["dependency_graph"].get("sha256") or "unavailable"
     plan_sha256 = report["execution_schedule"].get("plan_sha256") or "unavailable"
     lines = [
-        "# PVC-001 G0-G6 Evidence",
+        "# PVC-001 G0-G7 Evidence",
         "",
         f"- Repository: `{report['repository'] or 'unknown'}`",
         f"- Revision: `{report['revision'] or 'unknown'}`",
@@ -1539,6 +1776,42 @@ def render_markdown(report: dict[str, Any]) -> str:
         for item in compliance["classifications"]:
             detail = item.get("detail", "").replace("|", "\\|")
             lines.append(f"| {item['class']} | {item['rule']} | {item['result']} | {detail} |")
+    integration = report["integrated_validation"]
+    lines.extend(
+        [
+            "",
+            "## Integrated validation",
+            "",
+            f"- Command: `{' '.join(integration['command'])}`",
+            f"- Repository: `{integration['repository'] or 'unavailable'}`",
+            f"- Scope: `{integration['scope'] or 'unavailable'}`",
+            f"- Scope SHA-256: `{integration['scope_sha256'] or 'unavailable'}`",
+            f"- Source revision: `{integration['source_revision'] or 'unavailable'}`",
+            f"- Source tree clean: `{integration['source_tree_clean']}`",
+            f"- CI run ID: `{integration['run_id'] or 'unavailable'}`",
+            f"- Exit code: `{integration['exit_code']}`",
+            f"- Output SHA-256: `{integration['output_sha256'] or 'unavailable'}`",
+            "",
+            "| Scenario | Result |",
+            "|---|---|",
+        ]
+    )
+    lines.extend(
+        f"| `{scenario['name']}` | {scenario['result']} |"
+        for scenario in integration["scenarios"]
+    )
+    lines.extend(["", "| Reconciled gate | Result |", "|---|---|"])
+    lines.extend(
+        f"| {gate['gate']} | {gate['result']} |"
+        for gate in integration["reconciled_gates"]
+    )
+    if integration["reconciliation"]:
+        lines.extend(["", "| Evidence item | Observed | Expected |", "|---|---|---|"])
+        lines.extend(
+            f"| {item['item']} | `{item['observed'] or 'unavailable'}` | "
+            f"`{item['expected'] or 'unavailable'}` |"
+            for item in integration["reconciliation"]
+        )
     layers = report["execution_schedule"].get("execution_layers", [])
     lines.extend(["", "## Deterministic execution layers", ""])
     if layers:

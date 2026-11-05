@@ -13,6 +13,7 @@ from pvc_validate import (
     evaluate_g4,
     evaluate_g5,
     evaluate_g6,
+    evaluate_g7,
 )
 
 
@@ -604,6 +605,145 @@ class G6Tests(unittest.TestCase):
     def test_missing_prior_gate_results_hold_compliance(self):
         result, _ = self.evaluate(prior_results=[])
         self.assertEqual(result["result"], "HOLD")
+
+
+class G7Tests(unittest.TestCase):
+    def setUp(self):
+        self.scenarios = [
+            "runtime_plan_confirms_execution_path",
+            "runtime_plan_escalates_non_executable_scope",
+            "runtime_plan_safe_state_fails_closed",
+            "kernel_cycle_confirms_execution_path",
+            "kernel_cycle_escalates_non_executable_scope",
+            "kernel_cycle_safe_state_fails_closed",
+            "event_bus_publishes_events_without_authority_operations",
+            "append_and_replay_reconstructs_the_complete_lifecycle",
+            "revocation_survives_snapshot_replay",
+            "missing_event_provenance_is_rejected_before_commit",
+            "observatory_snapshot_marks_current_execution_as_current",
+            "observatory_snapshot_marks_observe_scope_as_degraded",
+            "observatory_snapshot_marks_missing_sensor_coverage_as_safe_state",
+            "observatory_snapshot_preserves_runtime_expiry_after_observation",
+            "observatory_snapshot_does_not_change_runtime_authority_state",
+            "action_flow_requires_authorization",
+        ]
+        self.output = "".join(
+            f"test integration::tests::{name} ... ok\n" for name in self.scenarios
+        )
+        self.gates = [{"gate": f"G{index}", "result": "PASS"} for index in range(7)]
+        self.g4 = {
+            "source_revision": "abc123",
+            "source_tree_clean": True,
+            "run_id": "run-1",
+        }
+        self.g5 = {
+            "source_revision": "abc123",
+            "source_tree_clean": True,
+            "run_id": "run-1",
+        }
+        self.g6 = {
+            "source_revision": "abc123",
+            "system_graph_revision": "abc123",
+            "system_graph_artifact_sha256": "a" * 64,
+            "inventory_sha256": "b" * 64,
+        }
+        self.graph_artifact = {"path": "validation/system-graph.json", "sha256": "a" * 64}
+        self.scope_manifest = {
+            "scope": "PALACO Core Alpha",
+            "repository": "Maurits-pixe/palaco-genesis",
+        }
+        self.scope_artifact = {"path": "validation/core-alpha-scope.json", "sha256": "c" * 64}
+        self.dependency_graph = {"sha256": "d" * 64}
+        self.execution_schedule = {"plan_sha256": "e" * 64}
+
+    def evaluate(self, **overrides):
+        arguments = {
+            "test_output": self.output,
+            "exit_code": 0,
+            "prior_gates": self.gates,
+            "source_revision": "abc123",
+            "source_tree_clean": True,
+            "repository": "Maurits-pixe/palaco-genesis",
+            "scope_manifest": self.scope_manifest,
+            "scope_artifact": self.scope_artifact,
+            "g4_evidence": self.g4,
+            "g5_evidence": self.g5,
+            "g6_evidence": self.g6,
+            "system_graph_artifact": self.graph_artifact,
+            "dependency_graph": self.dependency_graph,
+            "execution_schedule": self.execution_schedule,
+            "run_id": "run-1",
+        }
+        arguments.update(overrides)
+        return evaluate_g7(**arguments)
+
+    def test_passes_when_outputs_reconcile_and_integrated_scenarios_pass(self):
+        result, evidence = self.evaluate()
+        self.assertEqual(result["result"], "PASS")
+        self.assertEqual(len(evidence["scenarios"]), len(self.scenarios))
+        self.assertEqual(evidence["scope"], "PALACO Core Alpha")
+        self.assertEqual(len(evidence["reconciliation"]), 5)
+
+    def test_failed_integrated_test_is_fail(self):
+        output = self.output.replace(
+            "integration::tests::action_flow_requires_authorization ... ok",
+            "integration::tests::action_flow_requires_authorization ... FAILED",
+        )
+        result, _ = self.evaluate(test_output=output, exit_code=101)
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_missing_integrated_scenario_is_hold(self):
+        result, _ = self.evaluate(test_output=self.output.replace("runtime_plan_safe_state_fails_closed", "omitted"))
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_prior_fail_is_not_hidden_by_g7(self):
+        gates = [*self.gates]
+        gates[2] = {"gate": "G2", "result": "FAIL"}
+        result, _ = self.evaluate(prior_gates=gates)
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_prior_hold_blocks_g7(self):
+        gates = [*self.gates]
+        gates[1] = {"gate": "G1", "result": "HOLD"}
+        result, _ = self.evaluate(prior_gates=gates)
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_malformed_prior_gate_record_is_not_ignored(self):
+        result, _ = self.evaluate(prior_gates=[*self.gates, None])
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_conflicting_component_revision_is_inconclusive(self):
+        g5 = {**self.g5, "source_revision": "different"}
+        result, _ = self.evaluate(g5_evidence=g5)
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
+    def test_graph_digest_mismatch_is_inconclusive(self):
+        graph_artifact = {**self.graph_artifact, "sha256": "f" * 64}
+        result, _ = self.evaluate(system_graph_artifact=graph_artifact)
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
+    def test_scope_repository_mismatch_holds(self):
+        scope_manifest = {**self.scope_manifest, "repository": "other/repository"}
+        result, _ = self.evaluate(scope_manifest=scope_manifest)
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_dirty_source_is_inconclusive(self):
+        result, _ = self.evaluate(source_tree_clean=False)
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
+    def test_missing_ci_run_id_holds(self):
+        result, _ = self.evaluate(run_id=None)
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_graph_revision_mismatch_is_inconclusive(self):
+        g6 = {**self.g6, "system_graph_revision": "stale"}
+        result, _ = self.evaluate(g6_evidence=g6)
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
+    def test_conflicting_ci_run_ids_are_inconclusive(self):
+        g4 = {**self.g4, "run_id": "different-run"}
+        result, _ = self.evaluate(g4_evidence=g4)
+        self.assertEqual(result["result"], "INCONCLUSIVE")
 
 
 if __name__ == "__main__":
