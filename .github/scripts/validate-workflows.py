@@ -801,6 +801,9 @@ def main() -> int:
             if not isinstance(steps, list):
                 errors.append(f"{path}: job '{job_name}' steps must be a list")
                 continue
+            if not steps:
+                errors.append(f"{path}: job '{job_name}' steps must not be empty")
+                continue
             step_display_name_to_indexes: dict[str, list[int]] = {}
             step_id_to_indexes: dict[str, list[int]] = {}
             for step_index, step in enumerate(steps):
