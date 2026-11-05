@@ -559,8 +559,10 @@ def main() -> int:
                 )
             group = concurrency.get("group")
             cancel = concurrency.get("cancel-in-progress")
-            if not group:
-                errors.append(f"{path}: concurrency.group is missing or empty")
+            if not isinstance(group, str) or not group.strip():
+                errors.append(
+                    f"{path}: concurrency.group must be a non-empty string"
+                )
             else:
                 filename = os.path.basename(path)
                 if filename == "pages.yml":
