@@ -14,7 +14,7 @@ const busyLabels = {
 const {
   token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, lastJournalRefreshAt, busy,
   message, error, lookupId, outcome, outcomeReceivedAt, outcomeMismatch, lastSubmissionId, realtimeStatus,
-  canCommit, canClearOutcome, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearCommand, clearSession, clearOutcome, clearJournal,
+  validTtl, canRequestTicket, canCommit, canClearOutcome, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearCommand, clearSession, clearOutcome, clearJournal,
 } = useSession()
 
 function date(value) {
@@ -55,8 +55,12 @@ function receiptIso(value) {
           <textarea id="command" v-model="command" rows="4" :maxlength="MAX_COMMAND_LENGTH" required :disabled="!!busy" aria-describedby="command-limit" />
           <p id="command-limit" class="muted">{{ commandLength(command) }} / {{ MAX_COMMAND_LENGTH }} UTF-16-tekeneenheden (een emoji telt meestal als twee).</p>
           <label for="ttl">Geldigheidsduur (milliseconden)</label>
-          <input id="ttl" v-model="ttlMs" type="number" min="1" max="60000" step="1" required :disabled="!!busy" />
-          <button :disabled="!!busy || revocationUncertain || !token.trim() || !command.trim() || commandLength(command) > MAX_COMMAND_LENGTH">Ticket aanvragen</button>
+          <input id="ttl" v-model="ttlMs" type="number" min="1" max="60000" step="1" required :disabled="!!busy" aria-describedby="ttl-help" :aria-invalid="!validTtl" />
+          <div id="ttl-help">
+            <p class="muted">Vul een geheel aantal milliseconden in van 1 tot en met 60000.</p>
+            <p v-if="!validTtl" class="error">Ongeldige duur: kies een geheel getal van 1 tot en met 60000.</p>
+          </div>
+          <button :disabled="!canRequestTicket">Ticket aanvragen</button>
           <button type="button" class="secondary" :disabled="!!busy || !command" aria-describedby="clear-command-help" @click="clearCommand">Wis commandotekst</button>
           <p id="clear-command-help" class="muted">Wist alleen lokaal de concepttekst en maakt een normaal lokaal ticket ongeldig; geen intrekking op de server.
             Een onzekere intrekking behoudt het oorspronkelijke ticket en blijft vastleggen en nieuwe tickets blokkeren.

@@ -7,7 +7,7 @@ import { compile } from '@vue/compiler-dom'
 import { renderToString } from 'vue/server-renderer'
 import { realtimeLabels, useSession } from '../src/useSession.js'
 import { createRealtime } from '../src/realtime.js'
-import { listCommands, validateTicketStatus } from '../src/api.js'
+import { commandLength, MAX_COMMAND_LENGTH, listCommands, validateTicketStatus } from '../src/api.js'
 
 const held = () => ({ id: 'ticket-1', command: 'journal only', not_before: 1000, expires_at: 1100 })
 const record = (id = 'record-1') => ({ id, command: 'journal only', committed_at: 1050 })
@@ -106,6 +106,8 @@ function assertEmpty(state, token = '') {
   assert.equal(state.realtimeStatus.value, 'disconnected')
   assert.equal(state.canCommit.value, false)
   assert.equal(state.canClearOutcome.value, false)
+  assert.equal(state.validTtl.value, true)
+  assert.equal(state.canRequestTicket.value, false)
   assert.equal(state.remaining.value, 0)
   assert.equal(state.ttlMs.value, 10000)
 }
@@ -150,6 +152,160 @@ function outcomeClearButton() {
     return vnode
   }
 }
+
+function ticketForm() {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const form = app.match(/<form @submit.prevent="perform\('ticket'\)">[\s\S]*?<\/form>/)[0]
+  const { code } = compile(form, { mode: 'function', prefixIdentifiers: true })
+  const render = new Function('Vue', code)(Vue)
+  return async (state, enabled, valid = state.validTtl.value) => {
+    const context = { ...state, commandLength, MAX_COMMAND_LENGTH }
+    let vnode
+    const html = await renderToString(Vue.createSSRApp({
+      setup: () => context,
+      render() {
+        vnode = render(this, {})
+        return vnode
+      },
+    }))
+    const find = (node, predicate) => {
+      if (predicate(node)) return node
+      return Array.isArray(node.children)
+        ? node.children.map(child => find(child, predicate)).find(Boolean)
+        : undefined
+    }
+    const button = find(vnode, node => node.type === 'button')
+    const input = find(vnode, node => node.props?.id === 'ttl')
+    assert.equal(state.canRequestTicket.value, enabled)
+    assert.equal(state.validTtl.value, valid)
+    assert.equal(button.props.disabled, !enabled)
+    assert.equal(input.props['aria-invalid'], !valid)
+    assert.equal(input.props['aria-describedby'], 'ttl-help')
+    assert.equal(input.props.type, 'number')
+    assert.equal(input.props.min, '1')
+    assert.equal(input.props.max, '60000')
+    assert.equal(input.props.step, '1')
+    assert.equal(input.props.required, '')
+    assert.equal(input.props.disabled, !!state.busy.value)
+    const renderedButton = html.match(/<button[^>]*>Ticket aanvragen<\/button>/)[0]
+    const renderedInput = html.match(/<input[^>]*id="ttl"[^>]*>/)[0]
+    assert.equal(/\sdisabled(?:[=>\s])/.test(renderedButton), !enabled, html)
+    assert.match(renderedInput, new RegExp(`aria-invalid="${!valid}"`))
+    assert.match(renderedInput, /aria-describedby="ttl-help"/)
+    assert.match(html, /id="ttl-help"/)
+    assert.match(html, /Vul een geheel aantal milliseconden in van 1 tot en met 60000\./)
+    assert.equal(html.includes('Ongeldige duur: kies een geheel getal van 1 tot en met 60000.'), !valid)
+    return { vnode, input }
+  }
+}
+
+for (const [value, valid] of [
+  [1, true], [60000, true], [0, false], [60001, false], [1.5, false],
+  [NaN, false], [Infinity, false], [-Infinity, false], ['', false],
+  ['1', true], ['60000', true], [' 42 ', true], ['1e3', true], ['1.0', true],
+  ['0', false], ['60001', false], ['1.5', false], ['NaN', false],
+  ['Infinity', false], [' ', false], ['not a number', false],
+]) {
+  test(`ticket form renders TTL ${typeof value === 'string' ? JSON.stringify(value) : String(value)} (${typeof value}) as ${valid ? 'valid' : 'invalid'}`, async t => {
+    const { state, calls } = fixture(t)
+    const checkForm = ticketForm()
+    state.command.value = 'journal only'
+    assert.equal(Vue.isReadonly(state.validTtl), true)
+    assert.equal(Vue.isReadonly(state.canRequestTicket), true)
+    await checkForm(state, true, true)
+    state.ttlMs.value = value
+    await checkForm(state, valid, valid)
+    state.ttlMs.value = 10000
+    await checkForm(state, true, true)
+    assert.equal(calls.length, 0, 'editing and rendering do not issue requests')
+  })
+}
+
+test('ticket eligibility and compiled form react to every non-TTL guard', async t => {
+  const { state, scope, calls } = fixture(t)
+  const checkForm = ticketForm()
+  state.command.value = 'journal only'
+  await checkForm(state, true)
+  for (const token of ['', ' \t ', 'token\rvalue', 'token\nvalue', 'token\r\n']) {
+    state.token.value = token
+    state.command.value = 'journal only'
+    await checkForm(state, false)
+    state.token.value = 'test-session-token'
+    state.command.value = 'journal only'
+    await checkForm(state, true)
+  }
+  for (const command of ['', ' \t\n ', 'a'.repeat(MAX_COMMAND_LENGTH + 1), '😀'.repeat(513)]) {
+    state.command.value = command
+    await checkForm(state, false)
+    state.command.value = 'journal only'
+    await checkForm(state, true)
+  }
+  for (const command of ['a'.repeat(MAX_COMMAND_LENGTH), '😀'.repeat(512), ' journal only ']) {
+    state.command.value = command
+    await checkForm(state, true)
+  }
+  for (const action of Object.keys(actions)) {
+    state.busy.value = action
+    await checkForm(state, false)
+    state.busy.value = ''
+    await checkForm(state, true)
+  }
+  state.revocationUncertain.value = true
+  await checkForm(state, false)
+  state.ttlMs.value = 0
+  await checkForm(state, false, false)
+  state.ttlMs.value = 1
+  await checkForm(state, false, true)
+  state.revocationUncertain.value = false
+  await checkForm(state, true)
+  scope.stop()
+  state.token.value = 'test-session-token'
+  state.command.value = 'journal only'
+  state.ttlMs.value = 60000
+  assert.equal(state.busy.value, '')
+  assert.equal(state.revocationUncertain.value, false)
+  await checkForm(state, false, true)
+  assert.equal(calls.length, 0)
+})
+
+test('compiled TTL model updates eligibility without changing the ticket submit action', async t => {
+  const { state, calls } = fixture(t)
+  const checkForm = ticketForm()
+  state.command.value = 'journal only'
+  const { input } = await checkForm(state, true)
+  input.props['onUpdate:modelValue']('')
+  await checkForm(state, false, false)
+  input.props['onUpdate:modelValue']('60000')
+  const { vnode } = await checkForm(state, true, true)
+  let prevented = false
+  const operation = vnode.props.onSubmit({ preventDefault() { prevented = true } })
+  assert.equal(prevented, true)
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].action, 'ticket')
+  assert.deepEqual(calls[0].args.slice(0, 3), ['journal only', 60000, 'test-session-token'])
+  await checkForm(state, false, true)
+  calls[0].resolve(held())
+  await operation
+  await checkForm(state, true, true)
+})
+
+test('eligible numeric TTL strings retain the existing request Number conversion', async t => {
+  const { state, calls } = fixture(t)
+  state.command.value = 'journal only'
+  for (const value of ['1', '60000', ' 42 ', '1e3', '1.0']) {
+    state.ttlMs.value = value
+    assert.equal(state.validTtl.value, true)
+    assert.equal(state.canRequestTicket.value, true)
+    const operation = state.perform('ticket')
+    const call = calls.at(-1)
+    assert.equal(call.args[1], Number(value))
+    assert.equal(state.canRequestTicket.value, false)
+    call.resolve(held())
+    await operation
+    assert.equal(state.canRequestTicket.value, true)
+  }
+  assert.equal(calls.length, 5)
+})
 
 for (const value of [0, 1050, 8_640_000_000_000_000]) {
   test(`startup preserves valid clock ${value}`, t => {
@@ -497,14 +653,19 @@ for (const uncertain of [false, true]) {
     // Connecting intentionally resets the journal; seed retained data afterwards.
     prepare(state, uncertain ? 'revoke' : 'commit')
     const originalTicket = state.ticket.value
-    const retained = commandState(state, ['command', 'ticket', 'canCommit', 'remaining'])
+    const retained = {
+      ...commandState(state, ['command', 'ticket', 'canCommit', 'remaining']),
+      canRequestTicket: false,
+    }
     const reads = clock.reads
     assert.equal(state.canCommit.value, !uncertain)
+    assert.equal(state.canRequestTicket.value, !uncertain)
 
     state.clearCommand()
     assert.equal(state.command.value, '')
     assert.equal(state.ticket.value, uncertain ? originalTicket : null)
     assert.equal(state.canCommit.value, false)
+    assert.equal(state.canRequestTicket.value, false)
     assert.deepEqual(commandState(state, ['command', 'ticket', 'canCommit', 'remaining']), retained)
     for (const [key, value] of Object.entries(retained)) assert.equal(state[key].value, value, key)
     const cleared = commandState(state)

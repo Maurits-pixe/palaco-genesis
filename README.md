@@ -191,6 +191,12 @@ Tijdens een verzoek noemt de toegankelijke voortgangsmelding de lopende actie:
 ticket aanvragen, commando indienen, ticket intrekken, ticketstatus controleren
 of logboek vernieuwen. De melding bevat geen token of commandotekst en is
 geen bevestiging dat de server de actie heeft voltooid.
+De ticketaanvraag vereist een gehele geldigheidsduur van 1 t/m 60000
+milliseconden. Bij een lege of ongeldige duur toont de interface gekoppelde
+invoerhulp en blokkeert de aanvraagknop. Ook zonder geldig token of
+commandotekst, tijdens een verzoek of bij een onzekere intrekking blijft
+de knop geblokkeerd. Deze lokale invoercontrole vervangt de API- en
+servervalidatie niet en geeft geen toestemming om vast te leggen.
 Als een ticketaanvraag mislukt, meldt de interface **Ticketuitgifte niet
 bevestigd**: er kan al een serverticket bestaan, zonder dat de client het
 antwoord heeft ontvangen. Zonder ontvangen ticket is lokaal vastleggen niet

@@ -45,6 +45,15 @@ export function useSession({
   const now = ref(sampleReceiptTime())
   let session = 0
   const disposed = ref(false)
+  const validTtl = computed(() => {
+    const ttl = Number(ttlMs.value)
+    return Number.isInteger(ttl) && ttl >= 1 && ttl <= 60_000
+  })
+  const canRequestTicket = computed(() => !disposed.value && !busy.value &&
+    !revocationUncertain.value && typeof token.value === 'string' &&
+    !!token.value.trim() && !/[\r\n]/.test(token.value) &&
+    typeof command.value === 'string' && !!command.value.trim() &&
+    defaultApi.commandLength(command.value) <= defaultApi.MAX_COMMAND_LENGTH && validTtl.value)
   let pending = null
   const feedbackAction = ref('')
   const canClearOutcome = computed(() => !disposed.value &&
@@ -331,6 +340,6 @@ export function useSession({
   return {
     token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, lastJournalRefreshAt, busy,
     message, error, lookupId, outcome, outcomeReceivedAt, outcomeMismatch, lastSubmissionId, realtimeStatus, now,
-    canCommit, canClearOutcome, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearCommand, clearSession, clearOutcome, clearJournal,
+    validTtl, canRequestTicket, canCommit, canClearOutcome, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearCommand, clearSession, clearOutcome, clearJournal,
   }
 }
