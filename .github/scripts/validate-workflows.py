@@ -970,6 +970,7 @@ def main() -> int:
                     )
                 step_uses = step.get("uses")
                 step_run = step.get("run")
+                step_shell = step.get("shell")
                 step_with = step.get("with")
                 if step_with is not None:
                     if not isinstance(step_with, dict):
@@ -1013,6 +1014,16 @@ def main() -> int:
                 ):
                     errors.append(
                         f"{path}: job '{job_name}' step #{step_index} run must be a non-empty string when provided"
+                    )
+                if step_shell is not None and (
+                    not isinstance(step_shell, str) or not step_shell.strip()
+                ):
+                    errors.append(
+                        f"{path}: job '{job_name}' step #{step_index} shell must be a non-empty string when provided"
+                    )
+                if step_shell is not None and step_run is None:
+                    errors.append(
+                        f"{path}: job '{job_name}' step #{step_index} shell is only allowed on run steps"
                     )
                 step_working_directory = step.get("working-directory")
                 if step_working_directory is not None and (
