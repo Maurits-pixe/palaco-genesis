@@ -848,6 +848,38 @@ def main() -> int:
                 errors.append(
                     f"{path}: job '{job_name}' timeout-minutes must be <= 60"
                 )
+            job_environment = job.get("environment")
+            if job_environment is not None:
+                if isinstance(job_environment, str):
+                    if not job_environment.strip():
+                        errors.append(
+                            f"{path}: job '{job_name}' environment must be a non-empty string when provided as a string"
+                        )
+                elif isinstance(job_environment, dict):
+                    unsupported_environment_keys = set(job_environment.keys()) - {
+                        "name",
+                        "url",
+                    }
+                    if unsupported_environment_keys:
+                        errors.append(
+                            f"{path}: job '{job_name}' environment has unsupported keys: {sorted(unsupported_environment_keys)}"
+                        )
+                    environment_name = job_environment.get("name")
+                    if not isinstance(environment_name, str) or not environment_name.strip():
+                        errors.append(
+                            f"{path}: job '{job_name}' environment.name must be a non-empty string"
+                        )
+                    environment_url = job_environment.get("url")
+                    if environment_url is not None and (
+                        not isinstance(environment_url, str) or not environment_url.strip()
+                    ):
+                        errors.append(
+                            f"{path}: job '{job_name}' environment.url must be a non-empty string when provided"
+                        )
+                else:
+                    errors.append(
+                        f"{path}: job '{job_name}' environment must be a string or mapping when provided"
+                    )
             job_working_directory = job.get("working-directory")
             if job_working_directory is not None and (
                 not isinstance(job_working_directory, str)
