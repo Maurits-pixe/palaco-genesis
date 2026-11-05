@@ -192,6 +192,11 @@ los van de actuele invoer. De tekst wordt niet als HTML of code uitgevoerd.
 Bij een onzekere intrekking blijft deze oorspronkelijke tekst zichtbaar,
 ook als de lokale invoer wordt gewist of veranderd. Dit geeft geen nieuwe
 toestemming en heft de blokkering niet op.
+Het huidige ticket-ID staat in een alleen-lezen veld dat bij focus volledig
+wordt geselecteerd. Kopieer het desgewenst handmatig vóór sessiewissing voor
+een latere statuscontrole. Selecteren verstuurt geen verzoek en herstelt geen
+toestemming. Een kopie op het klembord valt buiten de lokale sessie en wordt
+niet door **Wis sessie** verwijderd.
 Met **Wis commandotekst** wis je alleen de lokale invoer. Zoals bij iedere
 tekstwijziging vervalt een normaal lokaal ticket, zonder het serverticket
 in te trekken. Bij een onzekere intrekking blijven het bewaarde ticket en

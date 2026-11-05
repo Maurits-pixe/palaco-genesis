@@ -55,7 +55,11 @@ function receiptIso(value) {
         </form>
         <h2>2. Apart bevestigen</h2>
         <div v-if="ticket" class="result">
-          <p>Ticket: <code>{{ ticket.id }}</code></p>
+          <label for="current-ticket-id">Huidig ticket-ID (selecteer en kopieer)</label>
+          <input id="current-ticket-id" :value="ticket.id" readonly @focus="$event.target.select()" aria-describedby="current-ticket-id-help" />
+          <p id="current-ticket-id-help" class="muted">Selecteer en kopieer dit exacte ID handmatig vóór Wis sessie om later de status op te zoeken.
+            Kopieën op het klembord staan buiten de lokale sessie en worden niet gewist door Wis sessie.
+            Selecteren en kopiëren versturen geen automatische verzoeken en herstellen geen toestemming.</p>
           <p id="ticket-command-label">Commandotekst van dit ticket</p>
           <pre aria-labelledby="ticket-command-label" aria-describedby="ticket-command-help">{{ ticket.command }}</pre>
           <p id="ticket-command-help" class="muted">De exacte tekst waarvoor dit ticket is uitgegeven, niet de huidige concepttekst.

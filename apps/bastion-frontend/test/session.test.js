@@ -574,6 +574,64 @@ test('command clear UI is an explicit local-only secondary action inside the iss
   assert.match(help, /Logboek en ticketuitkomst kunnen commandotekst behouden/)
 })
 
+test('held ticket ID is readonly, labelled and selectable while busy with accessible manual-copy help', async () => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const block = app.match(/<div v-if="ticket" class="result">([\s\S]*?)<\/div>/)[1]
+  const label = block.match(/<label for="current-ticket-id">[^<]*<\/label>/)?.[0]
+  const input = block.match(/<input id="current-ticket-id"[^>]*\/>/)?.[0]
+  const help = block.match(/<p id="current-ticket-id-help"[^>]*>[\s\S]*?<\/p>/)?.[0]
+  assert.ok(label)
+  assert.match(label, /Huidig ticket-ID \(selecteer en kopieer\)/)
+  assert.ok(input)
+  assert.match(input, /:value="ticket.id"/)
+  assert.match(input, /\sreadonly\s/)
+  assert.match(input, /@focus="\$event.target.select\(\)"/)
+  assert.match(input, /aria-describedby="current-ticket-id-help"/)
+  assert.doesNotMatch(input, /disabled|v-model|@(?!focus=)|v-on|v-bind|v-if/)
+  assert.equal(app.match(/\bid="current-ticket-id"/g).length, 1)
+  assert.equal(app.match(/\bid="current-ticket-id-help"/g).length, 1)
+  assert.ok(help)
+  assert.match(help, /Selecteer en kopieer dit exacte ID handmatig vóór Wis sessie om later de status op te zoeken/)
+  assert.match(help, /Kopieën op het klembord staan buiten de lokale sessie en worden niet gewist door Wis sessie/)
+  assert.match(help, /geen automatische verzoeken en herstellen geen toestemming/)
+
+  const { code } = compile(label + input + help, { mode: 'function', prefixIdentifiers: true })
+  const render = new Function('Vue', code)(Vue)
+  for (const busy of ['', 'ticket', 'commit', 'revoke', 'status', 'list']) {
+    const html = await renderToString(Vue.createSSRApp({
+      data: () => ({ ticket: { ...held(), id: ' exact-É🚀<&"ticket> ' }, busy }),
+      render,
+    }))
+    assert.ok(html.includes('<input id="current-ticket-id" value=" exact-É🚀&lt;&amp;&quot;ticket&gt; " readonly aria-describedby="current-ticket-id-help">'), busy)
+    assert.ok(html.includes(label))
+    assert.ok(html.includes(help.replace(/\s+/g, ' ')))
+    assert.doesNotMatch(html, /\sdisabled(?:[=>\s])/)
+  }
+})
+
+test('held ticket ID focus only selects text without state mutation or requests', t => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const input = app.match(/<input id="current-ticket-id"[^>]*\/>/)[0]
+  const { code } = compile(input, { mode: 'function', prefixIdentifiers: true })
+  const render = new Function('Vue', code)(Vue)
+  const { state, calls, sockets } = fixture(t)
+  prepare(state, 'revoke')
+  state.busy.value = 'status'
+  const before = commandState(state)
+  const ticketBefore = { ...state.ticket.value }
+  const vnode = render(Vue.proxyRefs(state), {})
+  assert.deepEqual(Object.keys(vnode.props).sort(), ['aria-describedby', 'id', 'onFocus', 'readonly', 'value'])
+  assert.equal(vnode.props.value, held().id)
+  let selections = 0
+  const target = { select() { assert.equal(this, target); selections++ } }
+  vnode.props.onFocus({ target })
+  assert.equal(selections, 1)
+  assert.deepEqual(commandState(state), before)
+  assert.deepEqual(state.ticket.value, ticketBefore)
+  assert.equal(calls.length, 0)
+  assert.equal(sockets.length, 0)
+})
+
 test('issued ticket text is labelled, explained and rendered as escaped text rather than the draft', async () => {
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
   const block = app.match(/<div v-if="ticket" class="result">([\s\S]*?)<\/div>/)[1]
