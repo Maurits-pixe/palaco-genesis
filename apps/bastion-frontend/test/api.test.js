@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { commandLength, commitCommand, issueTicket, listCommands, MAX_COMMAND_LENGTH, mergeCommands, normalizeCommand, request, revokeTicket, ticketRemainingSeconds, ticketUsable } from '../src/api.js'
+import { commandLength, commitCommand, getTicketStatus, isValidTicketId, issueTicket, listCommands, MAX_COMMAND_LENGTH, mergeCommands, normalizeCommand, request, revokeTicket, ticketRemainingSeconds, ticketUsable } from '../src/api.js'
 import config from '../vite.config.js'
 
 const inputToken = 'test-only-user-input'
@@ -12,6 +12,37 @@ const ticket = () => ({
 })
 const entry = () => ({ id: 'command-1', command: 'registreer wijziging', committed_at: new Date().toISOString() })
 const issuedTicket = ttlMs => ({ id: 'ticket-1', not_before: 1000, expires_at: 1000 + ttlMs })
+
+test('shared ticket ID validation preserves exact ASCII status lookup IDs and boundaries', async () => {
+  const valid = ['a', 'Z', '0', '_', '-', 'aZ09_-', 'A'.repeat(128)]
+  let calls = 0
+  for (const id of valid) {
+    assert.equal(isValidTicketId(id), true)
+    const data = {
+      id, command: 'journal only', not_before: 1000, expires_at: 1100,
+      checked_at: 1050, status: 'active', revoked: false, record: null,
+    }
+    assert.deepEqual(await getTicketStatus(id, inputToken, async (url, options) => {
+      calls++
+      assert.equal(url, `/v1/tickets/${id}`)
+      assert.equal(options.method, 'GET')
+      return json(data)
+    }), data)
+  }
+  assert.equal(calls, valid.length)
+})
+
+test('shared ticket ID validation rejects invalid values before status lookup fetches', async () => {
+  for (const id of [
+    '', 'a'.repeat(129), 'a'.repeat(200), 'a'.repeat(201),
+    'é', '票', '😀', ' ', ' a', 'a ', 'a b', 'a/b', '../a',
+    'a\r', 'a\n', 'a\r\n', 'a\tb', null, undefined, 1, true, {}, [], new String('a'),
+  ]) {
+    assert.equal(isValidTicketId(id), false, String(id))
+    await assert.rejects(getTicketStatus(id, inputToken, () => assert.fail('must not fetch')),
+      /Vul een geldig ticket-ID in\./)
+  }
+})
 
 test('ticket issuance sends the exact command and integer TTL', async () => {
   const command = 'registreer wijziging'

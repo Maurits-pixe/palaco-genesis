@@ -290,6 +290,12 @@ Intrekken maakt eerder vastgelegde commando's niet ongedaan.
 Gebruik **Status controleren** met het ticket-ID als een inzending geen
 duidelijk antwoord gaf. De interface onthoudt het laatst ingezonden ID in het
 sessiegeheugen; je kunt ook handmatig een ID invoeren.
+Het statusformulier deelt de formaatcontrole met de API: 1 t/m 128
+ASCII-letters, cijfers, underscores of koppeltekens. Een niet-leeg ongeldig
+ID krijgt gekoppelde invoerfeedback en blokkeert de controleknop; een leeg
+veld blijft neutraal maar kan niet worden ingestuurd. Invoer wordt niet
+getrimd of genormaliseerd. Bewerken verstuurt geen automatisch verzoek en
+de formaatcontrole bewijst niet dat het ticket bestaat of geldig is.
 Met **Controleer laatste inzending** vraag je direct de status van dat
 bewaarde ID op, ook wanneer het lokale ticket na de inzendpoging al is
 verwijderd. Deze knop dient niets opnieuw in en herstelt geen toestemming.

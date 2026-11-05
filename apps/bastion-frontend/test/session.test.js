@@ -108,6 +108,8 @@ function assertEmpty(state, token = '') {
   assert.equal(state.canClearOutcome.value, false)
   assert.equal(state.validTtl.value, true)
   assert.equal(state.canRequestTicket.value, false)
+  assert.equal(state.validLookupId.value, false)
+  assert.equal(state.canCheckStatus.value, false)
   assert.equal(state.remaining.value, 0)
   assert.equal(state.ttlMs.value, 10000)
 }
@@ -198,6 +200,129 @@ function ticketForm() {
     return { vnode, input }
   }
 }
+
+function statusForm() {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const form = app.match(/<form @submit.prevent="perform\('status'\)">[\s\S]*?<\/form>/)[0]
+  const { code } = compile(form, { mode: 'function', prefixIdentifiers: true })
+  const render = new Function('Vue', code)(Vue)
+  return async (state, enabled, valid = state.validLookupId.value) => {
+    let vnode
+    const html = await renderToString(Vue.createSSRApp({
+      setup: () => state,
+      render() {
+        vnode = render(this, {})
+        return vnode
+      },
+    }))
+    const input = vnode.children.find(node => node.props?.id === 'lookup-id')
+    const button = vnode.children.find(node => node.type === 'button')
+    const error = vnode.children.find(node => node.props?.id === 'lookup-id-error')
+    const invalid = state.lookupId.value !== '' && !valid
+    const describedBy = invalid ? 'lookup-id-help lookup-id-error' : 'lookup-id-help'
+    assert.equal(state.validLookupId.value, valid)
+    assert.equal(state.canCheckStatus.value, enabled)
+    assert.equal(button.props.disabled, !enabled)
+    assert.equal(input.props['aria-invalid'], invalid)
+    assert.equal(input.props['aria-describedby'], describedBy)
+    assert.equal(input.props.maxlength, '128')
+    assert.equal(input.props.required, '')
+    assert.equal(input.props.disabled, !!state.busy.value)
+    assert.equal(!!error, invalid)
+    const renderedButton = html.match(/<button[^>]*>Status controleren<\/button>/)[0]
+    const renderedInput = html.match(/<input[^>]*id="lookup-id"[^>]*>/)[0]
+    assert.equal(/\sdisabled(?:[=>\s])/.test(renderedButton), !enabled, html)
+    assert.match(renderedInput, new RegExp(`aria-invalid="${invalid}"`))
+    assert.ok(renderedInput.includes(`aria-describedby="${describedBy}"`))
+    assert.equal(html.includes('id="lookup-id-error"'), invalid)
+    assert.equal(html.includes('Ongeldig ticket-ID:'), invalid)
+    assert.match(html, /id="lookup-id-help"/)
+    assert.match(html, /Formaat: 1–128 ASCII-letters/)
+    assert.match(html, /Een ander ID wist alleen de lokale status en breekt een lopende statuscontrole lokaal af\./)
+    assert.match(html, /Geen herstel van toestemming of intrekking op de server; geen automatisch verzoek\. Gebruik het exacte ID, zonder omringende spaties\./)
+    return { vnode, input }
+  }
+}
+
+for (const [id, valid] of [
+  ['', false], ['a', true], ['Z', true], ['0', true], ['_', true], ['-', true],
+  ['aZ09_-', true], ['a'.repeat(128), true], ['a'.repeat(129), false],
+  ['é', false], ['票', false], ['😀', false], [' ', false], [' a', false],
+  ['a ', false], ['a b', false], ['a/b', false], ['a\r', false],
+  ['a\n', false], ['a\r\n', false], ['a\tb', false],
+]) {
+  test(`compiled status form reacts to exact lookup ID ${JSON.stringify(id)}`, async t => {
+    const { state, calls } = fixture(t)
+    const checkForm = statusForm()
+    assert.equal(Vue.isReadonly(state.validLookupId), true)
+    assert.equal(Vue.isReadonly(state.canCheckStatus), true)
+    const { input } = await checkForm(state, false, false)
+    input.props['onUpdate:modelValue'](id)
+    assert.equal(state.lookupId.value, id, 'the model never trims or normalizes IDs')
+    await checkForm(state, valid, valid)
+    input.props['onUpdate:modelValue']('valid_ID-1')
+    await checkForm(state, true, true)
+    input.props['onUpdate:modelValue']('')
+    await checkForm(state, false, false)
+    assert.equal(calls.length, 0, 'editing and rendering never issue requests')
+  })
+}
+
+test('status eligibility and compiled form react to token, busy and disposal guards', async t => {
+  const { state, scope, calls } = fixture(t)
+  const checkForm = statusForm()
+  state.lookupId.value = 'valid_ID-1'
+  await checkForm(state, true)
+  for (const token of ['', ' \t ', 'token\rvalue', 'token\nvalue', 'token\r\n', null, undefined, 1, {}]) {
+    state.token.value = token
+    state.lookupId.value = 'valid_ID-1'
+    await checkForm(state, false, true)
+    state.token.value = 'test-session-token'
+    state.lookupId.value = 'valid_ID-1'
+    await checkForm(state, true, true)
+  }
+  for (const action of Object.keys(actions)) {
+    state.busy.value = action
+    await checkForm(state, false, true)
+    state.busy.value = ''
+    await checkForm(state, true, true)
+  }
+  state.token.value = ' test-session-token '
+  state.lookupId.value = 'valid_ID-1'
+  await checkForm(state, true, true)
+  state.revocationUncertain.value = true
+  await checkForm(state, true, true)
+  scope.stop()
+  state.token.value = 'test-session-token'
+  state.lookupId.value = 'valid_ID-1'
+  assert.equal(state.busy.value, '')
+  await checkForm(state, false, true)
+  assert.equal(calls.length, 0)
+})
+
+test('compiled status form submits only explicitly with the exact ID and status action', async t => {
+  const { state, calls } = fixture(t)
+  const checkForm = statusForm()
+  const { input } = await checkForm(state, false, false)
+  for (const id of ['_', 'A_z-09'.repeat(21) + '_-']) {
+    input.props['onUpdate:modelValue'](id)
+    const { vnode } = await checkForm(state, true, true)
+    const previousCalls = calls.length
+    let prevented = false
+    const operation = vnode.props.onSubmit({ preventDefault() { prevented = true } })
+    assert.equal(prevented, true)
+    assert.equal(calls.length, previousCalls + 1)
+    const call = calls.at(-1)
+    assert.equal(call.action, 'status')
+    assert.deepEqual(call.args.slice(0, 2), [id, 'test-session-token'])
+    await checkForm(state, false, true)
+    call.resolve(snapshot({ id }))
+    await operation
+    await checkForm(state, true, true)
+    assert.equal(state.outcome.value.id, id)
+  }
+  assert.equal(calls.length, 2)
+})
 
 for (const [value, valid] of [
   [1, true], [60000, true], [0, false], [60001, false], [1.5, false],
@@ -1700,6 +1825,7 @@ for (const settlement of ['resolve', 'reject']) {
     })
     state.clearOutcome()
     assert.deepEqual(atAbort, { busy: '', outcome: null })
+    before.canCheckStatus = true
     assert.equal(calls[0].signal.aborted, true)
     assert.equal(state.busy.value, '')
     state.clearOutcome()
@@ -1844,6 +1970,8 @@ for (const status of ['active', 'committed']) {
     // Whitespace is an exact ID edit, not a normalized equivalent.
     state.lookupId.value = ` ${held().id} `
     before.lookupId = ` ${held().id} `
+    before.validLookupId = false
+    before.canCheckStatus = false
     assert.equal(state.lookupId.value, ` ${held().id} `)
     assert.equal(state.outcome.value, null)
     assert.equal(state.message.value, '')
@@ -1892,6 +2020,7 @@ for (const settlement of ['resolve', 'reject']) {
     const before = retainedOutcomeState(state)
     state.lookupId.value = ''
     before.lookupId = ''
+    before.validLookupId = false
     assert.deepEqual(atAbort, ['', null, '', ''])
     assert.equal(calls[0].signal.aborted, true)
     if (settlement === 'resolve') calls[0].resolve(snapshot({ status: 'committed', record: record('stale') }))
@@ -2073,7 +2202,7 @@ test('lookup editing after scope cleanup cannot clear manually seeded read conte
 
 test('lookup help describes exact IDs, local-only clearing and explicit requests with accessible association', () => {
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
-  assert.match(app, /<input id="lookup-id"[^>]*aria-describedby="lookup-id-help"/)
+  assert.match(app, /<input id="lookup-id"[^>]*:aria-describedby="[^"]*'lookup-id-help lookup-id-error' : 'lookup-id-help'"/)
   assert.match(app, /id="lookup-id-help"[^>]*>Een ander ID wist alleen de lokale status/)
   assert.match(app, /Geen herstel van toestemming of intrekking op de server; geen automatisch verzoek\./)
   assert.match(app, /Gebruik het exacte ID, zonder omringende spaties\./)

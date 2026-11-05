@@ -14,7 +14,7 @@ const busyLabels = {
 const {
   token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, lastJournalRefreshAt, busy,
   message, error, lookupId, outcome, outcomeReceivedAt, outcomeMismatch, lastSubmissionId, realtimeStatus,
-  validTtl, canRequestTicket, canCommit, canClearOutcome, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearCommand, clearSession, clearOutcome, clearJournal,
+  validLookupId, canCheckStatus, validTtl, canRequestTicket, canCommit, canClearOutcome, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearCommand, clearSession, clearOutcome, clearJournal,
 } = useSession()
 
 function date(value) {
@@ -106,10 +106,12 @@ function receiptIso(value) {
         </div>
         <form @submit.prevent="perform('status')">
           <label for="lookup-id">Ticket-ID</label>
-          <input id="lookup-id" v-model="lookupId" maxlength="128" required :disabled="!!busy" autocomplete="off" spellcheck="false" aria-describedby="lookup-id-help" />
+          <input id="lookup-id" v-model="lookupId" maxlength="128" required :disabled="!!busy" autocomplete="off" spellcheck="false" :aria-invalid="lookupId !== '' && !validLookupId" :aria-describedby="lookupId !== '' && !validLookupId ? 'lookup-id-help lookup-id-error' : 'lookup-id-help'" />
           <p id="lookup-id-help" class="muted">Een ander ID wist alleen de lokale status en breekt een lopende statuscontrole lokaal af.
-            Geen herstel van toestemming of intrekking op de server; geen automatisch verzoek. Gebruik het exacte ID, zonder omringende spaties.</p>
-          <button :disabled="!!busy || !token.trim() || !lookupId">Status controleren</button>
+            Geen herstel van toestemming of intrekking op de server; geen automatisch verzoek. Gebruik het exacte ID, zonder omringende spaties.
+            Formaat: 1–128 ASCII-letters (a–z, A–Z), cijfers (0–9), underscores (_) of koppeltekens (-).</p>
+          <p v-if="lookupId !== '' && !validLookupId" id="lookup-id-error" class="error">Ongeldig ticket-ID: gebruik 1–128 ASCII-letters, cijfers, underscores (_) of koppeltekens (-).</p>
+          <button :disabled="!canCheckStatus">Status controleren</button>
         </form>
         <div v-if="outcome" class="result">
           <label for="outcome-ticket-id">Ticketuitkomst-ID (selecteer en kopieer)</label>

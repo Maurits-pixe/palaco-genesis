@@ -80,6 +80,10 @@ function validId(id) {
   return typeof id === 'string' && /^[a-zA-Z0-9_-]{1,200}$/.test(id)
 }
 
+export function isValidTicketId(value) {
+  return validId(value) && value.length <= 128
+}
+
 export function timestamp(value) {
   if (typeof value !== 'string' && typeof value !== 'number') return NaN
   return typeof value === 'number' ? value : Date.parse(value)
@@ -264,7 +268,7 @@ export function validateTicketStatus(value, ticketId) {
 }
 
 export async function getTicketStatus(ticketId, token, fetcher, signal) {
-  if (!validId(ticketId) || ticketId.length > 128) throw new ApiError('Vul een geldig ticket-ID in.')
+  if (!isValidTicketId(ticketId)) throw new ApiError('Vul een geldig ticket-ID in.')
   const result = await request(`/v1/tickets/${ticketId}`, { token, fetcher, signal })
   const validated = validateTicketStatus(result, ticketId)
   if (!validated) throw new ApiError('Onverwacht ticketstatusantwoord van de service.')
