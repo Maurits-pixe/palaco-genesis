@@ -44,6 +44,17 @@ jobs:
               if not isinstance(data, dict):
                   errors.append(f"{path}: workflow root must be a mapping")
                   continue
+
+              trigger_config = data.get("on", data.get(True))
+              if isinstance(trigger_config, str):
+                  if trigger_config == "pull_request_target":
+                      errors.append(f"{path}: pull_request_target trigger is not allowed")
+              elif isinstance(trigger_config, list):
+                  if "pull_request_target" in trigger_config:
+                      errors.append(f"{path}: pull_request_target trigger is not allowed")
+              elif isinstance(trigger_config, dict):
+                  if "pull_request_target" in trigger_config:
+                      errors.append(f"{path}: pull_request_target trigger is not allowed")
           
               concurrency = data.get("concurrency")
               if not isinstance(concurrency, dict):
