@@ -391,12 +391,45 @@ def main() -> int:
                         )
                     for pr_list_key in ("branches-ignore", "paths", "paths-ignore", "types"):
                         if pr_list_key in pr_trigger:
-                            validate_non_empty_string_list(
+                            normalized_values = validate_non_empty_string_list(
                                 errors,
                                 path,
                                 f"pull_request.{pr_list_key}",
                                 pr_trigger.get(pr_list_key),
                             )
+                            if pr_list_key == "types" and normalized_values:
+                                allowed_pr_types = {
+                                    "assigned",
+                                    "unassigned",
+                                    "labeled",
+                                    "unlabeled",
+                                    "opened",
+                                    "edited",
+                                    "closed",
+                                    "reopened",
+                                    "synchronize",
+                                    "converted_to_draft",
+                                    "ready_for_review",
+                                    "locked",
+                                    "unlocked",
+                                    "review_requested",
+                                    "review_request_removed",
+                                    "auto_merge_enabled",
+                                    "auto_merge_disabled",
+                                    "milestoned",
+                                    "demilestoned",
+                                    "enqueued",
+                                    "dequeued",
+                                }
+                                invalid_pr_types = sorted(
+                                    pr_type
+                                    for pr_type in normalized_values
+                                    if pr_type not in allowed_pr_types
+                                )
+                                if invalid_pr_types:
+                                    errors.append(
+                                        f"{path}: pull_request.types contains unsupported events: {invalid_pr_types}"
+                                    )
                     branches = pr_trigger.get("branches")
                     if branches is None:
                         errors.append(
