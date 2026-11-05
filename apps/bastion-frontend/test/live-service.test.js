@@ -449,6 +449,116 @@ test('live service: ticket, commit, explicit status and journal use the same per
   assert.equal(f.calls.length, 4)
 })
 
+for (const { label, original, altered } of [
+  {
+    label: 'NFC versus NFD unicode',
+    original: '<note>café 😀</note>\nregistreer wijziging',
+    altered: ['<note>cafe\u0301 😀</note>\nregistreer wijziging'],
+  },
+  {
+    label: 'CRLF versus LF',
+    original: '<note>regel één 😀</note>\r\nregistreer wijziging',
+    altered: ['<note>regel één 😀</note>\nregistreer wijziging'],
+  },
+  {
+    label: 'leading and trailing whitespace',
+    original: ' \t<note>wijziging 😀</note>\nregistreer wijziging\t ',
+    altered: [
+      '<note>wijziging 😀</note>\nregistreer wijziging\t ',
+      ' \t<note>wijziging 😀</note>\nregistreer wijziging',
+      '<note>wijziging 😀</note>\nregistreer wijziging',
+    ],
+  },
+]) {
+  test(`live service: exact ticket command binding survives restart for ${label}`, { timeout: 15000 }, async t => {
+    const f = await fixture(t)
+    const s = f.session
+    const snapshot = () => ({
+      tickets: f.db.prepare('SELECT * FROM tickets ORDER BY id').all().map(row => ({ ...row })),
+      commands: f.db.prepare('SELECT * FROM commands ORDER BY seq').all().map(row => ({ ...row })),
+      audit: f.db.prepare('SELECT * FROM audit ORDER BY id').all().map(row => ({ ...row })),
+    })
+    s.command.value = original
+    await f.run('ticket')
+    assert.equal(s.error.value, '')
+    const issued = { ...s.ticket.value }
+    assert.equal(issued.command, original)
+    assert.equal(s.canCommit.value, true)
+    const active = snapshot()
+    assert.deepEqual(active, {
+      tickets: [{
+        id: issued.id, issuer: 'bastion-local', subject: 'local-admin',
+        action: 'journal:append', resource: 'commands', command: original,
+        not_before: now, expires_at: now + s.ttlMs.value, revoked: 0, consumed: 0,
+      }],
+      commands: [], audit: [],
+    })
+
+    for (const command of altered) {
+      assert.notEqual(command, original)
+      // Bypass commitCommand's local equality guard to exercise server authorization.
+      const response = await bounded(f.externalFetch('/v1/commands', {
+        method: 'POST',
+        headers: { Authorization: ['Bearer', token].join(' '), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket_id: issued.id, command }),
+      }), 'altered command request')
+      assert.equal(response.status, 403)
+      assert.deepEqual(await bounded(response.json(), 'altered command response'), { error: 'Ticket denied' })
+      assert.deepEqual(snapshot(), active, 'denial must not consume, revoke or mutate journal/audit authority')
+      assert.deepEqual({ ...s.ticket.value }, issued)
+      assert.equal(s.command.value, original)
+      assert.equal(s.canCommit.value, true)
+    }
+
+    await f.restart()
+    assert.deepEqual(snapshot(), active)
+    await bounded(s.checkCurrentTicket(), 'exact active ticket status after restart')
+    assert.equal(s.error.value, '')
+    assert.deepEqual({ ...s.outcome.value }, {
+      ...issued, checked_at: now, status: 'active', revoked: false, record: null,
+    })
+    assert.deepEqual({ ...s.ticket.value }, issued)
+    assert.equal(s.command.value, original)
+    assert.equal(s.canCommit.value, true)
+
+    await f.run('commit')
+    assert.equal(s.error.value, '')
+    assert.equal(s.ticket.value, null)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.lastSubmissionId.value, issued.id)
+    assert.equal(s.commands.value.length, 1)
+    const record = { ...s.commands.value[0] }
+    assert.deepEqual(record, { id: record.id, command: original, committed_at: now })
+    const committed = snapshot()
+    assert.deepEqual(committed.tickets, [{ ...active.tickets[0], consumed: 1 }])
+    assert.deepEqual(committed.commands, [{ seq: 1, ...record, ticket_id: issued.id }])
+    assert.deepEqual(committed.audit, [{
+      id: 1, ticket_id: issued.id, subject: 'local-admin', action: 'journal:append', checked_at: now,
+    }])
+    await f.run('commit')
+    assert.equal(f.count('POST', '/v1/tickets'), 1)
+    assert.equal(f.count('POST', '/v1/commands'), 1, 'session submits original exactly once')
+    assert.deepEqual(snapshot(), committed)
+
+    for (const restart of [false, true]) {
+      if (restart) await f.restart()
+      await bounded(s.checkLastSubmission(), 'exact committed ticket status')
+      assert.equal(s.error.value, '')
+      assert.deepEqual({ ...s.outcome.value }, {
+        ...issued, checked_at: now, status: 'committed', revoked: false, record,
+      })
+      await f.run('list')
+      assert.equal(s.error.value, '')
+      assert.equal(s.hasLoaded.value, true)
+      assert.deepEqual(s.commands.value, [record])
+      assert.equal(s.command.value, original)
+      assert.equal(s.ticket.value, null, 'status and journal must not restore spent local authority')
+      assert.equal(s.canCommit.value, false)
+      assert.deepEqual(snapshot(), committed)
+    }
+  })
+}
+
 for (const clockFailure of ['invalid', 'throwing']) {
   test(`live service: ${clockFailure} local receipt clock retains a real ticket for status and revocation, not commit`, { timeout: 15000 }, async t => {
     const f = await fixture(t)

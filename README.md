@@ -536,6 +536,12 @@ HTTP/SQLite-service. Ze controleren een normale vastlegging en expliciete
 statusopvraging na verloren succesvolle commit- en intrekkingsantwoorden.
 Een verloren commitantwoord mag niet tot herinzending leiden; een onzekere
 intrekking blijft geblokkeerd tot de serveruitkomst expliciet is gecontroleerd.
+Tests voor exacte tekstbinding vergelijken ook Unicode-normalisatievormen,
+CRLF met LF en gewijzigde randspaties. Gewijzigde tekst wordt rechtstreeks
+via HTTP aangeboden om de servercontrole los van de lokale controle te testen:
+weigering mag het ticket niet verbruiken of commandorecords en auditmutaties
+toevoegen. De oorspronkelijke tekst blijft via status, vastlegging en SQLite
+behouden na ordelijke serviceherstart. Dit test geen crash- of stroomuitvalherstel.
 De sessietests combineren ook de echte realtimeclient en service om lokaal
 logboekwissen en een gesimuleerd `pagehide` te controleren: socketcredentials
 worden verwijderd, serverrecords blijven behouden en opnieuw verbinden vereist
