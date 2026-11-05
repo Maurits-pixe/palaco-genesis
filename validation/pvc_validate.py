@@ -1944,12 +1944,12 @@ def evaluate_g9(
             evidence,
         )
     evidence["attestation_binding_verified"] = True
-    evidence["release_eligible"] = True
     if evidence["decision"] == "REJECT":
         return (
-            {"gate": "G9", "result": "HOLD", "findings": ["Release candidate is technically eligible, but the recorded decision is REJECT."]},
+            {"gate": "G9", "result": "HOLD", "findings": ["Release candidate decision is REJECT; release eligibility is not established."]},
             evidence,
         )
+    evidence["release_eligible"] = True
     return (
         {"gate": "G9", "result": "PASS", "findings": ["Release candidate is technically eligible; the APPROVE entry is a recorded claim, not authenticated authority."]},
         evidence,

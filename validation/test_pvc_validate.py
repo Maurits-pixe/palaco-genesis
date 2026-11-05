@@ -1320,8 +1320,9 @@ class G9Tests(unittest.TestCase):
     def test_rejection_does_not_claim_approval(self):
         result, evidence = self.evaluate(release_text=self.checklist(decision="REJECT"))
         self.assertEqual(result["result"], "HOLD")
-        self.assertTrue(evidence["release_eligible"])
+        self.assertFalse(evidence["release_eligible"])
         self.assertFalse(evidence["release_approval_claimed"])
+        self.assertTrue(evidence["attestation_binding_verified"])
 
     def test_prior_gate_order_must_be_exact(self):
         result, _ = self.evaluate(prior_gates=list(reversed(self.prior_gates)))
