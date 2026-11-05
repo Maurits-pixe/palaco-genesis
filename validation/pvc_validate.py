@@ -1964,12 +1964,86 @@ def evaluate_g9(
             else {}
         )
         if (
-            len(observed_scenarios) != len(expected_scenarios)
+            not isinstance(scenarios, list)
+            or len(scenarios) != len(expected_scenarios)
+            or len(observed_scenarios) != len(expected_scenarios)
             or observed_scenarios.keys() != expected_scenarios
             or any(result != "ok" for result in observed_scenarios.values())
         ):
             return (
                 {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G4-G7 PASS gates do not reconcile with complete, successful required scenario evidence."]},
+                evidence,
+            )
+    security = report.get("security_validation")
+    security_environment = (
+        security.get("security_environment") if isinstance(security, dict) else None
+    )
+    dependency_audit = (
+        security.get("dependency_audit") if isinstance(security, dict) else None
+    )
+    control_records = security.get("controls") if isinstance(security, dict) else None
+    if (
+        not isinstance(security, dict)
+        or security.get("source_revision") != source_revision
+        or security.get("source_tree_clean") is not True
+        or not isinstance(security_environment, dict)
+        or any(
+            security_environment.get(name) is not True
+            for name in (
+                "dependency_audit_available",
+                "dependency_audit_config_present",
+                "security_workflow_present",
+            )
+        )
+        or not isinstance(dependency_audit, dict)
+        or dependency_audit.get("result") != "PASS"
+        or dependency_audit.get("source_revision") != source_revision
+        or dependency_audit.get("source_tree_clean") is not True
+        or dependency_audit.get("run_id") != report.get("run_id")
+        or type(dependency_audit.get("exit_code")) is not int
+        or dependency_audit.get("exit_code") != 0
+        or not isinstance(dependency_audit.get("output_sha256"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", dependency_audit["output_sha256"])
+        or not isinstance(control_records, list)
+    ):
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G8 security evidence has missing or conflicting revision, cleanliness, environment or dependency-audit metadata."]},
+            evidence,
+        )
+    controls_by_name = {
+        control.get("control"): control
+        for control in control_records
+        if isinstance(control, dict) and isinstance(control.get("control"), str)
+    }
+    if len(controls_by_name) != len(control_records) or controls_by_name.keys() != G8_REQUIRED_CONTROLS:
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G8 evidence does not contain exactly one record for each required security control."]},
+            evidence,
+        )
+    for control in controls_by_name.values():
+        reference = control.get("evidence")
+        match = re.fullmatch(r"[^@]+@([0-9a-f]{64})", reference) if isinstance(reference, str) else None
+        if (
+            control.get("status") != "PASS"
+            or control.get("evidence_verified") is not True
+            or match is None
+            or control.get("observed_sha256") != match.group(1)
+        ):
+            return (
+                {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G8 control evidence is incomplete or does not reconcile with its verified digest."]},
+                evidence,
+            )
+    for key in ("checklist", "threat_model"):
+        artifact = security.get(key)
+        if (
+            not isinstance(artifact, dict)
+            or not isinstance(artifact.get("path"), str)
+            or not artifact["path"]
+            or not isinstance(artifact.get("sha256"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", artifact["sha256"])
+        ):
+            return (
+                {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G8 security checklist or threat-model digest is unavailable or malformed."]},
                 evidence,
             )
     attestation_path = release_evidence_root / evidence["attestation"]["path"]

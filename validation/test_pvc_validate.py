@@ -10,6 +10,7 @@ from pvc_validate import (
     G4_SCENARIOS,
     G5_SCENARIOS,
     G7_SCENARIOS,
+    G8_REQUIRED_CONTROLS,
     VALIDATOR_VERSION,
     _artifact_in_directory,
     _canonical_sha256,
@@ -973,6 +974,35 @@ class G9Tests(unittest.TestCase):
                     {"name": name, "result": "ok"} for name in sorted(G7_SCENARIOS)
                 ],
             },
+            "security_validation": {
+                "source_revision": revision or self.source_revision,
+                "source_tree_clean": True,
+                "checklist": {"path": "validation/security_checklist.md", "sha256": "d" * 64},
+                "threat_model": {"path": "release-registry/THREAT-MODEL.md", "sha256": "e" * 64},
+                "security_environment": {
+                    "dependency_audit_available": True,
+                    "dependency_audit_config_present": True,
+                    "security_workflow_present": True,
+                },
+                "dependency_audit": {
+                    "result": "PASS",
+                    "source_revision": revision or self.source_revision,
+                    "source_tree_clean": True,
+                    "run_id": "run-1",
+                    "exit_code": 0,
+                    "output_sha256": "f" * 64,
+                },
+                "controls": [
+                    {
+                        "control": control,
+                        "status": "PASS",
+                        "evidence": f"validation/{control}.json@{'1' * 64}",
+                        "evidence_verified": True,
+                        "observed_sha256": "1" * 64,
+                    }
+                    for control in sorted(G8_REQUIRED_CONTROLS)
+                ],
+            },
             "gates": report_gates,
         }
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
@@ -1193,6 +1223,38 @@ class G9Tests(unittest.TestCase):
         self.assertEqual(result["result"], "INCONCLUSIVE")
         self.assertFalse(evidence["release_eligible"])
 
+    def test_evidence_report_g8_requires_revision_bound_audit(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["security_validation"]["dependency_audit"]["source_revision"] = "stale"
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_g8_controls_must_match_verified_digests(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["security_validation"]["controls"][0]["observed_sha256"] = "0" * 64
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_g8_requires_all_security_controls(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["security_validation"]["controls"].pop()
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_g8_malformed_control_name_is_inconclusive(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["security_validation"]["controls"][0]["control"] = []
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
     def test_evidence_report_scenario_failure_cannot_support_pass_gate(self):
         report = json.loads(self.report_path.read_text(encoding="utf-8"))
         report["event_observability_tests"]["scenarios"][0]["result"] = "FAILED"
@@ -1204,6 +1266,23 @@ class G9Tests(unittest.TestCase):
     def test_evidence_report_requires_complete_integrated_scenario_coverage(self):
         report = json.loads(self.report_path.read_text(encoding="utf-8"))
         report["integrated_validation"]["scenarios"].pop()
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_rejects_duplicate_integrated_scenarios(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        scenarios = report["integrated_validation"]["scenarios"]
+        scenarios.append(dict(scenarios[0]))
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_malformed_integrated_scenarios_are_inconclusive(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["integrated_validation"]["scenarios"] = None
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
         result, evidence = self.evaluate(release_text=self.checklist())
         self.assertEqual(result["result"], "INCONCLUSIVE")
