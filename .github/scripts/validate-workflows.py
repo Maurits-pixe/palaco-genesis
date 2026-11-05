@@ -436,16 +436,16 @@ def main() -> int:
                     errors.append(
                         f"{path}: job '{job_name}' step #{step_index} must define a non-empty name"
                     )
-                step_if = step.get("if")
-                if step_if is not None and (not isinstance(step_if, str) or not step_if.strip()):
-                    errors.append(
-                        f"{path}: job '{job_name}' step #{step_index} if must be a non-empty string when provided"
-                    )
                 else:
                     normalized_step_name = step_name.strip()
                     step_display_name_to_indexes.setdefault(
                         normalized_step_name, []
                     ).append(step_index)
+                step_if = step.get("if")
+                if step_if is not None and (not isinstance(step_if, str) or not step_if.strip()):
+                    errors.append(
+                        f"{path}: job '{job_name}' step #{step_index} if must be a non-empty string when provided"
+                    )
                 if step.get("continue-on-error") is True:
                     errors.append(
                         f"{path}: job '{job_name}' step #{step_index} must not set continue-on-error to true"
