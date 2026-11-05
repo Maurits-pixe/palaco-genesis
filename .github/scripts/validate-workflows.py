@@ -42,6 +42,12 @@ def validate(path: Path) -> list[str]:
     permissions = data.get("permissions")
     if not isinstance(permissions, dict) or permissions.get("contents") != "read":
         errors.append(f"{path.name}: top-level permissions.contents must be read")
+    elif path.name != "pages.yml":
+        for perm_name, perm_value in permissions.items():
+            if perm_value == "write":
+                errors.append(
+                    f"{path.name}: top-level write permission {perm_name}=write is not allowed"
+                )
 
     concurrency = data.get("concurrency")
     if not isinstance(concurrency, dict):
@@ -83,11 +89,15 @@ def validate(path: Path) -> list[str]:
         timeout = job.get("timeout-minutes")
         if not isinstance(timeout, int):
             errors.append(f"{path.name}:{job_name}: timeout-minutes must be an integer")
+        elif timeout <= 0:
+            errors.append(f"{path.name}:{job_name}: timeout-minutes must be greater than 0")
         elif timeout > 60:
             errors.append(f"{path.name}:{job_name}: timeout-minutes must be <= 60")
 
         job_permissions = job.get("permissions")
-        if isinstance(job_permissions, dict):
+        if job_permissions is not None and not isinstance(job_permissions, dict):
+            errors.append(f"{path.name}:{job_name}: permissions must be a mapping when set")
+        elif isinstance(job_permissions, dict):
             for perm_name, perm_value in job_permissions.items():
                 if perm_value == "write":
                     if not (
