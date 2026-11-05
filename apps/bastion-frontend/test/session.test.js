@@ -7,7 +7,7 @@ import { compile } from '@vue/compiler-dom'
 import { renderToString } from 'vue/server-renderer'
 import { useSession } from '../src/useSession.js'
 import { createRealtime } from '../src/realtime.js'
-import { listCommands } from '../src/api.js'
+import { listCommands, validateTicketStatus } from '../src/api.js'
 
 const held = () => ({ id: 'ticket-1', command: 'journal only', not_before: 1000, expires_at: 1100 })
 const record = (id = 'record-1') => ({ id, command: 'journal only', committed_at: 1050 })
@@ -654,6 +654,60 @@ test('issued ticket text is labelled, explained and rendered as escaped text rat
     render,
   }))
   assert.equal(html, '<pre aria-labelledby="ticket-command-label" aria-describedby="ticket-command-help">één 🚀\n&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &lt;b&gt;tekst&lt;/b&gt;</pre>')
+})
+
+test('outcome explanations render the validated server status without restoring authority', async t => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const panel = app.match(/<div v-if="outcome" class="result">[\s\S]*?<\/div>/)?.[0]
+  assert.ok(panel)
+  assert.ok(panel.includes("<p>Status: {{ outcome.status }} · ingetrokken: {{ outcome.revoked ? 'ja' : 'nee' }}</p>"))
+  assert.doesNotMatch(panel, /v-html/)
+  const { code } = compile(panel, { mode: 'function', prefixIdentifiers: true })
+  const render = new Function('Vue', code)(Vue)
+  const explanations = {
+    pending: 'De server controleerde dit ticket vóór de begintijd.',
+    active: 'Bij de servercontrole lag dit ticket binnen het geldigheidsvenster.',
+    expired: 'De server controleerde dit ticket op of na de vervaltijd.',
+    revoked: 'Dit ticket is ingetrokken en geeft geen verdere toestemming.',
+    committed: 'Het commando is al opgeslagen als logboekrecord, niet uitgevoerd.',
+  }
+  const laterRevocation = 'Een latere intrekking maakt het eerdere logboekrecord niet ongedaan.'
+  const command = 'één 🚀\n<script>alert("x")</script> & <b>tekst</b>'
+  const cases = [
+    { status: 'pending', checked_at: 999 },
+    ...[1000, 1099].map(checked_at => ({ status: 'active', checked_at })),
+    ...[1100, 1200].map(checked_at => ({ status: 'expired', checked_at })),
+    ...[999, 1000, 1099, 1100, 1200].map(checked_at => ({ status: 'revoked', revoked: true, checked_at })),
+    ...[false, true].flatMap(revoked => [1050, 1100, 1200].map(checked_at => ({
+      status: 'committed', revoked, checked_at, record: { ...record(), command },
+    }))),
+  ]
+  for (const changes of cases) {
+    await t.test(`${changes.status}, revoked ${changes.revoked ?? false}, checked at ${changes.checked_at}`, async () => {
+      const outcome = snapshot({ command, ...changes })
+      assert.equal(validateTicketStatus(outcome, outcome.id), outcome)
+      const html = await renderToString(Vue.createSSRApp({
+        data: () => ({ outcome, outcomeMismatch: false, outcomeReceivedAt: null }),
+        methods: { date: value => String(value) },
+        render,
+      }))
+      assert.ok(html.includes(`Status: ${outcome.status} · ingetrokken: ${outcome.revoked ? 'ja' : 'nee'}`))
+      for (const [status, explanation] of Object.entries(explanations)) {
+        assert.equal(html.includes(explanation), status === outcome.status, status)
+      }
+      assert.ok(html.includes('Deze statuscontrole geeft geen nieuwe toestemming en herstelt geen lokaal ticket.'))
+      assert.ok(html.includes('Geen uitvoering of automatische herinzending.'))
+      assert.equal(html.includes('geen garantie dat het ticket nu nog bruikbaar is'), outcome.status === 'active')
+      assert.equal(html.includes(laterRevocation), outcome.status === 'committed' && outcome.revoked)
+      assert.equal(html.includes('Vastgelegd: 1050 · record-1'), outcome.status === 'committed')
+      assert.ok(html.includes('<pre>één 🚀\n&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &lt;b&gt;tekst&lt;/b&gt;</pre>'))
+      assert.doesNotMatch(html, /<script>|<b>|teruggedraaid|ongedaan gemaakt|geen (?:eerder |eerdere )?(?:logboekrecord|vastlegging)/i)
+    })
+  }
+  await t.test('no outcome hides the panel and all explanations', async () => {
+    const html = await renderToString(Vue.createSSRApp({ data: () => ({ outcome: null }), render }))
+    assert.doesNotMatch(html, /Status:|statuscontrole|logboekrecord|servercontrole/)
+  })
 })
 
 test('uncertain revocation retains exact issued Unicode and multiline markup text after draft clear and edit', async t => {

@@ -99,6 +99,16 @@ function receiptIso(value) {
           <p>Ticket: <code>{{ outcome.id }}</code></p>
           <p v-if="outcomeMismatch" role="alert" class="error">Statusgegevens wijken af van het lokaal bewaarde ticket. Deze uitkomst wijzigt het lokale ticket of de onzekerheidsblokkering niet.</p>
           <p>Status: {{ outcome.status }} · ingetrokken: {{ outcome.revoked ? 'ja' : 'nee' }}</p>
+          <p v-if="outcome.status === 'pending'" class="muted">De server controleerde dit ticket vóór de begintijd.</p>
+          <p v-else-if="outcome.status === 'active'" class="muted">Bij de servercontrole lag dit ticket binnen het geldigheidsvenster.
+            Dit is een momentopname, geen garantie dat het ticket nu nog bruikbaar is.</p>
+          <p v-else-if="outcome.status === 'expired'" class="muted">De server controleerde dit ticket op of na de vervaltijd. Het geldigheidsvenster is verstreken.</p>
+          <p v-else-if="outcome.status === 'revoked'" class="muted">Dit ticket is ingetrokken en geeft geen verdere toestemming.</p>
+          <p v-else-if="outcome.status === 'committed'" class="muted">Het commando is al opgeslagen als logboekrecord, niet uitgevoerd.
+            <span v-if="outcome.revoked">Een latere intrekking maakt het eerdere logboekrecord niet ongedaan.</span>
+          </p>
+          <p class="muted">Deze statuscontrole geeft geen nieuwe toestemming en herstelt geen lokaal ticket.
+            Geen uitvoering of automatische herinzending.</p>
           <p>Gecontroleerd door server: {{ date(outcome.checked_at) }}</p>
           <p aria-describedby="outcome-receipt-help">Uitkomst lokaal ontvangen:
             <time v-if="outcomeReceivedAt !== null" :datetime="receiptIso(outcomeReceivedAt)">{{ date(outcomeReceivedAt) }}</time>

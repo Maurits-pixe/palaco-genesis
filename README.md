@@ -284,6 +284,11 @@ oudere ID's kun je handmatig invoeren. De server rapporteert
 of het ticket wacht, actief, verlopen, ingetrokken of al gecommit is en levert
 bij een commit het bijbehorende record, ook buiten de laatste 100 logboekregels.
 Dit historische resultaat staat apart en verdringt geen recente logboekregels.
+De interface licht iedere ticketstatus in het Nederlands toe naast de ruwe
+serverstatus. Een actieve uitkomst is geen nieuwe lokale toestemming.
+Bij een vastgelegd én ingetrokken ticket blijft expliciet zichtbaar dat
+latere intrekking het eerdere logboekrecord niet terugdraait. Vastlegging
+betekent uitsluitend opslag van tekst, geen uitvoering van het commando.
 Naast de servercontroletijd toont de uitkomst wanneer de interface het
 antwoord lokaal heeft ontvangen. Dit ontvangsttijdstip hoort uitsluitend bij
 de zichtbare uitkomst en verdwijnt bij wissen of een nieuwe statuscontrole,
