@@ -602,6 +602,30 @@ def main() -> int:
                     )
                 step_uses = step.get("uses")
                 step_run = step.get("run")
+                step_with = step.get("with")
+                if step_with is not None:
+                    if not isinstance(step_with, dict):
+                        errors.append(
+                            f"{path}: job '{job_name}' step #{step_index} with must be a mapping when provided"
+                        )
+                    else:
+                        for with_key, with_value in step_with.items():
+                            if not isinstance(with_key, str) or not with_key.strip():
+                                errors.append(
+                                    f"{path}: job '{job_name}' step #{step_index} with keys must be non-empty strings"
+                                )
+                            if isinstance(with_value, str):
+                                if not with_value.strip():
+                                    errors.append(
+                                        f"{path}: job '{job_name}' step #{step_index} with['{with_key}'] must not be an empty string"
+                                    )
+                            elif (
+                                type(with_value) is not bool
+                                and not isinstance(with_value, (int, float))
+                            ):
+                                errors.append(
+                                    f"{path}: job '{job_name}' step #{step_index} with['{with_key}'] must be a scalar (string, number, or boolean)"
+                                )
                 if step_uses is None and step_run is None:
                     errors.append(
                         f"{path}: job '{job_name}' step #{step_index} must define exactly one of 'uses' or 'run'"
@@ -656,7 +680,7 @@ def main() -> int:
                         errors.append(
                             f"{path}: job '{job_name}' checkout step #{step_index} must use actions/checkout@v4"
                         )
-                    with_cfg = step.get("with")
+                    with_cfg = step_with
                     persist = (
                         with_cfg.get("persist-credentials")
                         if isinstance(with_cfg, dict)
