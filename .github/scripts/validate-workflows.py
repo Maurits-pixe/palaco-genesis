@@ -142,6 +142,11 @@ def main() -> int:
                                 f"{path}: schedule entry #{schedule_index} must be a mapping with a non-empty cron"
                             )
                             continue
+                        extra_schedule_keys = set(schedule_entry.keys()) - {"cron"}
+                        if extra_schedule_keys:
+                            errors.append(
+                                f"{path}: schedule entry #{schedule_index} has unsupported keys: {sorted(extra_schedule_keys)}"
+                            )
                         cron_value = schedule_entry.get("cron")
                         if not isinstance(cron_value, str) or not cron_value.strip():
                             errors.append(
