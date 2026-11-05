@@ -22,7 +22,7 @@ function date(value) {
 }
 
 function receiptIso(value) {
-  return value !== null ? new Date(value).toISOString() : undefined
+  return value !== null ? new Date(timestamp(value)).toISOString() : undefined
 }
 </script>
 
@@ -190,8 +190,9 @@ function receiptIso(value) {
         <p v-if="commands.length === 100" id="journal-limit-help" class="muted" role="status">De lokale limiet van 100 records is bereikt. Er kunnen oudere records op de server staan die hier niet zichtbaar zijn. Zoeken doorzoekt alleen de geladen records, niet de volledige historie.</p>
         <p v-if="!commands.length" class="muted">{{ journalRefreshFailed ? 'Geen records beschikbaar na mislukte verversing.' : hasLoaded ? 'Het logboek is leeg.' : 'Nog geen records geladen.' }}</p>
         <p v-else-if="!filteredCommands.length" class="muted">Geen geladen records gevonden voor deze zoekopdracht.</p>
-        <ol class="journal">
-          <li v-for="entry in filteredCommands" :key="entry.id"><pre>{{ entry.command }}</pre><small>{{ date(entry.committed_at) }} · {{ entry.id }}</small></li>
+        <p id="journal-record-help" class="muted">Het record-ID identificeert het opgeslagen logboekrecord, niet het ticket-ID voor statuscontrole. Opgeslagen tekst, geen uitvoering.</p>
+        <ol class="journal" aria-describedby="journal-record-help">
+          <li v-for="entry in filteredCommands" :key="entry.id"><pre>{{ entry.command }}</pre><small>Vastgelegd: <time :datetime="receiptIso(entry.committed_at)">{{ date(entry.committed_at) }}</time> · Record-ID: <code>{{ entry.id }}</code></small></li>
         </ol>
       </section>
     </div>

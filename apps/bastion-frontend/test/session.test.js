@@ -7,7 +7,7 @@ import { compile } from '@vue/compiler-dom'
 import { renderToString } from 'vue/server-renderer'
 import { realtimeLabels, useSession } from '../src/useSession.js'
 import { createRealtime } from '../src/realtime.js'
-import { commandLength, isValidToken, MAX_COMMAND_LENGTH, listCommands, validateTicketStatus } from '../src/api.js'
+import { commandLength, isValidToken, MAX_COMMAND_LENGTH, listCommands, normalizeCommand, timestamp, validateTicketStatus } from '../src/api.js'
 
 const held = () => ({ id: 'ticket-1', command: 'journal only', not_before: 1000, expires_at: 1100 })
 const record = (id = 'record-1') => ({ id, command: 'journal only', committed_at: 1050 })
@@ -3691,6 +3691,58 @@ test('journal UI wires local search, accessible controls, counts, distinct empty
   assert.match(app, /alleen in sessiegeheugen/)
 })
 
+test('compiled journal labels stored records with ISO times, escaped exact text and supplied order', async () => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const help = app.match(/<p id="journal-record-help"[^>]*>[\s\S]*?<\/p>/)?.[0]
+  const journal = app.match(/<ol class="journal"[^>]*>[\s\S]*?<\/ol>/)?.[0]
+  assert.ok(help)
+  assert.ok(journal)
+  assert.equal(app.match(/\bid="journal-record-help"/g)?.length, 1)
+  assert.doesNotMatch(help, /v-|@|\{\{|:id/)
+  assert.match(help, /record-ID identificeert het opgeslagen logboekrecord, niet het ticket-ID voor statuscontrole/)
+  assert.match(help, /Opgeslagen tekst, geen uitvoering\./)
+  const helpers = app.match(/function date\(value\) \{[\s\S]*?\n\}[\s\S]*?function receiptIso\(value\) \{[\s\S]*?\n\}/)?.[0]
+  assert.ok(helpers)
+  const formatters = new Function('timestamp', `${helpers}; return { date, receiptIso }`)(timestamp)
+  const render = compileFragment(`<div>${help}${journal}</div>`)
+  const entries = [
+    { id: 'numeric', command: '  first\n  exact text  ', committed_at: 1_700_000_000_123 },
+    { id: '<id>&"\'', command: '  <script>alert("x")</script> & \'text\'\n  ', committed_at: 0 },
+    { id: 'maximum', command: 'maximum numeric date', committed_at: 8_640_000_000_000_000 },
+    { id: 'iso', command: 'normal ISO date', committed_at: '2025-01-02T03:04:05.678+02:00' },
+    { id: 'maximum-iso', command: 'maximum ISO date', committed_at: '+275760-09-13T00:00:00.000Z' },
+  ]
+  const expectedIso = [
+    '2023-11-14T22:13:20.123Z', '1970-01-01T00:00:00.000Z',
+    '+275760-09-13T00:00:00.000Z', '2025-01-02T01:04:05.678Z',
+    '+275760-09-13T00:00:00.000Z',
+  ]
+  const escaped = value => value.replace(/[&<>"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[character])
+  entries.forEach((entry, index) => {
+    const accepted = { ...entry, id: `record-${index}` }
+    assert.deepEqual(normalizeCommand(accepted), accepted)
+  })
+  const before = structuredClone(entries)
+  const { html, find } = await render({ filteredCommands: entries, ...formatters })
+  assert.equal(find(node => node.type === 'ol').props['aria-describedby'], 'journal-record-help')
+  assert.equal(html.match(/\bid="journal-record-help"/g)?.length, 1)
+  const rows = [...html.matchAll(/<li>([\s\S]*?)<\/li>/g)].map(match => match[1])
+  assert.equal(rows.length, entries.length)
+  entries.forEach((entry, index) => {
+    const displayDate = new Date(timestamp(entry.committed_at)).toLocaleString('nl-NL')
+    assert.equal(rows[index], `<pre>${escaped(entry.command)}</pre><small>Vastgelegd: <time datetime="${expectedIso[index]}">${escaped(displayDate)}</time> · Record-ID: <code>${escaped(entry.id)}</code></small>`)
+  })
+  assert.doesNotMatch(html, /<script>/)
+  assert.deepEqual(entries, before)
+
+  const { html: empty, find: findEmpty } = await render({ filteredCommands: [], ...formatters })
+  assert.equal(findEmpty(node => node.type === 'ol').props['aria-describedby'], 'journal-record-help')
+  assert.equal(empty.match(/\bid="journal-record-help"/g)?.length, 1)
+  assert.doesNotMatch(empty, /<li\b|<time\b|<code\b|Vastgelegd:|Record-ID:|datetime=/)
+})
+
 test('compiled realtime controls retain scoped guidance in every connection and busy state', async t => {
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
   const panel = app.match(/<p role="status"[^>]*>{{ realtimeLabels\[realtimeStatus\] }}<\/p>[\s\S]*?<\/div>/)?.[0]
@@ -3746,7 +3798,7 @@ test('compiled journal limit notice depends only on loaded count, including real
   const count = '<p role="status" aria-live="polite">{{ filteredCommands.length }} van {{ commands.length }} geladen records</p>'
   const start = app.indexOf(count)
   assert.ok(start >= 0)
-  const panel = app.slice(start, app.indexOf('<ol class="journal">', start))
+  const panel = app.slice(start, app.indexOf('<ol class="journal"', start))
   assert.ok(panel.includes(notice))
   const { code } = compile(panel, { mode: 'function', prefixIdentifiers: true })
   const render = new Function('Vue', code)(Vue)
@@ -4273,7 +4325,7 @@ test('journal receipt UI uses an accessible local-clock label and semantic ISO t
   assert.match(app, /role="status" aria-live="polite" aria-describedby="journal-receipt-help"/)
   assert.match(app, /v-if="lastJournalRefreshAt !== null">Laatste geslaagde verversing ontvangen:/)
   assert.match(app, /<time :datetime="receiptIso\(lastJournalRefreshAt\)">{{ date\(lastJournalRefreshAt\) }}<\/time>/)
-  assert.match(app, /return value !== null \? new Date\(value\).toISOString\(\) : undefined/)
+  assert.match(app, /return value !== null \? new Date\(timestamp\(value\)\).toISOString\(\) : undefined/)
   assert.match(app, /v-else>Geen ontvangsttijdstip beschikbaar\./)
   assert.match(app, /Volgens de lokale klok; geen server- of audittijd en geen garantie/)
   assert.match(app, /Realtime-events vernieuwen dit ontvangsttijdstip van de snapshot niet\./)

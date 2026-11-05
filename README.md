@@ -506,6 +506,10 @@ Sessiewissen en het resetten van de realtimeverbinding blijven de lokale
 logboekgegevens en dit ontvangsttijdstip wissen.
 Met **Zoek in geladen logboek** filter je lokaal op commandotekst of
 record-ID, zonder onderscheid tussen hoofdletters en kleine letters.
+Iedere logboekregel labelt het **Record-ID** en toont **Vastgelegd** met
+een machineleesbaar tijdstip. Een record-ID identificeert opgeslagen
+logboektekst, niet het ticket-ID voor een statuscontrole. Vastlegging
+betekent geen uitvoering van de tekst.
 De zoektekst is letterlijk, geen reguliere expressie; spaties aan begin
 en einde worden genegeerd. De teller toont zichtbare versus geladen records.
 Alleen de maximaal 100 momenteel geladen records worden doorzocht, niet
