@@ -842,6 +842,11 @@ def main() -> int:
                 errors.append(
                     f"{path}: job '{job_name}' must depend on 'build-binaries' via needs"
                 )
+            if workflow_filename == "release.yml" and job_name == "publish-release":
+                if not isinstance(job_needs, str) or job_needs.strip() != "build-binaries":
+                    errors.append(
+                        f"{path}: job '{job_name}' must set needs to exactly 'build-binaries'"
+                    )
             job_if = job.get("if")
             if job_if is not None and (not isinstance(job_if, str) or not job_if.strip()):
                 errors.append(
