@@ -112,6 +112,10 @@ def validate(path: Path) -> list[str]:
         ):
             errors.append(f"{path.name}:{job_name}: job name must be a non-empty string when set")
 
+        job_if = job.get("if")
+        if job_if is not None and (not isinstance(job_if, str) or not job_if.strip()):
+            errors.append(f"{path.name}:{job_name}: job if must be a non-empty string when set")
+
         needs = job.get("needs")
         if needs is not None:
             if isinstance(needs, str):
@@ -219,6 +223,12 @@ def validate(path: Path) -> list[str]:
             if step_name is not None and (not isinstance(step_name, str) or not step_name.strip()):
                 errors.append(
                     f"{path.name}:{job_name}:step#{idx + 1}: step name must be a non-empty string when set"
+                )
+
+            step_if = step.get("if")
+            if step_if is not None and (not isinstance(step_if, str) or not step_if.strip()):
+                errors.append(
+                    f"{path.name}:{job_name}:step#{idx + 1}: step if must be a non-empty string when set"
                 )
 
             has_run = "run" in step
