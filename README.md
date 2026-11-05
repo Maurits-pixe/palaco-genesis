@@ -370,6 +370,11 @@ of de verbindingspoging nog actueel is. Een adapter die tijdens het aanmaken
 door sessiewissing, disposal of een vervangende poging is achterhaald, wordt
 opgeruimd zonder zijn verbinding te starten. Zijn callbacks worden genegeerd;
 dit is geen algemene garantie voor willekeurige synchrone Vue-watchers.
+De realtimeclient bewaakt ook zelf de verbindingsgeneratie rond zijn
+reset-/statuscallbacks en socketaanmaak. Een expliciete verbreking of
+vervangende verbinding maakt de oudere poging ongeldig. Een achterhaalde
+socket wordt zonder starten opgeruimd, inclusief handshakecredentials;
+oude callbacks en fouten mogen de vervangende verbinding niet resetten.
 Tijdens **Logboek vernieuwen** blijven eerder geladen records zichtbaar.
 Met **Wis lokaal logboek** verwijder je de geladen records, zoektekst en
 verversingsgegevens en verbreek je realtime. Een lopende logboekverversing
