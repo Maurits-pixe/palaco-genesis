@@ -17,6 +17,7 @@ import { TRUSTED_MODULES, verifyModule, launchUrl } from '../../neo-launcher/src
 const token = 'test-only-live-service-operator-secret'
 const now = 1000
 const commitCaution = 'Vastlegging niet bevestigd. Controleer de laatste inzending via het ticket-ID. Dien niet automatisch opnieuw in.'
+const localCommitBlocked = 'Niet ingezonden: de lokale ticketcontrole blokkeert vastleggen. Voor deze actie is geen commitverzoek verstuurd. Dit zegt niets over eerdere inzendingen.'
 
 async function bounded(pending, label) {
   let timer
@@ -461,6 +462,8 @@ for (const clockFailure of ['invalid', 'throwing']) {
 
     await f.run('commit')
     assert.equal(s.ticket.value, held)
+    assert.equal(s.message.value, localCommitBlocked)
+    assert.equal(s.error.value, '')
     assert.equal(s.lastSubmissionId.value, '')
     assert.equal(f.count('POST', '/v1/commands'), 0)
     assert.equal(f.calls.length, 1)
@@ -539,6 +542,8 @@ for (const sample of ['expiry', 'invalid', 'throwing']) {
     assert.equal(s.outcomeReceivedAt.value, receipt)
     assert.equal(s.busy.value, '')
     assert.equal(s.error.value, '')
+    assert.equal(s.message.value, localCommitBlocked)
+    assert.equal(s.revocationUncertain.value, false)
     assert.equal(f.calls.length, requests)
     assert.equal(f.count('POST', '/v1/commands'), 0)
     assert.deepEqual(persisted(), before, 'no ticket, journal, audit or watermark mutation')
@@ -551,6 +556,7 @@ for (const sample of ['expiry', 'invalid', 'throwing']) {
       await f.run('commit')
       assert.equal(s.now.value, now + 100)
       assert.equal(s.error.value, '')
+      assert.equal(s.message.value, 'Commando vastgelegd in het logboek; er is niets uitgevoerd.')
       assert.equal(s.ticket.value, null)
       assert.equal(s.lastSubmissionId.value, held.id)
       assert.equal(s.outcome.value, null)
@@ -1214,6 +1220,10 @@ test('live service: a lost successful commit consumes local authority without re
 
   await f.run('commit')
   assert.equal(f.calls.length, 2, 'recommit cannot send a second POST')
+  assert.equal(s.message.value, localCommitBlocked)
+  assert.equal(s.error.value, '')
+  assert.equal(f.count('POST', '/v1/commands'), 1)
+  assert.deepEqual({ ...f.db.prepare('SELECT id, command, committed_at FROM commands WHERE ticket_id = ?').get(id) }, persisted)
   assert.equal(s.lastSubmissionId.value, id)
   await bounded(s.checkLastSubmission(), 'lost commit reconciliation')
   assert.equal(s.error.value, '')

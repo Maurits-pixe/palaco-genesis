@@ -14,6 +14,7 @@ const snapshot = (changes = {}) => ({
 const actions = { ticket: 'issueTicket', commit: 'commitCommand', revoke: 'revokeTicket', status: 'getTicketStatus', list: 'listCommands' }
 const results = { ticket: held(), commit: record(), revoke: undefined, status: snapshot(), list: [record()] }
 const commitCaution = 'Vastlegging niet bevestigd. Controleer de laatste inzending via het ticket-ID. Dien niet automatisch opnieuw in.'
+const localCommitBlocked = 'Niet ingezonden: de lokale ticketcontrole blokkeert vastleggen. Voor deze actie is geen commitverzoek verstuurd. Dit zegt niets over eerdere inzendingen.'
 const deferred = () => {
   let resolve, reject
   const promise = new Promise((yes, no) => { resolve = yes; reject = no })
@@ -278,8 +279,100 @@ for (const value of [
     assert.deepEqual(commandState(state, ['now', 'canCommit', 'remaining', 'message', 'error']), retained)
     assert.equal(state.busy.value, '')
     assert.equal(state.error.value, '')
+    assert.equal(state.message.value, localCommitBlocked)
     assert.equal(calls.length, 0)
     assert.equal(clock.interval, 100)
+  })
+}
+
+for (const reason of ['not yet valid', 'command mismatch', 'no ticket', 'uncertain revoke']) {
+  test(`local commit feedback preserves session state for ${reason}`, async t => {
+    const { state, calls, clock } = fixture(t)
+    prepare(state, 'commit')
+    if (reason === 'not yet valid') clock.time = 999
+    if (reason === 'command mismatch') state.ticket.value = { ...held(), command: 'other command' }
+    if (reason === 'no ticket') state.ticket.value = null
+    if (reason === 'uncertain revoke') state.revocationUncertain.value = true
+    const retained = commandState(state, ['now', 'canCommit', 'remaining', 'message', 'error'])
+
+    await state.perform('commit')
+
+    assert.deepEqual(commandState(state, ['now', 'canCommit', 'remaining', 'message', 'error']), retained)
+    assert.equal(state.message.value, localCommitBlocked)
+    assert.equal(state.error.value, '')
+    assert.equal(calls.length, 0)
+  })
+}
+
+for (const settlement of ['resolve', 'reject']) {
+  test(`actual commit ${settlement} replaces local rejection feedback`, async t => {
+    const { state, calls, clock } = fixture(t)
+    prepare(state, 'commit')
+    clock.time = 1100
+    await state.perform('commit')
+    assert.equal(state.message.value, localCommitBlocked)
+    clock.time = 1050
+    const committing = state.perform('commit')
+    assert.equal(state.message.value, '')
+    assert.equal(calls.length, 1)
+    if (settlement === 'resolve') calls[0].resolve(record())
+    else calls[0].reject(new Error('response lost'))
+    await committing
+    assert.equal(state.message.value, settlement === 'resolve'
+      ? 'Commando vastgelegd in het logboek; er is niets uitgevoerd.' : commitCaution)
+    assert.equal(state.error.value, settlement === 'resolve' ? '' : 'response lost')
+  })
+}
+
+test('local commit feedback survives selective clears until a new explicit action', async t => {
+  const { state, calls, clock } = fixture(t)
+  prepare(state, 'commit')
+  clock.time = 1100
+  await state.perform('commit')
+  state.lookupId.value = 'other-id'
+  assert.equal(state.outcome.value, null)
+  assert.equal(state.message.value, localCommitBlocked)
+  for (const clear of ['clearCommand', 'clearOutcome', 'clearJournal']) {
+    state[clear]()
+    assert.equal(state.message.value, localCommitBlocked, clear)
+    assert.equal(state.error.value, '')
+    assert.equal(calls.length, 0)
+  }
+  const checking = state.checkLastSubmission()
+  assert.equal(state.message.value, '')
+  calls[0].resolve(snapshot({ id: 'retained-id' }))
+  await checking
+  assert.match(state.message.value, /Ticketstatus opgehaald/)
+})
+
+for (const reset of ['clearSession', 'pagehide', 'token', 'dispose']) {
+  test(`${reset} clears local commit feedback`, async t => {
+    const { state, calls, clock, eventTarget, scope } = fixture(t)
+    prepare(state, 'commit')
+    clock.time = 1100
+    await state.perform('commit')
+    assert.equal(state.message.value, localCommitBlocked)
+    if (reset === 'pagehide') eventTarget.dispatchEvent(pageTransition('pagehide', true))
+    else if (reset === 'token') state.token.value = 'replacement-token'
+    else if (reset === 'dispose') scope.stop()
+    else state.clearSession()
+    assertEmpty(state, reset === 'token' ? 'replacement-token' : '')
+    assert.equal(calls.length, 0)
+  })
+}
+
+for (const guard of ['busy', 'disposed']) {
+  test(`${guard} commit leaves existing feedback untouched`, async t => {
+    const { state, calls, scope, clock } = fixture(t)
+    if (guard === 'disposed') scope.stop()
+    prepare(state, 'commit')
+    if (guard === 'busy') state.busy.value = 'status'
+    const retained = commandState(state)
+    const reads = clock.reads
+    await state.perform('commit')
+    assert.deepEqual(commandState(state), retained)
+    assert.equal(clock.reads, reads)
+    assert.equal(calls.length, 0)
   })
 }
 
@@ -305,6 +398,7 @@ for (const cachedTime of [1050, null, 1100]) {
         assert.equal(state.lastSubmissionId.value, 'retained-id')
         assert.equal(state.outcome.value, outcome)
         assert.equal(state.revocationUncertain.value, true)
+        assert.equal(state.message.value, localCommitBlocked)
       } else {
         assert.equal(calls[0].action, 'commit')
         assert.equal(calls[0].args[0], heldTicket)

@@ -216,6 +216,10 @@ Dit is uitsluitend een lokale indicatie, geen serverbeslissing of toestemming.
 Vlak vóór vastleggen leest BASTION de lokale klok opnieuw, onafhankelijk van
 de laatste afteltick. Is het ticket dan verlopen of de klok ongeldig, dan
 volgt geen commitverzoek en wordt het lokale ticket niet verbruikt.
+Bij deze lokale blokkering toont de interface **Niet ingezonden**: voor
+die actie is geen commitverzoek verstuurd. Dit zegt niets over eerdere
+inzendingen en verschilt van **Vastlegging niet bevestigd** na een mislukte
+inzendpoging. Ticketuitkomsten en het laatst ingezonden ID blijven behouden.
 Een geldige lokale controle vervangt de servercontrole niet.
 Een falende of ongeldige klok bij het openen van de interface verhindert
 het opbouwen van de sessie niet: er is dan geen bruikbare lokale tijd.

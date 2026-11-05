@@ -256,7 +256,10 @@ export function useSession({
         const sampledAt = sampleReceiptTime()
         if (!current()) return
         now.value = sampledAt
-        if (!canCommit.value) return
+        if (!canCommit.value) {
+          message.value = 'Niet ingezonden: de lokale ticketcontrole blokkeert vastleggen. Voor deze actie is geen commitverzoek verstuurd. Dit zegt niets over eerdere inzendingen.'
+          return
+        }
         const currentTicket = ticket.value
         // Een onzekere netwerkuitkomst mag nooit een automatische tweede inzending veroorzaken.
         const submission = defaultApi.beginSubmission(currentTicket)
