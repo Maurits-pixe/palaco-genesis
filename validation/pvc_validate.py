@@ -1610,11 +1610,13 @@ def evaluate_g9(
     release_text: str | None,
     release_error: str | None,
     source_revision: str | None,
+    expected_repository: str | None,
     source_tree_clean: bool | None,
     prior_gates: list[dict[str, Any]],
     release_artifact: dict[str, str] | None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     evidence: dict[str, Any] = {
+        "repository": expected_repository,
         "source_revision": source_revision,
         "source_tree_clean": source_tree_clean,
         "release_checklist": release_artifact,
@@ -1701,9 +1703,9 @@ def evaluate_g9(
         )
     evidence["release_approval_claimed"] = fields["decision"] == "APPROVE"
 
-    if not source_revision or source_tree_clean is not True:
+    if not source_revision or not expected_repository or source_tree_clean is not True:
         return (
-            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Release evidence is not bound to a clean source revision."]},
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Release evidence is not bound to a clean repository and source revision."]},
             evidence,
         )
     if fields["source_revision"] != source_revision:
@@ -1799,6 +1801,11 @@ def evaluate_g9(
     if report.get("revision") != source_revision:
         return (
             {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G0-G8 evidence report is for a different source revision."]},
+            evidence,
+        )
+    if report.get("repository") != expected_repository:
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G0-G8 evidence report is for a different or unidentified repository."]},
             evidence,
         )
     report_gates = report.get("gates")
@@ -2263,6 +2270,7 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
         release_text,
         release_error,
         revision or None,
+        _repository_identity(),
         not dirty,
         [g0, g1, g2, g3, g4, g5, g6, g7, g8],
         release_artifact,

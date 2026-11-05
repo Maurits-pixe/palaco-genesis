@@ -911,6 +911,7 @@ class G9Tests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.addCleanup(self.temp_dir.cleanup)
         self.source_revision = "abc123"
+        self.repository = "Maurits-pixe/palaco-genesis"
         self.prior_gates = [{"gate": f"G{index}", "result": "PASS"} for index in range(9)]
         (self.root / "dist").mkdir()
         (self.root / "validation").mkdir()
@@ -922,6 +923,7 @@ class G9Tests(unittest.TestCase):
 
     def write_report(self, revision=None, gates=None):
         report = {
+            "repository": self.repository,
             "revision": revision or self.source_revision,
             "gates": gates or self.prior_gates,
         }
@@ -956,6 +958,7 @@ class G9Tests(unittest.TestCase):
             "release_text": self.checklist(),
             "release_error": None,
             "source_revision": self.source_revision,
+            "expected_repository": self.repository,
             "source_tree_clean": True,
             "prior_gates": self.prior_gates,
             "release_artifact": self.artifact,
@@ -1040,6 +1043,19 @@ class G9Tests(unittest.TestCase):
 
     def test_evidence_report_revision_mismatch_is_inconclusive(self):
         self.write_report(revision="stale")
+        result, _ = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
+    def test_evidence_report_repository_mismatch_is_inconclusive(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["repository"] = "different/project"
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        attestation = {
+            "source_revision": self.source_revision,
+            "artifact_sha256": hashlib.sha256((self.root / "dist/palaco.tar").read_bytes()).hexdigest(),
+            "evidence_report_sha256": hashlib.sha256(self.report_path.read_bytes()).hexdigest(),
+        }
+        (self.root / "dist/attestation.json").write_text(json.dumps(attestation), encoding="utf-8")
         result, _ = self.evaluate(release_text=self.checklist())
         self.assertEqual(result["result"], "INCONCLUSIVE")
 
