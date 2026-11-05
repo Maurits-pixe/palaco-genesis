@@ -368,6 +368,11 @@ def main() -> int:
                 errors.append(
                     f"{path}: job '{job_name}' must set runs-on to 'ubuntu-latest'"
                 )
+            job_if = job.get("if")
+            if job_if is not None and (not isinstance(job_if, str) or not job_if.strip()):
+                errors.append(
+                    f"{path}: job '{job_name}' if must be a non-empty string when provided"
+                )
 
             if job.get("continue-on-error") is True:
                 errors.append(
@@ -430,6 +435,11 @@ def main() -> int:
                 if not isinstance(step_name, str) or not step_name.strip():
                     errors.append(
                         f"{path}: job '{job_name}' step #{step_index} must define a non-empty name"
+                    )
+                step_if = step.get("if")
+                if step_if is not None and (not isinstance(step_if, str) or not step_if.strip()):
+                    errors.append(
+                        f"{path}: job '{job_name}' step #{step_index} if must be a non-empty string when provided"
                     )
                 else:
                     normalized_step_name = step_name.strip()
