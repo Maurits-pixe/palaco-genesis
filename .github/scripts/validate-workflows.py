@@ -636,7 +636,6 @@ def main() -> int:
                 "env",
                 "defaults",
                 "continue-on-error",
-                "working-directory",
                 "environment",
             }
             if unsupported_job_keys:
@@ -880,15 +879,6 @@ def main() -> int:
                     errors.append(
                         f"{path}: job '{job_name}' environment must be a string or mapping when provided"
                     )
-            job_working_directory = job.get("working-directory")
-            if job_working_directory is not None and (
-                not isinstance(job_working_directory, str)
-                or not job_working_directory.strip()
-            ):
-                errors.append(
-                    f"{path}: job '{job_name}' working-directory must be a non-empty string when provided"
-                )
-
             steps = job.get("steps", [])
             if not isinstance(steps, list):
                 errors.append(f"{path}: job '{job_name}' steps must be a list")
