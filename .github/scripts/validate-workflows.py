@@ -259,6 +259,21 @@ def validate(path: Path) -> list[str]:
                     f"{path.name}:{job_name}:step#{idx + 1}: step env must be a mapping when set"
                 )
 
+            step_timeout = step.get("timeout-minutes")
+            if step_timeout is not None:
+                if type(step_timeout) is not int:
+                    errors.append(
+                        f"{path.name}:{job_name}:step#{idx + 1}: timeout-minutes must be an integer when set"
+                    )
+                elif step_timeout <= 0:
+                    errors.append(
+                        f"{path.name}:{job_name}:step#{idx + 1}: timeout-minutes must be greater than 0"
+                    )
+                elif step_timeout > 60:
+                    errors.append(
+                        f"{path.name}:{job_name}:step#{idx + 1}: timeout-minutes must be <= 60"
+                    )
+
             has_run = "run" in step
             has_uses = "uses" in step
             if has_run == has_uses:
