@@ -392,6 +392,13 @@ def main() -> int:
                         errors.append(
                             f"{path}: job '{job_name}' strategy.max-parallel must be a positive integer when provided"
                         )
+                    strategy_matrix = job_strategy.get("matrix")
+                    if strategy_matrix is not None and (
+                        not isinstance(strategy_matrix, dict) or not strategy_matrix
+                    ):
+                        errors.append(
+                            f"{path}: job '{job_name}' strategy.matrix must be a non-empty mapping when provided"
+                        )
             job_needs = job.get("needs")
             if isinstance(job_needs, str):
                 normalized_need = job_needs.strip()
