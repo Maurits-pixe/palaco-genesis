@@ -70,6 +70,9 @@ def validate(path: Path) -> list[str]:
             errors.append(f"{path.name}:{job_name}: job must be a mapping")
             continue
 
+        if job.get("continue-on-error") is True:
+            errors.append(f"{path.name}:{job_name}: continue-on-error: true is not allowed")
+
         if job.get("runs-on") != "ubuntu-latest":
             errors.append(f"{path.name}:{job_name}: runs-on must be ubuntu-latest")
 
@@ -100,6 +103,11 @@ def validate(path: Path) -> list[str]:
         for idx, step in enumerate(steps):
             if not isinstance(step, dict):
                 continue
+
+            if step.get("continue-on-error") is True:
+                errors.append(
+                    f"{path.name}:{job_name}:step#{idx + 1}: continue-on-error: true is not allowed"
+                )
 
             uses = iter_uses(step)
             if not uses:
