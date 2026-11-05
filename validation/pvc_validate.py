@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate revision-bound G0/G1 evidence for PVC-001."""
+"""Generate revision-bound G0-G6 evidence for PVC-001."""
 
 from __future__ import annotations
 
@@ -22,7 +22,8 @@ GRAPH_SCHEMA_PATH = ROOT / "validation/system-graph.schema.json"
 ORDERING_PATH = ROOT / "validation/dependency-ordering.json"
 PLAN_PATH = ROOT / "validation/execution-plan.json"
 PLAN_SCHEMA_PATH = ROOT / "validation/execution-plan.schema.json"
-VALIDATOR_VERSION = "0.6.0"
+VALIDATOR_VERSION = "0.7.0"
+G6_RULESET_VERSION = "1.0.0"
 NODE_KINDS = {"service", "capability", "resource", "lifecycle", "event"}
 G4_SCENARIOS = {
     "runtime_plan_confirms_execution_path",
@@ -1021,6 +1022,163 @@ def evaluate_g5(
     )
 
 
+def evaluate_g6(
+    graph: Any,
+    graph_error: str | None,
+    inventory: list[dict[str, str]] | None,
+    inventory_error: str | None,
+    prior_results: list[str],
+    source_revision: str | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    evidence: dict[str, Any] = {
+        "ruleset_version": G6_RULESET_VERSION,
+        "source_revision": source_revision,
+        "system_graph_revision": graph.get("revision") if isinstance(graph, dict) else None,
+        "system_graph_sha256": _canonical_sha256(graph) if isinstance(graph, dict) else None,
+        "inventory_sha256": _canonical_sha256(inventory) if inventory is not None else None,
+        "inventory": inventory,
+        "classifications": [],
+    }
+    if graph_error == "missing":
+        return (
+            {"gate": "G6", "result": "HOLD", "findings": ["SystemGraph artifact is not present."]},
+            evidence,
+        )
+    if graph_error is not None:
+        return (
+            {"gate": "G6", "result": "FAIL", "findings": [f"SystemGraph could not be parsed: {graph_error}"]},
+            evidence,
+        )
+    if inventory_error or inventory is None:
+        return (
+            {
+                "gate": "G6",
+                "result": "HOLD",
+                "findings": [f"Implementation inventory is unavailable: {inventory_error or 'unknown error'}."],
+            },
+            evidence,
+        )
+    if not all(
+        isinstance(package, dict)
+        and isinstance(package.get("name"), str)
+        and package["name"]
+        and isinstance(package.get("manifest_path"), str)
+        and package["manifest_path"]
+        for package in inventory
+    ):
+        return (
+            {"gate": "G6", "result": "HOLD", "findings": ["Implementation inventory has an invalid package record."]},
+            evidence,
+        )
+    if not isinstance(graph, dict) or not isinstance(graph.get("nodes"), list):
+        return (
+            {"gate": "G6", "result": "FAIL", "findings": ["SystemGraph nodes must be available for compliance analysis."]},
+            evidence,
+        )
+
+    graph_paths: list[tuple[str, Path]] = []
+    path_errors: list[str] = []
+    for node in graph["nodes"]:
+        if not isinstance(node, dict) or not isinstance(node.get("source_paths"), list):
+            path_errors.append("Graph node has no valid source_paths inventory.")
+            continue
+        for source_path in node["source_paths"]:
+            if (
+                not isinstance(source_path, str)
+                or not source_path
+                or source_path == "."
+                or "\\" in source_path
+                or Path(source_path).is_absolute()
+                or ".." in Path(source_path).parts
+            ):
+                path_errors.append(f"Invalid graph source path: {source_path!r}.")
+                continue
+            resolved_path = (ROOT / source_path).resolve()
+            try:
+                resolved_path.relative_to(ROOT.resolve())
+            except ValueError:
+                path_errors.append(f"Graph source path escapes the repository: {source_path!r}.")
+                continue
+            if not resolved_path.exists():
+                path_errors.append(f"Graph source path does not exist: {source_path}.")
+                continue
+            graph_paths.append((source_path, resolved_path))
+
+    package_roots = {
+        package["name"]: (ROOT / package["manifest_path"]).resolve().parent
+        for package in inventory
+    }
+    covered: set[str] = set()
+    for package_name, package_root in package_roots.items():
+        for _, source_root in graph_paths:
+            if not source_root.is_dir():
+                continue
+            try:
+                package_root.relative_to(source_root)
+                covered.add(package_name)
+                break
+            except ValueError:
+                continue
+    uncovered = sorted(set(package_roots) - covered)
+    evidence["classifications"] = [
+        {
+            "class": "mandatory_violation",
+            "rule": "G6-SOURCE-PATH-EXISTS",
+            "result": "FAIL",
+            "detail": detail,
+        }
+        for detail in path_errors
+    ] + [
+        {
+            "class": "mandatory_violation",
+            "rule": "G6-WORKSPACE-COVERAGE",
+            "result": "FAIL",
+            "component": package_name,
+            "detail": "Workspace package is not covered by any declared SystemGraph source path.",
+        }
+        for package_name in uncovered
+    ]
+
+    if path_errors or uncovered:
+        findings = [*path_errors]
+        if uncovered:
+            findings.append(f"Uncovered workspace packages: {uncovered}.")
+        return {"gate": "G6", "result": "FAIL", "findings": findings}, evidence
+    if not source_revision:
+        return (
+            {"gate": "G6", "result": "HOLD", "findings": ["Implementation inventory is not bound to a source revision."]},
+            evidence,
+        )
+    if graph.get("revision") != source_revision:
+        return (
+            {
+                "gate": "G6",
+                "result": "INCONCLUSIVE",
+                "findings": ["SystemGraph revision does not match the implementation inventory revision."],
+            },
+            evidence,
+        )
+    if len(prior_results) != 6 or any(result != "PASS" for result in prior_results):
+        return (
+            {
+                "gate": "G6",
+                "result": "HOLD",
+                "findings": ["G0-G5 must all PASS before architecture compliance can PASS."],
+            },
+            evidence,
+        )
+    return (
+        {
+            "gate": "G6",
+            "result": "PASS",
+            "findings": [
+                f"All {len(inventory)} workspace packages are covered by existing SystemGraph source paths."
+            ],
+        },
+        evidence,
+    )
+
+
 def _git(*args: str) -> str | None:
     completed = subprocess.run(
         ["git", *args],
@@ -1062,6 +1220,35 @@ def _workspace_components() -> set[str] | None:
         }
     except (KeyError, TypeError, json.JSONDecodeError):
         return None
+
+
+def _workspace_manifest_inventory() -> tuple[list[dict[str, str]] | None, str | None]:
+    completed = subprocess.run(
+        ["cargo", "metadata", "--no-deps", "--format-version", "1"],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        return None, completed.stderr.strip() or "cargo metadata failed"
+    try:
+        metadata = json.loads(completed.stdout)
+        members = set(metadata["workspace_members"])
+        inventory = []
+        for package in metadata["packages"]:
+            if package["id"] not in members:
+                continue
+            manifest = Path(package["manifest_path"]).resolve()
+            inventory.append(
+                {
+                    "name": package["name"],
+                    "manifest_path": manifest.relative_to(ROOT.resolve()).as_posix(),
+                }
+            )
+        return sorted(inventory, key=lambda item: item["name"]), None
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        return None, f"Could not parse Cargo workspace inventory: {error}"
 
 
 def _workspace_dependency_graph() -> tuple[list[str] | None, list[tuple[str, str]] | None, str | None]:
@@ -1226,10 +1413,19 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
         not dirty,
         os.environ.get("GITHUB_RUN_ID"),
     )
+    workspace_inventory, inventory_error = _workspace_manifest_inventory()
+    g6, architecture_compliance = evaluate_g6(
+        graph,
+        graph_error,
+        workspace_inventory,
+        inventory_error,
+        [gate["result"] for gate in (g0, g1, g2, g3, g4, g5)],
+        revision or None,
+    )
 
     report: dict[str, Any] = {
         "format_version": 1,
-        "validator": {"name": "PVC-001 G0-G5 validator", "version": VALIDATOR_VERSION},
+        "validator": {"name": "PVC-001 G0-G6 validator", "version": VALIDATOR_VERSION},
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "repository": _repository_identity(),
         "revision": revision or None,
@@ -1246,7 +1442,8 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
         "execution_schedule": execution_schedule,
         "runtime_kernel_tests": g4_evidence,
         "event_observability_tests": g5_evidence,
-        "gates": [g0, g1, g2, g3, g4, g5],
+        "architecture_compliance": architecture_compliance,
+        "gates": [g0, g1, g2, g3, g4, g5, g6],
     }
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path = output_dir / "pvc-001-evidence.json"
@@ -1260,7 +1457,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     dependency_sha256 = report["dependency_graph"].get("sha256") or "unavailable"
     plan_sha256 = report["execution_schedule"].get("plan_sha256") or "unavailable"
     lines = [
-        "# PVC-001 G0-G5 Evidence",
+        "# PVC-001 G0-G6 Evidence",
         "",
         f"- Repository: `{report['repository'] or 'unknown'}`",
         f"- Revision: `{report['revision'] or 'unknown'}`",
@@ -1317,6 +1514,31 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"| `{scenario['name']}` | {scenario['result']} |"
         for scenario in event_tests["scenarios"]
     )
+    compliance = report["architecture_compliance"]
+    lines.extend(
+        [
+            "",
+            "## Architecture compliance",
+            "",
+            f"- Ruleset: `{compliance['ruleset_version']}`",
+            f"- Implementation revision: `{compliance['source_revision'] or 'unavailable'}`",
+            f"- SystemGraph revision: `{compliance['system_graph_revision'] or 'unavailable'}`",
+            f"- SystemGraph SHA-256: `{compliance['system_graph_sha256'] or 'unavailable'}`",
+            f"- Implementation inventory SHA-256: `{compliance['inventory_sha256'] or 'unavailable'}`",
+            "",
+            "| Component | Manifest |",
+            "|---|---|",
+        ]
+    )
+    lines.extend(
+        f"| `{package['name']}` | `{package['manifest_path']}` |"
+        for package in compliance["inventory"] or []
+    )
+    if compliance["classifications"]:
+        lines.extend(["", "| Classification | Rule | Result | Detail |", "|---|---|---|---|"])
+        for item in compliance["classifications"]:
+            detail = item.get("detail", "").replace("|", "\\|")
+            lines.append(f"| {item['class']} | {item['rule']} | {item['result']} | {detail} |")
     layers = report["execution_schedule"].get("execution_layers", [])
     lines.extend(["", "## Deterministic execution layers", ""])
     if layers:

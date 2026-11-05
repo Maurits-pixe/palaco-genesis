@@ -12,6 +12,7 @@ from pvc_validate import (
     evaluate_g3,
     evaluate_g4,
     evaluate_g5,
+    evaluate_g6,
 )
 
 
@@ -523,6 +524,86 @@ class G5Tests(unittest.TestCase):
             self.output, 0, "PASS", source_revision="abc123", source_tree_clean=False
         )
         self.assertEqual(result["result"], "INCONCLUSIVE")
+
+
+class G6Tests(unittest.TestCase):
+    def setUp(self):
+        self.graph = {
+            "schema_version": 1,
+            "revision": "abc123",
+            "nodes": [
+                {
+                    "id": "foundation",
+                    "kind": "service",
+                    "source_paths": ["crates/palaco-foundation"],
+                }
+            ],
+            "relation_kinds": {"supports": {"meaning": "support", "source_kinds": ["service"], "target_kinds": ["service"]}},
+            "relations": [],
+        }
+        self.inventory = [
+            {"name": "palaco-foundation", "manifest_path": "crates/palaco-foundation/Cargo.toml"}
+        ]
+        self.prior_results = ["PASS"] * 6
+
+    def evaluate(self, graph=None, inventory=None, prior_results=None, revision="abc123", error=None):
+        return evaluate_g6(
+            self.graph if graph is None else graph,
+            error,
+            self.inventory if inventory is None else inventory,
+            None,
+            self.prior_results if prior_results is None else prior_results,
+            revision,
+        )
+
+    def test_passes_when_graph_paths_cover_workspace_packages(self):
+        result, evidence = self.evaluate()
+        self.assertEqual(result["result"], "PASS")
+        self.assertEqual(evidence["ruleset_version"], "1.0.0")
+        self.assertTrue(evidence["inventory_sha256"])
+        self.assertEqual(evidence["inventory"], self.inventory)
+
+    def test_missing_graph_holds(self):
+        result, _ = self.evaluate(graph=None, error="missing")
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_missing_source_path_is_mandatory_violation(self):
+        graph = {
+            **self.graph,
+            "nodes": [{**self.graph["nodes"][0], "source_paths": ["crates/missing-module"]}],
+        }
+        result, evidence = self.evaluate(graph=graph)
+        self.assertEqual(result["result"], "FAIL")
+        self.assertEqual(evidence["classifications"][0]["class"], "mandatory_violation")
+
+    def test_repository_root_is_not_a_valid_component_source_path(self):
+        graph = {
+            **self.graph,
+            "nodes": [{**self.graph["nodes"][0], "source_paths": ["."]}],
+        }
+        result, _ = self.evaluate(graph=graph)
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_uncovered_workspace_package_is_mandatory_violation(self):
+        inventory = self.inventory + [
+            {"name": "palaco-kernel", "manifest_path": "runtime/palaco-kernel/Cargo.toml"}
+        ]
+        result, evidence = self.evaluate(inventory=inventory)
+        self.assertEqual(result["result"], "FAIL")
+        self.assertEqual(evidence["classifications"][0]["rule"], "G6-WORKSPACE-COVERAGE")
+
+    def test_graph_revision_mismatch_is_inconclusive(self):
+        graph = {**self.graph, "revision": "stale"}
+        result, _ = self.evaluate(graph=graph)
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
+    def test_prior_gate_blocker_holds_compliance(self):
+        result, _ = self.evaluate(prior_results=["PASS", "HOLD", "PASS", "PASS", "PASS", "PASS"])
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_missing_prior_gate_results_hold_compliance(self):
+        result, _ = self.evaluate(prior_results=[])
+        self.assertEqual(result["result"], "HOLD")
 
 
 if __name__ == "__main__":
