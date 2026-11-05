@@ -45,6 +45,10 @@ def main() -> int:
             )
 
         if isinstance(trigger_config, str):
+            if trigger_config == "schedule":
+                errors.append(
+                    f"{path}: schedule trigger must be a non-empty list of mappings with non-empty cron strings"
+                )
             if trigger_config == "workflow_dispatch":
                 errors.append(
                     f"{path}: workflow_dispatch trigger must be a mapping (use '{{}}' when no inputs are needed)"
@@ -60,6 +64,10 @@ def main() -> int:
             if trigger_config == "pull_request_target":
                 errors.append(f"{path}: pull_request_target trigger is not allowed")
         elif isinstance(trigger_config, list):
+            if "schedule" in trigger_config:
+                errors.append(
+                    f"{path}: schedule trigger must be a non-empty list of mappings with non-empty cron strings"
+                )
             if "workflow_dispatch" in trigger_config:
                 errors.append(
                     f"{path}: workflow_dispatch trigger must be a mapping (use '{{}}' when no inputs are needed)"
@@ -75,6 +83,24 @@ def main() -> int:
             if "pull_request_target" in trigger_config:
                 errors.append(f"{path}: pull_request_target trigger is not allowed")
         elif isinstance(trigger_config, dict):
+            if "schedule" in trigger_config:
+                schedule_trigger = trigger_config.get("schedule")
+                if not isinstance(schedule_trigger, list) or not schedule_trigger:
+                    errors.append(
+                        f"{path}: schedule trigger must be a non-empty list of mappings with non-empty cron strings"
+                    )
+                else:
+                    for schedule_index, schedule_entry in enumerate(schedule_trigger):
+                        if not isinstance(schedule_entry, dict):
+                            errors.append(
+                                f"{path}: schedule entry #{schedule_index} must be a mapping with a non-empty cron"
+                            )
+                            continue
+                        cron_value = schedule_entry.get("cron")
+                        if not isinstance(cron_value, str) or not cron_value.strip():
+                            errors.append(
+                                f"{path}: schedule entry #{schedule_index} must define a non-empty cron string"
+                            )
             if "workflow_dispatch" in trigger_config and not isinstance(
                 trigger_config.get("workflow_dispatch"), dict
             ):
