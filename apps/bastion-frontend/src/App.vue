@@ -2,6 +2,15 @@
 import { commandLength, MAX_COMMAND_LENGTH, timestamp } from './api.js'
 import { realtimeLabels, useSession } from './useSession.js'
 
+const busyLabels = {
+  __proto__: null,
+  ticket: 'Ticket aanvragen…',
+  commit: 'Commando indienen…',
+  revoke: 'Ticket intrekken…',
+  status: 'Ticketstatus controleren…',
+  list: 'Logboek vernieuwen…',
+}
+
 const {
   token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, lastJournalRefreshAt, busy,
   message, error, lookupId, outcome, outcomeReceivedAt, outcomeMismatch, lastSubmissionId, realtimeStatus,
@@ -36,7 +45,7 @@ function receiptIso(value) {
         Een al verzonden wijziging kan nog worden voltooid. Wissen verwijdert ook lokale ID's:
         kopieer het ticket-ID vóór het wissen om later handmatig de status op te zoeken. Dien nooit automatisch opnieuw in.</p>
     </section>
-    <div role="status" aria-live="polite"><p v-if="busy" class="notice">Even wachten…</p><p v-if="message" class="notice">{{ message }}</p></div>
+    <div role="status" aria-live="polite"><p v-if="busy" class="notice">{{ busyLabels[busy] ?? 'Verzoek verwerken…' }}</p><p v-if="message" class="notice">{{ message }}</p></div>
     <p v-if="error" role="alert" class="error">{{ error }} Bij een onzekere inzending: controleer handmatig het ticket-ID. Dien niet automatisch opnieuw in.</p>
     <div class="grid">
       <section aria-labelledby="ticket-title" :aria-busy="!!busy">

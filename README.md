@@ -187,6 +187,10 @@ een opslagverzoek server-side is teruggedraaid.
 
 BASTION geeft eerst een kortlevend ticket uit;
 pas de afzonderlijke commitactie schrijft het commando in het logboek.
+Tijdens een verzoek noemt de toegankelijke voortgangsmelding de lopende actie:
+ticket aanvragen, commando indienen, ticket intrekken, ticketstatus controleren
+of logboek vernieuwen. De melding bevat geen token of commandotekst en is
+geen bevestiging dat de server de actie heeft voltooid.
 Als een ticketaanvraag mislukt, meldt de interface **Ticketuitgifte niet
 bevestigd**: er kan al een serverticket bestaan, zonder dat de client het
 antwoord heeft ontvangen. Zonder ontvangen ticket is lokaal vastleggen niet

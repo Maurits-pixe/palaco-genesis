@@ -2858,6 +2858,60 @@ test('App uses the production composable and always enables clear with the local
   assert.match(app, /Dien nooit automatisch opnieuw in/)
 })
 
+test('compiled global status region renders local action progress without side effects or success claims', async t => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const script = app.match(/<script setup>([\s\S]*?)<\/script>/)?.[1]
+  const initializer = script?.match(/const busyLabels = (\{[\s\S]*?\n\})/)?.[1]
+  assert.ok(initializer)
+  const busyLabels = new Function(`return (${initializer})`)()
+  assert.equal(Object.getPrototypeOf(busyLabels), null)
+  assert.deepEqual(Object.keys(busyLabels).sort(), ['commit', 'list', 'revoke', 'status', 'ticket'])
+  const region = app.match(/<div role="status" aria-live="polite">[\s\S]*?<\/div>/)?.[0]
+  assert.ok(region)
+  assert.doesNotMatch(region, /@|v-on|v-model|v-html|<button|<input|<form|perform|fetch/)
+  const { code } = compile(region, { mode: 'function', prefixIdentifiers: true })
+  const render = new Function('Vue', code)(Vue)
+  const cases = [
+    ['ticket', 'Ticket aanvragen…'],
+    ['commit', 'Commando indienen…'],
+    ['revoke', 'Ticket intrekken…'],
+    ['status', 'Ticketstatus controleren…'],
+    ['list', 'Logboek vernieuwen…'],
+    ['', null],
+    ['unknown-action', 'Verzoek verwerken…'],
+    ['__proto__', 'Verzoek verwerken…'],
+    ['constructor', 'Verzoek verwerken…'],
+  ]
+  for (const [busy, label] of cases) {
+    for (const message of ['', '<em>Afzonderlijke melding & tekst</em>']) {
+      await t.test(`busy=${busy || 'idle'}, message=${!!message}`, async t => {
+        const { state, calls, sockets } = fixture(t)
+        prepare(state, 'status')
+        state.busy.value = busy
+        state.message.value = message
+        const before = commandState(state)
+        const html = await renderToString(Vue.createSSRApp({
+          setup: () => ({ ...state, busyLabels }),
+          render,
+        }))
+        assert.match(html, /^<div role="status" aria-live="polite">/)
+        const notices = [...html.matchAll(/<p class="notice">([\s\S]*?)<\/p>/g)].map(match => match[1])
+        assert.deepEqual(notices, [
+          ...(label ? [label] : []),
+          ...(message ? ['&lt;em&gt;Afzonderlijke melding &amp; tekst&lt;/em&gt;'] : []),
+        ])
+        assert.doesNotMatch(html, /Even wachten|geslaagd|opgeslagen|uitgevoerd|bevestigd|<em>|onClick/i)
+        for (const value of [state.token.value, state.command.value, state.ticket.value.id, state.lastSubmissionId.value]) {
+          assert.ok(!html.includes(value))
+        }
+        assert.deepEqual(commandState(state), before)
+        assert.deepEqual(calls, [])
+        assert.deepEqual(sockets, [])
+      })
+    }
+  }
+})
+
 test('local search uses trimmed case-insensitive literal command text OR record ID without mutations or requests', async t => {
   const { state, calls, sockets } = fixture(t)
   const loaded = Object.freeze([
