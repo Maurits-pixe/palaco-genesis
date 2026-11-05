@@ -373,6 +373,25 @@ def main() -> int:
                 errors.append(
                     f"{path}: job '{job_name}' must set runs-on to 'ubuntu-latest'"
                 )
+            job_strategy = job.get("strategy")
+            if job_strategy is not None:
+                if not isinstance(job_strategy, dict):
+                    errors.append(
+                        f"{path}: job '{job_name}' strategy must be a mapping when provided"
+                    )
+                else:
+                    strategy_fail_fast = job_strategy.get("fail-fast")
+                    if strategy_fail_fast is not None and type(strategy_fail_fast) is not bool:
+                        errors.append(
+                            f"{path}: job '{job_name}' strategy.fail-fast must be boolean when provided"
+                        )
+                    strategy_max_parallel = job_strategy.get("max-parallel")
+                    if strategy_max_parallel is not None and (
+                        type(strategy_max_parallel) is not int or strategy_max_parallel <= 0
+                    ):
+                        errors.append(
+                            f"{path}: job '{job_name}' strategy.max-parallel must be a positive integer when provided"
+                        )
             job_needs = job.get("needs")
             if isinstance(job_needs, str):
                 normalized_need = job_needs.strip()
