@@ -99,6 +99,23 @@ def validate(path: Path) -> list[str]:
                     )
             if "matrix" in strategy and not isinstance(strategy["matrix"], dict):
                 errors.append(f"{path.name}:{job_name}: strategy.matrix must be a mapping")
+            elif isinstance(strategy.get("matrix"), dict):
+                matrix = strategy["matrix"]
+                for matrix_key in ("include", "exclude"):
+                    matrix_value = matrix.get(matrix_key)
+                    if matrix_value is None:
+                        continue
+                    if not isinstance(matrix_value, list):
+                        errors.append(
+                            f"{path.name}:{job_name}: strategy.matrix.{matrix_key} must be a list"
+                        )
+                        continue
+                    for entry in matrix_value:
+                        if not isinstance(entry, dict):
+                            errors.append(
+                                f"{path.name}:{job_name}: strategy.matrix.{matrix_key} entries must be mappings"
+                            )
+                            break
 
         if job.get("continue-on-error") is True:
             errors.append(f"{path.name}:{job_name}: continue-on-error: true is not allowed")
