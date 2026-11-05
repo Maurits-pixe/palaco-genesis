@@ -152,9 +152,9 @@ def main() -> int:
                     )
 
             timeout = job.get("timeout-minutes")
-            if not isinstance(timeout, int) or timeout <= 0:
+            if type(timeout) is not int or timeout <= 0:
                 errors.append(
-                    f"{path}: job '{job_name}' must define positive timeout-minutes"
+                    f"{path}: job '{job_name}' must define positive integer timeout-minutes"
                 )
             elif timeout > 60:
                 errors.append(
