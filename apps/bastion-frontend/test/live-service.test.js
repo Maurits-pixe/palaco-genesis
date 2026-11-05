@@ -76,6 +76,7 @@ async function fixture(t, { realtime = false, fault = () => {} } = {}) {
   const eventTarget = new EventTarget()
   const intervals = new Set()
   const calls = []
+  const externalCommitCalls = []
   const sockets = []
   const listGates = []
   let app, db, session, dropNext, witness, nextListGate, tick
@@ -151,7 +152,8 @@ async function fixture(t, { realtime = false, fault = () => {} } = {}) {
       } else {
         const id = path.split('/').at(-1)
         assert.equal(db.prepare('SELECT revoked FROM tickets WHERE id = ?').get(id).revoked, 1)
-        assert.equal(db.prepare('SELECT COUNT(*) AS count FROM commands WHERE ticket_id = ?').get(id).count, 0)
+        const { consumed } = db.prepare('SELECT consumed FROM tickets WHERE id = ?').get(id)
+        assert.equal(db.prepare('SELECT COUNT(*) AS count FROM commands WHERE ticket_id = ?').get(id).count, consumed)
       }
       await bounded(response.body.cancel(), 'lost response body cancellation')
       losses++
@@ -217,7 +219,7 @@ async function fixture(t, { realtime = false, fault = () => {} } = {}) {
     await connected
   }
   return {
-    session, db, calls, sockets, witness, scope, eventTarget, intervals,
+    session, db, calls, externalCommitCalls, sockets, witness, scope, eventTarget, intervals,
     externalFetch,
     get origin() { return origin },
     async restart() {
@@ -247,6 +249,15 @@ async function fixture(t, { realtime = false, fault = () => {} } = {}) {
     async commitExternal(command) {
       const ticket = await productionApi.issueTicket(command, 10000, token, externalFetch)
       return productionApi.commitCommand(ticket, command, token, externalFetch)
+    },
+    commitTicketExternal(ticket) {
+      return productionApi.commitCommand(ticket, ticket.command, token, async (path, options) => {
+        const call = { path, method: options.method, ticketId: JSON.parse(options.body).ticket_id }
+        externalCommitCalls.push(call)
+        const response = await externalFetch(path, options)
+        call.status = response.status
+        return response
+      })
     },
     statusExternal: id => productionApi.getTicketStatus(id, token, externalFetch),
     revokeExternal: ticket => productionApi.revokeTicket(ticket, token, externalFetch),
@@ -1194,6 +1205,133 @@ test('live service: a real revocation 503 preserves uncertainty through active s
   assert.equal(f.count('GET', path), 1)
   assert.equal(f.count('POST', '/v1/commands'), 0)
   assert.equal(f.calls.length, 5)
+})
+
+test('live service: external commit before lost successful revoke preserves the record while matching committed status clears uncertainty', { timeout: 15000 }, async t => {
+  const f = await fixture(t)
+  const s = f.session
+  await f.run('ticket')
+  const held = s.ticket.value
+  const path = `/v1/tickets/${held.id}`
+  assert.equal(s.canCommit.value, true)
+
+  // Await the real commit before revoking: this tests ordering, not simultaneous racing.
+  const record = await bounded(f.commitTicketExternal(held), 'external commit of session ticket')
+  assert.deepEqual({ ...f.db.prepare('SELECT consumed, revoked FROM tickets WHERE id = ?').get(held.id) },
+    { consumed: 1, revoked: 0 })
+  await f.run('list')
+  assert.deepEqual(s.commands.value, [record])
+  f.loseNext('DELETE', path)
+  await f.run('revoke')
+  assert.equal(f.losses, 1)
+  assert.match(s.error.value, /Geen geldig antwoord/)
+  assert.equal(s.ticket.value, held)
+  assert.equal(s.revocationUncertain.value, true)
+  assert.equal(s.canCommit.value, false)
+  assert.deepEqual(s.commands.value, [record])
+  assert.deepEqual({ ...f.db.prepare('SELECT consumed, revoked FROM tickets WHERE id = ?').get(held.id) },
+    { consumed: 1, revoked: 1 })
+  const audit = f.db.prepare('SELECT * FROM audit ORDER BY rowid').all()
+  assert.deepEqual(audit.map(({ ticket_id, action }) => ({ ticket_id, action })), [
+    { ticket_id: held.id, action: 'journal:append' },
+    { ticket_id: held.id, action: 'ticket:revoke' },
+  ])
+  await f.run('ticket')
+  await f.run('commit')
+  assert.equal(f.calls.length, 3, 'uncertainty causes neither issuance, commit, retry nor automatic status')
+  await bounded(s.checkCurrentTicket(), 'committed and revoked matching status')
+  assert.equal(s.error.value, '')
+  assert.deepEqual({ ...s.outcome.value }, {
+    id: held.id, command: held.command, not_before: held.not_before, expires_at: held.expires_at,
+    checked_at: now, status: 'committed', revoked: true, record,
+  })
+  assert.equal(s.outcomeReceivedAt.value, now)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.revocationUncertain.value, false)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, '', 'the external commit is not a local submission')
+  assert.deepEqual(s.commands.value, [record], 'status must not erase the existing journal')
+  await f.run('list')
+  await f.run('commit')
+  assert.deepEqual(s.commands.value, [record])
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM tickets').get().count, 1)
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM commands').get().count, 1)
+  assert.deepEqual({ ...f.db.prepare('SELECT id, command, committed_at FROM commands WHERE ticket_id = ?').get(held.id) }, record)
+  assert.deepEqual(f.db.prepare('SELECT * FROM audit ORDER BY rowid').all(), audit)
+  assert.deepEqual(f.externalCommitCalls, [
+    { path: '/v1/commands', method: 'POST', ticketId: held.id, status: 201 },
+  ])
+  assert.deepEqual(f.calls, [
+    { path: '/v1/tickets', method: 'POST', status: 201 },
+    { path: '/v1/commands', method: 'GET', status: 200 },
+    { path, method: 'DELETE', status: 200 },
+    { path, method: 'GET', status: 200 },
+    { path: '/v1/commands', method: 'GET', status: 200 },
+  ])
+})
+
+test('live service: lost successful revoke before external commit denies the same ticket without resolving local uncertainty automatically', { timeout: 15000 }, async t => {
+  const f = await fixture(t)
+  const s = f.session
+  await f.run('ticket')
+  const held = s.ticket.value
+  const path = `/v1/tickets/${held.id}`
+  f.loseNext('DELETE', path)
+  await f.run('revoke')
+  assert.equal(f.losses, 1)
+  assert.match(s.error.value, /Geen geldig antwoord/)
+  assert.equal(s.ticket.value, held)
+  assert.equal(s.revocationUncertain.value, true)
+  assert.equal(s.canCommit.value, false)
+  const tickets = f.db.prepare('SELECT * FROM tickets').all()
+  assert.equal(tickets.length, 1)
+  assert.equal(tickets[0].id, held.id)
+  assert.equal(tickets[0].consumed, 0)
+  assert.equal(tickets[0].revoked, 1)
+  const audit = f.db.prepare('SELECT * FROM audit ORDER BY rowid').all()
+  assert.deepEqual(audit.map(({ ticket_id, action }) => ({ ticket_id, action })), [
+    { ticket_id: held.id, action: 'ticket:revoke' },
+  ])
+
+  await assert.rejects(bounded(f.commitTicketExternal(held), 'external commit after session revocation'), /Geen toestemming/)
+  assert.deepEqual(f.externalCommitCalls, [
+    { path: '/v1/commands', method: 'POST', ticketId: held.id, status: 403 },
+  ])
+  assert.equal(s.ticket.value, held)
+  assert.equal(s.revocationUncertain.value, true, 'external denial cannot reconcile session authority')
+  assert.equal(s.outcome.value, null)
+  assert.deepEqual(s.commands.value, [])
+  await f.run('ticket')
+  await f.run('commit')
+  assert.equal(f.calls.length, 2, 'no automatic retry, reconciliation or replacement ticket')
+  await bounded(s.checkCurrentTicket(), 'explicit revoked status after denied external commit')
+  assert.equal(s.error.value, '')
+  assert.deepEqual({ ...s.outcome.value }, {
+    id: held.id, command: held.command, not_before: held.not_before, expires_at: held.expires_at,
+    checked_at: now, status: 'revoked', revoked: true, record: null,
+  })
+  assert.equal(s.outcomeReceivedAt.value, now)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.revocationUncertain.value, false)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, '')
+  await f.run('list')
+  await f.run('commit')
+  assert.deepEqual(s.commands.value, [])
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.deepEqual(f.db.prepare('SELECT * FROM tickets').all(), tickets)
+  assert.deepEqual(f.db.prepare('SELECT * FROM commands').all(), [])
+  assert.deepEqual(f.db.prepare('SELECT * FROM audit ORDER BY rowid').all(), audit)
+  assert.equal(f.externalCommitCalls.length, 1, 'the denied external commit is never retried')
+  assert.deepEqual(f.calls, [
+    { path: '/v1/tickets', method: 'POST', status: 201 },
+    { path, method: 'DELETE', status: 200 },
+    { path, method: 'GET', status: 200 },
+    { path: '/v1/commands', method: 'GET', status: 200 },
+  ])
 })
 
 test('live service: a lost successful commit consumes local authority without retry; explicit lookup recovers its record', { timeout: 15000 }, async t => {

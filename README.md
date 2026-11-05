@@ -545,6 +545,11 @@ een fout werpen, terwijl de serverklok geldig blijft. Vastleggen is dan lokaal
 geblokkeerd zonder commitverzoek; expliciete statuscontrole en intrekking
 blijven via de echte service mogelijk. Een herstelde klok verstuurt zelf
 geen verzoek: vastleggen vereist nog steeds een expliciete actie.
+Live volgordetests controleren ook vastleggen en intrekken van hetzelfde
+ticket: intrekken na vastleggen behoudt het bestaande record, terwijl
+vastleggen na intrekken wordt geweigerd. Expliciete statuscontrole verklaart
+de uitkomst zonder lokale toestemming te herstellen of opnieuw in te dienen.
+Dit test gecontroleerde opeenvolgende operaties, geen gelijktijdige race.
 Live foutinjectietests laten de echte SQLite-transactie vlak voor de commit
 falen. Ze controleren rollback van commando, ticketmutatie en bijbehorende
 auditregel, zonder automatische herinzending door de sessie. Een actieve
