@@ -10,6 +10,7 @@ import yaml
 WORKFLOW_DIR = Path(__file__).resolve().parents[1] / "workflows"
 SHA40_RE = re.compile(r"^[0-9a-f]{40}$")
 FLOATING_REFS = {"main", "master", "latest", "head"}
+ALLOWED_PERMISSION_VALUES = {"read", "write", "none"}
 
 
 def load_yaml(path: Path):
@@ -44,6 +45,10 @@ def validate(path: Path) -> list[str]:
         errors.append(f"{path.name}: top-level permissions.contents must be read")
     elif path.name != "pages.yml":
         for perm_name, perm_value in permissions.items():
+            if perm_value not in ALLOWED_PERMISSION_VALUES:
+                errors.append(
+                    f"{path.name}: top-level permission {perm_name} must be one of {sorted(ALLOWED_PERMISSION_VALUES)}"
+                )
             if perm_value == "write":
                 errors.append(
                     f"{path.name}: top-level write permission {perm_name}=write is not allowed"
@@ -99,6 +104,10 @@ def validate(path: Path) -> list[str]:
             errors.append(f"{path.name}:{job_name}: permissions must be a mapping when set")
         elif isinstance(job_permissions, dict):
             for perm_name, perm_value in job_permissions.items():
+                if perm_value not in ALLOWED_PERMISSION_VALUES:
+                    errors.append(
+                        f"{path.name}:{job_name}: permission {perm_name} must be one of {sorted(ALLOWED_PERMISSION_VALUES)}"
+                    )
                 if perm_value == "write":
                     if not (
                         path.name == "release.yml"
