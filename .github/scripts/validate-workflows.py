@@ -266,6 +266,11 @@ def validate(path: Path) -> list[str]:
                 for axis_name, axis_values in matrix.items():
                     if axis_name in ("include", "exclude"):
                         continue
+                    if not isinstance(axis_name, str) or not axis_name.strip():
+                        errors.append(
+                            f"{path.name}:{job_name}: strategy.matrix axis names must be non-empty strings"
+                        )
+                        continue
                     if not isinstance(axis_values, list):
                         errors.append(
                             f"{path.name}:{job_name}: strategy.matrix.{axis_name} must be a list"
