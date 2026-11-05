@@ -416,6 +416,20 @@ def main() -> int:
                                 errors.append(
                                     f"{path}: job '{job_name}' strategy.matrix.{matrix_key} must be a non-empty list"
                                 )
+                                continue
+                            for value_index, matrix_dimension_value in enumerate(matrix_value):
+                                if isinstance(matrix_dimension_value, str):
+                                    if not matrix_dimension_value.strip():
+                                        errors.append(
+                                            f"{path}: job '{job_name}' strategy.matrix.{matrix_key}[{value_index}] must not be an empty string"
+                                        )
+                                elif (
+                                    type(matrix_dimension_value) is not bool
+                                    and not isinstance(matrix_dimension_value, (int, float))
+                                ):
+                                    errors.append(
+                                        f"{path}: job '{job_name}' strategy.matrix.{matrix_key}[{value_index}] must be a scalar (string, number, or boolean)"
+                                    )
                         for matrix_list_key in ("include", "exclude"):
                             matrix_list_value = strategy_matrix.get(matrix_list_key)
                             if matrix_list_value is None:
