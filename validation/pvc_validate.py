@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate revision-bound G0-G7 evidence for PVC-001."""
+"""Generate revision-bound G0-G8 evidence for PVC-001."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -22,8 +23,17 @@ GRAPH_SCHEMA_PATH = ROOT / "validation/system-graph.schema.json"
 ORDERING_PATH = ROOT / "validation/dependency-ordering.json"
 PLAN_PATH = ROOT / "validation/execution-plan.json"
 PLAN_SCHEMA_PATH = ROOT / "validation/execution-plan.schema.json"
-VALIDATOR_VERSION = "0.8.0"
+VALIDATOR_VERSION = "0.9.0"
 G6_RULESET_VERSION = "1.0.0"
+G8_CHECKLIST_PATH = ROOT / "validation/security_checklist.md"
+G8_THREAT_MODEL_PATH = ROOT / "release-registry/THREAT-MODEL.md"
+G8_REQUIRED_CONTROLS = {
+    "SEC-THREAT-MODEL",
+    "SEC-SUPPLY-CHAIN",
+    "SEC-SECRETS-CONFIG",
+    "SEC-ADVERSARIAL",
+    "SEC-INDEPENDENT-REVIEW",
+}
 NODE_KINDS = {"service", "capability", "resource", "lifecycle", "event"}
 G4_SCENARIOS = {
     "runtime_plan_confirms_execution_path",
@@ -1370,6 +1380,232 @@ def evaluate_g7(
     )
 
 
+def evaluate_g8(
+    checklist_text: str | None,
+    threat_model_text: str | None,
+    checklist_error: str | None,
+    threat_model_error: str | None,
+    source_revision: str | None,
+    source_tree_clean: bool | None,
+    checklist_artifact: dict[str, str] | None,
+    threat_model_artifact: dict[str, str] | None,
+    prior_gates: list[dict[str, Any]],
+    security_environment: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    evidence: dict[str, Any] = {
+        "source_revision": source_revision,
+        "source_tree_clean": source_tree_clean,
+        "checklist": checklist_artifact,
+        "threat_model": threat_model_artifact,
+        "security_environment": security_environment,
+        "controls": [],
+    }
+    if checklist_error == "missing":
+        return (
+            {"gate": "G8", "result": "HOLD", "findings": ["Required validation/security_checklist.md is not present."]},
+            evidence,
+        )
+    if checklist_error or checklist_text is None:
+        return (
+            {"gate": "G8", "result": "FAIL", "findings": [f"Security checklist could not be read: {checklist_error or 'unknown error'}."]},
+            evidence,
+        )
+    if threat_model_error or threat_model_text is None:
+        return (
+            {"gate": "G8", "result": "HOLD", "findings": [f"Core Alpha threat model is unavailable: {threat_model_error or 'unknown error'}."]},
+            evidence,
+        )
+    controls: dict[str, dict[str, str]] = {}
+    for line in checklist_text.splitlines():
+        if not line.startswith("|"):
+            continue
+        columns = [column.strip() for column in line.strip("|").split("|")]
+        if len(columns) != 3 or columns[0] not in G8_REQUIRED_CONTROLS:
+            continue
+        control, status, reference = columns
+        if control in controls:
+            return (
+                {"gate": "G8", "result": "FAIL", "findings": [f"Security checklist contains duplicate control {control}."]},
+                evidence,
+            )
+        controls[control] = {"status": status, "evidence": reference}
+
+    evidence["controls"] = [
+        {
+            "control": control,
+            "status": item["status"],
+            "evidence": item["evidence"],
+            "evidence_verified": False,
+        }
+        for control, item in sorted(controls.items())
+    ]
+    missing_controls = sorted(G8_REQUIRED_CONTROLS - controls.keys())
+    if missing_controls:
+        return (
+            {"gate": "G8", "result": "HOLD", "findings": [f"Security checklist omits required controls: {missing_controls}."]},
+            evidence,
+        )
+    invalid = sorted(
+        control
+        for control, item in controls.items()
+        if item["status"] not in {"PASS", "FAIL", "HOLD", "OPEN"}
+    )
+    if invalid:
+        return (
+            {"gate": "G8", "result": "FAIL", "findings": [f"Security checklist has invalid statuses for controls: {invalid}."]},
+            evidence,
+        )
+
+    if "**Scope:** PALACO Core Alpha" not in checklist_text:
+        return (
+            {"gate": "G8", "result": "FAIL", "findings": ["Security checklist does not identify the required PALACO Core Alpha scope."]},
+            evidence,
+        )
+    if "core alpha" not in threat_model_text.lower():
+        return (
+            {"gate": "G8", "result": "HOLD", "findings": ["Threat model does not explicitly identify PALACO Core Alpha scope."]},
+            evidence,
+        )
+    if "Assets:" not in threat_model_text or "Trust boundaries:" not in threat_model_text:
+        return (
+            {"gate": "G8", "result": "FAIL", "findings": ["Threat-model artifact is missing required asset or trust-boundary analysis."]},
+            evidence,
+        )
+
+    evidence["controls"] = []
+    for control in sorted(controls):
+        item = controls[control]
+        result: dict[str, Any] = {
+            "control": control,
+            "status": item["status"],
+            "evidence": item["evidence"],
+            "evidence_verified": False,
+        }
+        if item["status"] == "PASS":
+            match = re.fullmatch(r"([^@]+)@([0-9a-f]{64})", item["evidence"])
+            if not match:
+                return (
+                    {"gate": "G8", "result": "FAIL", "findings": [f"PASS control {control} must reference evidence as path@sha256."]},
+                    {**evidence, "controls": [*evidence["controls"], result]},
+                )
+            path_text, expected_digest = match.groups()
+            evidence_path = Path(path_text)
+            if evidence_path.is_absolute() or "\\" in path_text or ".." in evidence_path.parts:
+                return (
+                    {"gate": "G8", "result": "FAIL", "findings": [f"Evidence path for {control} is not repository-relative."]},
+                    {**evidence, "controls": [*evidence["controls"], result]},
+                )
+            candidate = (ROOT / evidence_path).resolve()
+            try:
+                candidate.relative_to(ROOT.resolve())
+            except ValueError:
+                return (
+                    {"gate": "G8", "result": "FAIL", "findings": [f"Evidence path for {control} escapes the repository."]},
+                    {**evidence, "controls": [*evidence["controls"], result]},
+                )
+            if not candidate.is_file():
+                return (
+                    {"gate": "G8", "result": "HOLD", "findings": [f"Evidence artifact for {control} is missing: {path_text}."]},
+                    {**evidence, "controls": [*evidence["controls"], result]},
+                )
+            actual_digest = digest(candidate)
+            result["observed_sha256"] = actual_digest
+            if actual_digest != expected_digest:
+                return (
+                    {"gate": "G8", "result": "FAIL", "findings": [f"Evidence digest mismatch for {control}."]},
+                    {**evidence, "controls": [*evidence["controls"], result]},
+                )
+            result["evidence_verified"] = True
+        evidence["controls"].append(result)
+
+    failed_controls = sorted(control for control, item in controls.items() if item["status"] == "FAIL")
+    if failed_controls:
+        return (
+            {"gate": "G8", "result": "FAIL", "findings": [f"Security controls are marked FAIL: {failed_controls}."]},
+            evidence,
+        )
+    expected_gates = [f"G{index}" for index in range(8)]
+    actual_gates = [gate.get("gate") if isinstance(gate, dict) else None for gate in prior_gates]
+    if actual_gates != expected_gates:
+        return (
+            {"gate": "G8", "result": "HOLD", "findings": ["Consolidated evidence must contain ordered G0-G7 results."]},
+            evidence,
+        )
+    prior_failures = [gate["gate"] for gate in prior_gates if gate.get("result") == "FAIL"]
+    if prior_failures:
+        return (
+            {"gate": "G8", "result": "FAIL", "findings": [f"Prior mandatory gates failed and remain unresolved: {prior_failures}."]},
+            evidence,
+        )
+    open_controls = sorted(control for control, item in controls.items() if item["status"] in {"OPEN", "HOLD"})
+    if open_controls:
+        return (
+            {"gate": "G8", "result": "HOLD", "findings": [f"Security controls remain unresolved: {open_controls}."]},
+            evidence,
+        )
+    if not source_revision or source_tree_clean is not True:
+        return (
+            {"gate": "G8", "result": "INCONCLUSIVE", "findings": ["Security evidence is not bound to a clean source revision."]},
+            evidence,
+        )
+    prior_blockers = [gate["gate"] for gate in prior_gates if gate.get("result") != "PASS"]
+    if prior_blockers:
+        return (
+            {"gate": "G8", "result": "HOLD", "findings": [f"Prior gates are not all PASS: {prior_blockers}."]},
+            evidence,
+        )
+    if not security_environment.get("dependency_audit_available"):
+        return (
+            {"gate": "G8", "result": "HOLD", "findings": ["Cargo dependency-audit tooling is unavailable."]},
+            evidence,
+        )
+    if not security_environment.get("dependency_audit_config_present"):
+        return (
+            {"gate": "G8", "result": "HOLD", "findings": ["Dependency/supply-chain policy configuration is absent."]},
+            evidence,
+        )
+    if not security_environment.get("security_workflow_present"):
+        return (
+            {"gate": "G8", "result": "HOLD", "findings": ["Dedicated security workflow is absent."]},
+            evidence,
+        )
+    if not checklist_artifact or not threat_model_artifact:
+        return (
+            {"gate": "G8", "result": "HOLD", "findings": ["Checklist and threat-model digests are required."]},
+            evidence,
+        )
+    if "OPEN" in threat_model_text or "production blocked" in threat_model_text.lower():
+        return (
+            {"gate": "G8", "result": "HOLD", "findings": ["Threat model retains open production-blocking risks."]},
+            evidence,
+        )
+    return (
+        {"gate": "G8", "result": "PASS", "findings": ["Required security controls and evidence are complete for the bound source revision."]},
+        evidence,
+    )
+
+
+def _read_text(path: Path) -> tuple[str | None, str | None]:
+    try:
+        return path.read_text(encoding="utf-8"), None
+    except (OSError, UnicodeDecodeError) as error:
+        return None, str(error)
+
+
+def _security_environment() -> dict[str, Any]:
+    return {
+        "dependency_audit_available": shutil.which("cargo-audit") is not None,
+        "dependency_audit_config_present": (ROOT / ".cargo-deny.toml").is_file(),
+        "security_workflow_present": (ROOT / ".github/workflows/security.yml").is_file(),
+    }
+
+
+def _read_artifact_text(path: Path) -> tuple[str | None, str | None]:
+    if not path.is_file():
+        return None, "missing"
+    return _read_text(path)
+
+
 def _git(*args: str) -> str | None:
     completed = subprocess.run(
         ["git", *args],
@@ -1658,10 +1894,26 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
         g7_error,
         os.environ.get("GITHUB_RUN_ID"),
     )
+    checklist_text, checklist_error = _read_artifact_text(G8_CHECKLIST_PATH)
+    threat_model_text, threat_model_error = _read_artifact_text(G8_THREAT_MODEL_PATH)
+    checklist_artifact = _artifact(G8_CHECKLIST_PATH)
+    threat_model_artifact = _artifact(G8_THREAT_MODEL_PATH)
+    g8, security_validation = evaluate_g8(
+        checklist_text,
+        threat_model_text,
+        checklist_error,
+        threat_model_error,
+        revision or None,
+        not dirty,
+        checklist_artifact,
+        threat_model_artifact,
+        [g0, g1, g2, g3, g4, g5, g6, g7],
+        _security_environment(),
+    )
 
     report: dict[str, Any] = {
         "format_version": 1,
-        "validator": {"name": "PVC-001 G0-G7 validator", "version": VALIDATOR_VERSION},
+        "validator": {"name": "PVC-001 G0-G8 validator", "version": VALIDATOR_VERSION},
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "repository": _repository_identity(),
         "revision": revision or None,
@@ -1680,7 +1932,8 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
         "event_observability_tests": g5_evidence,
         "architecture_compliance": architecture_compliance,
         "integrated_validation": integrated_validation,
-        "gates": [g0, g1, g2, g3, g4, g5, g6, g7],
+        "security_validation": security_validation,
+        "gates": [g0, g1, g2, g3, g4, g5, g6, g7, g8],
     }
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path = output_dir / "pvc-001-evidence.json"
@@ -1694,7 +1947,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     dependency_sha256 = report["dependency_graph"].get("sha256") or "unavailable"
     plan_sha256 = report["execution_schedule"].get("plan_sha256") or "unavailable"
     lines = [
-        "# PVC-001 G0-G7 Evidence",
+        "# PVC-001 G0-G8 Evidence",
         "",
         f"- Repository: `{report['repository'] or 'unknown'}`",
         f"- Revision: `{report['revision'] or 'unknown'}`",
@@ -1812,6 +2065,32 @@ def render_markdown(report: dict[str, Any]) -> str:
             f"`{item['expected'] or 'unavailable'}` |"
             for item in integration["reconciliation"]
         )
+    security = report["security_validation"]
+    environment = security["security_environment"]
+    lines.extend(
+        [
+            "",
+            "## Security validation",
+            "",
+            f"- Source revision: `{security['source_revision'] or 'unavailable'}`",
+            f"- Source tree clean: `{security['source_tree_clean']}`",
+            f"- Checklist: `{security['checklist']['path'] if security['checklist'] else 'unavailable'}`",
+            f"- Checklist SHA-256: `{security['checklist']['sha256'] if security['checklist'] else 'unavailable'}`",
+            f"- Threat model: `{security['threat_model']['path'] if security['threat_model'] else 'unavailable'}`",
+            f"- Threat-model SHA-256: `{security['threat_model']['sha256'] if security['threat_model'] else 'unavailable'}`",
+            f"- Cargo audit available: `{environment['dependency_audit_available']}`",
+            f"- Supply-chain config present: `{environment['dependency_audit_config_present']}`",
+            f"- Dedicated security workflow present: `{environment['security_workflow_present']}`",
+            "",
+            "| Control | Status | Evidence | Verified digest |",
+            "|---|---|---|---|",
+        ]
+    )
+    lines.extend(
+        f"| {control['control']} | {control['status']} | `{control['evidence']}` | "
+        f"{control.get('observed_sha256', 'unverified')} |"
+        for control in security["controls"]
+    )
     layers = report["execution_schedule"].get("execution_layers", [])
     lines.extend(["", "## Deterministic execution layers", ""])
     if layers:

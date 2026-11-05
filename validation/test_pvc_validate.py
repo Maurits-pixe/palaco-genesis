@@ -1,5 +1,7 @@
+import hashlib
 import unittest
 from unittest.mock import patch
+from pathlib import Path
 
 from pvc_validate import (
     _canonical_sha256,
@@ -14,6 +16,7 @@ from pvc_validate import (
     evaluate_g5,
     evaluate_g6,
     evaluate_g7,
+    evaluate_g8,
 )
 
 
@@ -744,6 +747,110 @@ class G7Tests(unittest.TestCase):
         g4 = {**self.g4, "run_id": "different-run"}
         result, _ = self.evaluate(g4_evidence=g4)
         self.assertEqual(result["result"], "INCONCLUSIVE")
+
+
+class G8Tests(unittest.TestCase):
+    def setUp(self):
+        self.controls = [
+            "SEC-THREAT-MODEL",
+            "SEC-SUPPLY-CHAIN",
+            "SEC-SECRETS-CONFIG",
+            "SEC-ADVERSARIAL",
+            "SEC-INDEPENDENT-REVIEW",
+        ]
+        self.threat_model = (
+            "# Threat model — Core Alpha\n\n"
+            "Assets: authority, credentials.\n\n"
+            "Trust boundaries: browser and server.\n\n"
+            "Threats reviewed. No open risks remain.\n"
+        )
+        self.prior_gates = [{"gate": f"G{index}", "result": "PASS"} for index in range(8)]
+        self.checklist_artifact = {"path": "validation/security_checklist.md", "sha256": "a" * 64}
+        self.threat_artifact = {"path": "validation/threat-model.md", "sha256": "b" * 64}
+        self.environment = {
+            "dependency_audit_available": True,
+            "dependency_audit_config_present": True,
+            "security_workflow_present": True,
+        }
+
+    def checklist(self, status="PASS", evidence=None):
+        reference = evidence or f"Cargo.lock@{hashlib.sha256(Path('Cargo.lock').read_bytes()).hexdigest()}"
+        rows = "\n".join(f"| {control} | {status} | {reference} |" for control in self.controls)
+        return f"**Scope:** PALACO Core Alpha\n\n| Control | Status | Evidence |\n|---|---|---|\n{rows}\n"
+
+    def evaluate(self, **overrides):
+        arguments = {
+            "checklist_text": self.checklist(),
+            "threat_model_text": self.threat_model,
+            "checklist_error": None,
+            "threat_model_error": None,
+            "source_revision": "abc123",
+            "source_tree_clean": True,
+            "checklist_artifact": self.checklist_artifact,
+            "threat_model_artifact": self.threat_artifact,
+            "prior_gates": self.prior_gates,
+            "security_environment": self.environment,
+        }
+        arguments.update(overrides)
+        return evaluate_g8(**arguments)
+
+    def test_passes_only_with_complete_digest_bound_evidence(self):
+        result, evidence = self.evaluate()
+        self.assertEqual(result["result"], "PASS")
+        self.assertTrue(all(control["evidence_verified"] for control in evidence["controls"]))
+
+    def test_open_control_holds(self):
+        result, _ = self.evaluate(checklist_text=self.checklist(status="OPEN"))
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_missing_checklist_holds(self):
+        result, _ = self.evaluate(checklist_text=None, checklist_error="missing")
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_missing_control_holds(self):
+        checklist = self.checklist().replace("| SEC-ADVERSARIAL | PASS | Cargo.lock@" + hashlib.sha256(Path("Cargo.lock").read_bytes()).hexdigest() + " |\n", "")
+        result, _ = self.evaluate(checklist_text=checklist)
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_invalid_status_fails(self):
+        result, _ = self.evaluate(checklist_text=self.checklist(status="MAYBE"))
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_evidence_digest_mismatch_fails(self):
+        result, _ = self.evaluate(checklist_text=self.checklist(evidence=f"Cargo.lock@{'0' * 64}"))
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_missing_evidence_artifact_holds(self):
+        result, _ = self.evaluate(checklist_text=self.checklist(evidence=f"validation/missing.json@{'0' * 64}"))
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_open_threat_model_holds(self):
+        result, _ = self.evaluate(threat_model_text=self.threat_model + "OPEN: production blocked.\n")
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_threat_model_without_core_alpha_scope_holds(self):
+        result, _ = self.evaluate(threat_model_text=self.threat_model.replace("Core Alpha", "generic product"))
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_prior_gate_hold_blocks_security_pass(self):
+        gates = [*self.prior_gates]
+        gates[6] = {"gate": "G6", "result": "HOLD"}
+        result, _ = self.evaluate(prior_gates=gates)
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_prior_gate_failure_is_not_hidden_by_open_controls(self):
+        gates = [*self.prior_gates]
+        gates[2] = {"gate": "G2", "result": "FAIL"}
+        result, _ = self.evaluate(
+            prior_gates=gates,
+            checklist_text=self.checklist(status="OPEN"),
+        )
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_absent_dependency_audit_tool_holds(self):
+        environment = {**self.environment, "dependency_audit_available": False}
+        result, _ = self.evaluate(security_environment=environment)
+        self.assertEqual(result["result"], "HOLD")
 
 
 if __name__ == "__main__":
