@@ -97,6 +97,8 @@ def validate(path: Path) -> list[str]:
                     errors.append(
                         f"{path.name}:{job_name}: strategy.max-parallel must be a positive integer"
                     )
+            if "matrix" in strategy and not isinstance(strategy["matrix"], dict):
+                errors.append(f"{path.name}:{job_name}: strategy.matrix must be a mapping")
 
         if job.get("continue-on-error") is True:
             errors.append(f"{path.name}:{job_name}: continue-on-error: true is not allowed")
