@@ -1632,6 +1632,7 @@ def evaluate_g9(
         "release_approval_claimed": False,
         "decision_authority_authenticated": False,
         "attestation_binding_verified": False,
+        "evidence_report_g9_result": None,
     }
     if release_error == "missing":
         return (
@@ -1811,16 +1812,27 @@ def evaluate_g9(
             evidence,
         )
     report_gates = report.get("gates")
-    if not isinstance(report_gates, list) or [
-        gate.get("gate") if isinstance(gate, dict) else None for gate in report_gates
-    ] != expected_gates:
+    report_gate_names = (
+        [gate.get("gate") if isinstance(gate, dict) else None for gate in report_gates]
+        if isinstance(report_gates, list)
+        else []
+    )
+    if report_gate_names not in (expected_gates, [*expected_gates, "G9"]):
         return (
             {"gate": "G9", "result": "FAIL", "findings": ["Referenced evidence report does not contain ordered G0-G8 results."]},
             evidence,
         )
+    if len(report_gates) == 10:
+        report_g9 = report_gates[9]
+        if report_g9.get("result") not in GATE_RESULTS:
+            return (
+                {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced evidence report has an unverifiable G9 result."]},
+                evidence,
+            )
+        evidence["evidence_report_g9_result"] = report_g9["result"]
     report_invalid = [
         gate["gate"]
-        for gate in report_gates
+        for gate in report_gates[:9]
         if gate.get("result") not in GATE_RESULTS
     ]
     if report_invalid:
@@ -1828,13 +1840,13 @@ def evaluate_g9(
             {"gate": "G9", "result": "INCONCLUSIVE", "findings": [f"Referenced evidence report has unverifiable gate results: {report_invalid}."]},
             evidence,
         )
-    report_failures = [gate["gate"] for gate in report_gates if gate.get("result") == "FAIL"]
+    report_failures = [gate["gate"] for gate in report_gates[:9] if gate.get("result") == "FAIL"]
     if report_failures:
         return (
             {"gate": "G9", "result": "FAIL", "findings": [f"Referenced evidence report records prior failures: {report_failures}."]},
             evidence,
         )
-    report_blockers = [gate["gate"] for gate in report_gates if gate.get("result") != "PASS"]
+    report_blockers = [gate["gate"] for gate in report_gates[:9] if gate.get("result") != "PASS"]
     if report_blockers:
         return (
             {"gate": "G9", "result": "HOLD", "findings": [f"Referenced evidence report has non-PASS gates: {report_blockers}."]},
@@ -2505,6 +2517,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             f"- Release artifact: `{release['artifact']['path'] if release['artifact'] else 'unavailable'}`",
             f"- Artifact SHA-256: `{release['artifact']['sha256'] if release['artifact'] else 'unavailable'}`",
             f"- G0-G8 evidence report: `{release['evidence_report']['path'] if release['evidence_report'] else 'unavailable'}`",
+            f"- Referenced report G9 result (not a prerequisite): `{release['evidence_report_g9_result'] or 'not present'}`",
             f"- Attestation: `{release['attestation']['path'] if release['attestation'] else 'unavailable'}`",
             f"- Decision authority: `{release['decision_authority'] or 'unavailable'}`",
             f"- Decision record: `{release['decision_record'] or 'unavailable'}`",

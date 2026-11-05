@@ -925,7 +925,10 @@ class G9Tests(unittest.TestCase):
         report = {
             "repository": self.repository,
             "revision": revision or self.source_revision,
-            "gates": gates or self.prior_gates,
+            "gates": gates or [
+                *self.prior_gates,
+                {"gate": "G9", "result": "HOLD"},
+            ],
         }
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
         attestation = {
@@ -1035,6 +1038,24 @@ class G9Tests(unittest.TestCase):
         result, evidence = self.evaluate(release_text=self.checklist())
         self.assertEqual(result["result"], "HOLD")
         self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_g9_hold_does_not_create_recursive_blocker(self):
+        result, evidence = self.evaluate()
+        self.assertEqual(result["result"], "PASS")
+        self.assertEqual(evidence["evidence_report_g9_result"], "HOLD")
+
+    def test_evidence_report_g9_failure_does_not_override_g0_g8(self):
+        gates = [*self.prior_gates, {"gate": "G9", "result": "FAIL"}]
+        self.write_report(gates=gates)
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "PASS")
+        self.assertEqual(evidence["evidence_report_g9_result"], "FAIL")
+
+    def test_evidence_report_g9_invalid_result_is_inconclusive(self):
+        gates = [*self.prior_gates, {"gate": "G9", "result": "UNKNOWN"}]
+        self.write_report(gates=gates)
+        result, _ = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
 
     def test_unverifiable_evidence_report_gate_is_inconclusive(self):
         gates = [*self.prior_gates]
