@@ -897,6 +897,79 @@ test('revocation, retries, and concurrent requests cannot duplicate a command', 
   assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM audit WHERE action = ?').get('journal:append').n, 1);
 });
 
+test('overlapping HTTP commit and revoke requests leave one consistent ticket outcome',
+  { timeout: 15000 }, async t => {
+    const f = await fixture(t);
+    const command = 'competing commit and revoke';
+    const issued = await f.ticket(command);
+    const path = `/v1/tickets/${issued.id}`;
+    const snapshot = () => Object.fromEntries(['tickets', 'commands', 'audit', 'clock_state'].map(table =>
+      [table, f.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all().map(row => ({ ...row }))]));
+    const before = snapshot();
+    assert.equal(before.tickets.length, 1);
+    assert.deepEqual(before.commands, []);
+    assert.deepEqual(before.audit, []);
+
+    // DELETE does not consume a body, so a held-body barrier cannot gate both handlers.
+    // Start both clients before awaiting either: this overlaps HTTP requests, not SQLite execution.
+    const competingRequest = async (route, method, data) => {
+      const response = await fetch(f.base + route, {
+        method,
+        headers: {
+          authorization: ['Bearer', token].join(' '),
+          ...(data === undefined ? {} : { 'content-type': 'application/json' }),
+        },
+        body: data === undefined ? undefined : JSON.stringify(data),
+        signal: AbortSignal.timeout(3000),
+      });
+      return { status: response.status, data: await response.json() };
+    };
+    const [commit, revoke] = await Promise.all([
+      competingRequest('/v1/commands', 'POST', { ticket_id: issued.id, command }),
+      competingRequest(path, 'DELETE'),
+    ]);
+    assert.ok([201, 403].includes(commit.status));
+    assert.deepEqual(revoke, { status: 200, data: { revoked: true } });
+    const committed = commit.status === 201;
+    const record = committed ? commit.data : null;
+    if (committed) {
+      assert.deepEqual(Object.keys(record).sort(), ['command', 'committed_at', 'id']);
+      assert.equal(typeof record.id, 'string');
+      assert.ok(record.id.length > 0);
+      assert.equal(record.command, command);
+      assert.equal(record.committed_at, 1000);
+    } else {
+      assert.deepEqual(commit.data, { error: 'Ticket denied' });
+    }
+
+    const expected = {
+      ...before,
+      tickets: [{ ...before.tickets[0], consumed: committed ? 1 : 0, revoked: 1 }],
+      commands: committed ? [{ seq: 1, ticket_id: issued.id, ...record }] : [],
+      audit: (committed ? ['journal:append', 'ticket:revoke'] : ['ticket:revoke'])
+        .map((action, index) => ({
+          id: index + 1, ticket_id: issued.id, subject: before.tickets[0].subject,
+          action, checked_at: 1000,
+        })),
+    };
+    // Audit sequence, not equal clock timestamps, proves append-before-revoke when commit wins.
+    assert.deepEqual(snapshot(), expected);
+    const outcome = await competingRequest(path, 'GET');
+    assert.equal(outcome.status, 200);
+    assert.deepEqual(outcome.data, {
+      ...issued, command, checked_at: 1000,
+      status: committed ? 'committed' : 'revoked', revoked: true, record,
+    });
+    assert.deepEqual((await competingRequest('/v1/commands', 'GET')).data, {
+      commands: committed ? [record] : [],
+    });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const retry = await competingRequest('/v1/commands', 'POST', { ticket_id: issued.id, command });
+      assert.deepEqual(retry, { status: 403, data: { error: 'Ticket denied' } });
+      assert.deepEqual(snapshot(), expected, 'denied retries must not append commands or audit');
+    }
+  });
+
 test('time is read only after transaction lock acquisition', async t => {
   const f = await fixture(t);
   const ticket = await f.ticket();

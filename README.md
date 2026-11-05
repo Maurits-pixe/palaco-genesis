@@ -555,6 +555,12 @@ ticket: intrekken na vastleggen behoudt het bestaande record, terwijl
 vastleggen na intrekken wordt geweigerd. Expliciete statuscontrole verklaart
 de uitkomst zonder lokale toestemming te herstellen of opnieuw in te dienen.
 Dit test gecontroleerde opeenvolgende operaties, geen gelijktijdige race.
+Een aparte servicetest start overlappende HTTP-verzoeken voor vastleggen en
+intrekken van hetzelfde ticket. Beide mogelijke afhandelvolgordes zijn
+toegestaan: één behouden vastlegging vóór intrekking, of geweigerde
+vastlegging na intrekking. Status, recorddata en auditvolgorde moeten daarbij
+overeenkomen. Dit bewijst geen parallelle SQLite-uitvoering of dekking van
+alle mogelijke planningen.
 Live foutinjectietests laten de echte SQLite-transactie vlak voor de commit
 falen. Ze controleren rollback van commando, ticketmutatie en bijbehorende
 auditregel, zonder automatische herinzending door de sessie. Een actieve
