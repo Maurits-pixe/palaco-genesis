@@ -585,6 +585,9 @@ def main() -> int:
 
         job_display_name_to_ids: dict[str, list[str]] = {}
         for job_name, job in jobs.items():
+            if not isinstance(job_name, str) or not job_name.strip():
+                errors.append(f"{path}: jobs keys must be non-empty strings")
+                continue
             if not isinstance(job, dict):
                 errors.append(f"{path}: job '{job_name}' must be a mapping")
                 continue
