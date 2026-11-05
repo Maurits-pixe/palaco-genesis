@@ -10,6 +10,7 @@ import yaml
 def main() -> int:
     files = sorted(glob.glob(".github/workflows/*.yml"))
     errors: list[str] = []
+    workflow_name_to_paths: dict[str, list[str]] = {}
 
     for path in files:
         with open(path, "r", encoding="utf-8") as fh:
@@ -22,6 +23,9 @@ def main() -> int:
         workflow_name = data.get("name")
         if not isinstance(workflow_name, str) or not workflow_name.strip():
             errors.append(f"{path}: top-level workflow name must be a non-empty string")
+        else:
+            normalized_name = workflow_name.strip()
+            workflow_name_to_paths.setdefault(normalized_name, []).append(path)
 
         trigger_config = data.get("on", data.get(True))
         if isinstance(trigger_config, str):
@@ -196,6 +200,13 @@ def main() -> int:
                         )
 
         print(f"OK {path}")
+
+    for workflow_name, paths in workflow_name_to_paths.items():
+        if len(paths) > 1:
+            for path in paths:
+                errors.append(
+                    f"{path}: top-level workflow name '{workflow_name}' must be unique across .github/workflows"
+                )
 
     if errors:
         for err in errors:
