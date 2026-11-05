@@ -2,6 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { effectScope, isRef } from 'vue'
+import * as Vue from 'vue'
+import { compile } from '@vue/compiler-dom'
+import { renderToString } from 'vue/server-renderer'
 import { useSession } from '../src/useSession.js'
 import { createRealtime } from '../src/realtime.js'
 import { listCommands } from '../src/api.js'
@@ -569,6 +572,54 @@ test('command clear UI is an explicit local-only secondary action inside the iss
   assert.match(help, /blijft vastleggen en nieuwe tickets blokkeren/)
   assert.match(help, /Geen verzoeken, verbreking van realtime of veilige geheugenwissing/)
   assert.match(help, /Logboek en ticketuitkomst kunnen commandotekst behouden/)
+})
+
+test('issued ticket text is labelled, explained and rendered as escaped text rather than the draft', async () => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const block = app.match(/<div v-if="ticket" class="result">([\s\S]*?)<\/div>/)[1]
+  assert.match(block, /<p id="ticket-command-label">Commandotekst van dit ticket<\/p>/)
+  const pre = block.match(/<pre[^>]*>[\s\S]*?<\/pre>/)[0]
+  assert.match(pre, /aria-labelledby="ticket-command-label"/)
+  assert.match(pre, /aria-describedby="ticket-command-help"/)
+  assert.match(pre, />{{ ticket\.command }}<\/pre>/)
+  assert.doesNotMatch(block, /v-html|{{\s*command\s*}}/)
+  const help = block.match(/<p id="ticket-command-help" class="muted">([\s\S]*?)<\/p>/)[1]
+  assert.match(help, /exacte tekst waarvoor dit ticket is uitgegeven, niet de huidige concepttekst/)
+  assert.match(help, /onzekere intrekking[\s\S]*na Wis commandotekst zichtbaar blijven/)
+  assert.match(help, /geen uitvoering of nieuwe toestemming/)
+
+  const { code } = compile(pre, { mode: 'function', prefixIdentifiers: true })
+  const render = new Function('Vue', code)(Vue)
+  const html = await renderToString(Vue.createSSRApp({
+    data: () => ({ ticket: { ...held(), command: 'één 🚀\n<script>alert("x")</script> & <b>tekst</b>' }, command: 'different draft' }),
+    render,
+  }))
+  assert.equal(html, '<pre aria-labelledby="ticket-command-label" aria-describedby="ticket-command-help">één 🚀\n&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &lt;b&gt;tekst&lt;/b&gt;</pre>')
+})
+
+test('uncertain revocation retains exact issued Unicode and multiline markup text after draft clear and edit', async t => {
+  const { state, calls } = fixture(t)
+  const issued = { ...held(), command: 'één 🚀\n<script>alert("x")</script> & <b>tekst</b>\n' }
+  state.command.value = issued.command
+  const issuing = state.perform('ticket')
+  calls[0].resolve(issued)
+  await issuing
+  assert.deepEqual(state.ticket.value, issued)
+  assert.equal(state.canCommit.value, true)
+  const revoking = state.perform('revoke')
+  calls[1].reject(new Error('confirmation lost'))
+  await revoking
+  assert.equal(state.revocationUncertain.value, true)
+  const retained = state.ticket.value
+  for (const edit of [() => state.clearCommand(), () => { state.command.value = 'new draft' }]) {
+    edit()
+    assert.equal(state.ticket.value, retained)
+    assert.deepEqual(state.ticket.value, issued)
+    assert.notEqual(state.command.value, issued.command)
+    assert.equal(state.canCommit.value, false)
+  }
+  assert.equal(state.command.value, 'new draft')
+  assert.equal(calls.length, 2, 'draft changes do not issue requests')
 })
 
 for (const uncertain of [false, true]) {

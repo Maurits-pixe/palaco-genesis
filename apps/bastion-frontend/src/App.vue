@@ -56,6 +56,11 @@ function receiptIso(value) {
         <h2>2. Apart bevestigen</h2>
         <div v-if="ticket" class="result">
           <p>Ticket: <code>{{ ticket.id }}</code></p>
+          <p id="ticket-command-label">Commandotekst van dit ticket</p>
+          <pre aria-labelledby="ticket-command-label" aria-describedby="ticket-command-help">{{ ticket.command }}</pre>
+          <p id="ticket-command-help" class="muted">De exacte tekst waarvoor dit ticket is uitgegeven, niet de huidige concepttekst.
+            Bij een onzekere intrekking kan deze tekst ook na Wis commandotekst zichtbaar blijven.
+            Alleen tekst: geen uitvoering of nieuwe toestemming.</p>
           <p>Geldig vanaf: {{ date(ticket.not_before) }}</p>
           <p>Verloopt: {{ date(ticket.expires_at) }}</p>
           <p v-if="remaining === null">Resterende tijd niet beschikbaar. Controleer de lokale klok en ticketgegevens.</p>

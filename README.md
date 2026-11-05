@@ -187,6 +187,11 @@ een opslagverzoek server-side is teruggedraaid.
 
 BASTION geeft eerst een kortlevend ticket uit;
 pas de afzonderlijke commitactie schrijft het commando in het logboek.
+Bij het bewaarde ticket staat de exacte **Commandotekst van dit ticket**,
+los van de actuele invoer. De tekst wordt niet als HTML of code uitgevoerd.
+Bij een onzekere intrekking blijft deze oorspronkelijke tekst zichtbaar,
+ook als de lokale invoer wordt gewist of veranderd. Dit geeft geen nieuwe
+toestemming en heft de blokkering niet op.
 Met **Wis commandotekst** wis je alleen de lokale invoer. Zoals bij iedere
 tekstwijziging vervalt een normaal lokaal ticket, zonder het serverticket
 in te trekken. Bij een onzekere intrekking blijven het bewaarde ticket en
