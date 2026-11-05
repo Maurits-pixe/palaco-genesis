@@ -106,6 +106,12 @@ def validate(path: Path) -> list[str]:
             errors.append(f"{path.name}:{job_name}: job must be a mapping")
             continue
 
+        job_display_name = job.get("name")
+        if job_display_name is not None and (
+            not isinstance(job_display_name, str) or not job_display_name.strip()
+        ):
+            errors.append(f"{path.name}:{job_name}: job name must be a non-empty string when set")
+
         strategy = job.get("strategy")
         if strategy is not None and not isinstance(strategy, dict):
             errors.append(f"{path.name}:{job_name}: strategy must be a mapping when set")
@@ -189,6 +195,12 @@ def validate(path: Path) -> list[str]:
                     f"{path.name}:{job_name}:step#{idx + 1}: step must be a mapping"
                 )
                 continue
+
+            step_name = step.get("name")
+            if step_name is not None and (not isinstance(step_name, str) or not step_name.strip()):
+                errors.append(
+                    f"{path.name}:{job_name}:step#{idx + 1}: step name must be a non-empty string when set"
+                )
 
             if step.get("continue-on-error") is True:
                 errors.append(
