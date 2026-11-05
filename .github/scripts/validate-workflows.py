@@ -431,13 +431,15 @@ def validate(path: Path) -> list[str]:
                     f"{path.name}:{job_name}:step#{idx + 1}: step must define exactly one of run or uses"
                 )
             else:
-                if has_run and not isinstance(step.get("run"), str):
+                run_value = step.get("run")
+                uses_value = step.get("uses")
+                if has_run and (not isinstance(run_value, str) or not run_value.strip()):
                     errors.append(
-                        f"{path.name}:{job_name}:step#{idx + 1}: run must be a string when set"
+                        f"{path.name}:{job_name}:step#{idx + 1}: run must be a non-empty string when set"
                     )
-                if has_uses and not isinstance(step.get("uses"), str):
+                if has_uses and (not isinstance(uses_value, str) or not uses_value.strip()):
                     errors.append(
-                        f"{path.name}:{job_name}:step#{idx + 1}: uses must be a string when set"
+                        f"{path.name}:{job_name}:step#{idx + 1}: uses must be a non-empty string when set"
                     )
 
             if step.get("continue-on-error") is True:
