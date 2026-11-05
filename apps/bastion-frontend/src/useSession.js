@@ -311,6 +311,8 @@ export function useSession({
           message.value = 'Vastlegging niet bevestigd. Controleer de laatste inzending via het ticket-ID. Dien niet automatisch opnieuw in.'
         } else if (action === 'revoke') {
           message.value = 'Intrekking niet bevestigd. Vastleggen en nieuwe tickets blijven geblokkeerd. Controleer dit ticket of trek het expliciet opnieuw in.'
+        } else if (action === 'status') {
+          message.value = 'Ticketstatus niet bevestigd. Er is geen geldige nieuwe momentopname ontvangen. Deze fout bevestigt geen vastlegging of intrekking en herstelt geen toestemming. Controleer het ticket expliciet opnieuw; geen automatische herhaling.'
         }
         if (refresh) journalRefreshFailed.value = true
       }

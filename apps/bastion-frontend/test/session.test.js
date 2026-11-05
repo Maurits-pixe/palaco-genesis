@@ -19,6 +19,7 @@ const results = { ticket: held(), commit: record(), revoke: undefined, status: s
 const commitCaution = 'Vastlegging niet bevestigd. Controleer de laatste inzending via het ticket-ID. Dien niet automatisch opnieuw in.'
 const revokeCaution = 'Intrekking niet bevestigd. Vastleggen en nieuwe tickets blijven geblokkeerd. Controleer dit ticket of trek het expliciet opnieuw in.'
 const ticketCaution = 'Ticketuitgifte niet bevestigd. Er kan al een serverticket bestaan. Zonder ontvangen ticket is lokaal vastleggen niet mogelijk. Geen automatische nieuwe aanvraag.'
+const statusCaution = 'Ticketstatus niet bevestigd. Er is geen geldige nieuwe momentopname ontvangen. Deze fout bevestigt geen vastlegging of intrekking en herstelt geen toestemming. Controleer het ticket expliciet opnieuw; geen automatische herhaling.'
 const localCommitBlocked = 'Niet ingezonden: de lokale ticketcontrole blokkeert vastleggen. Voor deze actie is geen commitverzoek verstuurd. Dit zegt niets over eerdere inzendingen.'
 const deferred = () => {
   let resolve, reject
@@ -1239,11 +1240,22 @@ test('clearing a completed terminal reconciliation only hides it, never restores
 test('clearing failed status feedback retains IDs, ticket and blocked revocation without retry', async t => {
   const { state, calls } = fixture(t)
   prepare(state, 'revoke')
+  const before = retainedOutcomeState(state)
+  const ticket = state.ticket.value
   const operation = state.perform('status')
+  assert.equal(state.outcome.value, null)
+  assert.equal(state.outcomeReceivedAt.value, null)
   calls[0].reject(new Error('status failure'))
   await operation
   assert.equal(state.error.value, 'status failure')
-  const before = retainedOutcomeState(state)
+  assert.equal(state.message.value, statusCaution)
+  assert.equal(state.busy.value, '')
+  assert.equal(state.outcome.value, null)
+  assert.equal(state.outcomeReceivedAt.value, null)
+  assert.equal(state.ticket.value, ticket)
+  assert.equal(state.revocationUncertain.value, true)
+  assert.equal(state.canCommit.value, false)
+  assert.deepEqual(retainedOutcomeState(state), before)
   state.clearOutcome()
   state.clearOutcome()
   assert.equal(state.error.value, '')
@@ -1251,6 +1263,51 @@ test('clearing failed status feedback retains IDs, ticket and blocked revocation
   assert.deepEqual(retainedOutcomeState(state), before)
   assert.equal(calls.length, 1)
 })
+
+for (const clear of ['clearCommand', 'clearJournal']) {
+  test(`${clear} preserves failed status caution and the uncertain ticket without retry`, async t => {
+    const { state, calls } = fixture(t)
+    prepare(state, 'revoke')
+    const checking = state.perform('status')
+    calls[0].reject(new Error('status response unavailable'))
+    await checking
+    state[clear]()
+    assert.equal(state.message.value, statusCaution)
+    assert.equal(state.error.value, 'status response unavailable')
+    assert.deepEqual(state.ticket.value, held())
+    assert.equal(state.revocationUncertain.value, true)
+    assert.equal(state.canCommit.value, false)
+    assert.equal(state.lookupId.value, held().id)
+    assert.equal(state.lastSubmissionId.value, 'retained-id')
+    assert.equal(state.outcome.value, null)
+    assert.equal(state.outcomeReceivedAt.value, null)
+    assert.equal(calls.length, 1)
+  })
+}
+
+for (const action of Object.keys(actions)) {
+  test(`next explicit ${action} resets failed status feedback without automatic requests`, async t => {
+    const { state, calls } = fixture(t)
+    prepare(state, 'status')
+    const checking = state.perform('status')
+    calls[0].reject(new Error('status unavailable'))
+    await checking
+    assert.equal(state.message.value, statusCaution)
+    assert.equal(state.error.value, 'status unavailable')
+    assert.equal(calls.length, 1)
+    const next = state.perform(action)
+    assert.equal(state.message.value, '')
+    assert.equal(state.error.value, '')
+    assert.equal(state.busy.value, action)
+    assert.equal(calls.length, 2)
+    calls[1].resolve(results[action])
+    await next
+    assert.notEqual(state.message.value, statusCaution)
+    assert.equal(state.error.value, '')
+    assert.equal(state.busy.value, '')
+    assert.equal(calls.length, 2)
+  })
+}
 
 for (const action of ['ticket', 'commit', 'revoke', 'list']) {
   for (const settlement of ['resolve', 'reject']) {
@@ -2609,7 +2666,7 @@ test('all current request failures release busy without retries', async t => {
     await operation
     assert.equal(state.busy.value, '')
     assert.equal(state.error.value, 'service failed')
-    assert.equal(state.message.value, action === 'ticket' ? ticketCaution : action === 'commit' ? commitCaution : action === 'revoke' ? revokeCaution : '')
+    assert.equal(state.message.value, action === 'ticket' ? ticketCaution : action === 'commit' ? commitCaution : action === 'revoke' ? revokeCaution : action === 'status' ? statusCaution : '')
     assert.equal(calls.length, 1)
   }
 })
@@ -3686,9 +3743,11 @@ for (const reset of ['clearOutcome', 'lookup', 'clearSession', 'token', 'pagehid
       state.lookupId.value = 'new-ticket'
       const newer = state.perform('status')
       const reads = clock.reads
+      const beforeStale = commandState(state)
       if (settlement === 'resolve') calls[0].resolve(snapshot())
       else calls[0].reject(new Error('stale status failure'))
       await old
+      assert.deepEqual(commandState(state), beforeStale)
       assert.equal(state.outcomeReceivedAt.value, null)
       assert.equal(clock.reads, reads)
       if (reset === 'dispose') {
@@ -3708,9 +3767,11 @@ for (const reset of ['clearOutcome', 'lookup', 'clearSession', 'token', 'pagehid
       await latest
       clock.time = 1090
       const before = clock.reads
+      const beforeLate = commandState(state)
       if (settlement === 'resolve') calls[2].resolve(snapshot())
       else calls[2].reject(new Error('late status failure'))
       await late
+      assert.deepEqual(commandState(state), beforeLate)
       assert.equal(state.outcomeReceivedAt.value, 1080)
       assert.equal(state.outcome.value.id, 'new-ticket')
       assert.equal(state.busy.value, '')

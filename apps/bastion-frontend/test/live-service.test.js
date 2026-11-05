@@ -19,6 +19,7 @@ const now = 1000
 const commitCaution = 'Vastlegging niet bevestigd. Controleer de laatste inzending via het ticket-ID. Dien niet automatisch opnieuw in.'
 const revokeCaution = 'Intrekking niet bevestigd. Vastleggen en nieuwe tickets blijven geblokkeerd. Controleer dit ticket of trek het expliciet opnieuw in.'
 const ticketCaution = 'Ticketuitgifte niet bevestigd. Er kan al een serverticket bestaan. Zonder ontvangen ticket is lokaal vastleggen niet mogelijk. Geen automatische nieuwe aanvraag.'
+const statusCaution = 'Ticketstatus niet bevestigd. Er is geen geldige nieuwe momentopname ontvangen. Deze fout bevestigt geen vastlegging of intrekking en herstelt geen toestemming. Controleer het ticket expliciet opnieuw; geen automatische herhaling.'
 const localCommitBlocked = 'Niet ingezonden: de lokale ticketcontrole blokkeert vastleggen. Voor deze actie is geen commitverzoek verstuurd. Dit zegt niets over eerdere inzendingen.'
 
 async function bounded(pending, label) {
@@ -515,6 +516,62 @@ test('live service: clearing a draft leaves server authority active but requires
   assert.equal(f.count('DELETE', `/v1/tickets/${held.id}`), 0)
   assert.equal(f.calls.length, requests + 2)
   assert.equal((await f.statusExternal(held.id)).status, 'active')
+})
+
+test('live service: unknown status returns HTTP 404 without resolving retained uncertain revocation or mutating SQLite', { timeout: 15000 }, async t => {
+  const f = await fixture(t)
+  const s = f.session
+  await f.run('ticket')
+  const held = s.ticket.value
+  const path = `/v1/tickets/${held.id}`
+  await bounded(s.checkCurrentTicket(), 'initial explicit status')
+  assert.equal(s.outcome.value.status, 'active')
+  assert.equal(s.outcomeReceivedAt.value, now)
+  f.loseNext('DELETE', path)
+  await f.run('revoke')
+  assert.equal(f.losses, 1)
+  assert.equal(s.revocationUncertain.value, true)
+  s.command.value = 'retained edited draft'
+  s.lookupId.value = 'unknown-ticket'
+  const retained = () => ({
+    command: s.command.value, ttlMs: s.ttlMs.value, commands: [...s.commands.value],
+    search: s.search.value, hasLoaded: s.hasLoaded.value,
+    journalRefreshFailed: s.journalRefreshFailed.value,
+    lastJournalRefreshAt: s.lastJournalRefreshAt.value,
+    lookupId: s.lookupId.value, lastSubmissionId: s.lastSubmissionId.value,
+  })
+  const before = retained()
+  const database = () => Object.fromEntries(['tickets', 'commands', 'audit'].map(table =>
+    [table, f.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]))
+  const persisted = database()
+  const requests = f.calls.length
+  await f.run('status')
+  assert.deepEqual(f.calls.at(-1), { path: '/v1/tickets/unknown-ticket', method: 'GET', status: 404 })
+  assert.equal(s.error.value, 'Ticket niet gevonden.')
+  assert.equal(s.message.value, statusCaution)
+  assert.equal(s.busy.value, '')
+  assert.equal(s.outcome.value, null)
+  assert.equal(s.outcomeReceivedAt.value, null)
+  assert.equal(s.ticket.value, held)
+  assert.equal(s.revocationUncertain.value, true)
+  assert.equal(s.canCommit.value, false)
+  assert.deepEqual(retained(), before)
+  assert.deepEqual(database(), persisted)
+  assert.equal(f.calls.length, requests + 1, 'no automatic retry or mutation')
+
+  await bounded(s.checkCurrentTicket(), 'matching explicit status after not found')
+  assert.deepEqual(f.calls.at(-1), { path, method: 'GET', status: 200 })
+  assert.equal(s.outcome.value.id, held.id)
+  assert.equal(s.outcome.value.status, 'revoked')
+  assert.equal(s.outcomeReceivedAt.value, now)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.revocationUncertain.value, false)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.error.value, '')
+  assert.equal(s.message.value, 'Ticketstatus opgehaald. Dit is een momentopname, geen nieuwe toestemming.')
+  assert.equal(s.command.value, before.command)
+  assert.deepEqual(database(), persisted)
+  assert.equal(f.calls.length, requests + 2, 'only the matching explicit check follows the failed lookup')
 })
 
 for (const resolution of ['status', 'revoke']) {
