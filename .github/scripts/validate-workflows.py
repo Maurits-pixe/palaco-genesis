@@ -597,6 +597,25 @@ def main() -> int:
             if not isinstance(job, dict):
                 errors.append(f"{path}: job '{job_name}' must be a mapping")
                 continue
+            unsupported_job_keys = set(job.keys()) - {
+                "name",
+                "runs-on",
+                "steps",
+                "timeout-minutes",
+                "needs",
+                "if",
+                "permissions",
+                "strategy",
+                "env",
+                "defaults",
+                "continue-on-error",
+                "working-directory",
+                "environment",
+            }
+            if unsupported_job_keys:
+                errors.append(
+                    f"{path}: job '{job_name}' has unsupported keys: {sorted(unsupported_job_keys)}"
+                )
 
             display_name = job.get("name")
             if not isinstance(display_name, str) or not display_name.strip():
