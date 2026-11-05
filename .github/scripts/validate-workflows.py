@@ -449,6 +449,24 @@ def main() -> int:
                                     errors.append(
                                         f"{path}: job '{job_name}' strategy.matrix.{matrix_list_key}[{matrix_index}] must be a non-empty mapping"
                                     )
+                                    continue
+                                for entry_key, entry_value in matrix_item.items():
+                                    if not isinstance(entry_key, str) or not entry_key.strip():
+                                        errors.append(
+                                            f"{path}: job '{job_name}' strategy.matrix.{matrix_list_key}[{matrix_index}] keys must be non-empty strings"
+                                        )
+                                    if isinstance(entry_value, str):
+                                        if not entry_value.strip():
+                                            errors.append(
+                                                f"{path}: job '{job_name}' strategy.matrix.{matrix_list_key}[{matrix_index}]['{entry_key}'] must not be an empty string"
+                                            )
+                                    elif (
+                                        type(entry_value) is not bool
+                                        and not isinstance(entry_value, (int, float))
+                                    ):
+                                        errors.append(
+                                            f"{path}: job '{job_name}' strategy.matrix.{matrix_list_key}[{matrix_index}]['{entry_key}'] must be a scalar (string, number, or boolean)"
+                                        )
             job_needs = job.get("needs")
             if isinstance(job_needs, str):
                 normalized_need = job_needs.strip()
