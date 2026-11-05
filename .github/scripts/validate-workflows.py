@@ -57,6 +57,23 @@ def validate(path: Path) -> list[str]:
     top_defaults = data.get("defaults")
     if top_defaults is not None and not isinstance(top_defaults, dict):
         errors.append(f"{path.name}: top-level defaults must be a mapping when set")
+    elif isinstance(top_defaults, dict):
+        top_defaults_run = top_defaults.get("run")
+        if top_defaults_run is not None and not isinstance(top_defaults_run, dict):
+            errors.append(f"{path.name}: top-level defaults.run must be a mapping when set")
+        elif isinstance(top_defaults_run, dict):
+            top_shell = top_defaults_run.get("shell")
+            if top_shell is not None and (not isinstance(top_shell, str) or not top_shell.strip()):
+                errors.append(
+                    f"{path.name}: top-level defaults.run.shell must be a non-empty string when set"
+                )
+            top_workdir = top_defaults_run.get("working-directory")
+            if top_workdir is not None and (
+                not isinstance(top_workdir, str) or not top_workdir.strip()
+            ):
+                errors.append(
+                    f"{path.name}: top-level defaults.run.working-directory must be a non-empty string when set"
+                )
 
     permissions = data.get("permissions")
     if not isinstance(permissions, dict) or permissions.get("contents") != "read":
@@ -134,6 +151,25 @@ def validate(path: Path) -> list[str]:
         job_defaults = job.get("defaults")
         if job_defaults is not None and not isinstance(job_defaults, dict):
             errors.append(f"{path.name}:{job_name}: job defaults must be a mapping when set")
+        elif isinstance(job_defaults, dict):
+            job_defaults_run = job_defaults.get("run")
+            if job_defaults_run is not None and not isinstance(job_defaults_run, dict):
+                errors.append(
+                    f"{path.name}:{job_name}: job defaults.run must be a mapping when set"
+                )
+            elif isinstance(job_defaults_run, dict):
+                job_shell = job_defaults_run.get("shell")
+                if job_shell is not None and (not isinstance(job_shell, str) or not job_shell.strip()):
+                    errors.append(
+                        f"{path.name}:{job_name}: job defaults.run.shell must be a non-empty string when set"
+                    )
+                job_workdir = job_defaults_run.get("working-directory")
+                if job_workdir is not None and (
+                    not isinstance(job_workdir, str) or not job_workdir.strip()
+                ):
+                    errors.append(
+                        f"{path.name}:{job_name}: job defaults.run.working-directory must be a non-empty string when set"
+                    )
 
         job_outputs = job.get("outputs")
         if job_outputs is not None:
