@@ -801,6 +801,9 @@ def main() -> int:
             step_display_name_to_indexes: dict[str, list[int]] = {}
             for step_index, step in enumerate(steps):
                 if not isinstance(step, dict):
+                    errors.append(
+                        f"{path}: job '{job_name}' step #{step_index} must be a mapping"
+                    )
                     continue
                 validate_env_mapping(
                     errors,
