@@ -651,6 +651,66 @@ test('held ticket ID focus only selects text without state mutation or requests'
   assert.equal(sockets.length, 0)
 })
 
+test('outcome ticket ID renders exact escaped text with accessible manual-copy help only with an outcome', async () => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const panel = app.match(/<div v-if="outcome" class="result">[\s\S]*?<\/div>/)[0]
+  const label = panel.match(/<label for="outcome-ticket-id">[^<]*<\/label>/)[0]
+  const input = panel.match(/<input id="outcome-ticket-id"[^>]*\/>/)[0]
+  const help = panel.match(/<p id="outcome-ticket-id-help"[^>]*>[\s\S]*?<\/p>/)[0]
+  assert.match(label, /Ticketuitkomst-ID \(selecteer en kopieer\)/)
+  assert.match(input, /:value="outcome.id"/)
+  assert.doesNotMatch(input, /disabled|v-model|@(?!focus=)|v-on|v-bind|v-if/)
+  assert.match(help, /Selecteer en kopieer dit exacte ID handmatig vóór Wis ticketuitkomst of Wis sessie om later de status op te zoeken/)
+  assert.match(help, /Wis ticketuitkomst behoudt het opzoekveld/)
+  assert.match(help, /Kopieën op het klembord staan buiten de lokale sessie en worden niet gewist/)
+  assert.match(help, /geen automatische verzoeken en herstellen geen toestemming/)
+  for (const id of ['outcome-ticket-id', 'outcome-ticket-id-help']) {
+    assert.equal(app.match(new RegExp(`\\bid="${id}"`, 'g')).length, 1)
+  }
+  const { code } = compile(panel, { mode: 'function', prefixIdentifiers: true })
+  const render = new Function('Vue', code)(Vue)
+  for (const busy of ['', 'ticket', 'commit', 'revoke', 'status', 'list']) {
+    const html = await renderToString(Vue.createSSRApp({
+      data: () => ({
+        outcome: snapshot({ id: ' exact-É🚀<&"ticket> ' }), outcomeMismatch: false, outcomeReceivedAt: null, busy,
+        lookupId: 'different-lookup-id', ticket: { ...held(), id: 'different-current-id' },
+        lastSubmissionId: 'different-submission-id',
+      }),
+      methods: { date: value => String(value) },
+      render,
+    }))
+    assert.ok(html.includes('<input id="outcome-ticket-id" value=" exact-É🚀&lt;&amp;&quot;ticket&gt; " readonly aria-describedby="outcome-ticket-id-help">'), busy)
+    assert.ok(html.includes(label))
+    assert.ok(html.includes(help.replace(/\s+/g, ' ')))
+    assert.doesNotMatch(html, /different-lookup-id|different-current-id|different-submission-id|\sdisabled(?:[=>\s])/)
+  }
+  const html = await renderToString(Vue.createSSRApp({ data: () => ({ outcome: null }), render }))
+  assert.doesNotMatch(html, /outcome-ticket-id|Ticketuitkomst-ID|Selecteer en kopieer/)
+})
+
+test('outcome ticket ID focus only selects text without state mutation or requests', t => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const input = app.match(/<input id="outcome-ticket-id"[^>]*\/>/)[0]
+  const { code } = compile(input, { mode: 'function', prefixIdentifiers: true })
+  const render = new Function('Vue', code)(Vue)
+  const { state, calls, sockets } = fixture(t)
+  prepare(state, 'revoke')
+  state.lookupId.value = 'different-lookup-id'
+  state.outcome.value = snapshot({ id: ' exact-É🚀<&"ticket> ' })
+  state.busy.value = 'status'
+  const before = JSON.parse(JSON.stringify(commandState(state)))
+  const vnode = render(Vue.proxyRefs(state), {})
+  assert.deepEqual(Object.keys(vnode.props).sort(), ['aria-describedby', 'id', 'onFocus', 'readonly', 'value'])
+  assert.equal(vnode.props.value, state.outcome.value.id)
+  let selections = 0
+  const target = { select() { assert.equal(this, target); selections++ } }
+  vnode.props.onFocus({ target })
+  assert.equal(selections, 1)
+  assert.deepEqual(commandState(state), before)
+  assert.equal(calls.length, 0)
+  assert.equal(sockets.length, 0)
+})
+
 test('issued ticket text is labelled, explained and rendered as escaped text rather than the draft', async () => {
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
   const block = app.match(/<div v-if="ticket" class="result">([\s\S]*?)<\/div>/)[1]
@@ -1219,7 +1279,7 @@ test('fresh issuance recomputes warning against the held ticket, not the lookup 
 test('mismatch UI is an alert inside the source-bound result without claiming all actions are blocked', () => {
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
   const result = app.match(/<div v-if="outcome" class="result">([\s\S]*?)<\/div>/)[1]
-  assert.match(result, /Ticket: <code>\{\{ outcome.id \}\}<\/code>/)
+  assert.match(result, /<input id="outcome-ticket-id" :value="outcome.id" readonly/)
   assert.match(result, /<p v-if="outcomeMismatch" role="alert" class="error">Statusgegevens wijken af van het lokaal bewaarde ticket\. Deze uitkomst wijzigt het lokale ticket of de onzekerheidsblokkering niet\.<\/p>/)
   assert.match(result, /\{\{ outcome.command \}\}/)
   assert.doesNotMatch(result, /zijn geblokkeerd/)
@@ -1856,7 +1916,7 @@ test('lookup help describes exact IDs, local-only clearing and explicit requests
   assert.match(app, /id="lookup-id-help"[^>]*>Een ander ID wist alleen de lokale status/)
   assert.match(app, /Geen herstel van toestemming of intrekking op de server; geen automatisch verzoek\./)
   assert.match(app, /Gebruik het exacte ID, zonder omringende spaties\./)
-  assert.match(app, /Ticket: <code>\{\{ outcome.id \}\}<\/code>/)
+  assert.match(app, /<input id="outcome-ticket-id" :value="outcome.id" readonly/)
 })
 
 test('outcome clear UI is an explicit local-only button with status-only busy eligibility and honest help', () => {

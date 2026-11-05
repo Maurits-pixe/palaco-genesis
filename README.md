@@ -297,6 +297,12 @@ serverstatus. Een actieve uitkomst is geen nieuwe lokale toestemming.
 Bij een vastgelegd én ingetrokken ticket blijft expliciet zichtbaar dat
 latere intrekking het eerdere logboekrecord niet terugdraait. Vastlegging
 betekent uitsluitend opslag van tekst, geen uitvoering van het commando.
+Het ticket-ID van de ontvangen uitkomst staat in een gelabeld, alleen-lezen
+veld dat bij focus de volledige waarde selecteert. Kopieer het handmatig
+voor een latere statuscontrole. **Wis ticketuitkomst** behoudt het invoerveld
+voor het opzoeken; **Wis sessie** verwijdert ook lokale ID's.
+Klembordkopieën vallen buiten de sessie en worden niet meegewist.
+Selecteren of kopiëren verstuurt geen verzoek en herstelt geen toestemming.
 Naast de servercontroletijd toont de uitkomst wanneer de interface het
 antwoord lokaal heeft ontvangen. Dit ontvangsttijdstip hoort uitsluitend bij
 de zichtbare uitkomst en verdwijnt bij wissen of een nieuwe statuscontrole,

@@ -108,7 +108,11 @@ function receiptIso(value) {
           <button :disabled="!!busy || !token.trim() || !lookupId">Status controleren</button>
         </form>
         <div v-if="outcome" class="result">
-          <p>Ticket: <code>{{ outcome.id }}</code></p>
+          <label for="outcome-ticket-id">Ticketuitkomst-ID (selecteer en kopieer)</label>
+          <input id="outcome-ticket-id" :value="outcome.id" readonly @focus="$event.target.select()" aria-describedby="outcome-ticket-id-help" />
+          <p id="outcome-ticket-id-help" class="muted">Selecteer en kopieer dit exacte ID handmatig vóór Wis ticketuitkomst of Wis sessie om later de status op te zoeken.
+            Wis ticketuitkomst behoudt het opzoekveld. Kopieën op het klembord staan buiten de lokale sessie en worden niet gewist.
+            Selecteren en kopiëren versturen geen automatische verzoeken en herstellen geen toestemming.</p>
           <p v-if="outcomeMismatch" role="alert" class="error">Statusgegevens wijken af van het lokaal bewaarde ticket. Deze uitkomst wijzigt het lokale ticket of de onzekerheidsblokkering niet.</p>
           <p>Status: {{ outcome.status }} · ingetrokken: {{ outcome.revoked ? 'ja' : 'nee' }}</p>
           <p v-if="outcome.status === 'pending'" class="muted">De server controleerde dit ticket vóór de begintijd.</p>
