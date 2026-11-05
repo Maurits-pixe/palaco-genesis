@@ -211,7 +211,21 @@ def validate(path: Path) -> list[str]:
 
 
 def main() -> int:
-    workflow_files = sorted(WORKFLOW_DIR.glob("*.yml"))
+    target_path = WORKFLOW_DIR
+    if len(sys.argv) > 2:
+        print("Usage: validate-workflows.py [WORKFLOW_DIR_OR_FILE]")
+        return 1
+    if len(sys.argv) == 2:
+        target_path = Path(sys.argv[1])
+
+    if target_path.is_file():
+        workflow_files = [target_path]
+    elif target_path.is_dir():
+        workflow_files = sorted(target_path.glob("*.yml"))
+    else:
+        print(f"Path not found: {target_path}")
+        return 1
+
     if not workflow_files:
         print("No workflow files found.")
         return 1
