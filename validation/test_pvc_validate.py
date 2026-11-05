@@ -10,6 +10,7 @@ from pvc_validate import (
     evaluate_g1,
     evaluate_g2,
     evaluate_g3,
+    evaluate_g4,
 )
 
 
@@ -400,6 +401,60 @@ class G3Tests(unittest.TestCase):
     def test_graph_digest_mismatch_is_inconclusive(self):
         plan = {**self.plan, "system_graph_sha256": "0" * 64}
         result, _ = self.evaluate(plan=plan)
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
+
+class G4Tests(unittest.TestCase):
+    def setUp(self):
+        self.scenarios = [
+            "runtime_plan_confirms_execution_path",
+            "runtime_plan_escalates_non_executable_scope",
+            "runtime_plan_safe_state_fails_closed",
+            "kernel_cycle_confirms_execution_path",
+            "kernel_cycle_escalates_non_executable_scope",
+            "kernel_cycle_safe_state_fails_closed",
+        ]
+        self.output = "".join(f"test tests::{name} ... ok\n" for name in self.scenarios)
+
+    def test_passes_only_with_all_runtime_and_kernel_scenarios_and_g3(self):
+        result, evidence = evaluate_g4(
+            self.output, 0, "PASS", source_revision="abc123", source_tree_clean=True
+        )
+        self.assertEqual(result["result"], "PASS")
+        self.assertEqual(len(evidence["scenarios"]), len(self.scenarios))
+        self.assertEqual(evidence["source_revision"], "abc123")
+        self.assertTrue(evidence["output_sha256"])
+
+    def test_missing_scenario_is_hold(self):
+        result, _ = evaluate_g4(
+            self.output.replace("runtime_plan_safe_state_fails_closed", "omitted"),
+            0,
+            "PASS",
+            source_revision="abc123",
+            source_tree_clean=True,
+        )
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_failed_scenario_is_fail(self):
+        output = self.output.replace("kernel_cycle_safe_state_fails_closed ... ok", "kernel_cycle_safe_state_fails_closed ... FAILED")
+        result, _ = evaluate_g4(output, 101, "PASS", source_revision="abc123", source_tree_clean=True)
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_passed_scenarios_hold_until_g3_passes(self):
+        result, _ = evaluate_g4(
+            self.output, 0, "HOLD", source_revision="abc123", source_tree_clean=True
+        )
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_unavailable_test_execution_is_hold(self):
+        result, evidence = evaluate_g4(None, None, "PASS", "cargo is unavailable")
+        self.assertEqual(result["result"], "HOLD")
+        self.assertEqual(evidence["error"], "cargo is unavailable")
+
+    def test_dirty_source_is_inconclusive(self):
+        result, _ = evaluate_g4(
+            self.output, 0, "PASS", source_revision="abc123", source_tree_clean=False
+        )
         self.assertEqual(result["result"], "INCONCLUSIVE")
 
 

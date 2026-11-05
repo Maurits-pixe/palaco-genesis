@@ -22,8 +22,16 @@ GRAPH_SCHEMA_PATH = ROOT / "validation/system-graph.schema.json"
 ORDERING_PATH = ROOT / "validation/dependency-ordering.json"
 PLAN_PATH = ROOT / "validation/execution-plan.json"
 PLAN_SCHEMA_PATH = ROOT / "validation/execution-plan.schema.json"
-VALIDATOR_VERSION = "0.4.0"
+VALIDATOR_VERSION = "0.5.0"
 NODE_KINDS = {"service", "capability", "resource", "lifecycle", "event"}
+G4_SCENARIOS = {
+    "runtime_plan_confirms_execution_path",
+    "runtime_plan_escalates_non_executable_scope",
+    "runtime_plan_safe_state_fails_closed",
+    "kernel_cycle_confirms_execution_path",
+    "kernel_cycle_escalates_non_executable_scope",
+    "kernel_cycle_safe_state_fails_closed",
+}
 
 
 def digest(path: Path) -> str:
@@ -809,6 +817,98 @@ def evaluate_g3(
     )
 
 
+def evaluate_g4(
+    test_output: str | None,
+    exit_code: int | None,
+    g3_result: str,
+    error: str | None = None,
+    source_revision: str | None = None,
+    source_tree_clean: bool | None = None,
+    run_id: str | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    command = ["cargo", "test", "--locked", "-p", "palaco-runtime", "-p", "palaco-kernel"]
+    evidence: dict[str, Any] = {
+        "command": command,
+        "exit_code": exit_code,
+        "source_revision": source_revision,
+        "source_tree_clean": source_tree_clean,
+        "run_id": run_id,
+        "output_sha256": hashlib.sha256((test_output or "").encode("utf-8")).hexdigest()
+        if test_output is not None
+        else None,
+        "scenarios": [],
+    }
+    if error:
+        evidence["error"] = error
+        return (
+            {"gate": "G4", "result": "HOLD", "findings": [f"Runtime/kernel contract tests could not run: {error}"]},
+            evidence,
+        )
+    if test_output is None or exit_code is None:
+        return (
+            {"gate": "G4", "result": "HOLD", "findings": ["Runtime/kernel contract test evidence is unavailable."]},
+            evidence,
+        )
+
+    observed: dict[str, str] = {}
+    pattern = re.compile(
+        r"^test tests::("
+        + "|".join(sorted(G4_SCENARIOS))
+        + r") \.\.\. (ok|FAILED)$",
+        re.MULTILINE,
+    )
+    for match in pattern.finditer(test_output):
+        observed[match.group(1)] = match.group(2)
+    evidence["scenarios"] = [
+        {"name": name, "result": observed.get(name, "missing")}
+        for name in sorted(G4_SCENARIOS)
+    ]
+
+    failed = sorted(name for name, result in observed.items() if result != "ok")
+    missing = sorted(G4_SCENARIOS - observed.keys())
+    if exit_code != 0 or failed:
+        findings = [f"Runtime/kernel contract tests failed (exit code {exit_code})."]
+        if failed:
+            findings.append(f"Failed scenarios: {failed}.")
+        return {"gate": "G4", "result": "FAIL", "findings": findings}, evidence
+    if missing:
+        return (
+            {"gate": "G4", "result": "HOLD", "findings": [f"Required runtime/kernel scenarios are missing: {missing}."]},
+            evidence,
+        )
+    if not source_revision:
+        return (
+            {"gate": "G4", "result": "HOLD", "findings": ["Runtime/kernel test evidence is not bound to a source revision."]},
+            evidence,
+        )
+    if source_tree_clean is not True:
+        return (
+            {
+                "gate": "G4",
+                "result": "INCONCLUSIVE",
+                "findings": ["Runtime/kernel test evidence was produced from a dirty or unverifiable source tree."],
+            },
+            evidence,
+        )
+    if g3_result != "PASS":
+        return (
+            {
+                "gate": "G4",
+                "result": "HOLD",
+                "findings": [f"Runtime/kernel scenarios pass, but G3 is {g3_result}; the governed execution plan is not validated."],
+            },
+            evidence,
+        )
+    return (
+        {
+            "gate": "G4",
+            "result": "PASS",
+            "findings": ["Runtime/kernel revalidation, escalation, and safe-state contract tests passed for the validated G3 input."],
+        },
+        evidence,
+    )
+
+
 def _git(*args: str) -> str | None:
     completed = subprocess.run(
         ["git", *args],
@@ -889,6 +989,27 @@ def _workspace_dependency_graph() -> tuple[list[str] | None, list[tuple[str, str
         return None, None, f"Could not parse cargo metadata: {error}"
 
 
+def _run_g4_contract_tests() -> tuple[str | None, int | None, str | None]:
+    try:
+        completed = subprocess.run(
+            ["cargo", "test", "--locked", "-p", "palaco-runtime", "-p", "palaco-kernel"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+    except FileNotFoundError as error:
+        return None, None, str(error)
+    except subprocess.TimeoutExpired as error:
+        output = error.stdout or ""
+        if isinstance(output, bytes):
+            output = output.decode("utf-8", errors="replace")
+        return output, None, "Runtime/kernel contract tests exceeded 180 seconds."
+    output = completed.stdout + completed.stderr
+    return output, completed.returncode, None
+
+
 def _artifact(path: Path) -> dict[str, str] | None:
     if not path.is_file():
         return None
@@ -942,10 +1063,20 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
         g2["result"],
         plan_error,
     )
+    g4_output, g4_exit_code, g4_error = _run_g4_contract_tests()
+    g4, g4_evidence = evaluate_g4(
+        g4_output,
+        g4_exit_code,
+        g3["result"],
+        g4_error,
+        revision or None,
+        not dirty,
+        os.environ.get("GITHUB_RUN_ID"),
+    )
 
     report: dict[str, Any] = {
         "format_version": 1,
-        "validator": {"name": "PVC-001 G0-G3 validator", "version": VALIDATOR_VERSION},
+        "validator": {"name": "PVC-001 G0-G4 validator", "version": VALIDATOR_VERSION},
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "repository": _repository_identity(),
         "revision": revision or None,
@@ -960,7 +1091,8 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
         },
         "dependency_graph": dependency_graph,
         "execution_schedule": execution_schedule,
-        "gates": [g0, g1, g2, g3],
+        "runtime_kernel_tests": g4_evidence,
+        "gates": [g0, g1, g2, g3, g4],
     }
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path = output_dir / "pvc-001-evidence.json"
@@ -974,7 +1106,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     dependency_sha256 = report["dependency_graph"].get("sha256") or "unavailable"
     plan_sha256 = report["execution_schedule"].get("plan_sha256") or "unavailable"
     lines = [
-        "# PVC-001 G0-G3 Evidence",
+        "# PVC-001 G0-G4 Evidence",
         "",
         f"- Repository: `{report['repository'] or 'unknown'}`",
         f"- Revision: `{report['revision'] or 'unknown'}`",
@@ -989,6 +1121,27 @@ def render_markdown(report: dict[str, Any]) -> str:
     for gate in report["gates"]:
         findings = "; ".join(gate["findings"]).replace("|", "\\|")
         lines.append(f"| {gate['gate']} | **{gate['result']}** | {findings} |")
+    runtime_tests = report["runtime_kernel_tests"]
+    lines.extend(
+        [
+            "",
+            "## Runtime/kernel contract test evidence",
+            "",
+            f"- Command: `{' '.join(runtime_tests['command'])}`",
+            f"- Source revision: `{runtime_tests['source_revision'] or 'unavailable'}`",
+            f"- Source tree clean: `{runtime_tests['source_tree_clean']}`",
+            f"- CI run ID: `{runtime_tests['run_id'] or 'unavailable'}`",
+            f"- Exit code: `{runtime_tests['exit_code']}`",
+            f"- Output SHA-256: `{runtime_tests['output_sha256'] or 'unavailable'}`",
+            "",
+            "| Scenario | Result |",
+            "|---|---|",
+        ]
+    )
+    lines.extend(
+        f"| `{scenario['name']}` | {scenario['result']} |"
+        for scenario in runtime_tests["scenarios"]
+    )
     layers = report["execution_schedule"].get("execution_layers", [])
     lines.extend(["", "## Deterministic execution layers", ""])
     if layers:

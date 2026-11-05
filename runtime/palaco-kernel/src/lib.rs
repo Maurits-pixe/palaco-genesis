@@ -97,7 +97,7 @@ mod tests {
         },
     };
     use palaco_oracle::PlausibleState;
-    use palaco_runtime::RuntimePlan;
+    use palaco_runtime::{RuntimeDisposition, RuntimePlan};
     use palaco_trias::{AuthorizationScope, GovernanceDecision};
     use palaco_types::DomainMarker;
 
@@ -186,6 +186,25 @@ mod tests {
         assert_eq!(
             cycle.current_validity(timestamp(2026, 1, 20, 0, 0, 0)?),
             CurrentValidity::InsufficientEvidence
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn kernel_cycle_safe_state_fails_closed() -> Result<(), &'static str> {
+        let mut runtime_plan = kernel_cycle(AuthorizationScope::Execute)?.runtime_plan;
+        runtime_plan.disposition = RuntimeDisposition::SafeState;
+        let cycle = KernelCycle::new(runtime_plan);
+
+        assert_eq!(cycle.disposition, KernelDisposition::SafeState);
+        assert_eq!(
+            cycle.current_validity(timestamp(2026, 1, 20, 0, 0, 0)?),
+            CurrentValidity::SafeStateRequired
+        );
+        assert_eq!(
+            cycle.revalidate(&cycle.runtime_plan.boundary.decision.context),
+            Ok(RevalidationOutcome::SafeState)
         );
 
         Ok(())
