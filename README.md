@@ -94,7 +94,7 @@ cargo test --workspace
 - `pages.yml` — GitHub Pages deployment (optioneel met custom domain via `PAGES_CUSTOM_DOMAIN`)
 - `metrics.yml` — dependency metrics vergelijking met artifact output
 - `baseline-metrics.yml` — periodieke baseline + metrics report artifact generatie
-- `automation-integrity.yml` — valideert workflow YAML, dwingt permissions/concurrency-group/timeout/runner/checkout-security policy af (least-privilege permissions incl. release-uitzondering, `runs-on: ubuntu-latest`, timeouts verplicht en max 60 min, checkout zonder persisted credentials op `actions/checkout@v4`, geen floating action refs zoals `@main`/`@master`, geen `pull_request_target` trigger), en controleert shell scripts (syntax + shellcheck)
+- `automation-integrity.yml` — valideert workflow YAML, dwingt permissions/concurrency-group/timeout/runner/checkout-security policy af (least-privilege permissions incl. release-uitzondering, `runs-on: ubuntu-latest`, timeouts verplicht en max 60 min, checkout zonder persisted credentials op `actions/checkout@v4`, geen floating action refs zoals `@main`/`@master`, geen `pull_request_target` trigger, en geen `continue-on-error: true` op jobs/steps), en controleert shell scripts (syntax + shellcheck)
 - `workflow-lint.yml` — lint alle GitHub workflow-definities met actionlint
 - `palaco-ci.yml` — uitgebreide PALACO baseline pipeline
 - `citadel-a1.yml` — Citadel A1 contractverificatie

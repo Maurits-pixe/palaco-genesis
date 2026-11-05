@@ -125,6 +125,11 @@ jobs:
                           f"{path}: job '{job_name}' must set runs-on to 'ubuntu-latest'"
                       )
 
+                  if job.get("continue-on-error") is True:
+                      errors.append(
+                          f"{path}: job '{job_name}' must not set continue-on-error to true"
+                      )
+
                   job_permissions = job.get("permissions")
                   filename = os.path.basename(path)
                   if job_permissions is not None:
@@ -160,6 +165,10 @@ jobs:
                   for step_index, step in enumerate(steps):
                       if not isinstance(step, dict):
                           continue
+                      if step.get("continue-on-error") is True:
+                          errors.append(
+                              f"{path}: job '{job_name}' step #{step_index} must not set continue-on-error to true"
+                          )
                       step_uses = step.get("uses")
                       if isinstance(step_uses, str) and "@" in step_uses and not step_uses.startswith("./"):
                           action_ref = step_uses.rsplit("@", 1)[1]
