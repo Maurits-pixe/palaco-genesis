@@ -1010,12 +1010,52 @@ test('session countdown preserves valid numeric and ISO windows through pending,
   assertEmpty(state)
 })
 
-test('countdown UI separates unavailable, positive and expired time and disclaims server authority', () => {
+test('countdown UI separates unavailable, positive and locally elapsed time and disclaims server authority', () => {
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
   const result = app.match(/<div v-if="ticket" class="result">([\s\S]*?)<\/div>/)[1]
-  assert.match(result, /<p v-if="remaining === null">Resterende tijd niet beschikbaar\. Controleer de lokale klok en ticketgegevens\.<\/p>\s*<p v-else-if="remaining > 0">Nog circa \{\{ remaining \}\} seconden\.<\/p>\s*<p v-else>Verlopen\. Vraag een nieuw ticket aan\.<\/p>/)
+  assert.match(result, /<p v-if="remaining === null">Resterende tijd niet beschikbaar\. Controleer de lokale klok en ticketgegevens\.<\/p>\s*<p v-else-if="remaining > 0">Volgens de lokale klok nog circa \{\{ remaining \}\} seconden\.<\/p>\s*<p v-else>Volgens de lokale klok is de vervaltijd bereikt\.\s*<span v-if="revocationUncertain">Controleer de status van hetzelfde ticket of trek dit ticket expliciet opnieuw in\. Nieuwe tickets blijven geblokkeerd\.<\/span>\s*<span v-else>Je kunt expliciet een nieuw ticket aanvragen; geen automatische aanvraag\.<\/span>\s*<\/p>/)
   assert.match(result, /<p v-if="remaining > 0 && !canCommit && !revocationUncertain">Niet geldig voor de huidige invoer of begintijd\.<\/p>/)
   assert.match(result, /De aftelling gebruikt de lokale klok; alleen de server beslist over geldigheid\./)
+})
+
+test('compiled countdown renders local-only guidance without requests or authority changes', async t => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const countdown = app.match(/<p v-if="remaining === null">[\s\S]*?<p class="muted">De aftelling[\s\S]*?<\/p>/)?.[0]
+  assert.ok(countdown)
+  assert.doesNotMatch(countdown, /@|v-on|v-model|v-bind|v-html|<button|<a\b|<input|<form|canCommit|ticket\.|outcome|perform|fetch|checkCurrentTicket/)
+  assert.deepEqual([...countdown.matchAll(/\{\{([\s\S]*?)\}\}/g)].map(match => match[1].trim()), ['remaining'])
+  const { code } = compile(countdown, { mode: 'function', prefixIdentifiers: true })
+  const render = new Function('Vue', code)(Vue)
+  for (const remaining of [null, 12, 0]) {
+    for (const revocationUncertain of [false, true]) {
+      await t.test(`remaining=${remaining}, uncertainty=${revocationUncertain}`, async t => {
+        const { state, calls, sockets } = fixture(t)
+        prepare(state, 'revoke')
+        state.revocationUncertain.value = revocationUncertain
+        const before = commandState(state)
+        const ticketBefore = state.ticket.value
+        const canCommitBefore = state.canCommit.value
+        const html = await renderToString(Vue.createSSRApp({
+          setup: () => ({ ...state, remaining }),
+          render,
+        }))
+        assert.equal(html.includes('Resterende tijd niet beschikbaar. Controleer de lokale klok en ticketgegevens.'), remaining === null)
+        assert.equal(html.includes('Volgens de lokale klok nog circa 12 seconden.'), remaining === 12)
+        assert.equal(html.includes('Volgens de lokale klok is de vervaltijd bereikt.'), remaining === 0)
+        assert.equal(html.includes('Controleer de status van hetzelfde ticket of trek dit ticket expliciet opnieuw in. Nieuwe tickets blijven geblokkeerd.'), remaining === 0 && revocationUncertain)
+        assert.equal(html.includes('Je kunt expliciet een nieuw ticket aanvragen; geen automatische aanvraag.'), remaining === 0 && !revocationUncertain)
+        if (revocationUncertain) assert.doesNotMatch(html, /nieuw ticket aanvragen|Vraag een nieuw ticket/)
+        assert.ok(html.includes('De aftelling gebruikt de lokale klok; alleen de server beslist over geldigheid.'))
+        assert.doesNotMatch(html, /Verlopen\.|ticket is (?:ingetrokken|verlopen)|<button|<a\b|<input|<form|onClick/i)
+        assert.deepEqual(commandState(state), before)
+        assert.equal(state.ticket.value, ticketBefore)
+        assert.equal(state.revocationUncertain.value, revocationUncertain)
+        assert.equal(state.canCommit.value, canCommitBefore)
+        assert.equal(calls.length, 0)
+        assert.equal(sockets.length, 0)
+      })
+    }
+  }
 })
 
 for (const uncertain of [false, true]) {

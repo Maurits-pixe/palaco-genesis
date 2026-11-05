@@ -229,6 +229,10 @@ vensterwaarden verschijnt **Resterende tijd niet beschikbaar**, niet een
 verlopenmelding of onbetrouwbare duur. Bij geldige waarden telt hij afgerond
 naar boven tot de eindtijd, ook als de begintijd nog niet is bereikt.
 Dit is uitsluitend een lokale indicatie, geen serverbeslissing of toestemming.
+Ook bij nul seconden zegt de interface alleen dat volgens de lokale klok de
+vervaltijd is bereikt. Bij onzekere intrekking blijft het advies de status
+van hetzelfde ticket te controleren of de intrekking expliciet te herhalen;
+de lokale aftelling heft de blokkering op nieuwe tickets niet op.
 Vlak vóór vastleggen leest BASTION de lokale klok opnieuw, onafhankelijk van
 de laatste afteltick. Is het ticket dan verlopen of de klok ongeldig, dan
 volgt geen commitverzoek en wordt het lokale ticket niet verbruikt.
