@@ -119,6 +119,12 @@ jobs:
                       errors.append(f"{path}: job '{job_name}' must be a mapping")
                       continue
 
+                  runs_on = job.get("runs-on")
+                  if runs_on != "ubuntu-latest":
+                      errors.append(
+                          f"{path}: job '{job_name}' must set runs-on to 'ubuntu-latest'"
+                      )
+
                   job_permissions = job.get("permissions")
                   filename = os.path.basename(path)
                   if job_permissions is not None:
