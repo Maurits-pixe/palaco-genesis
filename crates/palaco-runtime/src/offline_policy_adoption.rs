@@ -133,10 +133,10 @@ pub fn adopt_prepared_policy<B: PolicyPinBackend>(
     backend: &mut B,
     prepared: &PreparedPolicyTransition,
 ) -> Result<PolicyAdoptionOutcome, PolicyAdoptionError> {
-    let previous = read_pinned_policy(root, Some(&prepared.previous))
-        .map_err(PolicyAdoptionError::Store)?;
-    let next = read_pinned_policy(root, Some(&prepared.proposed))
-        .map_err(PolicyAdoptionError::Store)?;
+    let previous =
+        read_pinned_policy(root, Some(&prepared.previous)).map_err(PolicyAdoptionError::Store)?;
+    let next =
+        read_pinned_policy(root, Some(&prepared.proposed)).map_err(PolicyAdoptionError::Store)?;
     if prepared.previous.version.checked_add(1) != Some(prepared.proposed.version)
         || previous.registry_id != next.registry_id
         || previous.pinned_public_key != next.pinned_public_key
@@ -145,7 +145,9 @@ pub fn adopt_prepared_policy<B: PolicyPinBackend>(
     {
         return Err(PolicyAdoptionError::InvalidTransition);
     }
-    let current = backend.read_current().map_err(PolicyAdoptionError::Backend)?;
+    let current = backend
+        .read_current()
+        .map_err(PolicyAdoptionError::Backend)?;
     if current == Some(prepared.proposed) {
         return Ok(PolicyAdoptionOutcome::ObservedNext);
     }
