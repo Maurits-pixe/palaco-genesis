@@ -385,6 +385,13 @@ def validate(path: Path) -> list[str]:
                 errors.append(
                     f"{path.name}:{job_name}:step#{idx + 1}: step with must be a mapping when set"
                 )
+            elif isinstance(step_with, dict):
+                for with_key in step_with.keys():
+                    if not isinstance(with_key, str) or not with_key.strip():
+                        errors.append(
+                            f"{path.name}:{job_name}:step#{idx + 1}: step with keys must be non-empty strings"
+                        )
+                        break
 
             step_timeout = step.get("timeout-minutes")
             if step_timeout is not None:
