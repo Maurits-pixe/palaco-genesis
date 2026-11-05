@@ -22,7 +22,7 @@ GRAPH_SCHEMA_PATH = ROOT / "validation/system-graph.schema.json"
 ORDERING_PATH = ROOT / "validation/dependency-ordering.json"
 PLAN_PATH = ROOT / "validation/execution-plan.json"
 PLAN_SCHEMA_PATH = ROOT / "validation/execution-plan.schema.json"
-VALIDATOR_VERSION = "0.5.0"
+VALIDATOR_VERSION = "0.6.0"
 NODE_KINDS = {"service", "capability", "resource", "lifecycle", "event"}
 G4_SCENARIOS = {
     "runtime_plan_confirms_execution_path",
@@ -31,6 +31,18 @@ G4_SCENARIOS = {
     "kernel_cycle_confirms_execution_path",
     "kernel_cycle_escalates_non_executable_scope",
     "kernel_cycle_safe_state_fails_closed",
+}
+G5_SCENARIOS = {
+    "event_bus_publishes_events_without_authority_operations",
+    "append_and_replay_reconstructs_the_complete_lifecycle",
+    "revocation_survives_snapshot_replay",
+    "missing_event_provenance_is_rejected_before_commit",
+    "observatory_snapshot_marks_current_execution_as_current",
+    "observatory_snapshot_marks_observe_scope_as_degraded",
+    "observatory_snapshot_marks_missing_sensor_coverage_as_safe_state",
+    "observatory_snapshot_preserves_runtime_expiry_after_observation",
+    "observatory_snapshot_does_not_change_runtime_authority_state",
+    "action_flow_requires_authorization",
 }
 
 
@@ -909,6 +921,106 @@ def evaluate_g4(
     )
 
 
+def evaluate_g5(
+    test_output: str | None,
+    exit_code: int | None,
+    g4_result: str,
+    error: str | None = None,
+    source_revision: str | None = None,
+    source_tree_clean: bool | None = None,
+    run_id: str | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    command = [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "palaco-eventbus",
+        "-p",
+        "palaco-rio-core",
+        "-p",
+        "palaco-observatory",
+    ]
+    evidence: dict[str, Any] = {
+        "command": command,
+        "exit_code": exit_code,
+        "source_revision": source_revision,
+        "source_tree_clean": source_tree_clean,
+        "run_id": run_id,
+        "output_sha256": hashlib.sha256((test_output or "").encode("utf-8")).hexdigest()
+        if test_output is not None
+        else None,
+        "scenarios": [],
+    }
+    if error:
+        evidence["error"] = error
+        return (
+            {"gate": "G5", "result": "HOLD", "findings": [f"Event/observability contract tests could not run: {error}"]},
+            evidence,
+        )
+    if test_output is None or exit_code is None:
+        return (
+            {"gate": "G5", "result": "HOLD", "findings": ["Event/observability contract test evidence is unavailable."]},
+            evidence,
+        )
+
+    pattern = re.compile(
+        r"^test (?:[\w]+::)*tests::("
+        + "|".join(sorted(G5_SCENARIOS))
+        + r") \.\.\. (ok|FAILED)$",
+        re.MULTILINE,
+    )
+    observed = {match.group(1): match.group(2) for match in pattern.finditer(test_output)}
+    evidence["scenarios"] = [
+        {"name": name, "result": observed.get(name, "missing")}
+        for name in sorted(G5_SCENARIOS)
+    ]
+
+    failed = sorted(name for name, result in observed.items() if result != "ok")
+    missing = sorted(G5_SCENARIOS - observed.keys())
+    if exit_code != 0 or failed:
+        findings = [f"Event/observability contract tests failed (exit code {exit_code})."]
+        if failed:
+            findings.append(f"Failed scenarios: {failed}.")
+        return {"gate": "G5", "result": "FAIL", "findings": findings}, evidence
+    if missing:
+        return (
+            {"gate": "G5", "result": "HOLD", "findings": [f"Required event/observability scenarios are missing: {missing}."]},
+            evidence,
+        )
+    if not source_revision:
+        return (
+            {"gate": "G5", "result": "HOLD", "findings": ["Event/observability test evidence is not bound to a source revision."]},
+            evidence,
+        )
+    if source_tree_clean is not True:
+        return (
+            {
+                "gate": "G5",
+                "result": "INCONCLUSIVE",
+                "findings": ["Event/observability test evidence was produced from a dirty or unverifiable source tree."],
+            },
+            evidence,
+        )
+    if g4_result != "PASS":
+        return (
+            {
+                "gate": "G5",
+                "result": "HOLD",
+                "findings": [f"Required prior gate G4 is {g4_result}; the runtime/kernel contract is not validated."],
+            },
+            evidence,
+        )
+    return (
+        {
+            "gate": "G5",
+            "result": "PASS",
+            "findings": ["Event lifecycle, provenance, observability and authority-separation scenarios passed."],
+        },
+        evidence,
+    )
+
+
 def _git(*args: str) -> str | None:
     completed = subprocess.run(
         ["git", *args],
@@ -1010,6 +1122,37 @@ def _run_g4_contract_tests() -> tuple[str | None, int | None, str | None]:
     return output, completed.returncode, None
 
 
+def _run_g5_contract_tests() -> tuple[str | None, int | None, str | None]:
+    try:
+        completed = subprocess.run(
+            [
+                "cargo",
+                "test",
+                "--locked",
+                "-p",
+                "palaco-eventbus",
+                "-p",
+                "palaco-rio-core",
+                "-p",
+                "palaco-observatory",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+    except FileNotFoundError as error:
+        return None, None, str(error)
+    except subprocess.TimeoutExpired as error:
+        output = error.stdout or ""
+        if isinstance(output, bytes):
+            output = output.decode("utf-8", errors="replace")
+        return output, None, "Event/observability contract tests exceeded 180 seconds."
+    output = completed.stdout + completed.stderr
+    return output, completed.returncode, None
+
+
 def _artifact(path: Path) -> dict[str, str] | None:
     if not path.is_file():
         return None
@@ -1073,10 +1216,20 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
         not dirty,
         os.environ.get("GITHUB_RUN_ID"),
     )
+    g5_output, g5_exit_code, g5_error = _run_g5_contract_tests()
+    g5, g5_evidence = evaluate_g5(
+        g5_output,
+        g5_exit_code,
+        g4["result"],
+        g5_error,
+        revision or None,
+        not dirty,
+        os.environ.get("GITHUB_RUN_ID"),
+    )
 
     report: dict[str, Any] = {
         "format_version": 1,
-        "validator": {"name": "PVC-001 G0-G4 validator", "version": VALIDATOR_VERSION},
+        "validator": {"name": "PVC-001 G0-G5 validator", "version": VALIDATOR_VERSION},
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "repository": _repository_identity(),
         "revision": revision or None,
@@ -1092,7 +1245,8 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
         "dependency_graph": dependency_graph,
         "execution_schedule": execution_schedule,
         "runtime_kernel_tests": g4_evidence,
-        "gates": [g0, g1, g2, g3, g4],
+        "event_observability_tests": g5_evidence,
+        "gates": [g0, g1, g2, g3, g4, g5],
     }
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path = output_dir / "pvc-001-evidence.json"
@@ -1106,7 +1260,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     dependency_sha256 = report["dependency_graph"].get("sha256") or "unavailable"
     plan_sha256 = report["execution_schedule"].get("plan_sha256") or "unavailable"
     lines = [
-        "# PVC-001 G0-G4 Evidence",
+        "# PVC-001 G0-G5 Evidence",
         "",
         f"- Repository: `{report['repository'] or 'unknown'}`",
         f"- Revision: `{report['revision'] or 'unknown'}`",
@@ -1141,6 +1295,27 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.extend(
         f"| `{scenario['name']}` | {scenario['result']} |"
         for scenario in runtime_tests["scenarios"]
+    )
+    event_tests = report["event_observability_tests"]
+    lines.extend(
+        [
+            "",
+            "## Event/observability contract test evidence",
+            "",
+            f"- Command: `{' '.join(event_tests['command'])}`",
+            f"- Source revision: `{event_tests['source_revision'] or 'unavailable'}`",
+            f"- Source tree clean: `{event_tests['source_tree_clean']}`",
+            f"- CI run ID: `{event_tests['run_id'] or 'unavailable'}`",
+            f"- Exit code: `{event_tests['exit_code']}`",
+            f"- Output SHA-256: `{event_tests['output_sha256'] or 'unavailable'}`",
+            "",
+            "| Scenario | Result |",
+            "|---|---|",
+        ]
+    )
+    lines.extend(
+        f"| `{scenario['name']}` | {scenario['result']} |"
+        for scenario in event_tests["scenarios"]
     )
     layers = report["execution_schedule"].get("execution_layers", [])
     lines.extend(["", "## Deterministic execution layers", ""])

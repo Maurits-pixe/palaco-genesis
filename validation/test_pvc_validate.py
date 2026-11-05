@@ -11,6 +11,7 @@ from pvc_validate import (
     evaluate_g2,
     evaluate_g3,
     evaluate_g4,
+    evaluate_g5,
 )
 
 
@@ -453,6 +454,72 @@ class G4Tests(unittest.TestCase):
 
     def test_dirty_source_is_inconclusive(self):
         result, _ = evaluate_g4(
+            self.output, 0, "PASS", source_revision="abc123", source_tree_clean=False
+        )
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
+
+class G5Tests(unittest.TestCase):
+    def setUp(self):
+        self.scenarios = [
+            "event_bus_publishes_events_without_authority_operations",
+            "append_and_replay_reconstructs_the_complete_lifecycle",
+            "revocation_survives_snapshot_replay",
+            "missing_event_provenance_is_rejected_before_commit",
+            "observatory_snapshot_marks_current_execution_as_current",
+            "observatory_snapshot_marks_observe_scope_as_degraded",
+            "observatory_snapshot_marks_missing_sensor_coverage_as_safe_state",
+            "observatory_snapshot_preserves_runtime_expiry_after_observation",
+            "observatory_snapshot_does_not_change_runtime_authority_state",
+            "action_flow_requires_authorization",
+        ]
+        event_tests = {
+            "append_and_replay_reconstructs_the_complete_lifecycle",
+            "revocation_survives_snapshot_replay",
+            "missing_event_provenance_is_rejected_before_commit",
+        }
+        self.output = "".join(
+            f"test {'event::tests' if name in event_tests else 'tests'}::{name} ... ok\n"
+            for name in self.scenarios
+        )
+
+    def test_passes_with_all_scenarios_and_prior_gates(self):
+        result, evidence = evaluate_g5(
+            self.output,
+            0,
+            "PASS",
+            source_revision="abc123",
+            source_tree_clean=True,
+        )
+        self.assertEqual(result["result"], "PASS")
+        self.assertEqual(len(evidence["scenarios"]), len(self.scenarios))
+        self.assertTrue(evidence["output_sha256"])
+
+    def test_missing_scenario_is_hold(self):
+        output = self.output.replace("revocation_survives_snapshot_replay", "omitted")
+        result, _ = evaluate_g5(
+            output, 0, "PASS", source_revision="abc123", source_tree_clean=True
+        )
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_failed_scenario_is_fail(self):
+        output = self.output.replace(
+            "tests::action_flow_requires_authorization ... ok",
+            "tests::action_flow_requires_authorization ... FAILED",
+        )
+        result, _ = evaluate_g5(
+            output, 101, "PASS", source_revision="abc123", source_tree_clean=True
+        )
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_requires_g4_pass(self):
+        result, _ = evaluate_g5(
+            self.output, 0, "HOLD", source_revision="abc123", source_tree_clean=True
+        )
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_dirty_source_is_inconclusive(self):
+        result, _ = evaluate_g5(
             self.output, 0, "PASS", source_revision="abc123", source_tree_clean=False
         )
         self.assertEqual(result["result"], "INCONCLUSIVE")
