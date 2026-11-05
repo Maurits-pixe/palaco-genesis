@@ -31,12 +31,25 @@ def validate_defaults_run(
     if not isinstance(defaults_value, dict):
         errors.append(f"{path}: {scope} defaults must be a mapping when provided")
         return
+    unsupported_defaults_keys = set(defaults_value.keys()) - {"run"}
+    if unsupported_defaults_keys:
+        errors.append(
+            f"{path}: {scope} defaults has unsupported keys: {sorted(unsupported_defaults_keys)}"
+        )
     run_defaults = defaults_value.get("run")
     if run_defaults is None:
         return
     if not isinstance(run_defaults, dict):
         errors.append(f"{path}: {scope} defaults.run must be a mapping when provided")
         return
+    unsupported_run_defaults_keys = set(run_defaults.keys()) - {
+        "working-directory",
+        "shell",
+    }
+    if unsupported_run_defaults_keys:
+        errors.append(
+            f"{path}: {scope} defaults.run has unsupported keys: {sorted(unsupported_run_defaults_keys)}"
+        )
     run_working_directory = run_defaults.get("working-directory")
     if run_working_directory is not None and (
         not isinstance(run_working_directory, str) or not run_working_directory.strip()
