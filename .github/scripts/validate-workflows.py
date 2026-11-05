@@ -358,6 +358,7 @@ def validate(path: Path) -> list[str]:
             continue
 
         uses_checkout = False
+        seen_step_ids: set[str] = set()
         for idx, step in enumerate(steps):
             if not isinstance(step, dict):
                 errors.append(
@@ -376,6 +377,13 @@ def validate(path: Path) -> list[str]:
                 errors.append(
                     f"{path.name}:{job_name}:step#{idx + 1}: step id must be a non-empty string when set"
                 )
+            elif isinstance(step_id, str):
+                if step_id in seen_step_ids:
+                    errors.append(
+                        f"{path.name}:{job_name}:step#{idx + 1}: duplicate step id {step_id!r} is not allowed"
+                    )
+                else:
+                    seen_step_ids.add(step_id)
 
             step_if = step.get("if")
             if step_if is not None and (not isinstance(step_if, str) or not step_if.strip()):
