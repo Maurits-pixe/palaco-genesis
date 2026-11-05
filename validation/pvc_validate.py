@@ -61,7 +61,11 @@ G7_SCENARIOS = G4_SCENARIOS | G5_SCENARIOS
 
 
 def digest(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    hasher = hashlib.sha256()
+    with path.open("rb") as artifact:
+        for chunk in iter(lambda: artifact.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
 
 
 def read_json(path: Path) -> tuple[Any | None, str | None]:
@@ -1755,15 +1759,26 @@ def evaluate_g9(
             return None, None, f"{label} must reference evidence as relative-path@sha256."
         path_text, expected_digest = match.groups()
         artifact_path = Path(path_text)
-        if artifact_path.is_absolute() or "\\" in path_text or ".." in artifact_path.parts:
+        if (
+            artifact_path.is_absolute()
+            or "\\" in path_text
+            or ".." in artifact_path.parts
+            or any(ord(character) < 32 or ord(character) == 127 for character in path_text)
+        ):
             return None, None, f"{label} path must be relative to the release evidence directory."
-        candidate = (release_evidence_root / artifact_path).resolve()
+        try:
+            candidate = (release_evidence_root / artifact_path).resolve()
+        except (OSError, RuntimeError) as error:
+            return None, None, f"{label} path could not be resolved: {error}."
         try:
             candidate.relative_to(release_evidence_root.resolve())
         except ValueError:
             return None, None, f"{label} path escapes the release evidence directory."
-        if not candidate.is_file():
-            return None, f"{label} artifact is missing: {path_text}.", None
+        try:
+            if not candidate.is_file():
+                return None, f"{label} artifact is missing: {path_text}.", None
+        except (OSError, ValueError, RuntimeError) as error:
+            return None, None, f"{label} path could not be inspected: {error}."
         try:
             observed_digest = digest(candidate)
         except OSError:
@@ -2207,7 +2222,7 @@ def _artifact_in_directory(path: Path, directory: Path) -> dict[str, str] | None
     try:
         relative_path = path.resolve().relative_to(directory.resolve()).as_posix()
         return {"path": relative_path, "sha256": digest(path)}
-    except (OSError, ValueError):
+    except (OSError, RuntimeError, ValueError):
         return None
 
 

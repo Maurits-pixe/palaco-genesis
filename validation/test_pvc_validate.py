@@ -14,6 +14,7 @@ from pvc_validate import (
     _ordering_approval_digest,
     _repository_identity,
     _run_dependency_audit,
+    digest,
     evaluate_g0,
     evaluate_g1,
     evaluate_g2,
@@ -1039,6 +1040,30 @@ class G9Tests(unittest.TestCase):
         )
         result, _ = self.evaluate(release_text=checklist)
         self.assertEqual(result["result"], "FAIL")
+
+    def test_artifact_path_with_null_byte_fails_without_crashing(self):
+        result, _ = self.evaluate(
+            release_text=self.checklist().replace(
+                "dist/palaco.tar@", "dist/\x00palaco.tar@"
+            )
+        )
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_artifact_symlink_loop_fails_without_crashing(self):
+        loop = self.root / "dist/loop"
+        loop.symlink_to("loop")
+        checklist = self.checklist().replace(
+            self.file_reference("dist/palaco.tar"),
+            f"dist/loop@{'a' * 64}",
+        )
+        result, _ = self.evaluate(release_text=checklist)
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_digest_streams_large_artifact(self):
+        content = b"release-data" * 200_000
+        path = self.root / "dist/large.tar"
+        path.write_bytes(content)
+        self.assertEqual(digest(path), hashlib.sha256(content).hexdigest())
 
     def test_evidence_report_must_contain_all_prior_passes(self):
         gates = [*self.prior_gates]
