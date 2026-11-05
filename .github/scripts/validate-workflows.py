@@ -110,7 +110,19 @@ def main() -> int:
                 f"{path}: top-level workflow 'on' trigger must be string, list, or mapping"
             )
 
+        allowed_top_level_triggers = {
+            "workflow_dispatch",
+            "push",
+            "pull_request",
+            "schedule",
+        }
+
         if isinstance(trigger_config, str):
+            normalized_trigger = trigger_config.strip()
+            if normalized_trigger and normalized_trigger not in allowed_top_level_triggers:
+                errors.append(
+                    f"{path}: top-level workflow 'on' string trigger '{normalized_trigger}' is not allowed"
+                )
             if trigger_config == "schedule":
                 errors.append(
                     f"{path}: schedule trigger must be a non-empty list of mappings with non-empty cron strings"
@@ -130,6 +142,27 @@ def main() -> int:
             if trigger_config == "pull_request_target":
                 errors.append(f"{path}: pull_request_target trigger is not allowed")
         elif isinstance(trigger_config, list):
+            normalized_triggers: list[str] = []
+            for trigger_index, trigger_name in enumerate(trigger_config):
+                if not isinstance(trigger_name, str) or not trigger_name.strip():
+                    errors.append(
+                        f"{path}: top-level workflow 'on' trigger list item #{trigger_index} must be a non-empty string"
+                    )
+                    continue
+                normalized_triggers.append(trigger_name.strip())
+            if len(set(normalized_triggers)) != len(normalized_triggers):
+                errors.append(
+                    f"{path}: top-level workflow 'on' trigger list must not contain duplicates"
+                )
+            unsupported_list_triggers = sorted(
+                trigger_name
+                for trigger_name in set(normalized_triggers)
+                if trigger_name not in allowed_top_level_triggers
+            )
+            if unsupported_list_triggers:
+                errors.append(
+                    f"{path}: top-level workflow 'on' trigger list has unsupported triggers: {unsupported_list_triggers}"
+                )
             if "schedule" in trigger_config:
                 errors.append(
                     f"{path}: schedule trigger must be a non-empty list of mappings with non-empty cron strings"
@@ -149,12 +182,7 @@ def main() -> int:
             if "pull_request_target" in trigger_config:
                 errors.append(f"{path}: pull_request_target trigger is not allowed")
         elif isinstance(trigger_config, dict):
-            unsupported_trigger_keys = set(trigger_config.keys()) - {
-                "workflow_dispatch",
-                "push",
-                "pull_request",
-                "schedule",
-            }
+            unsupported_trigger_keys = set(trigger_config.keys()) - allowed_top_level_triggers
             if unsupported_trigger_keys:
                 errors.append(
                     f"{path}: top-level workflow 'on' mapping has unsupported triggers: {sorted(unsupported_trigger_keys)}"
