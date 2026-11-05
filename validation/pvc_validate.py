@@ -1751,12 +1751,9 @@ def evaluate_g9(
             {"gate": "G9", "result": "FAIL", "findings": [f"Prior mandatory gates failed and remain unresolved: {failed_gates}."]},
             evidence,
         )
-    blocked_gates = [gate["gate"] for gate in prior_gates if gate["result"] != "PASS"]
-    if blocked_gates:
-        return (
-            {"gate": "G9", "result": "HOLD", "findings": [f"Prior gates are not all PASS: {blocked_gates}."]},
-            evidence,
-        )
+    current_blocked_gates = [
+        gate["gate"] for gate in prior_gates if gate["result"] != "PASS"
+    ]
 
     def verified_artifact(field: str, label: str) -> tuple[dict[str, Any] | None, str | None, str | None]:
         value = fields[field]
@@ -1910,10 +1907,13 @@ def evaluate_g9(
             {"gate": "G9", "result": "FAIL", "findings": [f"Referenced evidence report records prior failures: {report_failures}."]},
             evidence,
         )
-    report_blockers = [gate["gate"] for gate in report_gates[:9] if gate.get("result") != "PASS"]
-    if report_blockers:
+    report_blockers = [
+        gate["gate"] for gate in report_gates[:9] if gate.get("result") != "PASS"
+    ]
+    blocked_gates = list(dict.fromkeys(current_blocked_gates + report_blockers))
+    if blocked_gates:
         return (
-            {"gate": "G9", "result": "HOLD", "findings": [f"Referenced evidence report has non-PASS gates: {report_blockers}."]},
+            {"gate": "G9", "result": "HOLD", "findings": [f"Current or referenced prior gates are not all PASS: {blocked_gates}."]},
             evidence,
         )
     attestation_path = release_evidence_root / evidence["attestation"]["path"]

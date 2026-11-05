@@ -1092,6 +1092,26 @@ class G9Tests(unittest.TestCase):
         self.assertEqual(result["result"], "HOLD")
         self.assertFalse(evidence["release_eligible"])
 
+    def test_evidence_report_prior_failure_remains_failure(self):
+        gates = [*self.prior_gates]
+        gates[6] = {"gate": "G6", "result": "FAIL"}
+        self.write_report(gates=gates)
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "FAIL")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_current_hold_does_not_hide_evidence_report_prior_failure(self):
+        report_gates = [*self.prior_gates]
+        report_gates[6] = {"gate": "G6", "result": "FAIL"}
+        self.write_report(gates=report_gates)
+        current_gates = [*self.prior_gates]
+        current_gates[8] = {"gate": "G8", "result": "HOLD"}
+        result, evidence = self.evaluate(
+            release_text=self.checklist(), prior_gates=current_gates
+        )
+        self.assertEqual(result["result"], "FAIL")
+        self.assertFalse(evidence["release_eligible"])
+
     def test_evidence_report_g9_hold_does_not_create_recursive_blocker(self):
         result, evidence = self.evaluate()
         self.assertEqual(result["result"], "PASS")
