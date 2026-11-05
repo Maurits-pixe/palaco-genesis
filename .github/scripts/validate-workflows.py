@@ -374,6 +374,17 @@ def main() -> int:
                         f"{path}: job '{job_name}' step #{step_index} must not set continue-on-error to true"
                     )
                 step_uses = step.get("uses")
+                step_run = step.get("run")
+                if step_uses is not None and step_run is not None:
+                    errors.append(
+                        f"{path}: job '{job_name}' step #{step_index} must not define both 'uses' and 'run'"
+                    )
+                if step_run is not None and (
+                    not isinstance(step_run, str) or not step_run.strip()
+                ):
+                    errors.append(
+                        f"{path}: job '{job_name}' step #{step_index} run must be a non-empty string when provided"
+                    )
                 if (
                     isinstance(step_uses, str)
                     and not step_uses.startswith("./")
