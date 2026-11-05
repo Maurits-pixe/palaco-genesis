@@ -593,6 +593,10 @@ def main() -> int:
                     errors.append(
                         f"{path}: permissions['{permission_key}'] must be a non-empty string"
                     )
+                elif permission_value not in {"read", "write", "none"}:
+                    errors.append(
+                        f"{path}: permissions['{permission_key}'] must be one of 'read', 'write', or 'none'"
+                    )
             filename = os.path.basename(path)
             contents_permission = permissions.get("contents")
             if contents_permission != "read":
