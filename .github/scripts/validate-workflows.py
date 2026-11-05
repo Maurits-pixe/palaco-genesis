@@ -354,6 +354,14 @@ def main() -> int:
                 errors.append(
                     f"{path}: job '{job_name}' timeout-minutes must be <= 60"
                 )
+            job_working_directory = job.get("working-directory")
+            if job_working_directory is not None and (
+                not isinstance(job_working_directory, str)
+                or not job_working_directory.strip()
+            ):
+                errors.append(
+                    f"{path}: job '{job_name}' working-directory must be a non-empty string when provided"
+                )
 
             steps = job.get("steps", [])
             if not isinstance(steps, list):
@@ -398,6 +406,14 @@ def main() -> int:
                 ):
                     errors.append(
                         f"{path}: job '{job_name}' step #{step_index} run must be a non-empty string when provided"
+                    )
+                step_working_directory = step.get("working-directory")
+                if step_working_directory is not None and (
+                    not isinstance(step_working_directory, str)
+                    or not step_working_directory.strip()
+                ):
+                    errors.append(
+                        f"{path}: job '{job_name}' step #{step_index} working-directory must be a non-empty string when provided"
                     )
                 if (
                     isinstance(step_uses, str)
