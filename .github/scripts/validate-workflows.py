@@ -549,6 +549,14 @@ def main() -> int:
         if not isinstance(concurrency, dict):
             errors.append(f"{path}: missing top-level concurrency mapping")
         else:
+            unsupported_concurrency_keys = set(concurrency.keys()) - {
+                "group",
+                "cancel-in-progress",
+            }
+            if unsupported_concurrency_keys:
+                errors.append(
+                    f"{path}: concurrency has unsupported keys: {sorted(unsupported_concurrency_keys)}"
+                )
             group = concurrency.get("group")
             cancel = concurrency.get("cancel-in-progress")
             if not group:
