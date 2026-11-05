@@ -149,6 +149,16 @@ def main() -> int:
             if "pull_request_target" in trigger_config:
                 errors.append(f"{path}: pull_request_target trigger is not allowed")
         elif isinstance(trigger_config, dict):
+            unsupported_trigger_keys = set(trigger_config.keys()) - {
+                "workflow_dispatch",
+                "push",
+                "pull_request",
+                "schedule",
+            }
+            if unsupported_trigger_keys:
+                errors.append(
+                    f"{path}: top-level workflow 'on' mapping has unsupported triggers: {sorted(unsupported_trigger_keys)}"
+                )
             if "schedule" in trigger_config:
                 schedule_trigger = trigger_config.get("schedule")
                 if not isinstance(schedule_trigger, list) or not schedule_trigger:
