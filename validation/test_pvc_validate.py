@@ -7,6 +7,8 @@ from unittest.mock import patch
 from pathlib import Path
 
 from pvc_validate import (
+    VALIDATOR_VERSION,
+    _artifact_in_directory,
     _canonical_sha256,
     _dependency_graph_digest,
     _ordering_approval_digest,
@@ -922,13 +924,19 @@ class G9Tests(unittest.TestCase):
         self.artifact = {"path": "validation/release_validation.md", "sha256": "a" * 64}
 
     def write_report(self, revision=None, gates=None):
+        report_gates = gates or [
+            *self.prior_gates,
+            {"gate": "G9", "result": "HOLD"},
+        ]
+        for gate in report_gates:
+            gate.setdefault("findings", [])
         report = {
+            "format_version": 1,
+            "validator": {"name": "PVC-001 G0-G9 validator", "version": VALIDATOR_VERSION},
+            "generated_at": "2026-11-05T00:00:00+00:00",
             "repository": self.repository,
             "revision": revision or self.source_revision,
-            "gates": gates or [
-                *self.prior_gates,
-                {"gate": "G9", "result": "HOLD"},
-            ],
+            "gates": report_gates,
         }
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
         attestation = {
@@ -1069,6 +1077,27 @@ class G9Tests(unittest.TestCase):
         result, _ = self.evaluate(release_text=self.checklist())
         self.assertEqual(result["result"], "INCONCLUSIVE")
 
+    def test_evidence_report_requires_supported_validator_format(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["validator"]["version"] = "0.9.0"
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, _ = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_evidence_report_requires_timezone_aware_timestamp(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["generated_at"] = "2026-11-05T00:00:00"
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, _ = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_evidence_report_requires_gate_findings_shape(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        del report["gates"][0]["findings"]
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, _ = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "FAIL")
+
     def test_evidence_report_repository_mismatch_is_inconclusive(self):
         report = json.loads(self.report_path.read_text(encoding="utf-8"))
         report["repository"] = "different/project"
@@ -1108,6 +1137,24 @@ class G9Tests(unittest.TestCase):
         result, evidence = self.evaluate(release_evidence_root=bundle)
         self.assertEqual(result["result"], "PASS")
         self.assertTrue(evidence["release_eligible"])
+
+    def test_external_checklist_artifact_has_relative_path_and_digest(self):
+        bundle = self.root / "external-bundle"
+        checklist = bundle / "validation/release_validation.md"
+        checklist.parent.mkdir(parents=True)
+        checklist.write_text(self.checklist(), encoding="utf-8")
+        artifact = _artifact_in_directory(checklist, bundle)
+        self.assertEqual(artifact["path"], "validation/release_validation.md")
+        self.assertEqual(artifact["sha256"], hashlib.sha256(checklist.read_bytes()).hexdigest())
+
+    def test_external_checklist_symlink_cannot_escape_bundle(self):
+        bundle = self.root / "external-bundle"
+        (bundle / "validation").mkdir(parents=True)
+        outside = self.root / "release_validation.md"
+        outside.write_text(self.checklist(), encoding="utf-8")
+        checklist = bundle / "validation/release_validation.md"
+        checklist.symlink_to(outside)
+        self.assertIsNone(_artifact_in_directory(checklist, bundle))
 
     def test_attestation_artifact_mismatch_fails(self):
         attestation_path = self.root / "dist/attestation.json"

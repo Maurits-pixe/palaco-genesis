@@ -1801,6 +1801,32 @@ def evaluate_g9(
             {"gate": "G9", "result": "FAIL", "findings": ["Referenced G0-G8 evidence report is not valid JSON."]},
             evidence,
         )
+    validator = report.get("validator")
+    if (
+        report.get("format_version") != 1
+        or not isinstance(validator, dict)
+        or validator.get("name") != "PVC-001 G0-G9 validator"
+        or validator.get("version") != VALIDATOR_VERSION
+    ):
+        return (
+            {"gate": "G9", "result": "FAIL", "findings": ["Referenced evidence report format or validator identity is unsupported."]},
+            evidence,
+        )
+    generated_at = report.get("generated_at")
+    if not isinstance(generated_at, str):
+        return (
+            {"gate": "G9", "result": "FAIL", "findings": ["Referenced evidence report has no valid generation timestamp."]},
+            evidence,
+        )
+    try:
+        timestamp = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+    except ValueError:
+        timestamp = None
+    if timestamp is None or timestamp.tzinfo is None or timestamp.utcoffset() is None:
+        return (
+            {"gate": "G9", "result": "FAIL", "findings": ["Referenced evidence report generation timestamp must be timezone-aware ISO 8601."]},
+            evidence,
+        )
     if report.get("revision") != source_revision:
         return (
             {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G0-G8 evidence report is for a different source revision."]},
@@ -1820,6 +1846,17 @@ def evaluate_g9(
     if report_gate_names not in (expected_gates, [*expected_gates, "G9"]):
         return (
             {"gate": "G9", "result": "FAIL", "findings": ["Referenced evidence report does not contain ordered G0-G8 results."]},
+            evidence,
+        )
+    malformed_gates = [
+        gate["gate"]
+        for gate in report_gates
+        if not isinstance(gate.get("findings"), list)
+        or any(not isinstance(finding, str) for finding in gate["findings"])
+    ]
+    if malformed_gates:
+        return (
+            {"gate": "G9", "result": "FAIL", "findings": [f"Referenced evidence report has malformed gate findings: {malformed_gates}."]},
             evidence,
         )
     if len(report_gates) == 10:
@@ -2162,6 +2199,16 @@ def _artifact(path: Path) -> dict[str, str] | None:
         return {"path": str(path), "sha256": "unavailable"}
 
 
+def _artifact_in_directory(path: Path, directory: Path) -> dict[str, str] | None:
+    if not path.is_file():
+        return None
+    try:
+        relative_path = path.resolve().relative_to(directory.resolve()).as_posix()
+        return {"path": relative_path, "sha256": digest(path)}
+    except (OSError, ValueError):
+        return None
+
+
 def build_report(
     scope_path: Path,
     graph_path: Path,
@@ -2301,13 +2348,10 @@ def build_report(
             release_text, release_error = None, "release checklist escapes the evidence directory"
         else:
             release_text, release_error = _read_artifact_text(release_checklist_path)
-    release_artifact = (
-        None
-        if release_error == "release checklist escapes the evidence directory"
-        else _artifact(release_checklist_path)
-    )
-    if release_artifact and release_evidence_dir != ROOT.resolve():
-        release_artifact["path"] = "validation/release_validation.md"
+    if release_evidence_dir == ROOT.resolve():
+        release_artifact = _artifact(release_checklist_path)
+    else:
+        release_artifact = _artifact_in_directory(release_checklist_path, release_evidence_dir)
     g9, release_validation = evaluate_g9(
         release_text,
         release_error,
@@ -2514,6 +2558,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             f"- Source tree clean: `{release['source_tree_clean']}`",
             f"- Evidence root: `{release['evidence_root']}`",
             f"- Release checklist: `{release['release_checklist']['path'] if release['release_checklist'] else 'unavailable'}`",
+            f"- Release checklist SHA-256: `{release['release_checklist']['sha256'] if release['release_checklist'] else 'unavailable'}`",
             f"- Release artifact: `{release['artifact']['path'] if release['artifact'] else 'unavailable'}`",
             f"- Artifact SHA-256: `{release['artifact']['sha256'] if release['artifact'] else 'unavailable'}`",
             f"- G0-G8 evidence report: `{release['evidence_report']['path'] if release['evidence_report'] else 'unavailable'}`",
