@@ -1950,6 +1950,28 @@ def evaluate_g9(
             {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G4-G7 test evidence has missing or conflicting revision, cleanliness, repository, exit-code or output-digest metadata."]},
             evidence,
         )
+    for item, expected_scenarios in zip(
+        integrated_evidence, (G4_SCENARIOS, G5_SCENARIOS, G7_SCENARIOS)
+    ):
+        scenarios = item.get("scenarios")
+        observed_scenarios = (
+            {
+                scenario.get("name"): scenario.get("result")
+                for scenario in scenarios
+                if isinstance(scenario, dict)
+            }
+            if isinstance(scenarios, list)
+            else {}
+        )
+        if (
+            len(observed_scenarios) != len(expected_scenarios)
+            or observed_scenarios.keys() != expected_scenarios
+            or any(result != "ok" for result in observed_scenarios.values())
+        ):
+            return (
+                {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G4-G7 PASS gates do not reconcile with complete, successful required scenario evidence."]},
+                evidence,
+            )
     attestation_path = release_evidence_root / evidence["attestation"]["path"]
     attestation, attestation_error = read_json(attestation_path)
     if attestation_error or not isinstance(attestation, dict):

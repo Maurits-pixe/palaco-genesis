@@ -7,6 +7,9 @@ from unittest.mock import patch
 from pathlib import Path
 
 from pvc_validate import (
+    G4_SCENARIOS,
+    G5_SCENARIOS,
+    G7_SCENARIOS,
     VALIDATOR_VERSION,
     _artifact_in_directory,
     _canonical_sha256,
@@ -945,6 +948,9 @@ class G9Tests(unittest.TestCase):
                 "source_tree_clean": True,
                 "exit_code": 0,
                 "output_sha256": "a" * 64,
+                "scenarios": [
+                    {"name": name, "result": "ok"} for name in sorted(G4_SCENARIOS)
+                ],
             },
             "event_observability_tests": {
                 "run_id": "run-1",
@@ -952,6 +958,9 @@ class G9Tests(unittest.TestCase):
                 "source_tree_clean": True,
                 "exit_code": 0,
                 "output_sha256": "b" * 64,
+                "scenarios": [
+                    {"name": name, "result": "ok"} for name in sorted(G5_SCENARIOS)
+                ],
             },
             "integrated_validation": {
                 "run_id": "run-1",
@@ -960,6 +969,9 @@ class G9Tests(unittest.TestCase):
                 "repository": self.repository,
                 "exit_code": 0,
                 "output_sha256": "c" * 64,
+                "scenarios": [
+                    {"name": name, "result": "ok"} for name in sorted(G7_SCENARIOS)
+                ],
             },
             "gates": report_gates,
         }
@@ -1176,6 +1188,22 @@ class G9Tests(unittest.TestCase):
     def test_evidence_report_integrated_test_repository_must_match(self):
         report = json.loads(self.report_path.read_text(encoding="utf-8"))
         report["integrated_validation"]["repository"] = "different/project"
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_scenario_failure_cannot_support_pass_gate(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["event_observability_tests"]["scenarios"][0]["result"] = "FAILED"
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_requires_complete_integrated_scenario_coverage(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["integrated_validation"]["scenarios"].pop()
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
         result, evidence = self.evaluate(release_text=self.checklist())
         self.assertEqual(result["result"], "INCONCLUSIVE")
