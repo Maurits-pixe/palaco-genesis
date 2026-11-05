@@ -82,6 +82,20 @@ def main() -> int:
         if not isinstance(data, dict):
             errors.append(f"{path}: workflow root must be a mapping")
             continue
+        unsupported_top_level_keys = set(data.keys()) - {
+            "name",
+            "on",
+            True,
+            "permissions",
+            "concurrency",
+            "jobs",
+            "env",
+            "defaults",
+        }
+        if unsupported_top_level_keys:
+            errors.append(
+                f"{path}: workflow root has unsupported top-level keys: {sorted(unsupported_top_level_keys, key=str)}"
+            )
 
         workflow_name = data.get("name")
         if not isinstance(workflow_name, str) or not workflow_name.strip():
