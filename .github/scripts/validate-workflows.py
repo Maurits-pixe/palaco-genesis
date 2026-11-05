@@ -112,6 +112,25 @@ def validate(path: Path) -> list[str]:
         ):
             errors.append(f"{path.name}:{job_name}: job name must be a non-empty string when set")
 
+        needs = job.get("needs")
+        if needs is not None:
+            if isinstance(needs, str):
+                if not needs.strip():
+                    errors.append(f"{path.name}:{job_name}: needs must not be an empty string")
+            elif isinstance(needs, list):
+                if not needs:
+                    errors.append(f"{path.name}:{job_name}: needs list must not be empty")
+                for dep in needs:
+                    if not isinstance(dep, str) or not dep.strip():
+                        errors.append(
+                            f"{path.name}:{job_name}: needs list entries must be non-empty strings"
+                        )
+                        break
+            else:
+                errors.append(
+                    f"{path.name}:{job_name}: needs must be a string or list of strings when set"
+                )
+
         strategy = job.get("strategy")
         if strategy is not None and not isinstance(strategy, dict):
             errors.append(f"{path.name}:{job_name}: strategy must be a mapping when set")
