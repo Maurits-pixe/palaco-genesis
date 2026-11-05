@@ -101,12 +101,82 @@ def main() -> int:
                             errors.append(
                                 f"{path}: schedule entry #{schedule_index} must define a non-empty cron string"
                             )
-            if "workflow_dispatch" in trigger_config and not isinstance(
-                trigger_config.get("workflow_dispatch"), dict
-            ):
-                errors.append(
-                    f"{path}: workflow_dispatch trigger must be a mapping (use '{{}}' when no inputs are needed)"
-                )
+            if "workflow_dispatch" in trigger_config:
+                workflow_dispatch_trigger = trigger_config.get("workflow_dispatch")
+                if not isinstance(workflow_dispatch_trigger, dict):
+                    errors.append(
+                        f"{path}: workflow_dispatch trigger must be a mapping (use '{{}}' when no inputs are needed)"
+                    )
+                else:
+                    workflow_inputs = workflow_dispatch_trigger.get("inputs")
+                    if workflow_inputs is not None:
+                        if not isinstance(workflow_inputs, dict) or not workflow_inputs:
+                            errors.append(
+                                f"{path}: workflow_dispatch.inputs must be a non-empty mapping when provided"
+                            )
+                        else:
+                            allowed_dispatch_types = {
+                                "string",
+                                "boolean",
+                                "choice",
+                                "environment",
+                                "number",
+                            }
+                            for input_name, input_config in workflow_inputs.items():
+                                if (
+                                    not isinstance(input_name, str)
+                                    or not input_name.strip()
+                                ):
+                                    errors.append(
+                                        f"{path}: workflow_dispatch.inputs keys must be non-empty strings"
+                                    )
+                                    continue
+                                if not isinstance(input_config, dict):
+                                    errors.append(
+                                        f"{path}: workflow_dispatch input '{input_name}' must be a mapping"
+                                    )
+                                    continue
+                                description = input_config.get("description")
+                                if (
+                                    not isinstance(description, str)
+                                    or not description.strip()
+                                ):
+                                    errors.append(
+                                        f"{path}: workflow_dispatch input '{input_name}' must define a non-empty description"
+                                    )
+                                required_value = input_config.get("required")
+                                if (
+                                    required_value is not None
+                                    and type(required_value) is not bool
+                                ):
+                                    errors.append(
+                                        f"{path}: workflow_dispatch input '{input_name}' required must be boolean when provided"
+                                    )
+                                input_type = input_config.get("type")
+                                if (
+                                    not isinstance(input_type, str)
+                                    or input_type not in allowed_dispatch_types
+                                ):
+                                    errors.append(
+                                        f"{path}: workflow_dispatch input '{input_name}' type must be one of {sorted(allowed_dispatch_types)}"
+                                    )
+                                elif input_type == "choice":
+                                    options = input_config.get("options")
+                                    if not isinstance(options, list) or not options:
+                                        errors.append(
+                                            f"{path}: workflow_dispatch choice input '{input_name}' must define a non-empty options list"
+                                        )
+                                    else:
+                                        normalized_options = [
+                                            option.strip()
+                                            for option in options
+                                            if isinstance(option, str)
+                                            and option.strip()
+                                        ]
+                                        if len(normalized_options) != len(options):
+                                            errors.append(
+                                                f"{path}: workflow_dispatch choice input '{input_name}' options must contain only non-empty strings"
+                                            )
             if "push" in trigger_config:
                 push_trigger = trigger_config.get("push")
                 if not isinstance(push_trigger, dict):
