@@ -252,8 +252,15 @@ def main() -> int:
                                             errors.append(
                                                 f"{path}: workflow_dispatch choice input '{input_name}' options must be unique"
                                             )
-                                        elif isinstance(default_value, str):
-                                            if default_value.strip() not in normalized_options:
+                                        elif default_value is not None:
+                                            if not isinstance(default_value, str):
+                                                errors.append(
+                                                    f"{path}: workflow_dispatch choice input '{input_name}' default must be a string when provided"
+                                                )
+                                            elif (
+                                                default_value.strip()
+                                                not in normalized_options
+                                            ):
                                                 errors.append(
                                                     f"{path}: workflow_dispatch choice input '{input_name}' default must be one of options"
                                                 )
@@ -261,6 +268,24 @@ def main() -> int:
                                     errors.append(
                                         f"{path}: workflow_dispatch input '{input_name}' may define options only when type is 'choice'"
                                     )
+                                if default_value is not None:
+                                    if input_type == "boolean" and type(default_value) is not bool:
+                                        errors.append(
+                                            f"{path}: workflow_dispatch input '{input_name}' default must be boolean for type 'boolean'"
+                                        )
+                                    elif input_type == "number" and (
+                                        type(default_value) is bool
+                                        or not isinstance(default_value, (int, float))
+                                    ):
+                                        errors.append(
+                                            f"{path}: workflow_dispatch input '{input_name}' default must be numeric for type 'number'"
+                                        )
+                                    elif input_type in {"string", "environment"} and not isinstance(
+                                        default_value, str
+                                    ):
+                                        errors.append(
+                                            f"{path}: workflow_dispatch input '{input_name}' default must be a string for type '{input_type}'"
+                                        )
             if "push" in trigger_config:
                 push_trigger = trigger_config.get("push")
                 if not isinstance(push_trigger, dict):
