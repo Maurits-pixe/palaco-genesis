@@ -108,6 +108,12 @@ def main() -> int:
                 errors.append(f"{path}: job '{job_name}' must be a mapping")
                 continue
 
+            display_name = job.get("name")
+            if not isinstance(display_name, str) or not display_name.strip():
+                errors.append(
+                    f"{path}: job '{job_name}' must define a non-empty name"
+                )
+
             runs_on = job.get("runs-on")
             if runs_on != "ubuntu-latest":
                 errors.append(

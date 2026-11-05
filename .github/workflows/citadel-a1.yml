@@ -12,6 +12,7 @@ concurrency:
 
 jobs:
   independent-verifiers:
+    name: Independent verifiers
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
