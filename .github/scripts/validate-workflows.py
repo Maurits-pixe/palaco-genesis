@@ -207,6 +207,20 @@ def main() -> int:
                                     errors.append(
                                         f"{path}: workflow_dispatch input '{input_name}' required must be boolean when provided"
                                     )
+                                default_value = input_config.get("default")
+                                if default_value is not None:
+                                    if isinstance(default_value, str):
+                                        if not default_value.strip():
+                                            errors.append(
+                                                f"{path}: workflow_dispatch input '{input_name}' default must not be an empty string"
+                                            )
+                                    elif (
+                                        type(default_value) is not bool
+                                        and not isinstance(default_value, (int, float))
+                                    ):
+                                        errors.append(
+                                            f"{path}: workflow_dispatch input '{input_name}' default must be a scalar (string, number, or boolean) when provided"
+                                        )
                                 input_type = input_config.get("type")
                                 if (
                                     not isinstance(input_type, str)
@@ -238,6 +252,11 @@ def main() -> int:
                                             errors.append(
                                                 f"{path}: workflow_dispatch choice input '{input_name}' options must be unique"
                                             )
+                                        elif isinstance(default_value, str):
+                                            if default_value.strip() not in normalized_options:
+                                                errors.append(
+                                                    f"{path}: workflow_dispatch choice input '{input_name}' default must be one of options"
+                                                )
                                 elif "options" in input_config:
                                     errors.append(
                                         f"{path}: workflow_dispatch input '{input_name}' may define options only when type is 'choice'"
