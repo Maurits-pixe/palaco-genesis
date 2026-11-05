@@ -212,6 +212,7 @@ def validate(path: Path) -> list[str]:
             errors.append(f"{path.name}:{job_name}: steps must be a list")
             continue
 
+        uses_checkout = False
         for idx, step in enumerate(steps):
             if not isinstance(step, dict):
                 errors.append(
@@ -277,11 +278,17 @@ def validate(path: Path) -> list[str]:
                 )
 
             if uses.startswith("actions/checkout@"):
+                uses_checkout = True
                 with_block = step.get("with")
                 if not isinstance(with_block, dict) or with_block.get("persist-credentials") is not False:
                     errors.append(
                         f"{path.name}:{job_name}:step#{idx + 1}: checkout must set with.persist-credentials: false"
                     )
+
+        if isinstance(job_permissions, dict) and uses_checkout and "contents" not in job_permissions:
+            errors.append(
+                f"{path.name}:{job_name}: jobs using checkout with job-level permissions must set permissions.contents"
+            )
 
     return errors
 
