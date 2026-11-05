@@ -116,6 +116,10 @@ def validate(path: Path) -> list[str]:
         if job_if is not None and (not isinstance(job_if, str) or not job_if.strip()):
             errors.append(f"{path.name}:{job_name}: job if must be a non-empty string when set")
 
+        job_env = job.get("env")
+        if job_env is not None and not isinstance(job_env, dict):
+            errors.append(f"{path.name}:{job_name}: job env must be a mapping when set")
+
         needs = job.get("needs")
         if needs is not None:
             if isinstance(needs, str):
@@ -230,6 +234,12 @@ def validate(path: Path) -> list[str]:
             if step_if is not None and (not isinstance(step_if, str) or not step_if.strip()):
                 errors.append(
                     f"{path.name}:{job_name}:step#{idx + 1}: step if must be a non-empty string when set"
+                )
+
+            step_env = step.get("env")
+            if step_env is not None and not isinstance(step_env, dict):
+                errors.append(
+                    f"{path.name}:{job_name}:step#{idx + 1}: step env must be a mapping when set"
                 )
 
             has_run = "run" in step
