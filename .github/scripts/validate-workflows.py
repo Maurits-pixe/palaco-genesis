@@ -185,6 +185,11 @@ def main() -> int:
             for step_index, step in enumerate(steps):
                 if not isinstance(step, dict):
                     continue
+                step_name = step.get("name")
+                if not isinstance(step_name, str) or not step_name.strip():
+                    errors.append(
+                        f"{path}: job '{job_name}' step #{step_index} must define a non-empty name"
+                    )
                 if step.get("continue-on-error") is True:
                     errors.append(
                         f"{path}: job '{job_name}' step #{step_index} must not set continue-on-error to true"
