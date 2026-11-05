@@ -337,6 +337,10 @@ Bij een vastgelegde uitkomst staan het **Record-ID** en een machineleesbaar
 vastleggingstijdstip. De gekoppelde uitleg onderscheidt dit record-ID van
 het ticket-ID voor statuscontroles. De historische weergave herstelt geen
 toestemming en voegt het record niet aan het recente logboek toe.
+Een live test voert het record-ID in als ticketlookup: het formaat is geldig,
+maar de server antwoordt HTTP 404. Dat verandert geen ander actief ticket,
+logboekrecord of auditregel. Een expliciete controle met het oorspronkelijke
+ticket-ID haalt de historische uitkomst opnieuw op.
 De interface licht iedere ticketstatus in het Nederlands toe naast de ruwe
 serverstatus. Een actieve uitkomst is geen nieuwe lokale toestemming.
 Bij een vastgelegd én ingetrokken ticket blijft expliciet zichtbaar dat

@@ -1163,14 +1163,56 @@ test('live service: historical committed status stays isolated from a different 
     { path: `/v1/tickets/${a.id}`, method: 'GET', status: 200 },
     { path: '/v1/tickets', method: 'POST', status: 201 },
   ]
-  const assertUnchanged = () => {
+  const assertUnchanged = (expectedError = '') => {
     assert.deepEqual(snapshot(), persisted, 'local operations and status reads preserve every persisted row')
     assert.deepEqual(f.calls, expectedCalls, 'only explicitly requested HTTP operations occur')
     assert.equal(s.lastSubmissionId.value, a.id)
     assert.equal(s.revocationUncertain.value, false)
-    assert.equal(s.error.value, '')
+    assert.equal(s.error.value, expectedError)
     assert.equal(s.busy.value, '')
   }
+  assertUnchanged()
+
+  const heldB = s.ticket.value
+  assert.notEqual(record.id, a.id)
+  assert.notEqual(record.id, b.id)
+  s.lookupId.value = record.id
+  assert.equal(s.validLookupId.value, true, 'record IDs are syntactically valid ticket lookup IDs')
+  assert.equal(s.canCheckStatus.value, true)
+  assert.equal(s.outcome.value, null)
+  assert.equal(s.outcomeReceivedAt.value, null)
+  assert.strictEqual(s.ticket.value, heldB)
+  assert.deepEqual(s.ticket.value, b)
+  assert.equal(s.canCommit.value, true)
+  assert.deepEqual(s.commands.value, [record])
+  assertUnchanged()
+
+  await f.run('status')
+  expectedCalls.push({ path: `/v1/tickets/${record.id}`, method: 'GET', status: 404 })
+  assert.equal(s.message.value, statusCaution)
+  assert.equal(s.outcome.value, null)
+  assert.equal(s.outcomeReceivedAt.value, null)
+  assert.equal(s.lookupId.value, record.id)
+  assert.strictEqual(s.ticket.value, heldB)
+  assert.deepEqual(s.ticket.value, b)
+  assert.equal(s.canCommit.value, true)
+  assert.equal(s.outcomeMismatch.value, false)
+  assert.deepEqual(s.commands.value, [record])
+  assertUnchanged('Ticket niet gevonden.')
+  f.tick()
+  await Promise.resolve()
+  assertUnchanged('Ticket niet gevonden.')
+
+  await bounded(s.checkLastSubmission(), 'historical submission after record-ID lookup')
+  expectedCalls.push({ path: `/v1/tickets/${a.id}`, method: 'GET', status: 200 })
+  assert.deepEqual(s.outcome.value, historical)
+  assert.equal(s.outcomeReceivedAt.value, now)
+  assert.equal(s.lookupId.value, a.id)
+  assert.strictEqual(s.ticket.value, heldB)
+  assert.deepEqual(s.ticket.value, b)
+  assert.equal(s.canCommit.value, true)
+  assert.equal(s.outcomeMismatch.value, false)
+  assert.deepEqual(s.commands.value, [record], 'historical recovery must not duplicate journal entries')
   assertUnchanged()
 
   f.setLocalNow(now + 100)
@@ -1250,10 +1292,10 @@ test('live service: historical committed status stays isolated from a different 
   assert.equal(s.outcomeMismatch.value, false)
   assert.deepEqual(s.commands.value, [])
   assertUnchanged()
-  assert.equal(f.calls.length, 7)
+  assert.equal(f.calls.length, 9)
   assert.equal(f.count('POST', '/v1/tickets'), 2)
   assert.equal(f.count('POST', '/v1/commands'), 1)
-  assert.equal(f.count('GET', `/v1/tickets/${a.id}`), 3)
+  assert.equal(f.count('GET', `/v1/tickets/${a.id}`), 4)
   assert.equal(f.count('GET', `/v1/tickets/${b.id}`), 1)
   assert.equal(f.count('GET', '/v1/commands'), 0)
   assert.equal(f.count('DELETE', `/v1/tickets/${b.id}`), 0)
