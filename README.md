@@ -240,6 +240,11 @@ Met **Ticket intrekken** kun je het huidige ticket server-side ongeldig maken.
 De interface bevestigt dit alleen na een geldig serverantwoord. Bij een
 onzekere netwerkuitkomst blijft het ticket zichtbaar voor een nieuwe
 intrekpoging; vastleggen en nieuwe tickets aanvragen zijn dan lokaal geblokkeerd.
+Bij een mislukte intrekkingsactie staat naast de fout **Intrekking niet
+bevestigd**, met uitleg over de blijvende blokkering en expliciete
+statuscontrole of intrekking. Deze melding bewijst geen server-side intrekking
+of rollback. Een volgende actie kan de melding vervangen zonder de
+onzekerheidsblokkering op te heffen.
 Met **Controleer huidig ticket** vul je het ID van het lokaal bewaarde
 ticket in en vraag je direct de status op, ook bij een onzekere intrekking
 of een verlopen ticket. Dit is uitsluitend een handmatige leesactie:

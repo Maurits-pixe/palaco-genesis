@@ -14,6 +14,7 @@ const snapshot = (changes = {}) => ({
 const actions = { ticket: 'issueTicket', commit: 'commitCommand', revoke: 'revokeTicket', status: 'getTicketStatus', list: 'listCommands' }
 const results = { ticket: held(), commit: record(), revoke: undefined, status: snapshot(), list: [record()] }
 const commitCaution = 'Vastlegging niet bevestigd. Controleer de laatste inzending via het ticket-ID. Dien niet automatisch opnieuw in.'
+const revokeCaution = 'Intrekking niet bevestigd. Vastleggen en nieuwe tickets blijven geblokkeerd. Controleer dit ticket of trek het expliciet opnieuw in.'
 const localCommitBlocked = 'Niet ingezonden: de lokale ticketcontrole blokkeert vastleggen. Voor deze actie is geen commitverzoek verstuurd. Dit zegt niets over eerdere inzendingen.'
 const deferred = () => {
   let resolve, reject
@@ -1950,6 +1951,8 @@ test('uncertain revocation fails closed through edits and active lookup; manual 
   const revoking = state.perform('revoke')
   calls[0].reject(new Error('confirmation lost'))
   await revoking
+  assert.equal(state.message.value, revokeCaution)
+  assert.equal(state.error.value, 'confirmation lost')
   assert.equal(state.revocationUncertain.value, true)
   assert.deepEqual(state.ticket.value, held())
   assert.equal(state.canCommit.value, false)
@@ -1964,6 +1967,7 @@ test('uncertain revocation fails closed through edits and active lookup; manual 
   await checking
   assert.equal(state.revocationUncertain.value, true)
   assert.deepEqual(state.ticket.value, held())
+  assert.match(state.message.value, /geen nieuwe toestemming/)
   const retry = state.perform('revoke')
   assert.deepEqual(calls[2].args[0], held())
   calls[2].resolve()
@@ -2401,7 +2405,59 @@ test('all current request failures release busy without retries', async t => {
     await operation
     assert.equal(state.busy.value, '')
     assert.equal(state.error.value, 'service failed')
-    assert.equal(state.message.value, action === 'commit' ? commitCaution : '')
+    assert.equal(state.message.value, action === 'commit' ? commitCaution : action === 'revoke' ? revokeCaution : '')
+    assert.equal(calls.length, 1)
+  }
+})
+
+for (const nextAction of ['status', 'revoke']) {
+  test(`unconfirmed revoke feedback survives local clears until explicit ${nextAction} starts`, async t => {
+    const { state, calls } = fixture(t)
+    prepare(state, 'revoke')
+    const previousTicket = state.ticket.value
+    const revoking = state.perform('revoke')
+    calls[0].reject(new Error('revocation response lost'))
+    await revoking
+
+    for (const clear of ['clearCommand', 'clearOutcome', 'clearJournal']) {
+      state[clear]()
+      assert.equal(state.message.value, revokeCaution, clear)
+      assert.equal(state.error.value, 'revocation response lost', clear)
+      assert.equal(state.ticket.value, previousTicket, clear)
+      assert.equal(state.revocationUncertain.value, true, clear)
+      assert.equal(state.canCommit.value, false, clear)
+      assert.equal(calls.length, 1, 'local clears do not retry or reconcile')
+    }
+
+    const next = nextAction === 'status' ? state.checkCurrentTicket() : state.perform('revoke')
+    assert.equal(state.busy.value, nextAction)
+    assert.equal(state.message.value, '', 'clear caution before awaiting the explicit request')
+    assert.equal(state.error.value, '')
+    assert.equal(state.ticket.value, previousTicket)
+    assert.equal(state.revocationUncertain.value, true)
+    calls[1].resolve(nextAction === 'status' ? snapshot({ status: 'revoked', revoked: true }) : undefined)
+    await next
+    assert.equal(state.ticket.value, null)
+    assert.equal(state.revocationUncertain.value, false)
+    assert.equal(state.canCommit.value, false)
+    assert.notEqual(state.message.value, revokeCaution)
+    assert.deepEqual(calls.map(call => call.action), ['revoke', nextAction])
+  })
+}
+
+test('session reset, pagehide and disposal clear settled unconfirmed revoke feedback', async t => {
+  for (const reset of ['clearSession', 'pagehide', 'dispose']) {
+    const { state, calls, scope, eventTarget } = fixture(t)
+    prepare(state, 'revoke')
+    const revoking = state.perform('revoke')
+    calls[0].reject(new Error('revocation response lost'))
+    await revoking
+    assert.equal(state.message.value, revokeCaution)
+    assert.equal(state.error.value, 'revocation response lost')
+    if (reset === 'pagehide') eventTarget.dispatchEvent(pageTransition('pagehide', true))
+    else if (reset === 'dispose') scope.stop()
+    else state.clearSession()
+    assertEmpty(state)
     assert.equal(calls.length, 1)
   }
 })

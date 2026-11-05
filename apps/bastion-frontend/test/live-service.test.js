@@ -17,6 +17,7 @@ import { TRUSTED_MODULES, verifyModule, launchUrl } from '../../neo-launcher/src
 const token = 'test-only-live-service-operator-secret'
 const now = 1000
 const commitCaution = 'Vastlegging niet bevestigd. Controleer de laatste inzending via het ticket-ID. Dien niet automatisch opnieuw in.'
+const revokeCaution = 'Intrekking niet bevestigd. Vastleggen en nieuwe tickets blijven geblokkeerd. Controleer dit ticket of trek het expliciet opnieuw in.'
 const localCommitBlocked = 'Niet ingezonden: de lokale ticketcontrole blokkeert vastleggen. Voor deze actie is geen commitverzoek verstuurd. Dit zegt niets over eerdere inzendingen.'
 
 async function bounded(pending, label) {
@@ -1143,6 +1144,7 @@ test('live service: a real revocation 503 preserves uncertainty through active s
   assert.deepEqual(stages, ['after-begin', 'before-commit', 'before-watermark-commit'])
   assert.deepEqual(f.calls.at(-1), { path, method: 'DELETE', status: 503 })
   assert.match(s.error.value, /De service kan dit verzoek niet verwerken/)
+  assert.equal(s.message.value, revokeCaution, 'rollback is still unconfirmed to the client')
   assert.deepEqual(s.ticket.value, held)
   assert.equal(s.revocationUncertain.value, true)
   assert.equal(s.canCommit.value, false)
@@ -1155,6 +1157,8 @@ test('live service: a real revocation 503 preserves uncertainty through active s
   assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM audit').get().count, 0)
   assert.equal(f.db.prepare('SELECT last_time FROM clock_state WHERE id = 1').get().last_time, now)
   assert.equal(f.calls.length, 2, '503 triggers neither retry nor automatic reconciliation')
+  assert.equal(f.count('DELETE', path), 1)
+  assert.equal(f.count('POST', '/v1/commands'), 0)
 
   await f.run('ticket')
   await f.run('commit')
@@ -1165,6 +1169,7 @@ test('live service: a real revocation 503 preserves uncertainty through active s
   assert.equal(s.error.value, '')
   assert.equal(s.outcome.value.id, held.id)
   assert.equal(s.outcome.value.status, 'active')
+  assert.match(s.message.value, /geen nieuwe toestemming/)
   assert.equal(s.outcome.value.checked_at, now)
   assert.equal(s.outcome.value.revoked, false)
   assert.equal(s.outcome.value.record, null)
@@ -1612,6 +1617,7 @@ test('live service: a lost successful revocation blocks authority until explicit
   await f.run('revoke')
   assert.equal(f.losses, 1)
   assert.match(s.error.value, /Geen geldig antwoord/)
+  assert.equal(s.message.value, revokeCaution, 'lost success has the same caution as a rollback')
   assert.deepEqual(s.ticket.value, held)
   assert.equal(s.revocationUncertain.value, true)
   assert.equal(s.canCommit.value, false)
@@ -1619,6 +1625,8 @@ test('live service: a lost successful revocation blocks authority until explicit
   assert.equal(s.outcome.value, null)
   assert.equal(f.db.prepare('SELECT revoked FROM tickets WHERE id = ?').get(held.id).revoked, 1)
   assert.equal(f.calls.length, 2, 'no automatic retry or reconciliation')
+  assert.equal(f.count('DELETE', `/v1/tickets/${held.id}`), 1)
+  assert.equal(f.count('POST', '/v1/commands'), 0)
 
   await f.run('ticket')
   await f.run('commit')
@@ -1629,6 +1637,7 @@ test('live service: a lost successful revocation blocks authority until explicit
   assert.equal(s.error.value, '')
   assert.equal(s.outcome.value.id, held.id)
   assert.equal(s.outcome.value.status, 'revoked')
+  assert.match(s.message.value, /geen nieuwe toestemming/)
   assert.equal(s.outcome.value.revoked, true)
   assert.equal(s.outcome.value.record, null)
   assert.equal(s.outcomeReceivedAt.value, now)

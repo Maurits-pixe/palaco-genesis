@@ -301,6 +301,8 @@ export function useSession({
         error.value = failure.message
         if (action === 'commit') {
           message.value = 'Vastlegging niet bevestigd. Controleer de laatste inzending via het ticket-ID. Dien niet automatisch opnieuw in.'
+        } else if (action === 'revoke') {
+          message.value = 'Intrekking niet bevestigd. Vastleggen en nieuwe tickets blijven geblokkeerd. Controleer dit ticket of trek het expliciet opnieuw in.'
         }
         if (refresh) journalRefreshFailed.value = true
       }
