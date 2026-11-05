@@ -320,6 +320,11 @@ Die knop blijft na een mislukte statuscontrole beschikbaar, ook zonder
 ontvangen uitkomst. Tijdens andere verzoeken is hij geblokkeerd; meldingen
 van ticketaanvragen, vastleggingen of intrekkingen maken hem op zichzelf
 niet beschikbaar. Wissen verandert geen ticket-ID of toestemming.
+Een live HTTP/SQLite-test controleert dit na een echte statusfout: wissen
+behoudt de onzekerheidsblokkering en verstuurt geen verzoek. Realtime blijft
+nieuwe records ontvangen zonder die blokkering op te heffen. Alleen een
+expliciete passende statuscontrole sluit de onzekerheid af; de lokale
+wisacties veranderen geen serverrecords of auditregels.
 Live tests laten ook succesvolle terminale statusantwoorden verloren gaan
 voor ingetrokken en al vastgelegde, later ingetrokken tickets. De lokale
 onzekerheidsblokkering blijft dan behouden, ook al is de serveruitkomst bekend

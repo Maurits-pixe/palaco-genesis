@@ -594,6 +594,143 @@ test('live service: unknown status returns HTTP 404 without resolving retained u
   assert.equal(f.calls.length, requests + 2, 'only the matching explicit check follows the failed lookup')
 })
 
+test('live service: clearing HTTP 404 status feedback retains uncertain revocation through realtime until explicit matching status', { timeout: 15000 }, async t => {
+  const f = await fixture(t, { realtime: true })
+  const s = f.session
+  const socket = await f.connect()
+  await f.run('ticket')
+  const held = s.ticket.value
+  const path = `/v1/tickets/${held.id}`
+  f.loseNext('DELETE', path)
+  await f.run('revoke')
+  assert.equal(f.losses, 1)
+  assert.match(s.error.value, /Geen geldig antwoord/)
+  assert.equal(s.message.value, revokeCaution)
+  assert.equal(s.ticket.value, held)
+  assert.equal(s.revocationUncertain.value, true)
+  assert.equal(s.canCommit.value, false)
+  s.command.value = 'retained draft after uncertain revocation'
+  s.lookupId.value = 'unknown-ticket'
+  const retained = () => ({
+    command: s.command.value, ttlMs: s.ttlMs.value,
+    lookupId: s.lookupId.value, lastSubmissionId: s.lastSubmissionId.value,
+    search: s.search.value, hasLoaded: s.hasLoaded.value,
+    journalRefreshFailed: s.journalRefreshFailed.value,
+    lastJournalRefreshAt: s.lastJournalRefreshAt.value,
+  })
+  const before = retained()
+  const database = () => Object.fromEntries(['tickets', 'commands', 'audit'].map(table =>
+    [table, f.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]))
+  const persisted = database()
+  assert.equal(persisted.tickets.length, 1)
+  assert.equal(persisted.tickets[0].revoked, 1)
+  assert.equal(persisted.tickets[0].consumed, 0)
+  assert.deepEqual(persisted.commands, [])
+  await f.run('status')
+  const failedLookupCalls = [
+    { path: '/v1/tickets', method: 'POST', status: 201 },
+    { path, method: 'DELETE', status: 200 },
+    { path: '/v1/tickets/unknown-ticket', method: 'GET', status: 404 },
+  ]
+  assert.deepEqual(f.calls, failedLookupCalls)
+  assert.equal(s.error.value, 'Ticket niet gevonden.')
+  assert.equal(s.message.value, statusCaution)
+  assert.equal(s.outcome.value, null)
+  assert.equal(s.outcomeReceivedAt.value, null)
+  assert.equal(s.canClearOutcome.value, true)
+  assert.equal(s.busy.value, '')
+  assert.equal(s.ticket.value, held)
+  assert.equal(s.revocationUncertain.value, true)
+  assert.equal(s.canCommit.value, false)
+  assert.deepEqual(database(), persisted)
+  assert.deepEqual(retained(), before)
+  const journal = s.commands.value
+
+  s.clearOutcome()
+  assert.equal(s.canClearOutcome.value, false)
+  assert.equal(s.error.value, '')
+  assert.equal(s.message.value, '')
+  assert.equal(s.outcome.value, null)
+  assert.equal(s.outcomeReceivedAt.value, null)
+  assert.equal(s.ticket.value, held)
+  assert.equal(s.revocationUncertain.value, true)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.commands.value, journal)
+  assert.deepEqual(retained(), before)
+  assert.deepEqual(database(), persisted)
+  assert.deepEqual(f.calls, failedLookupCalls, 'clearing failed status sends no request')
+
+  const command = 'external commit after clearing failed status'
+  const witnessed = nextCommit(f.witness, command)
+  const received = waitFor(s.commands, rows => rows.some(row => row.command === command), 'session record after status clear')
+  const external = await f.commitExternal(command)
+  assert.deepEqual(await witnessed, external)
+  await received
+  assert.deepEqual(s.commands.value, [external])
+  assert.equal(socket.connected, true)
+  assert.equal(s.realtimeStatus.value, 'connected')
+  assert.equal(f.sockets.length, 1)
+  assert.equal(s.canClearOutcome.value, false)
+  assert.equal(s.outcome.value, null)
+  assert.equal(s.outcomeReceivedAt.value, null)
+  assert.equal(s.error.value, '')
+  assert.equal(s.message.value, '')
+  assert.equal(s.ticket.value, held)
+  assert.equal(s.revocationUncertain.value, true)
+  assert.equal(s.canCommit.value, false)
+  assert.deepEqual(retained(), before)
+  assert.deepEqual(f.calls, failedLookupCalls, 'realtime does not reconcile or request authority')
+  const afterExternal = database()
+  assert.equal(afterExternal.tickets.length, 2)
+  assert.deepEqual(afterExternal.tickets[0], persisted.tickets[0])
+  assert.equal(afterExternal.commands.length, 1)
+  assert.deepEqual({
+    id: afterExternal.commands[0].id,
+    command: afterExternal.commands[0].command,
+    committed_at: afterExternal.commands[0].committed_at,
+  }, external)
+
+  await bounded(s.checkCurrentTicket(), 'explicit matching status after clearing HTTP 404')
+  assert.deepEqual(s.outcome.value, {
+    ...held, checked_at: now, status: 'revoked', revoked: true, record: null,
+  })
+  assert.equal(s.outcomeReceivedAt.value, now)
+  assert.equal(s.canClearOutcome.value, true)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.revocationUncertain.value, false)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.error.value, '')
+  assert.equal(s.message.value, 'Ticketstatus opgehaald. Dit is een momentopname, geen nieuwe toestemming.')
+  assert.deepEqual(retained(), { ...before, lookupId: held.id })
+  assert.deepEqual(database(), afterExternal)
+  const reconciledJournal = s.commands.value
+
+  s.clearOutcome()
+  assert.equal(s.canClearOutcome.value, false)
+  assert.equal(s.outcome.value, null)
+  assert.equal(s.outcomeReceivedAt.value, null)
+  assert.equal(s.error.value, '')
+  assert.equal(s.message.value, '')
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.revocationUncertain.value, false)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.commands.value, reconciledJournal)
+  assert.deepEqual(s.commands.value, [external])
+  assert.deepEqual(retained(), { ...before, lookupId: held.id })
+  assert.equal(socket.connected, true)
+  assert.equal(s.realtimeStatus.value, 'connected')
+  assert.deepEqual(database(), afterExternal)
+  assert.deepEqual(f.calls, [...failedLookupCalls, { path, method: 'GET', status: 200 }])
+  assert.equal(f.calls.length, 4)
+  assert.equal(f.count('POST', '/v1/tickets'), 1)
+  assert.equal(f.count('DELETE', path), 1)
+  assert.equal(f.count('GET', '/v1/tickets/unknown-ticket'), 1)
+  assert.equal(f.count('GET', path), 1)
+  assert.equal(f.count('POST', '/v1/commands'), 0)
+  assert.equal(f.count('GET', '/v1/commands'), 0)
+  assert.equal(f.losses, 1)
+})
+
 for (const resolution of ['status', 'revoke']) {
   test(`live service: draft clear retains uncertain revocation until explicit matching ${resolution}`, { timeout: 15000 }, async t => {
     const f = await fixture(t, { realtime: true })
