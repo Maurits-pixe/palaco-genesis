@@ -101,6 +101,10 @@ def main() -> int:
                             errors.append(
                                 f"{path}: schedule entry #{schedule_index} must define a non-empty cron string"
                             )
+                        elif len(cron_value.split()) != 5:
+                            errors.append(
+                                f"{path}: schedule entry #{schedule_index} cron must contain exactly 5 fields"
+                            )
             if "workflow_dispatch" in trigger_config:
                 workflow_dispatch_trigger = trigger_config.get("workflow_dispatch")
                 if not isinstance(workflow_dispatch_trigger, dict):
