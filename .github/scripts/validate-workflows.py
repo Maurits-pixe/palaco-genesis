@@ -583,6 +583,7 @@ def main() -> int:
             errors.append(f"{path}: jobs mapping is missing or empty")
             continue
 
+        known_job_ids = set(jobs.keys())
         job_display_name_to_ids: dict[str, list[str]] = {}
         for job_name, job in jobs.items():
             if not isinstance(job_name, str) or not job_name.strip():
@@ -721,6 +722,10 @@ def main() -> int:
                     errors.append(
                         f"{path}: job '{job_name}' must not depend on itself via needs"
                     )
+                elif normalized_need not in known_job_ids:
+                    errors.append(
+                        f"{path}: job '{job_name}' needs references unknown job '{normalized_need}'"
+                    )
             elif isinstance(job_needs, list):
                 if not job_needs:
                     errors.append(
@@ -738,6 +743,10 @@ def main() -> int:
                         if normalized_need == job_name:
                             errors.append(
                                 f"{path}: job '{job_name}' must not depend on itself via needs[{need_index}]"
+                            )
+                        elif normalized_need not in known_job_ids:
+                            errors.append(
+                                f"{path}: job '{job_name}' needs[{need_index}] references unknown job '{normalized_need}'"
                             )
                         normalized_needs.append(normalized_need)
                     if len(set(normalized_needs)) != len(normalized_needs):
