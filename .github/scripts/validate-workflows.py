@@ -163,6 +163,13 @@ def main() -> int:
                         f"{path}: workflow_dispatch trigger must be a mapping (use '{{}}' when no inputs are needed)"
                     )
                 else:
+                    unsupported_dispatch_trigger_keys = set(
+                        workflow_dispatch_trigger.keys()
+                    ) - {"inputs"}
+                    if unsupported_dispatch_trigger_keys:
+                        errors.append(
+                            f"{path}: workflow_dispatch trigger has unsupported keys: {sorted(unsupported_dispatch_trigger_keys)}"
+                        )
                     workflow_inputs = workflow_dispatch_trigger.get("inputs")
                     if workflow_inputs is not None:
                         if not isinstance(workflow_inputs, dict) or not workflow_inputs:
