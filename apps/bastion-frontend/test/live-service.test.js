@@ -18,6 +18,7 @@ const token = 'test-only-live-service-operator-secret'
 const now = 1000
 const commitCaution = 'Vastlegging niet bevestigd. Controleer de laatste inzending via het ticket-ID. Dien niet automatisch opnieuw in.'
 const revokeCaution = 'Intrekking niet bevestigd. Vastleggen en nieuwe tickets blijven geblokkeerd. Controleer dit ticket of trek het expliciet opnieuw in.'
+const ticketCaution = 'Ticketuitgifte niet bevestigd. Er kan al een serverticket bestaan. Zonder ontvangen ticket is lokaal vastleggen niet mogelijk. Geen automatische nieuwe aanvraag.'
 const localCommitBlocked = 'Niet ingezonden: de lokale ticketcontrole blokkeert vastleggen. Voor deze actie is geen commitverzoek verstuurd. Dit zegt niets over eerdere inzendingen.'
 
 async function bounded(pending, label) {
@@ -146,7 +147,19 @@ async function fixture(t, { realtime = false, fault = () => {} } = {}) {
       dropNext = undefined
       assert.equal(response.status, options.method === 'POST' ? 201 : 200)
       // The mutation really committed before its successful response is lost.
-      if (options.method === 'POST') {
+      if (options.method === 'POST' && path === '/v1/tickets') {
+        const issued = await bounded(response.clone().json(), 'real issued ticket response body')
+        const stored = db.prepare('SELECT * FROM tickets WHERE id = ?').get(issued.id)
+        assert.ok(stored, 'the exact response ticket must already be persisted')
+        assert.equal(stored.command, JSON.parse(options.body).command)
+        assert.equal(stored.not_before, issued.not_before)
+        assert.equal(stored.expires_at, issued.expires_at)
+        assert.equal(stored.revoked, 0)
+        assert.equal(stored.consumed, 0)
+        assert.equal(db.prepare('SELECT COUNT(*) AS count FROM commands WHERE ticket_id = ?').get(issued.id).count, 0)
+        assert.equal(db.prepare('SELECT COUNT(*) AS count FROM audit WHERE ticket_id = ?').get(issued.id).count, 0)
+        assert.equal(response.bodyUsed, false, 'inspect only a clone before dropping the original response')
+      } else if (options.method === 'POST') {
         const { ticket_id: id } = JSON.parse(options.body)
         assert.equal(db.prepare('SELECT consumed FROM tickets WHERE id = ?').get(id).consumed, 1)
         assert.equal(db.prepare('SELECT COUNT(*) AS count FROM commands WHERE ticket_id = ?').get(id).count, 1)
@@ -289,6 +302,79 @@ async function fixture(t, { realtime = false, fault = () => {} } = {}) {
     run: action => bounded(session.perform(action), action),
   }
 }
+
+test('live service: lost issuance persists one active ticket but never grants local authority or retries', { timeout: 15000 }, async t => {
+  const f = await fixture(t)
+  const s = f.session
+  const draft = s.command.value
+  f.loseNext('POST', '/v1/tickets')
+  await f.run('ticket')
+  assert.equal(f.losses, 1)
+  assert.match(s.error.value, /Geen geldig antwoord/)
+  assert.equal(s.message.value, ticketCaution)
+  assert.equal(s.command.value, draft)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.revocationUncertain.value, false)
+  assert.equal(s.lastSubmissionId.value, '')
+  assert.equal(s.lookupId.value, '')
+  assert.equal(s.outcome.value, null)
+  assert.equal(s.busy.value, '')
+  assert.deepEqual(s.commands.value, [])
+  assert.equal(f.calls.length, 1)
+
+  // Only the test's database access reveals this ID; the client never received it.
+  const tickets = f.db.prepare('SELECT * FROM tickets').all()
+  assert.equal(tickets.length, 1)
+  const lost = tickets[0]
+  assert.equal(lost.command, draft)
+  assert.equal(lost.revoked, 0)
+  assert.equal(lost.consumed, 0)
+  assert.ok(lost.not_before <= now && now < lost.expires_at)
+  const assertUnchanged = () => {
+    assert.deepEqual(f.db.prepare('SELECT * FROM tickets').all(), tickets)
+    assert.deepEqual(f.db.prepare('SELECT * FROM commands').all(), [])
+    assert.deepEqual(f.db.prepare('SELECT * FROM audit').all(), [])
+  }
+  assertUnchanged()
+  f.tick()
+  await f.run('commit')
+  assert.equal(s.message.value, localCommitBlocked)
+  assert.equal(f.calls.length, 1, 'no commit or automatic issuance request')
+  assertUnchanged()
+
+  await f.restart()
+  assert.equal(f.calls.length, 1, 'orderly restart does not trigger client requests')
+  assertUnchanged()
+  s.lookupId.value = lost.id
+  await f.run('status')
+  assert.equal(s.outcome.value.id, lost.id)
+  assert.equal(s.outcome.value.status, 'active')
+  assert.equal(s.outcome.value.record, null)
+  assert.equal(s.ticket.value, null, 'a status snapshot does not recreate a received ticket')
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, '')
+  assert.equal(s.revocationUncertain.value, false)
+  assert.equal(f.calls.length, 2)
+  assert.deepEqual(f.calls.at(-1), { path: `/v1/tickets/${lost.id}`, method: 'GET', status: 200 })
+  await f.run('commit')
+  assert.equal(s.message.value, localCommitBlocked)
+  assert.equal(f.calls.length, 2, 'explicit status still cannot authorize a commit')
+  assert.equal(f.count('POST', '/v1/tickets'), 1)
+  assert.equal(f.count('POST', '/v1/commands'), 0)
+  assertUnchanged()
+
+  await f.run('ticket')
+  assert.equal(s.error.value, '')
+  assert.notEqual(s.ticket.value.id, lost.id)
+  assert.equal(s.canCommit.value, true)
+  assert.equal(f.count('POST', '/v1/tickets'), 2, 'only a manual action requests another ticket')
+  assert.equal(f.count('POST', '/v1/commands'), 0)
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM tickets').get().count, 2)
+  assert.deepEqual(f.db.prepare('SELECT * FROM tickets WHERE id = ?').get(lost.id), lost)
+  assert.deepEqual(f.db.prepare('SELECT * FROM commands').all(), [])
+  assert.deepEqual(f.db.prepare('SELECT * FROM audit').all(), [])
+})
 
 test('live service: clearing a draft leaves server authority active but requires a new explicit local ticket', { timeout: 15000 }, async t => {
   const f = await fixture(t, { realtime: true })

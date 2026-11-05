@@ -300,7 +300,9 @@ export function useSession({
     } catch (failure) {
       if (current() && (!refresh || refresh.generation === journalGeneration)) {
         error.value = failure.message
-        if (action === 'commit') {
+        if (action === 'ticket') {
+          message.value = 'Ticketuitgifte niet bevestigd. Er kan al een serverticket bestaan. Zonder ontvangen ticket is lokaal vastleggen niet mogelijk. Geen automatische nieuwe aanvraag.'
+        } else if (action === 'commit') {
           message.value = 'Vastlegging niet bevestigd. Controleer de laatste inzending via het ticket-ID. Dien niet automatisch opnieuw in.'
         } else if (action === 'revoke') {
           message.value = 'Intrekking niet bevestigd. Vastleggen en nieuwe tickets blijven geblokkeerd. Controleer dit ticket of trek het expliciet opnieuw in.'

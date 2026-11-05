@@ -18,6 +18,7 @@ const actions = { ticket: 'issueTicket', commit: 'commitCommand', revoke: 'revok
 const results = { ticket: held(), commit: record(), revoke: undefined, status: snapshot(), list: [record()] }
 const commitCaution = 'Vastlegging niet bevestigd. Controleer de laatste inzending via het ticket-ID. Dien niet automatisch opnieuw in.'
 const revokeCaution = 'Intrekking niet bevestigd. Vastleggen en nieuwe tickets blijven geblokkeerd. Controleer dit ticket of trek het expliciet opnieuw in.'
+const ticketCaution = 'Ticketuitgifte niet bevestigd. Er kan al een serverticket bestaan. Zonder ontvangen ticket is lokaal vastleggen niet mogelijk. Geen automatische nieuwe aanvraag.'
 const localCommitBlocked = 'Niet ingezonden: de lokale ticketcontrole blokkeert vastleggen. Voor deze actie is geen commitverzoek verstuurd. Dit zegt niets over eerdere inzendingen.'
 const deferred = () => {
   let resolve, reject
@@ -2514,10 +2515,69 @@ test('all current request failures release busy without retries', async t => {
     await operation
     assert.equal(state.busy.value, '')
     assert.equal(state.error.value, 'service failed')
-    assert.equal(state.message.value, action === 'commit' ? commitCaution : action === 'revoke' ? revokeCaution : '')
+    assert.equal(state.message.value, action === 'ticket' ? ticketCaution : action === 'commit' ? commitCaution : action === 'revoke' ? revokeCaution : '')
     assert.equal(calls.length, 1)
   }
 })
+
+test('unconfirmed issuance preserves the draft, journal and previous submission identifiers without authority or retry', async t => {
+  const { state, calls } = fixture(t)
+  prepare(state, 'ticket')
+  const before = commandState(state, ['ticket', 'canCommit', 'remaining', 'busy', 'message', 'error'])
+  const issuing = state.perform('ticket')
+  assert.equal(state.ticket.value, null, 'discard previous local ticket before requesting another')
+  calls[0].reject(new Error('issuance response lost'))
+  await issuing
+  assert.equal(state.message.value, ticketCaution)
+  assert.equal(state.error.value, 'issuance response lost')
+  assert.equal(state.busy.value, '')
+  assert.equal(state.ticket.value, null)
+  assert.equal(state.canCommit.value, false)
+  assert.equal(state.revocationUncertain.value, false)
+  assert.deepEqual(commandState(state, ['ticket', 'canCommit', 'remaining', 'busy', 'message', 'error']), before)
+  assert.equal(calls.length, 1)
+
+  for (const clear of ['clearCommand', 'clearOutcome', 'clearJournal']) {
+    state[clear]()
+    assert.equal(state.message.value, ticketCaution, clear)
+    assert.equal(state.error.value, 'issuance response lost', clear)
+    assert.equal(state.ticket.value, null, clear)
+    assert.equal(state.canCommit.value, false, clear)
+    assert.equal(state.lastSubmissionId.value, 'retained-id', clear)
+    assert.equal(state.lookupId.value, held().id, clear)
+    assert.equal(calls.length, 1, 'local clears do not retry issuance')
+  }
+  await state.perform('commit')
+  assert.equal(state.message.value, localCommitBlocked)
+  assert.equal(calls.length, 1, 'explicit commit without a received ticket sends no request')
+})
+
+for (const reset of ['clearSession', 'token', 'pagehide', 'dispose']) {
+  for (const settled of [false, true]) {
+    test(`unconfirmed issuance ${settled ? 'feedback clears' : 'late rejection stays inert'} after ${reset}`, async t => {
+      const { state, calls, scope, eventTarget } = fixture(t)
+      prepare(state, 'ticket')
+      const issuing = state.perform('ticket')
+      if (settled) {
+        calls[0].reject(new Error('issuance response lost'))
+        await issuing
+        assert.equal(state.message.value, ticketCaution)
+      }
+      if (reset === 'pagehide') eventTarget.dispatchEvent(pageTransition('pagehide', true))
+      else if (reset === 'dispose') scope.stop()
+      else if (reset === 'token') state.token.value = 'replacement-token'
+      else state.clearSession()
+      assertEmpty(state, reset === 'token' ? 'replacement-token' : '')
+      if (!settled) {
+        assert.equal(calls[0].signal.aborted, true)
+        calls[0].reject(new Error('stale issuance response lost'))
+        await issuing
+      }
+      assertEmpty(state, reset === 'token' ? 'replacement-token' : '')
+      assert.equal(calls.length, 1)
+    })
+  }
+}
 
 for (const nextAction of ['status', 'revoke']) {
   test(`unconfirmed revoke feedback survives local clears until explicit ${nextAction} starts`, async t => {

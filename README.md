@@ -187,6 +187,12 @@ een opslagverzoek server-side is teruggedraaid.
 
 BASTION geeft eerst een kortlevend ticket uit;
 pas de afzonderlijke commitactie schrijft het commando in het logboek.
+Als een ticketaanvraag mislukt, meldt de interface **Ticketuitgifte niet
+bevestigd**: er kan al een serverticket bestaan, zonder dat de client het
+antwoord heeft ontvangen. Zonder ontvangen ticket is lokaal vastleggen niet
+mogelijk; er volgt geen automatische nieuwe aanvraag. Een verloren antwoord
+kan ook betekenen dat het ticket-ID onbekend is. De interface reconstrueert
+dat ID niet en claimt geen terugdraaiing of intrekking.
 Bij het bewaarde ticket staat de exacte **Commandotekst van dit ticket**,
 los van de actuele invoer. De tekst wordt niet als HTML of code uitgevoerd.
 Bij een onzekere intrekking blijft deze oorspronkelijke tekst zichtbaar,
