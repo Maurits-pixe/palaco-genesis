@@ -2,6 +2,7 @@
 
 import glob
 import os
+import re
 import sys
 
 import yaml
@@ -212,6 +213,10 @@ def main() -> int:
                                         f"{path}: workflow_dispatch.inputs keys must be non-empty strings"
                                     )
                                     continue
+                                if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", input_name):
+                                    errors.append(
+                                        f"{path}: workflow_dispatch input '{input_name}' must match ^[A-Za-z_][A-Za-z0-9_-]*$"
+                                    )
                                 if not isinstance(input_config, dict):
                                     errors.append(
                                         f"{path}: workflow_dispatch input '{input_name}' must be a mapping"
