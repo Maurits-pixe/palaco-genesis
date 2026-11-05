@@ -1,7 +1,7 @@
 name: PALACO Release
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
     inputs:
       release_tag:
         description: "Release tag (bijv. v0.1.0)"

@@ -1,7 +1,7 @@
 name: PALACO Security
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
   schedule:
     - cron: "0 3 * * 1"
   push:

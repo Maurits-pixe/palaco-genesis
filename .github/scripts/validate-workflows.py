@@ -45,6 +45,10 @@ def main() -> int:
             )
 
         if isinstance(trigger_config, str):
+            if trigger_config == "workflow_dispatch":
+                errors.append(
+                    f"{path}: workflow_dispatch trigger must be a mapping (use '{{}}' when no inputs are needed)"
+                )
             if trigger_config == "push":
                 errors.append(
                     f"{path}: push trigger must be a mapping with explicit branches"
@@ -56,6 +60,10 @@ def main() -> int:
             if trigger_config == "pull_request_target":
                 errors.append(f"{path}: pull_request_target trigger is not allowed")
         elif isinstance(trigger_config, list):
+            if "workflow_dispatch" in trigger_config:
+                errors.append(
+                    f"{path}: workflow_dispatch trigger must be a mapping (use '{{}}' when no inputs are needed)"
+                )
             if "push" in trigger_config:
                 errors.append(
                     f"{path}: push trigger must be a mapping with explicit branches"
@@ -67,6 +75,12 @@ def main() -> int:
             if "pull_request_target" in trigger_config:
                 errors.append(f"{path}: pull_request_target trigger is not allowed")
         elif isinstance(trigger_config, dict):
+            if "workflow_dispatch" in trigger_config and not isinstance(
+                trigger_config.get("workflow_dispatch"), dict
+            ):
+                errors.append(
+                    f"{path}: workflow_dispatch trigger must be a mapping (use '{{}}' when no inputs are needed)"
+                )
             if "push" in trigger_config:
                 push_trigger = trigger_config.get("push")
                 if not isinstance(push_trigger, dict):

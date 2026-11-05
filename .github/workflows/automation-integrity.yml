@@ -1,7 +1,7 @@
 name: PALACO Automation Integrity
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
   push:
     branches: ["main", "master"]
   pull_request:
