@@ -1,5 +1,5 @@
 import { io } from 'socket.io-client'
-import { normalizeCommand } from './api.js'
+import { isValidToken, normalizeCommand } from './api.js'
 
 export function createRealtime({ onEntry, onStatus, onReset, createSocket = (options) => io(options) }) {
   let current = null
@@ -29,7 +29,7 @@ export function createRealtime({ onEntry, onStatus, onReset, createSocket = (opt
     const owner = generation + 1
     disconnect()
     if (generation !== owner) return
-    if (typeof token !== 'string' || !token.trim() || /[\r\n]/.test(token)) {
+    if (!isValidToken(token)) {
       onStatus('error')
       return
     }

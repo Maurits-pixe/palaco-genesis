@@ -187,6 +187,12 @@ een opslagverzoek server-side is teruggedraaid.
 
 BASTION geeft eerst een kortlevend ticket uit;
 pas de afzonderlijke commitactie schrijft het commando in het logboek.
+HTTP, realtime en de bedieningsknoppen delen dezelfde tokenformaatcontrole:
+niet leeg of uitsluitend witruimte, en zonder CR/LF-regelovergangen.
+Een niet-leeg ongeldig token krijgt gekoppelde invoerfeedback zonder de
+waarde in de melding te tonen. De tokenwaarde wordt niet getrimd of
+aangepast. Een geldig formaat bewijst geen servertoegang; invoeren start
+geen automatisch verzoek of verbinding.
 Tijdens een verzoek noemt de toegankelijke voortgangsmelding de lopende actie:
 ticket aanvragen, commando indienen, ticket intrekken, ticketstatus controleren
 of logboek vernieuwen. De melding bevat geen token of commandotekst en is

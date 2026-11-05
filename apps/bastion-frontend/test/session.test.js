@@ -7,7 +7,7 @@ import { compile } from '@vue/compiler-dom'
 import { renderToString } from 'vue/server-renderer'
 import { realtimeLabels, useSession } from '../src/useSession.js'
 import { createRealtime } from '../src/realtime.js'
-import { commandLength, MAX_COMMAND_LENGTH, listCommands, validateTicketStatus } from '../src/api.js'
+import { commandLength, isValidToken, MAX_COMMAND_LENGTH, listCommands, validateTicketStatus } from '../src/api.js'
 
 const held = () => ({ id: 'ticket-1', command: 'journal only', not_before: 1000, expires_at: 1100 })
 const record = (id = 'record-1') => ({ id, command: 'journal only', committed_at: 1050 })
@@ -93,6 +93,7 @@ function assertEmpty(state, token = '') {
     assert.equal(state[key].value, '', key)
   }
   assert.equal(state.token.value, token)
+  assert.equal(state.validToken.value, isValidToken(token))
   assert.equal(state.ticket.value, null)
   assert.equal(state.revocationUncertain.value, false)
   assert.deepEqual(state.commands.value, [])
@@ -137,6 +138,152 @@ function commandState(state, excluded = []) {
   return Object.fromEntries(Object.entries(state)
     .filter(([key, value]) => isRef(value) && !excluded.includes(key))
     .map(([key, value]) => [key, value.value]))
+}
+
+function compileFragment(source) {
+  const { code } = compile(source, { mode: 'function', prefixIdentifiers: true })
+  const render = new Function('Vue', code)(Vue)
+  return async state => {
+    let vnode
+    const html = await renderToString(Vue.createSSRApp({
+      setup: () => state,
+      render() {
+        vnode = render(this, {})
+        return vnode
+      },
+    }))
+    const find = predicate => {
+      function visit(node) {
+        if (predicate(node)) return node
+        return Array.isArray(node.children) ? node.children.map(visit).find(Boolean) : undefined
+      }
+      return visit(vnode)
+    }
+    return { html, find }
+  }
+}
+
+function tokenAccess() {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  return compileFragment(app.match(/<section aria-labelledby="access-title">[\s\S]*?<\/section>/)[0])
+}
+
+test('compiled token input exposes neutral empty and linked static invalid feedback without changing input', async t => {
+  const { state, calls, sockets } = fixture(t)
+  const render = tokenAccess()
+  assert.equal(Vue.isReadonly(state.validToken), true)
+  let { find } = await render(state)
+  const update = find(node => node.props?.id === 'token').props['onUpdate:modelValue']
+  for (const [token, valid] of [
+    ['', false], [' ', false], ['\t\u00a0', false], ['private\rvalue', false],
+    ['private\nvalue', false], ['private\r\nvalue', false],
+    ['unverified-token', true], [' unverified-token ', true], ['\ttoken\t', true],
+    ['a b', true], ['a\tb', true], ['é😀', true], ['a\u2028b', true], ['a\0b', true],
+  ]) {
+    update(token)
+    assert.equal(state.token.value, token, 'the compiled model never trims or normalizes tokens')
+    assert.equal(state.validToken.value, valid)
+    const invalid = token !== '' && !valid
+    const { html, find } = await render(state)
+    const input = find(node => node.props?.id === 'token')
+    const error = find(node => node.props?.id === 'token-error')
+    assert.equal(input.props.type, 'password')
+    assert.equal(input.props.autocomplete, 'off')
+    assert.equal(input.props.spellcheck, 'false')
+    assert.equal(input.props['aria-invalid'], invalid)
+    const describedBy = invalid ? 'token-help token-error' : 'token-help'
+    assert.equal(input.props['aria-describedby'], describedBy)
+    const renderedInput = html.match(/<input[^>]*id="token"[^>]*>/)[0]
+    assert.ok(renderedInput.includes(`aria-invalid="${invalid}"`))
+    assert.ok(renderedInput.includes(`aria-describedby="${describedBy}"`))
+    assert.equal(!!error, invalid)
+    assert.equal(html.includes('id="token-error"'), invalid)
+    if (invalid) {
+      assert.equal(error.children, 'Ongeldig tokenformaat: gebruik niet alleen witruimte en geen CR- of LF-regeleinden.')
+      assert.ok(!error.children.includes('private'))
+    }
+    assert.match(html, /De invoer blijft ongewijzigd; alleen de server beslist over toegang\./)
+    state.busy.value = 'list'
+    assert.equal((await render(state)).find(node => node.props?.id === 'token').props.disabled, true)
+    state.busy.value = ''
+  }
+  assert.deepEqual(calls, [])
+  assert.deepEqual(sockets, [])
+})
+
+test('compiled action buttons consistently gate on token format while retaining their other guards', async t => {
+  const { state, calls, sockets } = fixture(t)
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const labels = [
+    'Ticket aanvragen', 'Status controleren', 'Commando vastleggen', 'Ticket intrekken',
+    'Controleer huidig ticket', 'Controleer laatste inzending', 'Realtime verbinden', 'Logboek vernieuwen',
+  ]
+  const buttons = labels.map(label => app.match(new RegExp(`<button[^>]*>${label}</button>`))[0])
+  const render = compileFragment(`<div>${buttons.join('')}</div>`)
+  async function check(disabled) {
+    const { find, html } = await render(state)
+    for (const label of labels) {
+      assert.equal(find(node => node.type === 'button' && node.children === label).props.disabled, disabled, label)
+      const button = html.match(new RegExp(`<button[^>]*>${label}</button>`))[0]
+      assert.equal(/\sdisabled(?:[=>\s])/.test(button), disabled, label)
+    }
+  }
+  for (const token of ['', ' ', '\t\u00a0', 'private\rvalue', 'private\nvalue', 'private\r\nvalue', ' unverified-token ', 'é😀', 'a\tb']) {
+    state.token.value = token
+    prepare(state, 'status')
+    state.message.value = ''
+    state.error.value = ''
+    assert.equal(state.canCommit.value, true, 'token formatting must not create or retire ticket authority')
+    await check(!state.validToken.value)
+    state.busy.value = 'list'
+    await check(true)
+    state.busy.value = ''
+  }
+  state.token.value = 'unverified-token'
+  prepare(state, 'status')
+  state.revocationUncertain.value = true
+  let rendered = await render(state)
+  for (const label of ['Ticket aanvragen', 'Commando vastleggen']) {
+    assert.equal(rendered.find(node => node.type === 'button' && node.children === label).props.disabled, true)
+  }
+  for (const label of ['Ticket intrekken', 'Controleer huidig ticket', 'Controleer laatste inzending', 'Status controleren']) {
+    assert.equal(rendered.find(node => node.type === 'button' && node.children === label).props.disabled, false)
+  }
+  state.ticket.value = null
+  rendered = await render(state)
+  for (const label of ['Commando vastleggen', 'Ticket intrekken', 'Controleer huidig ticket']) {
+    assert.equal(rendered.find(node => node.type === 'button' && node.children === label).props.disabled, true)
+  }
+  for (const status of ['connecting', 'connected']) {
+    state.realtimeStatus.value = status
+    rendered = await render(state)
+    assert.equal(rendered.find(node => node.children === 'Realtime verbinden').props.disabled, true)
+    assert.equal(rendered.find(node => node.children === 'Logboek vernieuwen').props.disabled, false)
+  }
+  assert.deepEqual(calls, [])
+  assert.deepEqual(sockets, [])
+})
+
+for (const token of ['', ' \t ', 'private\rvalue', 'private\nvalue', 'private\r\nvalue', ' unverified-token ']) {
+  test(`compiled token changes preserve reset and stale-result isolation for ${JSON.stringify(token)}`, async t => {
+    const { state, calls, sockets } = fixture(t)
+    state.realtime.connect(state.token.value)
+    const socket = sockets[0]
+    prepare(state, 'revoke')
+    const checking = state.perform('status')
+    const { find } = await tokenAccess()(state)
+    find(node => node.props?.id === 'token').props['onUpdate:modelValue'](token)
+    assertEmpty(state, token)
+    assertDisconnected(socket)
+    assert.equal(calls[0].signal.aborted, true)
+    calls[0].resolve(snapshot({ status: 'committed', record: record() }))
+    await checking
+    socket.handlers.connect()
+    socket.handlers['command:committed'](record())
+    assertEmpty(state, token)
+    assert.equal(calls.length, 1, 'token edits never request automatically')
+    assert.equal(sockets.length, 1, 'token edits never reconnect automatically')
+  })
 }
 
 function outcomeClearButton() {
@@ -2824,12 +2971,16 @@ test('current-ticket shortcut does not change lookup or call the API while busy'
   await revoking
 })
 
-for (const guard of ['no ticket', 'empty token', 'blank token', 'disposed']) {
+for (const guard of ['no ticket', 'empty token', 'blank token', 'CR token', 'LF token', 'CRLF token', 'nonstring token', 'disposed']) {
   test(`current-ticket shortcut: ${guard} does not change lookup or call the API`, async t => {
     const { state, calls, scope } = fixture(t)
     if (guard === 'disposed') scope.stop()
     if (guard === 'empty token') state.token.value = ''
     if (guard === 'blank token') state.token.value = ' \t\n '
+    if (guard === 'CR token') state.token.value = 'private\rvalue'
+    if (guard === 'LF token') state.token.value = 'private\nvalue'
+    if (guard === 'CRLF token') state.token.value = 'private\r\nvalue'
+    if (guard === 'nonstring token') state.token.value = null
     prepare(state, 'revoke')
     if (guard === 'no ticket') state.ticket.value = null
     state.lookupId.value = 'unrelated-ticket'
@@ -2950,7 +3101,7 @@ for (const reset of ['clear', 'token', 'dispose']) {
 test('current-ticket button delegates to the composable without gating on expiry or uncertainty; manual lookup remains', () => {
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
   assert.match(app, /checkCurrentTicket, clearCommand, clearSession,[\s\S]*} = useSession\(\)/)
-  assert.match(app, /Ticket intrekken<\/button>\s*<button class="secondary" :disabled="!!busy \|\| !ticket \|\| !token.trim\(\)" @click="checkCurrentTicket">Controleer huidig ticket<\/button>/)
+  assert.match(app, /Ticket intrekken<\/button>\s*<button class="secondary" :disabled="!!busy \|\| !ticket \|\| !validToken" @click="checkCurrentTicket">Controleer huidig ticket<\/button>/)
   assert.match(app, /<form @submit.prevent="perform\('status'\)">/)
   assert.match(app, /<input id="lookup-id" v-model="lookupId"/)
 })
@@ -2987,12 +3138,16 @@ for (const commitResult of ['lost', 'successful']) {
   })
 }
 
-for (const guard of ['busy', 'missing ID', 'empty token', 'blank token', 'disposed']) {
+for (const guard of ['busy', 'missing ID', 'empty token', 'blank token', 'CR token', 'LF token', 'CRLF token', 'nonstring token', 'disposed']) {
   test(`last-submission shortcut: ${guard} leaves lookup unchanged and makes no request`, async t => {
     const { state, calls, scope } = fixture(t)
     if (guard === 'disposed') scope.stop()
     if (guard === 'empty token') state.token.value = ''
     if (guard === 'blank token') state.token.value = ' \t\n '
+    if (guard === 'CR token') state.token.value = 'private\rvalue'
+    if (guard === 'LF token') state.token.value = 'private\nvalue'
+    if (guard === 'CRLF token') state.token.value = 'private\r\nvalue'
+    if (guard === 'nonstring token') state.token.value = null
     // Populate after disposal/token resets so each guard is exercised independently.
     prepare(state, 'status')
     if (guard === 'missing ID') state.lastSubmissionId.value = ''
@@ -3124,7 +3279,7 @@ for (const reset of ['clear', 'token', 'dispose']) {
 test('last-submission button is an explicit manual read beside the readonly retained ID', () => {
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
   assert.match(app, /checkLastSubmission,[\s\S]*} = useSession\(\)/)
-  assert.match(app, /<div v-if="lastSubmissionId">\s*<label[^>]*>[^<]*<\/label>\s*<input id="last-submission" :value="lastSubmissionId" readonly @focus="\$event.target.select\(\)" \/>\s*<button type="button" class="secondary" :disabled="!!busy \|\| !token.trim\(\)" @click="checkLastSubmission">Controleer laatste inzending<\/button>\s*<\/div>/)
+  assert.match(app, /<div v-if="lastSubmissionId">\s*<label[^>]*>[^<]*<\/label>\s*<input id="last-submission" :value="lastSubmissionId" readonly @focus="\$event.target.select\(\)" \/>\s*<button type="button" class="secondary" :disabled="!!busy \|\| !validToken" @click="checkLastSubmission">Controleer laatste inzending<\/button>\s*<\/div>/)
   assert.match(app, /@click="checkCurrentTicket">Controleer huidig ticket<\/button>/)
   assert.match(app, /<form @submit.prevent="perform\('status'\)">/)
   assert.doesNotMatch(app, /clipboard|localStorage|sessionStorage/)

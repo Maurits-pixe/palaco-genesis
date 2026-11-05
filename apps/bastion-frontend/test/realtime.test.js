@@ -133,9 +133,23 @@ test('connection errors are generic, clear credentials and never reflect error/t
 
 test('invalid tokens never create sockets', () => {
   const f = fixture()
-  for (const token of ['', ' ', 'bad\r\nheader']) f.realtime.connect(token)
+  for (const token of ['', ' ', '\t\u00a0', 'bad\rheader', 'bad\nheader', 'bad\r\nheader', null, undefined, 1, {}, new String('token')]) {
+    f.realtime.connect(token)
+    assert.equal(f.states.at(-1), 'error')
+  }
   assert.equal(f.sockets.length, 0)
   assert.equal(f.states.at(-1), 'error')
+})
+
+test('format-valid tokens reach handshake auth unchanged without asserting server access', () => {
+  for (const token of [' token ', '\ttoken\t', 'a b', 'a\tb', 'é😀', 'a\u2028b', 'a\0b']) {
+    const f = fixture()
+    f.realtime.connect(token)
+    assert.deepEqual(f.sockets[0].options.auth, { token })
+    assert.equal(f.states.at(-1), 'connecting')
+    f.sockets[0].handlers.connect_error(new Error(token))
+    assert.equal(f.states.at(-1), 'error')
+  }
 })
 
 function assertDetached(socket) {

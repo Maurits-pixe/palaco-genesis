@@ -45,17 +45,16 @@ export function useSession({
   const now = ref(sampleReceiptTime())
   let session = 0
   const disposed = ref(false)
+  const validToken = computed(() => defaultApi.isValidToken(token.value))
   const validLookupId = computed(() => defaultApi.isValidTicketId(lookupId.value))
   const canCheckStatus = computed(() => !disposed.value && !busy.value &&
-    typeof token.value === 'string' && !!token.value.trim() && !/[\r\n]/.test(token.value) &&
-    validLookupId.value)
+    validToken.value && validLookupId.value)
   const validTtl = computed(() => {
     const ttl = Number(ttlMs.value)
     return Number.isInteger(ttl) && ttl >= 1 && ttl <= 60_000
   })
   const canRequestTicket = computed(() => !disposed.value && !busy.value &&
-    !revocationUncertain.value && typeof token.value === 'string' &&
-    !!token.value.trim() && !/[\r\n]/.test(token.value) &&
+    !revocationUncertain.value && validToken.value &&
     typeof command.value === 'string' && !!command.value.trim() &&
     defaultApi.commandLength(command.value) <= defaultApi.MAX_COMMAND_LENGTH && validTtl.value)
   let pending = null
@@ -229,13 +228,13 @@ export function useSession({
   })
 
   function checkCurrentTicket() {
-    if (disposed.value || busy.value || !ticket.value || !token.value.trim()) return
+    if (disposed.value || busy.value || !ticket.value || !validToken.value) return
     lookupId.value = ticket.value.id
     return perform('status')
   }
 
   function checkLastSubmission() {
-    if (disposed.value || busy.value || !lastSubmissionId.value || !token.value.trim()) return
+    if (disposed.value || busy.value || !lastSubmissionId.value || !validToken.value) return
     lookupId.value = lastSubmissionId.value
     return perform('status')
   }
@@ -344,6 +343,6 @@ export function useSession({
   return {
     token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, lastJournalRefreshAt, busy,
     message, error, lookupId, outcome, outcomeReceivedAt, outcomeMismatch, lastSubmissionId, realtimeStatus, now,
-    validLookupId, canCheckStatus, validTtl, canRequestTicket, canCommit, canClearOutcome, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearCommand, clearSession, clearOutcome, clearJournal,
+    validToken, validLookupId, canCheckStatus, validTtl, canRequestTicket, canCommit, canClearOutcome, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearCommand, clearSession, clearOutcome, clearJournal,
   }
 }

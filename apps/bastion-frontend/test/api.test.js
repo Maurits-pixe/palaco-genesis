@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { commandLength, commitCommand, getTicketStatus, isValidTicketId, issueTicket, listCommands, MAX_COMMAND_LENGTH, mergeCommands, normalizeCommand, request, revokeTicket, ticketRemainingSeconds, ticketUsable } from '../src/api.js'
+import { commandLength, commitCommand, getTicketStatus, isValidTicketId, isValidToken, issueTicket, listCommands, MAX_COMMAND_LENGTH, mergeCommands, normalizeCommand, request, revokeTicket, ticketRemainingSeconds, ticketUsable } from '../src/api.js'
 import config from '../vite.config.js'
 
 const inputToken = 'test-only-user-input'
@@ -12,6 +12,36 @@ const ticket = () => ({
 })
 const entry = () => ({ id: 'command-1', command: 'registreer wijziging', committed_at: new Date().toISOString() })
 const issuedTicket = ttlMs => ({ id: 'ticket-1', not_before: 1000, expires_at: 1000 + ttlMs })
+
+test('shared token format validation preserves the existing rule without normalization or authentication claims', async () => {
+  for (const token of ['a', ' a ', '\ta\t', 'a b', 'a\tb', 'é', '票😀', 'a\u2028b', 'a\0b', 'a'.repeat(10000)]) {
+    assert.equal(isValidToken(token), true)
+    let calls = 0
+    await assert.rejects(request('/v1/commands', {
+      token,
+      fetcher: async (url, options) => {
+        calls++
+        assert.equal(url, '/v1/commands')
+        assert.equal(options.headers.Authorization, ['Bearer', token].join(' '))
+        return json({}, 401)
+      },
+    }), { message: 'Toegang geweigerd. Controleer je token.' })
+    assert.equal(calls, 1, 'a valid format does not guarantee server access')
+  }
+})
+
+test('invalid token values fail before fetch with static feedback', async () => {
+  for (const token of [
+    '', ' ', '\t', '\v\f', '\u00a0\u2028\u2029', '\r', '\n',
+    'private\rvalue', 'private\nvalue', 'private\r\nvalue', '\rprivate', 'private\n',
+    null, undefined, 0, true, {}, [], new String('private'),
+  ]) {
+    assert.equal(isValidToken(token), false)
+    await assert.rejects(request('/v1/commands', {
+      token, fetcher: () => assert.fail('must not fetch'),
+    }), { message: 'Vul een geldig toegangstoken in.' })
+  }
+})
 
 test('shared ticket ID validation preserves exact ASCII status lookup IDs and boundaries', async () => {
   const valid = ['a', 'Z', '0', '_', '-', 'aZ09_-', 'A'.repeat(128)]

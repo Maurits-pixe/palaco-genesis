@@ -15,6 +15,10 @@ export const MAX_COMMAND_LENGTH = 1024
 export const MAX_RESPONSE_BYTES = 1024 * 1024
 export const commandLength = (value) => value.length
 
+export function isValidToken(value) {
+  return typeof value === 'string' && !!value.trim() && !/[\r\n]/.test(value)
+}
+
 function cancel(target) {
   try {
     Promise.resolve(target?.cancel()).catch(() => {})
@@ -111,7 +115,7 @@ export function ticketRemainingSeconds(ticket, now = Date.now()) {
 }
 
 export async function request(path, { token, method = 'GET', body, fetcher = fetch, timeoutMs = 8000, signal }) {
-  if (typeof token !== 'string' || !token.trim() || /[\r\n]/.test(token)) {
+  if (!isValidToken(token)) {
     throw new ApiError('Vul een geldig toegangstoken in.')
   }
   if (!/^\/v1\/(?:commands|tickets(?:\/[a-zA-Z0-9_-]{1,200})?)$/.test(path)) {

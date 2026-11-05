@@ -14,7 +14,7 @@ const busyLabels = {
 const {
   token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, lastJournalRefreshAt, busy,
   message, error, lookupId, outcome, outcomeReceivedAt, outcomeMismatch, lastSubmissionId, realtimeStatus,
-  validLookupId, canCheckStatus, validTtl, canRequestTicket, canCommit, canClearOutcome, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearCommand, clearSession, clearOutcome, clearJournal,
+  validToken, validLookupId, canCheckStatus, validTtl, canRequestTicket, canCommit, canClearOutcome, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearCommand, clearSession, clearOutcome, clearJournal,
 } = useSession()
 
 function date(value) {
@@ -35,8 +35,10 @@ function receiptIso(value) {
     <section aria-labelledby="access-title">
       <h2 id="access-title">Toegang</h2>
       <label for="token">Toegangstoken</label>
-      <input id="token" v-model="token" type="password" autocomplete="off" spellcheck="false" :disabled="!!busy" aria-describedby="token-help" />
-      <p id="token-help" class="muted">Alleen in componentgeheugen; niet in opslag of een URL.
+      <input id="token" v-model="token" type="password" autocomplete="off" spellcheck="false" :disabled="!!busy" :aria-invalid="token !== '' && !validToken" :aria-describedby="token !== '' && !validToken ? 'token-help token-error' : 'token-help'" />
+      <p v-if="token !== '' && !validToken" id="token-error" class="error">Ongeldig tokenformaat: gebruik niet alleen witruimte en geen CR- of LF-regeleinden.</p>
+      <p id="token-help" class="muted">Formaat: niet alleen witruimte en geen CR- of LF-regeleinden. De invoer blijft ongewijzigd; alleen de server beslist over toegang.
+        Alleen in componentgeheugen; niet in opslag of een URL.
         Bij pagehide (ook bij terug/vooruit-cache) wissen we de lokale sessie. Voer na terugkeer het token opnieuw in
         en kies zelf een actie; geen automatische verzoeken of herverbinding.
         De browser levert pagehide niet gegarandeerd; dit garandeert geen veilige geheugenwissing.</p>
@@ -91,9 +93,9 @@ function receiptIso(value) {
           <p v-if="remaining > 0 && !canCommit && !revocationUncertain">Niet geldig voor de huidige invoer of begintijd.</p>
         </div>
         <p v-else class="muted">Nog geen ticket. Tekst of duur wijzigen maakt het lokale ticket ongeldig.</p>
-        <button :disabled="!!busy || !canCommit || !token.trim()" @click="perform('commit')">Commando vastleggen</button>
-        <button class="secondary" :disabled="!!busy || !ticket || !token.trim()" @click="perform('revoke')">Ticket intrekken</button>
-        <button class="secondary" :disabled="!!busy || !ticket || !token.trim()" @click="checkCurrentTicket">Controleer huidig ticket</button>
+        <button :disabled="!!busy || !canCommit || !validToken" @click="perform('commit')">Commando vastleggen</button>
+        <button class="secondary" :disabled="!!busy || !ticket || !validToken" @click="perform('revoke')">Ticket intrekken</button>
+        <button class="secondary" :disabled="!!busy || !ticket || !validToken" @click="checkCurrentTicket">Controleer huidig ticket</button>
         <p v-if="revocationUncertain" role="alert" class="error">Intrekking nog niet bevestigd. Vastleggen en nieuwe tickets zijn geblokkeerd. Trek dit ticket opnieuw in of controleer de status van hetzelfde ticket.</p>
         <p class="muted">Intrekken wijzigt het ticket op de server. Een sessie wissen of invoer wijzigen trekt geen toestemming in.</p>
         <p class="muted">Na iedere inzendpoging vervalt het lokale ticket. Geen automatische herhaling.</p>
@@ -103,7 +105,7 @@ function receiptIso(value) {
         <div v-if="lastSubmissionId">
           <label for="last-submission">Laatste ingezonden ticket-ID (selecteer en kopieer)</label>
           <input id="last-submission" :value="lastSubmissionId" readonly @focus="$event.target.select()" />
-          <button type="button" class="secondary" :disabled="!!busy || !token.trim()" @click="checkLastSubmission">Controleer laatste inzending</button>
+          <button type="button" class="secondary" :disabled="!!busy || !validToken" @click="checkLastSubmission">Controleer laatste inzending</button>
         </div>
         <form @submit.prevent="perform('status')">
           <label for="lookup-id">Ticket-ID</label>
@@ -161,10 +163,10 @@ function receiptIso(value) {
           Kies expliciet Logboek vernieuwen voor een momentopname van de nieuwste maximaal 100 records, niet de hele historie.
           Geen garantie op ontvangst zonder gaten of precies één ontvangst per live record.</p>
         <div class="actions">
-          <button :disabled="!!busy || !token.trim() || realtimeStatus === 'connecting' || realtimeStatus === 'connected'" aria-describedby="realtime-help" @click="realtime.connect(token)">Realtime verbinden</button>
+          <button :disabled="!!busy || !validToken || realtimeStatus === 'connecting' || realtimeStatus === 'connected'" aria-describedby="realtime-help" @click="realtime.connect(token)">Realtime verbinden</button>
           <button class="secondary" :disabled="!!busy || (realtimeStatus !== 'connecting' && realtimeStatus !== 'connected')" @click="realtime.disconnect()">Verbinding verbreken</button>
         </div>
-        <button :disabled="!!busy || !token.trim()" @click="perform('list')">Logboek vernieuwen</button>
+        <button :disabled="!!busy || !validToken" @click="perform('list')">Logboek vernieuwen</button>
         <button type="button" class="secondary" :disabled="!!busy && busy !== 'list'" aria-describedby="clear-journal-help" @click="clearJournal">Wis lokaal logboek</button>
         <p id="clear-journal-help" class="muted">Wist alleen lokaal de geladen records en zoekopdracht, verbreekt realtime en breekt een lopende verversing lokaal af.
           Geen verwijdering uit de database of intrekking van tickets. De aparte ticketuitkomst blijft behouden en kan een historisch logboekrecord bevatten.
