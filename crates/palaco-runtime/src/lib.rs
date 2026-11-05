@@ -186,4 +186,21 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn runtime_plan_safe_state_fails_closed() -> Result<(), &'static str> {
+        let mut plan = plan(AuthorizationScope::Execute)?;
+        plan.disposition = RuntimeDisposition::SafeState;
+
+        assert_eq!(
+            plan.current_validity(timestamp(2026, 1, 20, 0, 0, 0)?),
+            CurrentValidity::SafeStateRequired
+        );
+        assert_eq!(
+            plan.revalidate(&plan.boundary.decision.context),
+            Ok(RevalidationOutcome::SafeState)
+        );
+
+        Ok(())
+    }
 }

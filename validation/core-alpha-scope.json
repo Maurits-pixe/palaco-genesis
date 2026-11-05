@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "scope": "PALACO Core Alpha",
+  "repository": "Maurits-pixe/palaco-genesis",
+  "required_components": [
+    "palaco-audit",
+    "palaco-citadel",
+    "palaco-citadel-contracts",
+    "palaco-constitution",
+    "palaco-errors",
+    "palaco-eventbus",
+    "palaco-events",
+    "palaco-evidence",
+    "palaco-evolution",
+    "palaco-federation",
+    "palaco-foundation",
+    "palaco-harbor",
+    "palaco-intelligence",
+    "palaco-knowledge",
+    "palaco-kernel",
+    "palaco-monetary-contracts",
+    "palaco-observatory",
+    "palaco-oracle",
+    "palaco-quay",
+    "palaco-rio-core",
+    "palaco-runtime",
+    "palaco-trias",
+    "palaco-types"
+  ],
+  "graph_inventory_approval": {
+    "status": "unapproved",
+    "graph_revision": null,
+    "approved_by": null,
+    "decision_ref": null
+  },
+  "excluded_paths": []
+}

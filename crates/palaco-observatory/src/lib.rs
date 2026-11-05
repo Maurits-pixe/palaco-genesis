@@ -331,4 +331,24 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn observatory_snapshot_does_not_change_runtime_authority_state() -> Result<(), &'static str> {
+        let audit_record = audit_record(AuthorizationScope::Execute)?;
+        let original_plan = audit_record.runtime_plan.clone();
+        let snapshot = ObservatorySnapshot::new(
+            audit_record,
+            timestamp(2026, 1, 20, 0, 0, 0)?,
+            vec![sensor_observation(
+                TrustLevel::High,
+                ObservationCoverage::Complete,
+                timestamp(2026, 1, 20, 0, 0, 0)?,
+            )],
+        );
+
+        assert_eq!(snapshot.disposition, ObservatoryDisposition::Current);
+        assert_eq!(snapshot.audit_record.runtime_plan, original_plan);
+
+        Ok(())
+    }
 }

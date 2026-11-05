@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "status": "unapproved",
+  "graph_sha256": null,
+  "approval_sha256": null,
+  "startup_constraints": null,
+  "shutdown_constraints": null,
+  "approved_by": null,
+  "decision_ref": null
+}

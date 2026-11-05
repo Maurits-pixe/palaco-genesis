@@ -36,3 +36,17 @@ jobs:
 
       - name: Architecture Validation
         run: cargo metadata --no-deps --format-version 1 > /dev/null
+
+      - name: Test PVC-001 validator
+        run: python3 -m unittest discover -s validation -p 'test_*.py'
+
+      - name: Generate PVC-001 evidence
+        run: python3 validation/pvc_validate.py --output-dir "$RUNNER_TEMP/pvc-evidence"
+
+      - name: Upload PVC-001 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pvc-001-evidence
+          path: ${{ runner.temp }}/pvc-evidence/
+          if-no-files-found: warn
