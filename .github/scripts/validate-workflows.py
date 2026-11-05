@@ -799,6 +799,7 @@ def main() -> int:
                 errors.append(f"{path}: job '{job_name}' steps must be a list")
                 continue
             step_display_name_to_indexes: dict[str, list[int]] = {}
+            step_id_to_indexes: dict[str, list[int]] = {}
             for step_index, step in enumerate(steps):
                 if not isinstance(step, dict):
                     errors.append(
@@ -821,6 +822,21 @@ def main() -> int:
                     step_display_name_to_indexes.setdefault(
                         normalized_step_name, []
                     ).append(step_index)
+                step_id = step.get("id")
+                if step_id is not None:
+                    if not isinstance(step_id, str) or not step_id.strip():
+                        errors.append(
+                            f"{path}: job '{job_name}' step #{step_index} id must be a non-empty string when provided"
+                        )
+                    else:
+                        normalized_step_id = step_id.strip()
+                        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", normalized_step_id):
+                            errors.append(
+                                f"{path}: job '{job_name}' step #{step_index} id '{normalized_step_id}' must match ^[A-Za-z_][A-Za-z0-9_-]*$"
+                            )
+                        step_id_to_indexes.setdefault(normalized_step_id, []).append(
+                            step_index
+                        )
                 step_if = step.get("if")
                 if step_if is not None and (not isinstance(step_if, str) or not step_if.strip()):
                     errors.append(
@@ -932,6 +948,11 @@ def main() -> int:
                 if len(step_indexes) > 1:
                     errors.append(
                         f"{path}: job '{job_name}' step name '{step_display_name}' must be unique within the job (used at indexes: {step_indexes})"
+                    )
+            for step_id, step_indexes in step_id_to_indexes.items():
+                if len(step_indexes) > 1:
+                    errors.append(
+                        f"{path}: job '{job_name}' step id '{step_id}' must be unique within the job (used at indexes: {step_indexes})"
                     )
 
         for display_name, job_ids in job_display_name_to_ids.items():
