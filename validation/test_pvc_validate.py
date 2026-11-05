@@ -1266,6 +1266,18 @@ class G9Tests(unittest.TestCase):
         result, _ = self.evaluate(release_text=self.checklist(decision="PENDING"))
         self.assertEqual(result["result"], "HOLD")
 
+    def test_decision_is_normalized_before_report_rendering(self):
+        result, evidence = self.evaluate(release_text=self.checklist(decision=" approve "))
+        self.assertEqual(result["result"], "PASS")
+        self.assertEqual(evidence["decision"], "APPROVE")
+        self.assertTrue(evidence["release_approval_claimed"])
+
+    def test_repeated_decision_row_fails(self):
+        result, _ = self.evaluate(
+            release_text=self.checklist() + "| decision | REJECT |\n"
+        )
+        self.assertEqual(result["result"], "FAIL")
+
     def test_rejection_does_not_claim_approval(self):
         result, evidence = self.evaluate(release_text=self.checklist(decision="REJECT"))
         self.assertEqual(result["result"], "PASS")

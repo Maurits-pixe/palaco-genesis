@@ -1698,18 +1698,18 @@ def evaluate_g9(
 
     evidence["decision_authority"] = fields["decision_authority"]
     evidence["decision_record"] = fields["decision_record"]
-    evidence["decision"] = fields["decision"]
+    evidence["decision"] = fields["decision"].upper()
     if not fields["decision_authority"].strip() or not fields["decision_record"].strip():
         return (
             {"gate": "G9", "result": "HOLD", "findings": ["Release decision authority and decision record must be explicit."]},
             evidence,
         )
-    if fields["decision"] not in {"APPROVE", "REJECT"}:
+    if evidence["decision"] not in {"APPROVE", "REJECT"}:
         return (
             {"gate": "G9", "result": "HOLD", "findings": ["Release decision must be recorded as APPROVE or REJECT."]},
             evidence,
         )
-    evidence["release_approval_claimed"] = fields["decision"] == "APPROVE"
+    evidence["release_approval_claimed"] = evidence["decision"] == "APPROVE"
 
     if (
         not source_revision
@@ -1940,7 +1940,7 @@ def evaluate_g9(
         )
     evidence["attestation_binding_verified"] = True
     evidence["release_eligible"] = True
-    if fields["decision"] == "REJECT":
+    if evidence["decision"] == "REJECT":
         return (
             {"gate": "G9", "result": "PASS", "findings": ["Release candidate is technically eligible, but the recorded decision is REJECT."]},
             evidence,
