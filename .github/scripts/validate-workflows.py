@@ -830,6 +830,14 @@ def main() -> int:
 
             job_permissions = job.get("permissions")
             filename = os.path.basename(path)
+            if (
+                filename == "release.yml"
+                and job_name == "publish-release"
+                and job_permissions is None
+            ):
+                errors.append(
+                    f"{path}: job '{job_name}' must define permissions.contents as 'write'"
+                )
             if job_permissions is not None:
                 if filename == "release.yml" and job_name == "publish-release":
                     if (
