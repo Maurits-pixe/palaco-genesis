@@ -409,6 +409,13 @@ def main() -> int:
                             f"{path}: job '{job_name}' strategy.matrix must be a non-empty mapping when provided"
                         )
                     elif isinstance(strategy_matrix, dict):
+                        for matrix_key, matrix_value in strategy_matrix.items():
+                            if matrix_key in {"include", "exclude"}:
+                                continue
+                            if not isinstance(matrix_value, list) or not matrix_value:
+                                errors.append(
+                                    f"{path}: job '{job_name}' strategy.matrix.{matrix_key} must be a non-empty list"
+                                )
                         for matrix_list_key in ("include", "exclude"):
                             matrix_list_value = strategy_matrix.get(matrix_list_key)
                             if matrix_list_value is None:
