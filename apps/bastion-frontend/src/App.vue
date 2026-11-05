@@ -129,7 +129,10 @@ function receiptIso(value) {
           <p id="outcome-receipt-help" class="muted">Volgens de lokale klok; geen server- of audittijd en geen garantie dat de uitkomst actueel is.
             Controleer de status handmatig opnieuw voor een nieuwe momentopname.</p>
           <p>Geldig vanaf: {{ date(outcome.not_before) }} · verloopt: {{ date(outcome.expires_at) }}</p>
-          <pre>{{ outcome.command }}</pre>
+          <p id="outcome-command-label">Commandotekst van deze ticketuitkomst</p>
+          <pre aria-labelledby="outcome-command-label" aria-describedby="outcome-command-help">{{ outcome.command }}</pre>
+          <p id="outcome-command-help" class="muted">De exacte tekst uit de ontvangen statusmomentopname, niet de huidige concepttekst of het huidige ticket.
+            Kan na Wis commandotekst zichtbaar blijven. Alleen tekst: geen uitvoering of nieuwe toestemming.</p>
           <p v-if="outcome.record">Vastgelegd: {{ date(outcome.record.committed_at) }} · {{ outcome.record.id }}</p>
         </div>
         <button type="button" class="secondary" :disabled="!canClearOutcome" aria-describedby="clear-outcome-help" @click="clearOutcome">Wis ticketuitkomst</button>

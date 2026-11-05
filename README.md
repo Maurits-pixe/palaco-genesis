@@ -305,6 +305,11 @@ niet. Bij een ongeldige of falende lokale klok is geen ontvangsttijdstip
 beschikbaar, maar blijft een geldig serverantwoord bruikbaar.
 Dit is geen server- of audittijd, garantie op actuele status of nieuwe
 toestemming; vraag voor een nieuwe momentopname de status handmatig op.
+De commandotekst in de ticketuitkomst heeft een eigen toegankelijk label:
+dit is de exacte tekst uit de ontvangen statusmomentopname, niet de huidige
+concepttekst of het huidige ticket. Een concept wissen wist deze aparte
+momentopname niet. De tekst wordt uitsluitend als tekst weergegeven, zonder
+uitvoering of nieuwe toestemming.
 Ook bij statusantwoorden moeten alle tijdstippen, inclusief de eventuele
 committijd, niet-negatieve veilige gehele epochmilliseconden zijn die als
 JavaScript-datum kunnen worden weergegeven. Een ongeldig antwoord wordt

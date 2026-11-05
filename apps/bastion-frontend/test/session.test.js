@@ -679,6 +679,10 @@ test('outcome explanations render the validated server status without restoring 
   const panel = app.match(/<div v-if="outcome" class="result">[\s\S]*?<\/div>/)?.[0]
   assert.ok(panel)
   assert.ok(panel.includes("<p>Status: {{ outcome.status }} · ingetrokken: {{ outcome.revoked ? 'ja' : 'nee' }}</p>"))
+  assert.match(panel, /<pre aria-labelledby="outcome-command-label" aria-describedby="outcome-command-help">{{ outcome\.command }}<\/pre>/)
+  for (const id of ['outcome-command-label', 'outcome-command-help']) {
+    assert.equal(app.match(new RegExp(`\\bid="${id}"`, 'g')).length, 1)
+  }
   assert.doesNotMatch(panel, /v-html/)
   const { code } = compile(panel, { mode: 'function', prefixIdentifiers: true })
   const render = new Function('Vue', code)(Vue)
@@ -690,7 +694,9 @@ test('outcome explanations render the validated server status without restoring 
     committed: 'Het commando is al opgeslagen als logboekrecord, niet uitgevoerd.',
   }
   const laterRevocation = 'Een latere intrekking maakt het eerdere logboekrecord niet ongedaan.'
-  const command = 'één 🚀\n<script>alert("x")</script> & <b>tekst</b>'
+  const command = ' \n  één 🚀\n<script>alert("x")</script> & <b>tekst</b>\n  '
+  const label = '<p id="outcome-command-label">Commandotekst van deze ticketuitkomst</p>'
+  const help = '<p id="outcome-command-help" class="muted">De exacte tekst uit de ontvangen statusmomentopname, niet de huidige concepttekst of het huidige ticket. Kan na Wis commandotekst zichtbaar blijven. Alleen tekst: geen uitvoering of nieuwe toestemming.</p>'
   const cases = [
     { status: 'pending', checked_at: 999 },
     ...[1000, 1099].map(checked_at => ({ status: 'active', checked_at })),
@@ -705,7 +711,10 @@ test('outcome explanations render the validated server status without restoring 
       const outcome = snapshot({ command, ...changes })
       assert.equal(validateTicketStatus(outcome, outcome.id), outcome)
       const html = await renderToString(Vue.createSSRApp({
-        data: () => ({ outcome, outcomeMismatch: false, outcomeReceivedAt: null }),
+        data: () => ({
+          outcome, outcomeMismatch: false, outcomeReceivedAt: null,
+          command: 'different current draft', ticket: { ...held(), command: 'different held ticket' },
+        }),
         methods: { date: value => String(value) },
         render,
       }))
@@ -718,13 +727,20 @@ test('outcome explanations render the validated server status without restoring 
       assert.equal(html.includes('geen garantie dat het ticket nu nog bruikbaar is'), outcome.status === 'active')
       assert.equal(html.includes(laterRevocation), outcome.status === 'committed' && outcome.revoked)
       assert.equal(html.includes('Vastgelegd: 1050 · record-1'), outcome.status === 'committed')
-      assert.ok(html.includes('<pre>één 🚀\n&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &lt;b&gt;tekst&lt;/b&gt;</pre>'))
+      assert.equal(html.match(/<pre\b[^>]*>[\s\S]*?<\/pre>/)[0], '<pre aria-labelledby="outcome-command-label" aria-describedby="outcome-command-help"> \n  één 🚀\n&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &lt;b&gt;tekst&lt;/b&gt;\n  </pre>')
+      assert.ok(html.includes(label))
+      assert.ok(html.includes(help))
+      for (const id of ['outcome-command-label', 'outcome-command-help']) {
+        assert.equal(html.match(new RegExp(`\\bid="${id}"`, 'g')).length, 1)
+      }
+      assert.doesNotMatch(html, /different current draft|different held ticket/)
       assert.doesNotMatch(html, /<script>|<b>|teruggedraaid|ongedaan gemaakt|geen (?:eerder |eerdere )?(?:logboekrecord|vastlegging)/i)
     })
   }
   await t.test('no outcome hides the panel and all explanations', async () => {
     const html = await renderToString(Vue.createSSRApp({ data: () => ({ outcome: null }), render }))
     assert.doesNotMatch(html, /Status:|statuscontrole|logboekrecord|servercontrole/)
+    assert.doesNotMatch(html, /outcome-command-label|outcome-command-help|Commandotekst van deze ticketuitkomst|exacte tekst uit de ontvangen statusmomentopname|<pre/)
   })
 })
 
