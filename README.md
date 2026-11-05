@@ -193,6 +193,10 @@ Een niet-leeg ongeldig token krijgt gekoppelde invoerfeedback zonder de
 waarde in de melding te tonen. De tokenwaarde wordt niet getrimd of
 aangepast. Een geldig formaat bewijst geen servertoegang; invoeren start
 geen automatisch verzoek of verbinding.
+Een live HTTP/SQLite-test onderscheidt ongeldig tokenformaat (geen verzoek
+of socket) van een correct gevormd maar geweigerd token (HTTP 401).
+Beide laten de database ongewijzigd. Een geldig token opnieuw invoeren
+start niets automatisch; ticketaanvraag en statuscontrole blijven expliciet.
 Tijdens een verzoek noemt de toegankelijke voortgangsmelding de lopende actie:
 ticket aanvragen, commando indienen, ticket intrekken, ticketstatus controleren
 of logboek vernieuwen. De melding bevat geen token of commandotekst en is

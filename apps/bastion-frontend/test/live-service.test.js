@@ -324,6 +324,141 @@ async function fixture(t, { realtime = false, fault = () => {} } = {}) {
   }
 }
 
+test('live service: malformed tokens stay local; well-formed credentials require server authentication', { timeout: 20000 }, async t => {
+  const f = await fixture(t, { realtime: true })
+  const s = f.session
+  const command = 'explicit authenticated ticket only'
+  const lookupId = 'valid-lookup-id'
+  const assertNoWrites = (tickets = 0) => {
+    assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM tickets').get().count, tickets)
+    for (const table of ['commands', 'audit', ...(tickets === 0 ? ['clock_state'] : [])]) {
+      assert.deepEqual(f.db.prepare(`SELECT * FROM ${table}`).all(), [])
+    }
+  }
+  const assertNoAuthority = () => {
+    assert.equal(s.ticket.value, null)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.revocationUncertain.value, false)
+    assert.equal(s.lastSubmissionId.value, '')
+    assert.equal(s.outcome.value, null)
+    assert.equal(s.outcomeReceivedAt.value, null)
+    assert.deepEqual(s.commands.value, [])
+    assert.equal(s.busy.value, '')
+  }
+  const assertReset = () => {
+    assertNoAuthority()
+    assert.equal(s.command.value, '')
+    assert.equal(s.lookupId.value, '')
+    assert.equal(s.ttlMs.value, 10000)
+    assert.equal(s.hasLoaded.value, false)
+    assert.equal(s.journalRefreshFailed.value, false)
+    assert.equal(s.lastJournalRefreshAt.value, null)
+    assert.equal(s.message.value, '')
+    assert.equal(s.error.value, '')
+    assert.equal(s.realtimeStatus.value, 'disconnected')
+    assert.equal(f.sockets.length, 0)
+  }
+
+  for (const malformed of [' \t ', 'not-a-secret\r\nnot-a-secret']) {
+    s.token.value = malformed
+    assertReset()
+    s.command.value = command
+    s.lookupId.value = lookupId
+    assert.equal(s.validLookupId.value, true)
+    assert.equal(s.validToken.value, false)
+    assert.equal(s.canRequestTicket.value, false)
+    assert.equal(s.canCheckStatus.value, false)
+
+    for (const action of ['ticket', 'list', 'status']) {
+      await f.run(action)
+      assert.equal(s.error.value, 'Vul een geldig toegangstoken in.')
+      assertNoAuthority()
+      assertNoWrites()
+      assert.deepEqual(f.calls, [], `${action} must reject the token before HTTP`)
+    }
+    s.realtime.connect(s.token.value)
+    assert.equal(s.realtimeStatus.value, 'error')
+    f.tick()
+    await Promise.resolve()
+    assert.equal(s.command.value, command)
+    assert.equal(s.lookupId.value, lookupId)
+    assert.equal(s.realtimeStatus.value, 'error')
+    assert.equal(f.sockets.length, 0, 'malformed tokens never create a session socket')
+    assert.deepEqual(f.calls, [], 'validation failures never trigger automatic requests')
+    assertNoAuthority()
+    assertNoWrites()
+  }
+
+  s.token.value = 'wrong-but-well-formed-not-a-secret'
+  assertReset()
+  s.command.value = command
+  s.lookupId.value = lookupId
+  assert.equal(s.validToken.value, true)
+  assert.equal(s.canRequestTicket.value, true)
+  assert.equal(s.canCheckStatus.value, true)
+  const rejectedCalls = [
+    { path: '/v1/tickets', method: 'POST', status: 401 },
+    { path: '/v1/commands', method: 'GET', status: 401 },
+    { path: `/v1/tickets/${lookupId}`, method: 'GET', status: 401 },
+  ]
+  for (const [index, action] of ['ticket', 'list', 'status'].entries()) {
+    await f.run(action)
+    assert.equal(s.error.value, 'Toegang geweigerd. Controleer je token.')
+    assertNoAuthority()
+    assertNoWrites()
+    assert.deepEqual(f.calls, rejectedCalls.slice(0, index + 1))
+  }
+  f.tick()
+  await Promise.resolve()
+  assert.deepEqual(f.calls, rejectedCalls, 'HTTP 401 never schedules retries')
+  assert.equal(f.sockets.length, 0)
+  assertNoAuthority()
+  assertNoWrites()
+
+  s.token.value = token
+  assertReset()
+  assert.equal(s.validToken.value, true)
+  assert.equal(s.canRequestTicket.value, false, 'token replacement clears the draft')
+  assert.equal(s.canCheckStatus.value, false, 'token replacement clears the lookup')
+  f.tick()
+  await Promise.resolve()
+  assertReset()
+  assert.deepEqual(f.calls, rejectedCalls, 'restoring credentials neither fetches nor issues a ticket')
+  assertNoWrites()
+
+  s.command.value = command
+  assert.equal(s.canRequestTicket.value, true)
+  await f.run('ticket')
+  assert.equal(s.error.value, '')
+  const issued = { ...s.ticket.value }
+  assert.equal(issued.command, command)
+  assert.equal(s.canCommit.value, true)
+  await bounded(s.checkCurrentTicket(), 'explicit authenticated current ticket status')
+  assert.equal(s.error.value, '')
+  assert.equal(s.lookupId.value, issued.id)
+  assert.equal(s.outcome.value.id, issued.id)
+  assert.equal(s.outcome.value.status, 'active')
+  assert.equal(s.outcome.value.record, null)
+  assert.equal(s.outcomeReceivedAt.value, now)
+  assert.deepEqual(s.ticket.value, issued)
+  assert.equal(s.canCommit.value, true)
+  assert.equal(s.lastSubmissionId.value, '')
+  assert.deepEqual(s.commands.value, [])
+  const expectedCalls = [
+    ...rejectedCalls,
+    { path: '/v1/tickets', method: 'POST', status: 201 },
+    { path: `/v1/tickets/${issued.id}`, method: 'GET', status: 200 },
+  ]
+  f.tick()
+  await Promise.resolve()
+  assert.deepEqual(f.calls, expectedCalls, 'issuance and status never automatically commit or list')
+  assert.equal(f.sockets.length, 0)
+  assert.equal(s.canCommit.value, true)
+  assertNoWrites(1)
+  assert.deepEqual({ ...f.db.prepare('SELECT id, command, consumed, revoked FROM tickets').get() },
+    { id: issued.id, command, consumed: 0, revoked: 0 })
+})
+
 for (const { label, command, length, error } of [
   { label: 'whitespace-only', command: ' \t\n\u00a0', length: 4, error: /Vul een commando/ },
   { label: 'ASCII 1025', command: 'a'.repeat(1025), length: 1025, error: /maximaal 1024 UTF-16/ },
