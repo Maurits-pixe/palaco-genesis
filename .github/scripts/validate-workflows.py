@@ -116,6 +116,13 @@ def validate(path: Path) -> list[str]:
                                 f"{path.name}:{job_name}: strategy.matrix.{matrix_key} entries must be mappings"
                             )
                             break
+                for axis_name, axis_values in matrix.items():
+                    if axis_name in ("include", "exclude"):
+                        continue
+                    if not isinstance(axis_values, list):
+                        errors.append(
+                            f"{path.name}:{job_name}: strategy.matrix.{axis_name} must be a list"
+                        )
 
         if job.get("continue-on-error") is True:
             errors.append(f"{path.name}:{job_name}: continue-on-error: true is not allowed")
