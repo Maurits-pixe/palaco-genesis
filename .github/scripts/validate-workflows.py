@@ -588,6 +588,11 @@ def main() -> int:
             if not isinstance(job_name, str) or not job_name.strip():
                 errors.append(f"{path}: jobs keys must be non-empty strings")
                 continue
+            normalized_job_name = job_name.strip()
+            if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", normalized_job_name):
+                errors.append(
+                    f"{path}: job id '{normalized_job_name}' must match ^[A-Za-z_][A-Za-z0-9_-]*$"
+                )
             if not isinstance(job, dict):
                 errors.append(f"{path}: job '{job_name}' must be a mapping")
                 continue
