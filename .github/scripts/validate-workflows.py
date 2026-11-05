@@ -31,7 +31,12 @@ def iter_uses(step: dict):
 
 def validate(path: Path) -> list[str]:
     errors: list[str] = []
-    data = load_yaml(path)
+    try:
+        data = load_yaml(path)
+    except OSError as exc:
+        return [f"{path.name}: unable to read workflow file: {exc}"]
+    except yaml.YAMLError as exc:
+        return [f"{path.name}: invalid YAML: {exc}"]
 
     if not isinstance(data, dict):
         return [f"{path.name}: top-level YAML must be a mapping"]
