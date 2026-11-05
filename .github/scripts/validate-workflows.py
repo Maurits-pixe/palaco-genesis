@@ -259,6 +259,12 @@ def validate(path: Path) -> list[str]:
                     f"{path.name}:{job_name}:step#{idx + 1}: step env must be a mapping when set"
                 )
 
+            step_with = step.get("with")
+            if step_with is not None and not isinstance(step_with, dict):
+                errors.append(
+                    f"{path.name}:{job_name}:step#{idx + 1}: step with must be a mapping when set"
+                )
+
             step_timeout = step.get("timeout-minutes")
             if step_timeout is not None:
                 if type(step_timeout) is not int:
