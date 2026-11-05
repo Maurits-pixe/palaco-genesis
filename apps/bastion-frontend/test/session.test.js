@@ -22,7 +22,7 @@ const deferred = () => {
   return { promise, resolve, reject }
 }
 
-function fixture(t, eventTarget = new EventTarget(), apiOverrides = {}, clockOverrides = {}) {
+function fixture(t, eventTarget = new EventTarget(), apiOverrides = {}, clockOverrides = {}, realtimeFactory = null) {
   const scope = effectScope()
   const calls = []
   const sockets = []
@@ -41,7 +41,7 @@ function fixture(t, eventTarget = new EventTarget(), apiOverrides = {}, clockOve
       setInterval(callback, interval) { clock.tick = callback; clock.interval = interval; return 42 },
       clearInterval(id) { clock.cleared.push(id) },
     },
-    realtimeFactory: callbacks => {
+    realtimeFactory: realtimeFactory ?? (callbacks => {
       realtimeCallbacks.push(callbacks)
       return createRealtime({
         ...callbacks,
@@ -58,7 +58,7 @@ function fixture(t, eventTarget = new EventTarget(), apiOverrides = {}, clockOve
           return socket
         }
       })
-    },
+    }),
   }))
   t.after(() => scope.stop())
   state.token.value = 'test-session-token'
@@ -3706,6 +3706,90 @@ for (const settlement of ['resolve', 'reject']) {
     assert.equal(state.journalRefreshFailed.value, false)
     assert.equal(state.busy.value, '')
   })
+}
+
+for (const transport of ['factory', 'socket']) {
+  for (const action of ['disconnect', 'disconnect and reconnect', 'connect and reconnect']) {
+    test(`${transport}: ${action} clears old state before external disconnect callbacks`, t => {
+      const connections = []
+      const callbacks = []
+      const injectedFactory = handlers => {
+        callbacks.push(handlers)
+        const connection = {
+          connects: [], disconnects: 0,
+          connect(value) { this.connects.push(value) },
+          disconnect() { this.disconnects++ },
+        }
+        connections.push(connection)
+        return connection
+      }
+      const { state, scope, sockets, realtimeCallbacks, calls } = fixture(
+        t, undefined, {}, {}, transport === 'factory' ? injectedFactory : null,
+      )
+      const handlers = transport === 'factory' ? callbacks : realtimeCallbacks
+      const transports = transport === 'factory' ? connections : sockets
+      state.realtime.connect(state.token.value)
+      handlers[0].onStatus('connected')
+      prepare(state, 'revoke')
+      const retained = sessionSnapshot(state, journalRefs)
+      const stale = handlers[0]
+      const oldEntry = transport === 'socket' ? sockets[0].handlers['command:committed'] : () => {}
+      const deliverStale = () => {
+        stale.onEntry(record('stale-disconnect-entry'))
+        stale.onStatus('error')
+        stale.onReset()
+        oldEntry(record('stale-socket-entry'))
+      }
+      const old = transports[0]
+      const originalDisconnect = old.disconnect.bind(old)
+      let callbackCount = 0
+      old.disconnect = () => {
+        originalDisconnect()
+        callbackCount++
+        assert.deepEqual(state.commands.value, [])
+        assert.equal(state.hasLoaded.value, false)
+        assert.equal(state.journalRefreshFailed.value, false)
+        assert.equal(state.lastJournalRefreshAt.value, null)
+        assert.equal(state.realtimeStatus.value, 'disconnected')
+        assert.deepEqual(sessionSnapshot(state, journalRefs), retained)
+        deliverStale()
+        assert.deepEqual(state.commands.value, [])
+        assert.equal(state.realtimeStatus.value, 'disconnected')
+        if (action.endsWith('reconnect')) {
+          state.realtime.connect('replacement-token')
+          handlers[1].onEntry(record('replacement-entry'))
+          handlers[1].onStatus('connected')
+        }
+      }
+      if (action.startsWith('connect')) state.realtime.connect('superseded-token')
+      else state.realtime.disconnect()
+      assert.equal(callbackCount, 1)
+      assert.equal(old.disconnects, 1)
+      assert.equal(transports.length, action.endsWith('reconnect') ? 2 : 1)
+      if (action.endsWith('reconnect')) {
+        assert.deepEqual(state.commands.value, [record('replacement-entry')])
+        assert.equal(state.realtimeStatus.value, 'connected')
+        assert.equal(transports[1].disconnects, 0)
+        if (transport === 'factory') assert.deepEqual(connections[1].connects, ['replacement-token'])
+        else assert.deepEqual(sockets[1].auth, { token: 'replacement-token' })
+      }
+      const afterDisconnect = sessionSnapshot(state)
+      deliverStale()
+      assert.deepEqual(sessionSnapshot(state), afterDisconnect)
+      assert.equal(calls.length, 0)
+      scope.stop()
+      assertEmpty(state)
+      if (action.endsWith('reconnect')) {
+        assert.equal(transports[1].disconnects, 1)
+        if (transport === 'socket') assertDisconnected(sockets[1])
+        handlers[1].onEntry(record('disposed-replacement-entry'))
+        handlers[1].onStatus('connected')
+        handlers[1].onReset()
+      }
+      deliverStale()
+      assertEmpty(state)
+    })
+  }
 }
 
 test('journal clear invalidates direct realtime callbacks before and after an explicit reconnect', t => {

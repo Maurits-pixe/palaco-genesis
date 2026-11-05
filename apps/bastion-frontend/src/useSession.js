@@ -80,17 +80,18 @@ export function useSession({
     connectionGeneration++
     const previous = connection
     connection = null
-    previous?.disconnect()
     resetJournal()
     realtimeStatus.value = 'disconnected'
+    previous?.disconnect()
   }
 
   const realtime = {
     disconnect,
     connect(value) {
       if (disposed) return
+      const generation = connectionGeneration + 1
       disconnect()
-      const generation = connectionGeneration
+      if (disposed || generation !== connectionGeneration) return
       const current = () => !disposed && generation === connectionGeneration
       connection = realtimeFactory({
         onEntry: entry => {

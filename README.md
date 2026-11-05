@@ -336,6 +336,10 @@ bijvoorbeeld een procescrash. Dit is geen veilige geheugenwissing, server-side
 ticketintrekking of terugdraaiing van een al verstuurde mutatie.
 De BASTION-interface kan met hetzelfde token verbinden voor realtime-events;
 vernieuw het logboek na een verbindingsonderbreking.
+Bij afzonderlijk realtime verbreken wordt de lokale logboekstaat gewist
+vóór de oude disconnectcallback wordt aangeroepen. Een vanuit die callback
+expliciet gestarte vervangende verbinding wordt niet achteraf door de oude
+reset overschreven; dit voegt geen automatische herverbinding toe.
 Tijdens **Logboek vernieuwen** blijven eerder geladen records zichtbaar.
 Met **Wis lokaal logboek** verwijder je de geladen records, zoektekst en
 verversingsgegevens en verbreek je realtime. Een lopende logboekverversing
