@@ -85,6 +85,19 @@ def validate(path: Path) -> list[str]:
             errors.append(f"{path.name}:{job_name}: job must be a mapping")
             continue
 
+        strategy = job.get("strategy")
+        if strategy is not None and not isinstance(strategy, dict):
+            errors.append(f"{path.name}:{job_name}: strategy must be a mapping when set")
+        elif isinstance(strategy, dict):
+            if "fail-fast" in strategy and type(strategy["fail-fast"]) is not bool:
+                errors.append(f"{path.name}:{job_name}: strategy.fail-fast must be a boolean")
+            if "max-parallel" in strategy:
+                max_parallel = strategy["max-parallel"]
+                if type(max_parallel) is not int or max_parallel <= 0:
+                    errors.append(
+                        f"{path.name}:{job_name}: strategy.max-parallel must be a positive integer"
+                    )
+
         if job.get("continue-on-error") is True:
             errors.append(f"{path.name}:{job_name}: continue-on-error: true is not allowed")
 
