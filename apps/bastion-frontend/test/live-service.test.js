@@ -153,6 +153,20 @@ async function fixture(t, { realtime = false, fault = () => {} } = {}) {
           .all().map(row => ({ ...row }))
         assert.deepEqual(listed, { commands: stored })
         assert.equal(response.bodyUsed, false, 'inspect only a clone before dropping the original response')
+      } else if (options.method === 'GET' && /^\/v1\/tickets\/[a-zA-Z0-9_-]+$/.test(path)) {
+        const id = path.split('/').at(-1)
+        const snapshot = await bounded(response.clone().json(), 'real lost ticket status response body')
+        assert.deepEqual(productionApi.validateTicketStatus(snapshot, id), snapshot)
+        const stored = db.prepare('SELECT * FROM tickets WHERE id = ?').get(id)
+        assert.ok(stored, 'the status must describe the requested persisted ticket')
+        assert.equal(snapshot.id, stored.id)
+        assert.equal(snapshot.command, stored.command)
+        assert.equal(snapshot.not_before, stored.not_before)
+        assert.equal(snapshot.expires_at, stored.expires_at)
+        assert.equal(snapshot.revoked, stored.revoked === 1)
+        const record = db.prepare('SELECT id, command, committed_at FROM commands WHERE ticket_id = ?').get(id)
+        assert.deepEqual(snapshot.record, record ? { ...record } : null)
+        assert.equal(response.bodyUsed, false, 'inspect only a clone before dropping the original response')
       } else if (options.method === 'POST' && path === '/v1/tickets') {
         // The mutation really committed before its successful response is lost.
         const issued = await bounded(response.clone().json(), 'real issued ticket response body')
@@ -1621,6 +1635,117 @@ test('live service: external commit before lost successful revoke preserves the 
     { path: '/v1/commands', method: 'GET', status: 200 },
   ])
 })
+
+for (const terminal of ['revoked', 'committed']) {
+  test(`live service: lost ${terminal} status preserves uncertain revocation until an explicit matching retry`, { timeout: 15000 }, async t => {
+    const f = await fixture(t)
+    const s = f.session
+    await f.run('ticket')
+    assert.equal(s.error.value, '')
+    const held = s.ticket.value
+    const path = `/v1/tickets/${held.id}`
+    assert.equal(s.canCommit.value, true)
+    const record = terminal === 'committed'
+      ? await bounded(f.commitTicketExternal(held), 'external same-ticket commit before revocation')
+      : null
+    f.loseNext('DELETE', path)
+    await f.run('revoke')
+    assert.equal(f.losses, 1)
+    assert.match(s.error.value, /Geen geldig antwoord/)
+    assert.equal(s.message.value, revokeCaution)
+    assert.equal(s.ticket.value, held)
+    assert.equal(s.revocationUncertain.value, true)
+    assert.equal(s.canCommit.value, false)
+
+    // Reads may advance the clock watermark, but must preserve every authority and journal row.
+    const snapshot = () => Object.fromEntries(['tickets', 'commands', 'audit'].map(table =>
+      [table, f.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]))
+    const persisted = snapshot()
+    assert.equal(persisted.tickets.length, 1)
+    const { id, command, not_before, expires_at, revoked, consumed } = persisted.tickets[0]
+    assert.deepEqual({ id, command, not_before, expires_at, revoked, consumed }, {
+      ...held, revoked: 1, consumed: record ? 1 : 0,
+    })
+    assert.deepEqual(persisted.commands.map(({ id, command, committed_at }) =>
+      ({ id, command, committed_at })), record ? [record] : [])
+    assert.deepEqual(persisted.audit.map(({ ticket_id, action }) => ({ ticket_id, action })), [
+      ...(record ? [{ ticket_id: held.id, action: 'journal:append' }] : []),
+      { ticket_id: held.id, action: 'ticket:revoke' },
+    ])
+
+    f.loseNext('GET', path)
+    await bounded(s.checkCurrentTicket(), 'lost terminal status during uncertain revocation')
+    assert.equal(f.losses, 2)
+    assert.match(s.error.value, /Geen geldig antwoord/)
+    assert.equal(s.message.value, statusCaution)
+    assert.equal(s.outcome.value, null)
+    assert.equal(s.outcomeReceivedAt.value, null)
+    assert.equal(s.lookupId.value, held.id)
+    assert.equal(s.ticket.value, held)
+    assert.equal(s.revocationUncertain.value, true)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.lastSubmissionId.value, '')
+    assert.equal(s.busy.value, '')
+    assert.deepEqual(s.commands.value, [])
+    assert.deepEqual(snapshot(), persisted, 'the lost successful status read changes no persisted rows')
+    assert.deepEqual(f.calls, [
+      { path: '/v1/tickets', method: 'POST', status: 201 },
+      { path, method: 'DELETE', status: 200 },
+      { path, method: 'GET', status: 200 },
+    ])
+
+    const assertBlocked = async () => {
+      f.tick()
+      await f.run('ticket')
+      await f.run('commit')
+      assert.equal(s.message.value, localCommitBlocked)
+      assert.equal(s.ticket.value, held)
+      assert.equal(s.revocationUncertain.value, true)
+      assert.equal(s.canCommit.value, false)
+      assert.equal(s.outcome.value, null)
+      assert.equal(s.outcomeReceivedAt.value, null)
+      assert.equal(f.calls.length, 3, 'uncertainty blocks explicit issuance and commit without any HTTP retry')
+      assert.deepEqual(snapshot(), persisted)
+    }
+    await assertBlocked()
+    await f.restart()
+    assert.equal(f.calls.length, 3, 'orderly restart sends no automatic requests')
+    await assertBlocked()
+
+    await bounded(s.checkCurrentTicket(), 'explicit matching terminal status retry')
+    assert.equal(s.error.value, '')
+    assert.deepEqual(s.outcome.value, {
+      ...held, checked_at: now, status: terminal, revoked: true, record,
+    })
+    assert.equal(s.outcomeReceivedAt.value, now)
+    assert.equal(s.ticket.value, null)
+    assert.equal(s.revocationUncertain.value, false)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.lastSubmissionId.value, '', 'the external commit is never a local submission')
+    assert.deepEqual(s.commands.value, [], 'status must not import historical journal records')
+    assert.equal(s.hasLoaded.value, false)
+    assert.deepEqual(snapshot(), persisted, 'the successful status retry preserves the terminal record and audit')
+    await f.run('commit')
+    assert.equal(s.message.value, localCommitBlocked)
+    assert.equal(s.canCommit.value, false)
+    assert.deepEqual(f.calls, [
+      { path: '/v1/tickets', method: 'POST', status: 201 },
+      { path, method: 'DELETE', status: 200 },
+      { path, method: 'GET', status: 200 },
+      { path, method: 'GET', status: 200 },
+    ])
+    assert.equal(f.count('POST', '/v1/tickets'), 1)
+    assert.equal(f.count('POST', '/v1/commands'), 0)
+    assert.equal(f.count('DELETE', path), 1)
+    assert.equal(f.count('GET', path), 2)
+    assert.equal(f.count('GET', '/v1/commands'), 0)
+    assert.deepEqual(f.externalCommitCalls, record
+      ? [{ path: '/v1/commands', method: 'POST', ticketId: held.id, status: 201 }]
+      : [])
+    assert.equal(f.losses, 2)
+    assert.deepEqual(snapshot(), persisted)
+  })
+}
 
 test('live service: lost successful revoke before external commit denies the same ticket without resolving local uncertainty automatically', { timeout: 15000 }, async t => {
   const f = await fixture(t)

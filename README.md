@@ -316,6 +316,11 @@ de fout bevestigt geen vastlegging of intrekking en herstelt geen toestemming.
 Ticket-ID's, logboek en een bestaande onzekerheidsblokkering blijven behouden.
 Opnieuw controleren vereist een expliciete actie; er volgt geen automatische
 herhaling. **Wis ticketuitkomst** wist ook deze lokale statusmelding.
+Live tests laten ook succesvolle terminale statusantwoorden verloren gaan
+voor ingetrokken en al vastgelegde, later ingetrokken tickets. De lokale
+onzekerheidsblokkering blijft dan behouden, ook al is de serveruitkomst bekend
+in SQLite. Pas een expliciete hercontrole met ontvangen passend antwoord sluit
+de onzekerheid af; de leesverzoeken veranderen geen ticket, record of auditregel.
 Een statuscontrole dient nooit opnieuw een commando in. Een actieve status is
 slechts een momentopname, geen nieuwe toestemming. Alleen een bevestigde
 terminale status van hetzelfde ticket kan een onzekere intrekking lokaal
