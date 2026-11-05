@@ -439,10 +439,15 @@ def main() -> int:
                                     f"{path}: job '{job_name}' strategy.matrix.{matrix_list_key} must be a list when provided"
                                 )
                                 continue
+                            if not matrix_list_value:
+                                errors.append(
+                                    f"{path}: job '{job_name}' strategy.matrix.{matrix_list_key} must not be an empty list when provided"
+                                )
+                                continue
                             for matrix_index, matrix_item in enumerate(matrix_list_value):
-                                if not isinstance(matrix_item, dict):
+                                if not isinstance(matrix_item, dict) or not matrix_item:
                                     errors.append(
-                                        f"{path}: job '{job_name}' strategy.matrix.{matrix_list_key}[{matrix_index}] must be a mapping"
+                                        f"{path}: job '{job_name}' strategy.matrix.{matrix_list_key}[{matrix_index}] must be a non-empty mapping"
                                     )
             job_needs = job.get("needs")
             if isinstance(job_needs, str):
