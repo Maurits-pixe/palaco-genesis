@@ -106,6 +106,12 @@ jobs:
                       if not isinstance(step, dict):
                           continue
                       step_uses = step.get("uses")
+                      if isinstance(step_uses, str) and "@" in step_uses and not step_uses.startswith("./"):
+                          action_ref = step_uses.rsplit("@", 1)[1]
+                          if action_ref in {"main", "master", "HEAD", "latest"}:
+                              errors.append(
+                                  f"{path}: job '{job_name}' step #{step_index} uses disallowed floating action ref '{action_ref}'"
+                              )
                       if isinstance(step_uses, str) and step_uses.startswith("actions/checkout@"):
                           if step_uses != "actions/checkout@v4":
                               errors.append(
