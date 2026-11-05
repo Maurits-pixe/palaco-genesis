@@ -408,6 +408,21 @@ def main() -> int:
                         errors.append(
                             f"{path}: job '{job_name}' strategy.matrix must be a non-empty mapping when provided"
                         )
+                    elif isinstance(strategy_matrix, dict):
+                        for matrix_list_key in ("include", "exclude"):
+                            matrix_list_value = strategy_matrix.get(matrix_list_key)
+                            if matrix_list_value is None:
+                                continue
+                            if not isinstance(matrix_list_value, list):
+                                errors.append(
+                                    f"{path}: job '{job_name}' strategy.matrix.{matrix_list_key} must be a list when provided"
+                                )
+                                continue
+                            for matrix_index, matrix_item in enumerate(matrix_list_value):
+                                if not isinstance(matrix_item, dict):
+                                    errors.append(
+                                        f"{path}: job '{job_name}' strategy.matrix.{matrix_list_key}[{matrix_index}] must be a mapping"
+                                    )
             job_needs = job.get("needs")
             if isinstance(job_needs, str):
                 normalized_need = job_needs.strip()
