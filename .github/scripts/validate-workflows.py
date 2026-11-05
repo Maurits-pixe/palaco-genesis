@@ -78,6 +78,17 @@ def validate(path: Path) -> list[str]:
             errors.append(f"{path.name}: concurrency.cancel-in-progress must be true")
 
     on_block = get_on_block(data)
+    if on_block is None:
+        errors.append(f"{path.name}: missing top-level on trigger block")
+    elif isinstance(on_block, dict) and not on_block:
+        errors.append(f"{path.name}: top-level on trigger mapping must not be empty")
+    elif isinstance(on_block, list) and not on_block:
+        errors.append(f"{path.name}: top-level on trigger list must not be empty")
+    elif isinstance(on_block, str) and not on_block.strip():
+        errors.append(f"{path.name}: top-level on trigger string must not be empty")
+    elif not isinstance(on_block, (dict, list, str)):
+        errors.append(f"{path.name}: top-level on trigger must be a mapping, list, or string")
+
     if isinstance(on_block, dict) and "pull_request_target" in on_block:
         errors.append(f"{path.name}: pull_request_target trigger is not allowed")
     elif isinstance(on_block, list) and "pull_request_target" in on_block:
