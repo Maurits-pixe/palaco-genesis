@@ -35,6 +35,10 @@ def validate(path: Path) -> list[str]:
     if not isinstance(data, dict):
         return [f"{path.name}: top-level YAML must be a mapping"]
 
+    workflow_name = data.get("name")
+    if not isinstance(workflow_name, str) or not workflow_name.strip():
+        errors.append(f"{path.name}: top-level name must be a non-empty string")
+
     permissions = data.get("permissions")
     if not isinstance(permissions, dict) or permissions.get("contents") != "read":
         errors.append(f"{path.name}: top-level permissions.contents must be read")
