@@ -50,6 +50,25 @@ def validate_defaults_run(
         )
 
 
+def validate_non_empty_string_list(
+    errors: list[str], path: str, field_name: str, field_value: object
+) -> list[str] | None:
+    if not isinstance(field_value, list) or not field_value:
+        errors.append(f"{path}: {field_name} must be a non-empty list")
+        return None
+    normalized_values: list[str] = []
+    for value_index, value in enumerate(field_value):
+        if not isinstance(value, str) or not value.strip():
+            errors.append(
+                f"{path}: {field_name}[{value_index}] must be a non-empty string"
+            )
+            continue
+        normalized_values.append(value.strip())
+    if len(set(normalized_values)) != len(normalized_values):
+        errors.append(f"{path}: {field_name} must not contain duplicates")
+    return normalized_values
+
+
 def main() -> int:
     files = sorted(glob.glob(".github/workflows/*.yml"))
     errors: list[str] = []
@@ -323,20 +342,32 @@ def main() -> int:
                         errors.append(
                             f"{path}: push trigger has unsupported keys: {sorted(unsupported_push_trigger_keys)}"
                         )
+                    for push_list_key in (
+                        "branches-ignore",
+                        "tags",
+                        "tags-ignore",
+                        "paths",
+                        "paths-ignore",
+                    ):
+                        if push_list_key in push_trigger:
+                            validate_non_empty_string_list(
+                                errors,
+                                path,
+                                f"push.{push_list_key}",
+                                push_trigger.get(push_list_key),
+                            )
                     branches = push_trigger.get("branches")
-                    if not isinstance(branches, list) or not branches:
+                    if branches is None:
                         errors.append(
                             f"{path}: push.branches must be a non-empty list"
                         )
                     else:
-                        normalized_branches = [
-                            b.strip() for b in branches if isinstance(b, str) and b.strip()
-                        ]
-                        if len(normalized_branches) != len(branches):
-                            errors.append(
-                                f"{path}: push.branches must contain only non-empty strings"
-                            )
-                        elif not {"main", "master"} & set(normalized_branches):
+                        normalized_branches = validate_non_empty_string_list(
+                            errors, path, "push.branches", branches
+                        )
+                        if normalized_branches and not {"main", "master"} & set(
+                            normalized_branches
+                        ):
                             errors.append(
                                 f"{path}: push.branches must include 'main' or 'master'"
                             )
@@ -358,20 +389,26 @@ def main() -> int:
                         errors.append(
                             f"{path}: pull_request trigger has unsupported keys: {sorted(unsupported_pr_trigger_keys)}"
                         )
+                    for pr_list_key in ("branches-ignore", "paths", "paths-ignore", "types"):
+                        if pr_list_key in pr_trigger:
+                            validate_non_empty_string_list(
+                                errors,
+                                path,
+                                f"pull_request.{pr_list_key}",
+                                pr_trigger.get(pr_list_key),
+                            )
                     branches = pr_trigger.get("branches")
-                    if not isinstance(branches, list) or not branches:
+                    if branches is None:
                         errors.append(
                             f"{path}: pull_request.branches must be a non-empty list"
                         )
                     else:
-                        normalized_branches = [
-                            b.strip() for b in branches if isinstance(b, str) and b.strip()
-                        ]
-                        if len(normalized_branches) != len(branches):
-                            errors.append(
-                                f"{path}: pull_request.branches must contain only non-empty strings"
-                            )
-                        elif not {"main", "master"} & set(normalized_branches):
+                        normalized_branches = validate_non_empty_string_list(
+                            errors, path, "pull_request.branches", branches
+                        )
+                        if normalized_branches and not {"main", "master"} & set(
+                            normalized_branches
+                        ):
                             errors.append(
                                 f"{path}: pull_request.branches must include 'main' or 'master'"
                             )
