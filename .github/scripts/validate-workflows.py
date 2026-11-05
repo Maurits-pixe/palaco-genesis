@@ -63,6 +63,9 @@ def validate(path: Path) -> list[str]:
         errors.append(f"{path.name}: top-level permissions.contents must be read")
     else:
         for perm_name, perm_value in permissions.items():
+            if not isinstance(perm_name, str) or not perm_name.strip():
+                errors.append(f"{path.name}: top-level permission names must be non-empty strings")
+                continue
             if perm_value not in ALLOWED_PERMISSION_VALUES:
                 errors.append(
                     f"{path.name}: top-level permission {perm_name} must be one of {sorted(ALLOWED_PERMISSION_VALUES)}"
@@ -226,6 +229,11 @@ def validate(path: Path) -> list[str]:
             errors.append(f"{path.name}:{job_name}: permissions must be a mapping when set")
         elif isinstance(job_permissions, dict):
             for perm_name, perm_value in job_permissions.items():
+                if not isinstance(perm_name, str) or not perm_name.strip():
+                    errors.append(
+                        f"{path.name}:{job_name}: permission names must be non-empty strings"
+                    )
+                    continue
                 if perm_value not in ALLOWED_PERMISSION_VALUES:
                     errors.append(
                         f"{path.name}:{job_name}: permission {perm_name} must be one of {sorted(ALLOWED_PERMISSION_VALUES)}"
