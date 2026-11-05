@@ -202,6 +202,22 @@ def validate(path: Path) -> list[str]:
                     f"{path.name}:{job_name}:step#{idx + 1}: step name must be a non-empty string when set"
                 )
 
+            has_run = "run" in step
+            has_uses = "uses" in step
+            if has_run == has_uses:
+                errors.append(
+                    f"{path.name}:{job_name}:step#{idx + 1}: step must define exactly one of run or uses"
+                )
+            else:
+                if has_run and not isinstance(step.get("run"), str):
+                    errors.append(
+                        f"{path.name}:{job_name}:step#{idx + 1}: run must be a string when set"
+                    )
+                if has_uses and not isinstance(step.get("uses"), str):
+                    errors.append(
+                        f"{path.name}:{job_name}:step#{idx + 1}: uses must be a string when set"
+                    )
+
             if step.get("continue-on-error") is True:
                 errors.append(
                     f"{path.name}:{job_name}:step#{idx + 1}: continue-on-error: true is not allowed"
