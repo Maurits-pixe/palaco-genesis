@@ -1942,6 +1942,122 @@ test('live service: a lost successful revocation blocks authority until explicit
   assert.equal(f.calls.length, 5)
 })
 
+test('live realtime: newest 100 records stay bounded without deleting older submissions or restoring authority', { timeout: 30000 }, async t => {
+  const f = await fixture(t, { realtime: true })
+  const s = f.session
+  await f.connect()
+  s.command.value = 'uniquely oldest session submission é😀'
+  await f.run('ticket')
+  const issued = { ...s.ticket.value }
+  const originalEvent = nextCommit(f.witness, issued.command)
+  await f.run('commit')
+  assert.equal(s.error.value, '')
+  const original = await originalEvent
+  assert.deepEqual(s.commands.value, [original])
+  assert.equal(s.lastSubmissionId.value, issued.id)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+
+  const snapshot = () => Object.fromEntries(['tickets', 'commands', 'audit'].map(table =>
+    [table, f.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all().map(row => ({ ...row }))]))
+  const firstStored = snapshot()
+  assert.equal(firstStored.tickets[0].consumed, 1)
+  const recentFromDb = () => f.db.prepare(
+    'SELECT id, command, committed_at FROM commands ORDER BY seq DESC LIMIT 100',
+  ).all().map(row => ({ ...row }))
+  const assertStored = count => {
+    const stored = snapshot()
+    assert.equal(stored.commands.length, count)
+    assert.equal(stored.audit.length, count)
+    assert.equal(stored.tickets.length, count)
+    assert.ok(stored.tickets.every(row => row.consumed === 1 && row.revoked === 0))
+    assert.ok(stored.audit.every(row => row.action === 'journal:append'))
+    assert.equal(f.db.prepare(`
+      SELECT COUNT(*) AS count FROM commands c
+      JOIN tickets t ON t.id = c.ticket_id
+      JOIN audit a ON a.ticket_id = t.id
+      WHERE t.consumed = 1 AND a.action = 'journal:append'
+    `).get().count, count)
+    for (const table of ['tickets', 'commands', 'audit']) {
+      assert.deepEqual(stored[table][0], firstStored[table][0],
+        `local eviction must retain the original ${table} row`)
+    }
+    return stored
+  }
+
+  const external = []
+  for (let index = 1; index <= 100; index++) {
+    const command = `bounded external record ${index}`
+    const witnessed = index === 100 ? nextCommit(f.witness, command) : null
+    const record = await bounded(f.commitExternal(command), `external commit ${index}`)
+    external.push(record)
+    if (witnessed) assert.deepEqual(await witnessed, record)
+  }
+  await waitFor(s.commands, records =>
+    records.length === 100 && records[0].id === external.at(-1).id &&
+    records.at(-1).id === external[0].id, 'newest 100 realtime records')
+  const recent = recentFromDb()
+  assert.deepEqual(recent, [...external].reverse(), 'sequence, not equal timestamps, orders the records')
+  assert.deepEqual(s.commands.value, recent)
+  assert.equal(s.commands.value.some(row => row.id === original.id), false)
+  const stored101 = assertStored(101)
+  assert.equal(f.count('GET', '/v1/commands'), 0, 'connected events alone maintain the bounded history')
+
+  await f.run('list')
+  assert.equal(s.error.value, '')
+  assert.equal(s.hasLoaded.value, true)
+  assert.equal(f.count('GET', '/v1/commands'), 1)
+  assert.deepEqual(s.commands.value, recent, 'an explicit real HTTP list returns the same newest 100')
+  const callsBeforeSearch = f.calls.length
+  s.search.value = issued.command
+  assert.deepEqual(s.filteredCommands.value, [], 'local search cannot find an evicted server record')
+  assert.equal(f.calls.length, callsBeforeSearch, 'search does not fetch older history')
+
+  await bounded(s.checkLastSubmission(), 'evicted original submission status')
+  assert.equal(s.error.value, '')
+  assert.deepEqual(s.outcome.value, {
+    ...issued, checked_at: now, status: 'committed', revoked: false, record: original,
+  })
+  assert.equal(s.lookupId.value, issued.id)
+  assert.equal(s.lastSubmissionId.value, issued.id)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.revocationUncertain.value, false)
+  assert.deepEqual(s.commands.value, recent, 'status does not insert an older record into recent history')
+  assert.deepEqual(s.filteredCommands.value, [])
+  assert.deepEqual(snapshot(), stored101, 'listing, search and status do not mutate persisted history')
+  s.clearOutcome()
+  assert.equal(s.outcome.value, null)
+  assert.equal(s.outcomeReceivedAt.value, null)
+  assert.deepEqual(s.commands.value, recent, 'clearing outcome preserves all 100 recent records')
+  assert.equal(s.lastSubmissionId.value, issued.id)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  s.search.value = ''
+
+  assert.equal(s.realtimeStatus.value, 'connected')
+  const finalCommand = 'bounded final live record 102'
+  const finalEvent = nextCommit(f.witness, finalCommand)
+  const final = await bounded(f.commitExternal(finalCommand), 'external commit 102')
+  assert.deepEqual(await finalEvent, final)
+  await waitFor(s.commands, records =>
+    records.length === 100 && records[0].id === final.id &&
+    records.at(-1).id === recent.at(-2).id, 'bounded realtime insertion after explicit list')
+  assert.deepEqual(s.commands.value, [final, ...recent.slice(0, -1)])
+  assert.deepEqual(s.commands.value, recentFromDb())
+  assert.equal(s.commands.value.some(row => row.id === recent.at(-1).id), false,
+    'exactly the oldest visible record is evicted by the next live insert')
+  assertStored(102)
+  assert.equal(s.lastSubmissionId.value, issued.id)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(f.count('POST', '/v1/tickets'), 1)
+  assert.equal(f.count('POST', '/v1/commands'), 1)
+  assert.equal(f.count('GET', `/v1/tickets/${issued.id}`), 1)
+  assert.equal(f.count('GET', '/v1/commands'), 1, 'the final live insert needs no additional list')
+  assert.equal(f.calls.length, 4, 'only explicit session actions issue HTTP requests')
+})
+
 test('live realtime: a reentrant socket factory retires its stale real socket and preserves only the replacement', { timeout: 20000 }, async t => {
   const sockets = []
   let adapter

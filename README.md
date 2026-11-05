@@ -422,6 +422,11 @@ Bij 100 geladen records meldt de interface expliciet dat de lokale limiet
 is bereikt en oudere serverrecords buiten beeld kunnen vallen. Dit bewijst
 niet dat zulke records bestaan. De melding blijft ook zichtbaar als het
 zoekfilter geen resultaten geeft; zoeken laadt geen aanvullende historie.
+Een live test met meer dan 100 echte HTTP-vastleggingen controleert de
+begrenzing van zowel realtime als verversen. Oudere records blijven in SQLite
+met hun auditregels behouden. Statuscontrole via het oorspronkelijke ticket-ID
+toont zo'n historisch record apart, zonder de recente 100 regels te verdringen
+of lokale toestemming te herstellen.
 Zoeken veroorzaakt geen extra API-verzoeken. De zoektekst blijft uitsluitend
 in sessiegeheugen en verdwijnt bij sessiewissen, tokenwijziging of herladen.
 Voor HTTP-antwoorden accepteert de BASTION-interface alleen JSON-objecten
