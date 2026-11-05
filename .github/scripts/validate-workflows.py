@@ -185,6 +185,9 @@ def validate(path: Path) -> list[str]:
 
         for idx, step in enumerate(steps):
             if not isinstance(step, dict):
+                errors.append(
+                    f"{path.name}:{job_name}:step#{idx + 1}: step must be a mapping"
+                )
                 continue
 
             if step.get("continue-on-error") is True:
