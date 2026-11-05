@@ -1857,6 +1857,95 @@ def evaluate_g9(
             {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G0-G8 evidence report is for a different or unidentified repository."]},
             evidence,
         )
+    report_artifacts = report.get("artifacts")
+    required_artifacts = (
+        "scope",
+        "system_graph",
+        "system_graph_schema",
+        "dependency_ordering",
+        "execution_plan",
+        "execution_plan_schema",
+    )
+    if not isinstance(report_artifacts, dict) or any(
+        not isinstance(report_artifacts.get(key), dict)
+        or not isinstance(report_artifacts[key].get("path"), str)
+        or not report_artifacts[key]["path"]
+        or Path(report_artifacts[key]["path"]).is_absolute()
+        or "\\" in report_artifacts[key]["path"]
+        or ".." in Path(report_artifacts[key]["path"]).parts
+        or any(ord(character) < 32 or ord(character) == 127 for character in report_artifacts[key]["path"])
+        or not isinstance(report_artifacts[key].get("sha256"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", report_artifacts[key]["sha256"])
+        for key in required_artifacts
+    ):
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G0-G3 input artifact paths or digests are missing or malformed."]},
+            evidence,
+        )
+    dependency_graph = report.get("dependency_graph")
+    if not isinstance(dependency_graph, dict):
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G2 dependency graph is missing or malformed."]},
+            evidence,
+        )
+    observed_dependency_digest = dependency_graph.get("sha256")
+    digest_payload = {key: value for key, value in dependency_graph.items() if key != "sha256"}
+    if (
+        not isinstance(observed_dependency_digest, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", observed_dependency_digest)
+        or _dependency_graph_digest(digest_payload) != observed_dependency_digest
+    ):
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G2 dependency graph digest does not match its contents."]},
+            evidence,
+        )
+    schedule = report.get("execution_schedule")
+    if not isinstance(schedule, dict):
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G3 execution schedule is missing or malformed."]},
+            evidence,
+        )
+    layers = schedule.get("execution_layers")
+    topological_order = schedule.get("topological_order")
+    flattened_layers = (
+        [step for layer in layers for step in layer]
+        if isinstance(layers, list)
+        and all(
+            isinstance(layer, list)
+            and layer
+            and all(isinstance(step, str) and step for step in layer)
+            for layer in layers
+        )
+        else None
+    )
+    plan_digest = schedule.get("plan_sha256")
+    if (
+        not isinstance(plan_digest, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", plan_digest)
+        or not isinstance(layers, list)
+        or not layers
+        or flattened_layers is None
+        or len(flattened_layers) != len(set(flattened_layers))
+        or not isinstance(topological_order, list)
+        or any(not isinstance(step, str) or not step for step in topological_order)
+        or topological_order != flattened_layers
+    ):
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G3 plan digest or deterministic execution schedule is missing, malformed or inconsistent."]},
+            evidence,
+        )
+    architecture = report.get("architecture_compliance")
+    if (
+        not isinstance(architecture, dict)
+        or architecture.get("source_revision") != source_revision
+        or architecture.get("system_graph_revision") != source_revision
+        or not isinstance(architecture.get("system_graph_sha256"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", architecture["system_graph_sha256"])
+    ):
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G1/G6 architecture evidence is not bound to the report revision and a valid SystemGraph digest."]},
+            evidence,
+        )
     report_gates = report.get("gates")
     report_gate_names = (
         [gate.get("gate") if isinstance(gate, dict) else None for gate in report_gates]
@@ -1954,18 +2043,21 @@ def evaluate_g9(
         integrated_evidence, (G4_SCENARIOS, G5_SCENARIOS, G7_SCENARIOS)
     ):
         scenarios = item.get("scenarios")
-        observed_scenarios = (
-            {
-                scenario.get("name"): scenario.get("result")
-                for scenario in scenarios
-                if isinstance(scenario, dict)
-            }
-            if isinstance(scenarios, list)
-            else {}
-        )
+        if not isinstance(scenarios, list) or any(
+            not isinstance(scenario, dict)
+            or not isinstance(scenario.get("name"), str)
+            or not isinstance(scenario.get("result"), str)
+            for scenario in scenarios
+        ):
+            return (
+                {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G4-G7 PASS gates have malformed scenario evidence."]},
+                evidence,
+            )
+        observed_scenarios = {
+            scenario["name"]: scenario["result"] for scenario in scenarios
+        }
         if (
-            not isinstance(scenarios, list)
-            or len(scenarios) != len(expected_scenarios)
+            len(scenarios) != len(expected_scenarios)
             or len(observed_scenarios) != len(expected_scenarios)
             or observed_scenarios.keys() != expected_scenarios
             or any(result != "ok" for result in observed_scenarios.values())

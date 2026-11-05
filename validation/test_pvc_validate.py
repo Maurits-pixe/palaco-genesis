@@ -942,6 +942,36 @@ class G9Tests(unittest.TestCase):
             "generated_at": "2026-11-05T00:00:00+00:00",
             "repository": self.repository,
             "revision": revision or self.source_revision,
+            "artifacts": {
+                key: {"path": f"validation/{key}.json", "sha256": f"{index:064x}"}
+                for index, key in enumerate(
+                    (
+                        "scope",
+                        "system_graph",
+                        "system_graph_schema",
+                        "dependency_ordering",
+                        "execution_plan",
+                        "execution_plan_schema",
+                    ),
+                    1,
+                )
+            },
+            "dependency_graph": {
+                "dependency_scope": "workspace-local dependencies across normal, build, and dev kinds",
+                "nodes": ["palaco-foundation"],
+                "edges": [],
+                "topological_order": ["palaco-foundation"],
+            },
+            "execution_schedule": {
+                "execution_layers": [["service"]],
+                "topological_order": ["service"],
+                "plan_sha256": "2" * 64,
+            },
+            "architecture_compliance": {
+                "source_revision": revision or self.source_revision,
+                "system_graph_revision": revision or self.source_revision,
+                "system_graph_sha256": "3" * 64,
+            },
             "run_id": "run-1",
             "runtime_kernel_tests": {
                 "run_id": "run-1",
@@ -1005,6 +1035,9 @@ class G9Tests(unittest.TestCase):
             },
             "gates": report_gates,
         }
+        report["dependency_graph"]["sha256"] = _dependency_graph_digest(
+            report["dependency_graph"]
+        )
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
         attestation = {
             "repository": self.repository,
@@ -1182,6 +1215,46 @@ class G9Tests(unittest.TestCase):
         self.assertEqual(result["result"], "PASS")
         self.assertEqual(evidence["evidence_report_g9_result"], "HOLD")
 
+    def test_evidence_report_requires_g0_g3_input_artifact_digests(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        del report["artifacts"]["execution_plan"]["sha256"]
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_rejects_artifact_path_escape(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["artifacts"]["system_graph"]["path"] = "../system-graph.json"
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_dependency_graph_digest_must_match(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["dependency_graph"]["nodes"].append("unbound-package")
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_execution_layers_must_match_topological_order(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["execution_schedule"]["topological_order"] = ["different-step"]
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_architecture_revision_must_match(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["architecture_compliance"]["system_graph_revision"] = "stale"
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
     def test_evidence_report_requires_consistent_integrated_ci_run_ids(self):
         report = json.loads(self.report_path.read_text(encoding="utf-8"))
         report["integrated_validation"]["run_id"] = "different-run"
@@ -1275,6 +1348,14 @@ class G9Tests(unittest.TestCase):
         report = json.loads(self.report_path.read_text(encoding="utf-8"))
         scenarios = report["integrated_validation"]["scenarios"]
         scenarios.append(dict(scenarios[0]))
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_malformed_scenario_name_is_inconclusive(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["runtime_kernel_tests"]["scenarios"][0]["name"] = []
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
         result, evidence = self.evaluate(release_text=self.checklist())
         self.assertEqual(result["result"], "INCONCLUSIVE")
