@@ -1,5 +1,7 @@
 import hashlib
+import json
 import subprocess
+import tempfile
 import unittest
 from unittest.mock import patch
 from pathlib import Path
@@ -19,6 +21,7 @@ from pvc_validate import (
     evaluate_g6,
     evaluate_g7,
     evaluate_g8,
+    evaluate_g9,
 )
 
 
@@ -897,6 +900,186 @@ class G8Tests(unittest.TestCase):
     def test_dependency_audit_runner_fails_on_reported_vulnerability(self, _run, _which):
         evidence = _run_dependency_audit("abc123", True, "run-1")
         self.assertEqual(evidence["result"], "FAIL")
+
+
+class G9Tests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp_dir.name)
+        patcher = patch("pvc_validate.ROOT", self.root)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self.temp_dir.cleanup)
+        self.source_revision = "abc123"
+        self.prior_gates = [{"gate": f"G{index}", "result": "PASS"} for index in range(9)]
+        (self.root / "dist").mkdir()
+        (self.root / "validation").mkdir()
+        (self.root / "dist/palaco.tar").write_bytes(b"release artifact")
+        (self.root / "dist/attestation.json").write_text("{}\n", encoding="utf-8")
+        self.report_path = self.root / "validation/prior-evidence.json"
+        self.write_report()
+        self.artifact = {"path": "validation/release_validation.md", "sha256": "a" * 64}
+
+    def write_report(self, revision=None, gates=None):
+        report = {
+            "revision": revision or self.source_revision,
+            "gates": gates or self.prior_gates,
+        }
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        attestation = {
+            "source_revision": revision or self.source_revision,
+            "artifact_sha256": hashlib.sha256((self.root / "dist/palaco.tar").read_bytes()).hexdigest(),
+            "evidence_report_sha256": hashlib.sha256(self.report_path.read_bytes()).hexdigest(),
+        }
+        (self.root / "dist/attestation.json").write_text(json.dumps(attestation), encoding="utf-8")
+
+    def file_reference(self, relative_path):
+        path = self.root / relative_path
+        return f"{relative_path}@{hashlib.sha256(path.read_bytes()).hexdigest()}"
+
+    def checklist(self, decision="APPROVE", source_revision=None):
+        fields = {
+            "source_revision": source_revision or self.source_revision,
+            "artifact": self.file_reference("dist/palaco.tar"),
+            "evidence_report": self.file_reference("validation/prior-evidence.json"),
+            "attestation": self.file_reference("dist/attestation.json"),
+            "decision_authority": "Release Authority",
+            "decision_record": "DEC-42",
+            "decision": decision,
+        }
+        return "| Field | Value |\n|---|---|\n" + "".join(
+            f"| {name} | {value} |\n" for name, value in fields.items()
+        )
+
+    def evaluate(self, **overrides):
+        arguments = {
+            "release_text": self.checklist(),
+            "release_error": None,
+            "source_revision": self.source_revision,
+            "source_tree_clean": True,
+            "prior_gates": self.prior_gates,
+            "release_artifact": self.artifact,
+        }
+        arguments.update(overrides)
+        return evaluate_g9(**arguments)
+
+    def test_release_eligibility_requires_bound_evidence_and_decision_claim(self):
+        result, evidence = self.evaluate()
+        self.assertEqual(result["result"], "PASS")
+        self.assertTrue(evidence["release_eligible"])
+        self.assertTrue(evidence["release_approval_claimed"])
+        self.assertFalse(evidence["decision_authority_authenticated"])
+        self.assertTrue(evidence["attestation_binding_verified"])
+
+    def test_missing_release_checklist_holds(self):
+        result, _ = self.evaluate(release_text=None, release_error="missing")
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_missing_required_release_field_holds(self):
+        result, _ = self.evaluate(release_text="| Field | Value |\n|---|---|\n")
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_invalid_release_table_header_fails(self):
+        result, _ = self.evaluate(release_text="| Name | Data |\n|---|---|\n")
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_duplicate_release_field_fails(self):
+        text = self.checklist() + "| decision | APPROVE |\n"
+        result, _ = self.evaluate(release_text=text)
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_stale_release_source_is_inconclusive(self):
+        result, _ = self.evaluate(release_text=self.checklist(source_revision="stale"))
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
+    def test_dirty_source_is_inconclusive(self):
+        result, _ = self.evaluate(source_tree_clean=False)
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
+    def test_prior_gate_hold_blocks_eligibility(self):
+        gates = [*self.prior_gates]
+        gates[8] = {"gate": "G8", "result": "HOLD"}
+        result, evidence = self.evaluate(prior_gates=gates)
+        self.assertEqual(result["result"], "HOLD")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_prior_gate_failure_remains_failure(self):
+        gates = [*self.prior_gates]
+        gates[1] = {"gate": "G1", "result": "FAIL"}
+        result, _ = self.evaluate(prior_gates=gates)
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_missing_artifact_holds(self):
+        checklist = self.checklist().replace(
+            self.file_reference("dist/palaco.tar"), f"dist/missing.tar@{'a' * 64}"
+        )
+        result, _ = self.evaluate(release_text=checklist)
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_artifact_digest_mismatch_fails(self):
+        checklist = self.checklist().replace(
+            self.file_reference("dist/palaco.tar"), f"dist/palaco.tar@{'0' * 64}"
+        )
+        result, _ = self.evaluate(release_text=checklist)
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_evidence_report_must_contain_all_prior_passes(self):
+        gates = [*self.prior_gates]
+        gates[6] = {"gate": "G6", "result": "HOLD"}
+        self.write_report(gates=gates)
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "HOLD")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_unverifiable_evidence_report_gate_is_inconclusive(self):
+        gates = [*self.prior_gates]
+        gates[6] = {"gate": "G6", "result": "UNKNOWN"}
+        self.write_report(gates=gates)
+        result, _ = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
+    def test_evidence_report_revision_mismatch_is_inconclusive(self):
+        self.write_report(revision="stale")
+        result, _ = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
+    def test_attestation_artifact_mismatch_fails(self):
+        attestation_path = self.root / "dist/attestation.json"
+        attestation = json.loads(attestation_path.read_text(encoding="utf-8"))
+        attestation["artifact_sha256"] = "0" * 64
+        attestation_path.write_text(json.dumps(attestation), encoding="utf-8")
+        result, _ = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_attestation_evidence_report_mismatch_fails(self):
+        attestation_path = self.root / "dist/attestation.json"
+        attestation = json.loads(attestation_path.read_text(encoding="utf-8"))
+        attestation["evidence_report_sha256"] = "0" * 64
+        attestation_path.write_text(json.dumps(attestation), encoding="utf-8")
+        result, _ = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_attestation_source_mismatch_is_inconclusive(self):
+        attestation_path = self.root / "dist/attestation.json"
+        attestation = json.loads(attestation_path.read_text(encoding="utf-8"))
+        attestation["source_revision"] = "stale"
+        attestation_path.write_text(json.dumps(attestation), encoding="utf-8")
+        result, _ = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+
+    def test_pending_decision_holds(self):
+        result, _ = self.evaluate(release_text=self.checklist(decision="PENDING"))
+        self.assertEqual(result["result"], "HOLD")
+
+    def test_rejection_does_not_claim_approval(self):
+        result, evidence = self.evaluate(release_text=self.checklist(decision="REJECT"))
+        self.assertEqual(result["result"], "PASS")
+        self.assertTrue(evidence["release_eligible"])
+        self.assertFalse(evidence["release_approval_claimed"])
+
+    def test_prior_gate_order_must_be_exact(self):
+        result, _ = self.evaluate(prior_gates=list(reversed(self.prior_gates)))
+        self.assertEqual(result["result"], "HOLD")
 
 
 if __name__ == "__main__":

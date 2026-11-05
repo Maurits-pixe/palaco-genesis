@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate revision-bound G0-G8 evidence for PVC-001."""
+"""Generate revision-bound G0-G9 evidence for PVC-001."""
 
 from __future__ import annotations
 
@@ -23,10 +23,12 @@ GRAPH_SCHEMA_PATH = ROOT / "validation/system-graph.schema.json"
 ORDERING_PATH = ROOT / "validation/dependency-ordering.json"
 PLAN_PATH = ROOT / "validation/execution-plan.json"
 PLAN_SCHEMA_PATH = ROOT / "validation/execution-plan.schema.json"
-VALIDATOR_VERSION = "0.9.0"
+VALIDATOR_VERSION = "0.10.0"
 G6_RULESET_VERSION = "1.0.0"
 G8_CHECKLIST_PATH = ROOT / "validation/security_checklist.md"
 G8_THREAT_MODEL_PATH = ROOT / "release-registry/THREAT-MODEL.md"
+G9_RELEASE_PATH = ROOT / "validation/release_validation.md"
+GATE_RESULTS = {"PASS", "FAIL", "HOLD", "INCONCLUSIVE"}
 G8_REQUIRED_CONTROLS = {
     "SEC-THREAT-MODEL",
     "SEC-SUPPLY-CHAIN",
@@ -1604,6 +1606,266 @@ def evaluate_g8(
     )
 
 
+def evaluate_g9(
+    release_text: str | None,
+    release_error: str | None,
+    source_revision: str | None,
+    source_tree_clean: bool | None,
+    prior_gates: list[dict[str, Any]],
+    release_artifact: dict[str, str] | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    evidence: dict[str, Any] = {
+        "source_revision": source_revision,
+        "source_tree_clean": source_tree_clean,
+        "release_checklist": release_artifact,
+        "artifact": None,
+        "evidence_report": None,
+        "attestation": None,
+        "decision_authority": None,
+        "decision_record": None,
+        "decision": None,
+        "release_eligible": False,
+        "release_approval_claimed": False,
+        "decision_authority_authenticated": False,
+        "attestation_binding_verified": False,
+    }
+    if release_error == "missing":
+        return (
+            {"gate": "G9", "result": "HOLD", "findings": ["Required validation/release_validation.md is not present."]},
+            evidence,
+        )
+    if release_error or release_text is None:
+        return (
+            {"gate": "G9", "result": "FAIL", "findings": [f"Release checklist could not be read: {release_error or 'unknown error'}."]},
+            evidence,
+        )
+
+    fields: dict[str, str] = {}
+    header_seen = False
+    for line in release_text.splitlines():
+        if not line.startswith("|"):
+            continue
+        columns = [column.strip() for column in line.strip("|").split("|")]
+        if columns == ["Field", "Value"]:
+            header_seen = True
+            continue
+        if columns and all(re.fullmatch(r":?-{3,}:?", column) for column in columns):
+            continue
+        if not header_seen:
+            continue
+        if len(columns) != 2:
+            return (
+                {"gate": "G9", "result": "FAIL", "findings": ["Release checklist table rows must contain exactly a field and value."]},
+                evidence,
+            )
+        if columns[0] in fields:
+            return (
+                {"gate": "G9", "result": "FAIL", "findings": [f"Release checklist contains duplicate field {columns[0]}."]},
+                evidence,
+            )
+        fields[columns[0]] = columns[1]
+
+    if not header_seen:
+        return (
+            {"gate": "G9", "result": "FAIL", "findings": ["Release checklist must use a Field/Value table."]},
+            evidence,
+        )
+    required = {
+        "source_revision",
+        "artifact",
+        "evidence_report",
+        "attestation",
+        "decision_authority",
+        "decision_record",
+        "decision",
+    }
+    missing = sorted(required - fields.keys())
+    if missing:
+        return (
+            {"gate": "G9", "result": "HOLD", "findings": [f"Release checklist omits required fields: {missing}."]},
+            evidence,
+        )
+
+    evidence["decision_authority"] = fields["decision_authority"]
+    evidence["decision_record"] = fields["decision_record"]
+    evidence["decision"] = fields["decision"]
+    if not fields["decision_authority"].strip() or not fields["decision_record"].strip():
+        return (
+            {"gate": "G9", "result": "HOLD", "findings": ["Release decision authority and decision record must be explicit."]},
+            evidence,
+        )
+    if fields["decision"] not in {"APPROVE", "REJECT"}:
+        return (
+            {"gate": "G9", "result": "HOLD", "findings": ["Release decision must be recorded as APPROVE or REJECT."]},
+            evidence,
+        )
+    evidence["release_approval_claimed"] = fields["decision"] == "APPROVE"
+
+    if not source_revision or source_tree_clean is not True:
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Release evidence is not bound to a clean source revision."]},
+            evidence,
+        )
+    if fields["source_revision"] != source_revision:
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Release checklist source revision does not match the evaluated revision."]},
+            evidence,
+        )
+
+    expected_gates = [f"G{index}" for index in range(9)]
+    actual_gates = [gate.get("gate") if isinstance(gate, dict) else None for gate in prior_gates]
+    if actual_gates != expected_gates:
+        return (
+            {"gate": "G9", "result": "HOLD", "findings": ["Consolidated evidence must contain ordered G0-G8 results."]},
+            evidence,
+        )
+    invalid_gates = [
+        gate["gate"]
+        for gate in prior_gates
+        if gate.get("result") not in GATE_RESULTS
+    ]
+    if invalid_gates:
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": [f"Prior gate results are invalid or unverifiable: {invalid_gates}."]},
+            evidence,
+        )
+    failed_gates = [gate["gate"] for gate in prior_gates if gate["result"] == "FAIL"]
+    if failed_gates:
+        return (
+            {"gate": "G9", "result": "FAIL", "findings": [f"Prior mandatory gates failed and remain unresolved: {failed_gates}."]},
+            evidence,
+        )
+    blocked_gates = [gate["gate"] for gate in prior_gates if gate["result"] != "PASS"]
+    if blocked_gates:
+        return (
+            {"gate": "G9", "result": "HOLD", "findings": [f"Prior gates are not all PASS: {blocked_gates}."]},
+            evidence,
+        )
+
+    def verified_artifact(field: str, label: str) -> tuple[dict[str, Any] | None, str | None, str | None]:
+        value = fields[field]
+        match = re.fullmatch(r"([^@]+)@([0-9a-f]{64})", value)
+        if not match:
+            return None, None, f"{label} must reference evidence as path@sha256."
+        path_text, expected_digest = match.groups()
+        artifact_path = Path(path_text)
+        if artifact_path.is_absolute() or "\\" in path_text or ".." in artifact_path.parts:
+            return None, None, f"{label} path must be repository-relative."
+        candidate = (ROOT / artifact_path).resolve()
+        try:
+            candidate.relative_to(ROOT.resolve())
+        except ValueError:
+            return None, None, f"{label} path escapes the repository."
+        if not candidate.is_file():
+            return None, f"{label} artifact is missing: {path_text}.", None
+        try:
+            observed_digest = digest(candidate)
+        except OSError:
+            return None, f"{label} artifact could not be read: {path_text}.", None
+        if observed_digest != expected_digest:
+            return None, None, f"{label} digest mismatch."
+        return {"path": path_text, "sha256": observed_digest}, None, None
+
+    for field, label, evidence_key in (
+        ("artifact", "Release artifact", "artifact"),
+        ("evidence_report", "G0-G8 evidence report", "evidence_report"),
+        ("attestation", "Release attestation", "attestation"),
+    ):
+        verified, missing_error, invalid_error = verified_artifact(field, label)
+        evidence[evidence_key] = verified
+        if invalid_error:
+            return (
+                {"gate": "G9", "result": "FAIL", "findings": [invalid_error]},
+                evidence,
+            )
+        if missing_error:
+            return (
+                {"gate": "G9", "result": "HOLD", "findings": [missing_error]},
+                evidence,
+            )
+
+    if evidence["evidence_report"] is None:
+        return (
+            {"gate": "G9", "result": "HOLD", "findings": ["G0-G8 evidence report is unavailable."]},
+            evidence,
+        )
+    evidence_path = ROOT / evidence["evidence_report"]["path"]
+    report, report_error = read_json(evidence_path)
+    if report_error or not isinstance(report, dict):
+        return (
+            {"gate": "G9", "result": "FAIL", "findings": ["Referenced G0-G8 evidence report is not valid JSON."]},
+            evidence,
+        )
+    if report.get("revision") != source_revision:
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G0-G8 evidence report is for a different source revision."]},
+            evidence,
+        )
+    report_gates = report.get("gates")
+    if not isinstance(report_gates, list) or [
+        gate.get("gate") if isinstance(gate, dict) else None for gate in report_gates
+    ] != expected_gates:
+        return (
+            {"gate": "G9", "result": "FAIL", "findings": ["Referenced evidence report does not contain ordered G0-G8 results."]},
+            evidence,
+        )
+    report_invalid = [
+        gate["gate"]
+        for gate in report_gates
+        if gate.get("result") not in GATE_RESULTS
+    ]
+    if report_invalid:
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": [f"Referenced evidence report has unverifiable gate results: {report_invalid}."]},
+            evidence,
+        )
+    report_failures = [gate["gate"] for gate in report_gates if gate.get("result") == "FAIL"]
+    if report_failures:
+        return (
+            {"gate": "G9", "result": "FAIL", "findings": [f"Referenced evidence report records prior failures: {report_failures}."]},
+            evidence,
+        )
+    report_blockers = [gate["gate"] for gate in report_gates if gate.get("result") != "PASS"]
+    if report_blockers:
+        return (
+            {"gate": "G9", "result": "HOLD", "findings": [f"Referenced evidence report has non-PASS gates: {report_blockers}."]},
+            evidence,
+        )
+    attestation_path = ROOT / evidence["attestation"]["path"]
+    attestation, attestation_error = read_json(attestation_path)
+    if attestation_error or not isinstance(attestation, dict):
+        return (
+            {"gate": "G9", "result": "FAIL", "findings": ["Referenced release attestation is not valid JSON."]},
+            evidence,
+        )
+    if attestation.get("source_revision") != source_revision:
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Release attestation is for a different source revision."]},
+            evidence,
+        )
+    if attestation.get("artifact_sha256") != evidence["artifact"]["sha256"]:
+        return (
+            {"gate": "G9", "result": "FAIL", "findings": ["Release attestation does not bind the checked artifact digest."]},
+            evidence,
+        )
+    if attestation.get("evidence_report_sha256") != evidence["evidence_report"]["sha256"]:
+        return (
+            {"gate": "G9", "result": "FAIL", "findings": ["Release attestation does not bind the checked G0-G8 evidence report."]},
+            evidence,
+        )
+    evidence["attestation_binding_verified"] = True
+    evidence["release_eligible"] = True
+    if fields["decision"] == "REJECT":
+        return (
+            {"gate": "G9", "result": "PASS", "findings": ["Release candidate is technically eligible, but the recorded decision is REJECT."]},
+            evidence,
+        )
+    return (
+        {"gate": "G9", "result": "PASS", "findings": ["Release candidate is technically eligible; the APPROVE entry is a recorded claim, not authenticated authority."]},
+        evidence,
+    )
+
+
 def _read_text(path: Path) -> tuple[str | None, str | None]:
     try:
         return path.read_text(encoding="utf-8"), None
@@ -1993,10 +2255,22 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
         _security_environment(),
         dependency_audit,
     )
+    release_text, release_error = _read_artifact_text(G9_RELEASE_PATH)
+    if not G9_RELEASE_PATH.is_file():
+        release_error = "missing"
+    release_artifact = _artifact(G9_RELEASE_PATH)
+    g9, release_validation = evaluate_g9(
+        release_text,
+        release_error,
+        revision or None,
+        not dirty,
+        [g0, g1, g2, g3, g4, g5, g6, g7, g8],
+        release_artifact,
+    )
 
     report: dict[str, Any] = {
         "format_version": 1,
-        "validator": {"name": "PVC-001 G0-G8 validator", "version": VALIDATOR_VERSION},
+        "validator": {"name": "PVC-001 G0-G9 validator", "version": VALIDATOR_VERSION},
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "repository": _repository_identity(),
         "revision": revision or None,
@@ -2016,7 +2290,8 @@ def build_report(scope_path: Path, graph_path: Path, output_dir: Path) -> dict[s
         "architecture_compliance": architecture_compliance,
         "integrated_validation": integrated_validation,
         "security_validation": security_validation,
-        "gates": [g0, g1, g2, g3, g4, g5, g6, g7, g8],
+        "release_validation": release_validation,
+        "gates": [g0, g1, g2, g3, g4, g5, g6, g7, g8, g9],
     }
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path = output_dir / "pvc-001-evidence.json"
@@ -2030,7 +2305,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     dependency_sha256 = report["dependency_graph"].get("sha256") or "unavailable"
     plan_sha256 = report["execution_schedule"].get("plan_sha256") or "unavailable"
     lines = [
-        "# PVC-001 G0-G8 Evidence",
+        "# PVC-001 G0-G9 Evidence",
         "",
         f"- Repository: `{report['repository'] or 'unknown'}`",
         f"- Revision: `{report['revision'] or 'unknown'}`",
@@ -2177,6 +2452,28 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"| {control['control']} | {control['status']} | `{control['evidence']}` | "
         f"{control.get('observed_sha256', 'unverified')} |"
         for control in security["controls"]
+    )
+    release = report["release_validation"]
+    lines.extend(
+        [
+            "",
+            "## Release validation",
+            "",
+            f"- Source revision: `{release['source_revision'] or 'unavailable'}`",
+            f"- Source tree clean: `{release['source_tree_clean']}`",
+            f"- Release checklist: `{release['release_checklist']['path'] if release['release_checklist'] else 'unavailable'}`",
+            f"- Release artifact: `{release['artifact']['path'] if release['artifact'] else 'unavailable'}`",
+            f"- Artifact SHA-256: `{release['artifact']['sha256'] if release['artifact'] else 'unavailable'}`",
+            f"- G0-G8 evidence report: `{release['evidence_report']['path'] if release['evidence_report'] else 'unavailable'}`",
+            f"- Attestation: `{release['attestation']['path'] if release['attestation'] else 'unavailable'}`",
+            f"- Decision authority: `{release['decision_authority'] or 'unavailable'}`",
+            f"- Decision record: `{release['decision_record'] or 'unavailable'}`",
+            f"- Recorded decision: `{release['decision'] or 'unavailable'}`",
+            f"- Technically release eligible: `{release['release_eligible']}`",
+            f"- Attestation binds source/artifact/evidence: `{release['attestation_binding_verified']}`",
+            f"- Approval claimed: `{release['release_approval_claimed']}`",
+            "- Decision-authority authentication: `not performed`",
+        ]
     )
     layers = report["execution_schedule"].get("execution_layers", [])
     lines.extend(["", "## Deterministic execution layers", ""])
