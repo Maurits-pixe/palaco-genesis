@@ -87,7 +87,7 @@ def validate(path: Path) -> list[str]:
             errors.append(f"{path.name}:{job_name}: runs-on must be ubuntu-latest")
 
         timeout = job.get("timeout-minutes")
-        if not isinstance(timeout, int):
+        if type(timeout) is not int:
             errors.append(f"{path.name}:{job_name}: timeout-minutes must be an integer")
         elif timeout <= 0:
             errors.append(f"{path.name}:{job_name}: timeout-minutes must be greater than 0")
