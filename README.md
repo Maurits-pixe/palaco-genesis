@@ -542,6 +542,13 @@ HTTP/SQLite-service. Ze controleren een normale vastlegging en expliciete
 statusopvraging na verloren succesvolle commit- en intrekkingsantwoorden.
 Een verloren commitantwoord mag niet tot herinzending leiden; een onzekere
 intrekking blijft geblokkeerd tot de serveruitkomst expliciet is gecontroleerd.
+Bij een verloren uitgifteantwoord controleren live tests dat het serverticket
+wel kan bestaan zonder lokale toestemming. Op de exacte server-verloopgrens
+wordt een rechtstreekse vastlegging met dat ticket geweigerd, ook met een
+achterlopende clientklok. Na ordelijke herstart toont expliciete statuscontrole
+het ticket als verlopen, zonder lokale toestemming te herstellen of ticket,
+logboek en audit te wijzigen. Het onbekende ticket-ID wordt uitsluitend voor
+deze test uit SQLite gelezen; de interface kan dit ID niet reconstrueren.
 Tests voor exacte tekstbinding vergelijken ook Unicode-normalisatievormen,
 CRLF met LF en gewijzigde randspaties. Gewijzigde tekst wordt rechtstreeks
 via HTTP aangeboden om de servercontrole los van de lokale controle te testen:

@@ -376,6 +376,92 @@ test('live service: lost issuance persists one active ticket but never grants lo
   assert.deepEqual(f.db.prepare('SELECT * FROM audit').all(), [])
 })
 
+test('live service: lost issuance is denied exactly at server expiry and status after restart never restores local authority', { timeout: 15000 }, async t => {
+  const f = await fixture(t)
+  const s = f.session
+  const draft = s.command.value
+  f.loseNext('POST', '/v1/tickets')
+  await f.run('ticket')
+  assert.equal(f.losses, 1)
+  assert.match(s.error.value, /Geen geldig antwoord/)
+  assert.equal(s.message.value, ticketCaution)
+  assert.equal(s.command.value, draft)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, '')
+  assert.equal(s.lookupId.value, '')
+  assert.equal(s.outcome.value, null)
+  assert.equal(s.revocationUncertain.value, false)
+  assert.equal(s.busy.value, '')
+  assert.deepEqual(s.commands.value, [])
+  assert.deepEqual(f.calls, [{ path: '/v1/tickets', method: 'POST', status: 201 }])
+
+  // Test-only database knowledge: the session never received this ticket or its ID.
+  const tickets = f.db.prepare('SELECT * FROM tickets').all()
+  assert.equal(tickets.length, 1)
+  const lost = tickets[0]
+  assert.equal(lost.command, draft)
+  assert.equal(lost.revoked, 0)
+  assert.equal(lost.consumed, 0)
+  assert.ok(lost.not_before <= now && now < lost.expires_at)
+  const assertUnchanged = () => {
+    // The server clock watermark may advance; authority and journal/audit rows must not.
+    assert.deepEqual(f.db.prepare('SELECT * FROM tickets').all(), tickets)
+    assert.deepEqual(f.db.prepare('SELECT * FROM commands').all(), [])
+    assert.deepEqual(f.db.prepare('SELECT * FROM audit').all(), [])
+  }
+  assertUnchanged()
+
+  f.setServerNow(lost.expires_at)
+  assert.equal(Date.now(), now)
+  assert.equal(s.now.value, now)
+  // Bypass the missing local ticket with test-only knowledge to exercise real server denial.
+  const response = await bounded(f.externalFetch('/v1/commands', {
+    method: 'POST',
+    headers: { Authorization: ['Bearer', token].join(' '), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ticket_id: lost.id, command: lost.command }),
+  }), 'lost ticket commit at exact expiry')
+  assert.equal(response.status, 403)
+  assert.deepEqual(await bounded(response.json(), 'expired lost ticket response'), { error: 'Ticket denied' })
+  assertUnchanged()
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, '')
+  assert.equal(f.calls.length, 1, 'raw test request causes no session retry or new issuance')
+
+  await f.restart()
+  assert.equal(f.calls.length, 1, 'orderly restart causes no automatic requests')
+  assertUnchanged()
+  s.lookupId.value = lost.id // Explicit operator lookup using test-only database knowledge.
+  await f.run('status')
+  assert.equal(s.error.value, '')
+  assert.equal(s.outcome.value.id, lost.id)
+  assert.equal(s.outcome.value.command, lost.command)
+  assert.equal(s.outcome.value.status, 'expired')
+  assert.equal(s.outcome.value.checked_at, lost.expires_at, 'restart retains exact server expiry time')
+  assert.equal(s.outcome.value.record, null)
+  assert.equal(s.outcomeReceivedAt.value, now)
+  assert.equal(s.now.value, now, 'the local clock remains stale')
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, '')
+  assert.equal(s.revocationUncertain.value, false)
+  assert.deepEqual(f.calls, [
+    { path: '/v1/tickets', method: 'POST', status: 201 },
+    { path: `/v1/tickets/${lost.id}`, method: 'GET', status: 200 },
+  ])
+  await f.run('commit')
+  f.tick()
+  assert.equal(s.message.value, localCommitBlocked)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.lastSubmissionId.value, '')
+  assert.equal(f.calls.length, 2, 'explicit commit and tick send no retry or new ticket request')
+  assert.equal(f.count('POST', '/v1/tickets'), 1)
+  assert.equal(f.count('POST', '/v1/commands'), 0, 'only the raw test request reached the command endpoint')
+  assertUnchanged()
+})
+
 test('live service: clearing a draft leaves server authority active but requires a new explicit local ticket', { timeout: 15000 }, async t => {
   const f = await fixture(t, { realtime: true })
   const s = f.session
