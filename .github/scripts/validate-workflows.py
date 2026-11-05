@@ -7,6 +7,21 @@ import sys
 import yaml
 
 
+def validate_env_mapping(
+    errors: list[str], path: str, scope: str, env_value: object
+) -> None:
+    if env_value is None:
+        return
+    if not isinstance(env_value, dict):
+        errors.append(f"{path}: {scope} env must be a mapping when provided")
+        return
+    for key, value in env_value.items():
+        if not isinstance(key, str) or not key.strip():
+            errors.append(f"{path}: {scope} env keys must be non-empty strings")
+        if not isinstance(value, str):
+            errors.append(f"{path}: {scope} env value for '{key}' must be a string")
+
+
 def main() -> int:
     files = sorted(glob.glob(".github/workflows/*.yml"))
     errors: list[str] = []
@@ -26,6 +41,8 @@ def main() -> int:
         else:
             normalized_name = workflow_name.strip()
             workflow_name_to_paths.setdefault(normalized_name, []).append(path)
+
+        validate_env_mapping(errors, path, "workflow", data.get("env"))
 
         trigger_config = data.get("on", data.get(True))
         if trigger_config is None:
@@ -314,6 +331,8 @@ def main() -> int:
                     job_name
                 )
 
+            validate_env_mapping(errors, path, f"job '{job_name}'", job.get("env"))
+
             runs_on = job.get("runs-on")
             if runs_on != "ubuntu-latest":
                 errors.append(
@@ -371,6 +390,12 @@ def main() -> int:
             for step_index, step in enumerate(steps):
                 if not isinstance(step, dict):
                     continue
+                validate_env_mapping(
+                    errors,
+                    path,
+                    f"job '{job_name}' step #{step_index}",
+                    step.get("env"),
+                )
                 step_name = step.get("name")
                 if not isinstance(step_name, str) or not step_name.strip():
                     errors.append(
