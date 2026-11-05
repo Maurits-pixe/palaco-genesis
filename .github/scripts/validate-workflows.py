@@ -632,6 +632,9 @@ def main() -> int:
         if not isinstance(jobs, dict) or not jobs:
             errors.append(f"{path}: jobs mapping is missing or empty")
             continue
+        workflow_filename = os.path.basename(path)
+        if workflow_filename == "release.yml" and "publish-release" not in jobs:
+            errors.append(f"{path}: release workflow must define job 'publish-release'")
 
         known_job_ids = set(jobs.keys())
         job_display_name_to_ids: dict[str, list[str]] = {}
