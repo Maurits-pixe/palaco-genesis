@@ -191,6 +191,17 @@ def main() -> int:
                                         f"{path}: workflow_dispatch input '{input_name}' must be a mapping"
                                     )
                                     continue
+                                unsupported_input_keys = set(input_config.keys()) - {
+                                    "description",
+                                    "required",
+                                    "default",
+                                    "type",
+                                    "options",
+                                }
+                                if unsupported_input_keys:
+                                    errors.append(
+                                        f"{path}: workflow_dispatch input '{input_name}' has unsupported keys: {sorted(unsupported_input_keys)}"
+                                    )
                                 description = input_config.get("description")
                                 if (
                                     not isinstance(description, str)
