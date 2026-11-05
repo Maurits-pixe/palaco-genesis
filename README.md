@@ -418,6 +418,10 @@ en einde worden genegeerd. De teller toont zichtbare versus geladen records.
 Alleen de maximaal 100 momenteel geladen records worden doorzocht, niet
 de volledige database of ticket-ID's. Het filter verandert de records en
 hun volgorde niet en blijft actief bij vernieuwen en realtime-updates.
+Bij 100 geladen records meldt de interface expliciet dat de lokale limiet
+is bereikt en oudere serverrecords buiten beeld kunnen vallen. Dit bewijst
+niet dat zulke records bestaan. De melding blijft ook zichtbaar als het
+zoekfilter geen resultaten geeft; zoeken laadt geen aanvullende historie.
 Zoeken veroorzaakt geen extra API-verzoeken. De zoektekst blijft uitsluitend
 in sessiegeheugen en verdwijnt bij sessiewissen, tokenwijziging of herladen.
 Voor HTTP-antwoorden accepteert de BASTION-interface alleen JSON-objecten

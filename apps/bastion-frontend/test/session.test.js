@@ -2911,6 +2911,56 @@ test('journal UI wires local search, accessible controls, counts, distinct empty
   assert.match(app, /alleen in sessiegeheugen/)
 })
 
+test('compiled journal limit notice depends only on loaded count, including realtime-only and failed-refresh states', async t => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const notice = app.match(/<p\b[^>]*\bid="journal-limit-help"[^>]*>[\s\S]*?<\/p>/)?.[0]
+  const text = 'De lokale limiet van 100 records is bereikt. Er kunnen oudere records op de server staan die hier niet zichtbaar zijn. Zoeken doorzoekt alleen de geladen records, niet de volledige historie.'
+  assert.equal(notice, `<p v-if="commands.length === 100" id="journal-limit-help" class="muted" role="status">${text}</p>`)
+  assert.equal(app.match(/\bid="journal-limit-help"/g).length, 1)
+  assert.doesNotMatch(notice, /v-html|v-text|\{\{|@|v-on|fetch|request/)
+  const count = '<p role="status" aria-live="polite">{{ filteredCommands.length }} van {{ commands.length }} geladen records</p>'
+  const start = app.indexOf(count)
+  assert.ok(start >= 0)
+  const panel = app.slice(start, app.indexOf('<ol class="journal">', start))
+  assert.ok(panel.includes(notice))
+  const { code } = compile(panel, { mode: 'function', prefixIdentifiers: true })
+  const render = new Function('Vue', code)(Vue)
+
+  for (const length of [0, 99, 100]) {
+    for (const search of ['', 'no matches']) {
+      for (const hasLoaded of [false, true]) {
+        for (const journalRefreshFailed of [false, true]) {
+          await t.test(`loaded=${length}, search=${search || 'all'}, snapshot=${hasLoaded}, failed=${journalRefreshFailed}`, async t => {
+            const { state, calls, sockets } = fixture(t)
+            state.commands.value = Array.from({ length }, (_, index) => record(`record-${index}`))
+            state.search.value = search
+            state.hasLoaded.value = hasLoaded
+            state.journalRefreshFailed.value = journalRefreshFailed
+            const before = commandState(state)
+            const html = await renderToString(Vue.createSSRApp({ setup: () => state, render }))
+            const filtered = search ? 0 : length
+            assert.equal(state.filteredCommands.value.length, filtered)
+            assert.ok(html.includes(`${filtered} van ${length} geladen records`))
+            assert.equal(html.includes(`<p id="journal-limit-help" class="muted" role="status">${text}</p>`), length === 100)
+            assert.equal(html.includes('id="journal-limit-help"'), length === 100)
+            assert.equal(html.includes(text), length === 100)
+            if (!length) {
+              assert.ok(html.includes(journalRefreshFailed
+                ? 'Geen records beschikbaar na mislukte verversing.'
+                : hasLoaded ? 'Het logboek is leeg.' : 'Nog geen records geladen.'))
+            } else {
+              assert.equal(html.includes('Geen geladen records gevonden voor deze zoekopdracht.'), !!search)
+            }
+            assert.deepEqual(commandState(state), before)
+            assert.equal(calls.length, 0)
+            assert.equal(sockets.length, 0)
+          })
+        }
+      }
+    }
+  }
+})
+
 test('snapshot receipt time uses successful response time, survives failure and search, and advances on empty retry', async t => {
   const { state, calls, clock } = fixture(t)
   assert.equal(state.lastJournalRefreshAt.value, null)

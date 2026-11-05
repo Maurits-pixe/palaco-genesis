@@ -158,6 +158,7 @@ function receiptIso(value) {
           Niet in de hele database of ticket-ID's. De zoekopdracht blijft alleen in sessiegeheugen.</p>
         <button type="button" class="secondary" :disabled="!search" @click="search = ''">Wis zoekopdracht</button>
         <p role="status" aria-live="polite">{{ filteredCommands.length }} van {{ commands.length }} geladen records</p>
+        <p v-if="commands.length === 100" id="journal-limit-help" class="muted" role="status">De lokale limiet van 100 records is bereikt. Er kunnen oudere records op de server staan die hier niet zichtbaar zijn. Zoeken doorzoekt alleen de geladen records, niet de volledige historie.</p>
         <p v-if="!commands.length" class="muted">{{ journalRefreshFailed ? 'Geen records beschikbaar na mislukte verversing.' : hasLoaded ? 'Het logboek is leeg.' : 'Nog geen records geladen.' }}</p>
         <p v-else-if="!filteredCommands.length" class="muted">Geen geladen records gevonden voor deze zoekopdracht.</p>
         <ol class="journal">
