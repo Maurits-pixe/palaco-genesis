@@ -197,6 +197,11 @@ invoerhulp en blokkeert de aanvraagknop. Ook zonder geldig token of
 commandotekst, tijdens een verzoek of bij een onzekere intrekking blijft
 de knop geblokkeerd. Deze lokale invoercontrole vervangt de API- en
 servervalidatie niet en geeft geen toestemming om vast te leggen.
+Live HTTP/SQLite-tests controleren dat ongeldige duur lokaal wordt afgewezen
+zonder verzoek, en dat de grenzen van 1 en 60000 ms worden geaccepteerd.
+Op de exacte serververvaltijd wordt vastlegging geweigerd, ook wanneer de
+lokale klok nog geldigheid aangeeft. Er ontstaat dan geen record of
+append-auditregel; een expliciete statuscontrole herstelt geen toestemming.
 Als een ticketaanvraag mislukt, meldt de interface **Ticketuitgifte niet
 bevestigd**: er kan al een serverticket bestaan, zonder dat de client het
 antwoord heeft ontvangen. Zonder ontvangen ticket is lokaal vastleggen niet
