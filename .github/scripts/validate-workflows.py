@@ -342,6 +342,18 @@ def main() -> int:
                         errors.append(
                             f"{path}: push trigger has unsupported keys: {sorted(unsupported_push_trigger_keys)}"
                         )
+                    if "branches" in push_trigger and "branches-ignore" in push_trigger:
+                        errors.append(
+                            f"{path}: push trigger must not define both branches and branches-ignore"
+                        )
+                    if "tags" in push_trigger and "tags-ignore" in push_trigger:
+                        errors.append(
+                            f"{path}: push trigger must not define both tags and tags-ignore"
+                        )
+                    if "paths" in push_trigger and "paths-ignore" in push_trigger:
+                        errors.append(
+                            f"{path}: push trigger must not define both paths and paths-ignore"
+                        )
                     for push_list_key in (
                         "branches-ignore",
                         "tags",
@@ -388,6 +400,14 @@ def main() -> int:
                     if unsupported_pr_trigger_keys:
                         errors.append(
                             f"{path}: pull_request trigger has unsupported keys: {sorted(unsupported_pr_trigger_keys)}"
+                        )
+                    if "branches" in pr_trigger and "branches-ignore" in pr_trigger:
+                        errors.append(
+                            f"{path}: pull_request trigger must not define both branches and branches-ignore"
+                        )
+                    if "paths" in pr_trigger and "paths-ignore" in pr_trigger:
+                        errors.append(
+                            f"{path}: pull_request trigger must not define both paths and paths-ignore"
                         )
                     for pr_list_key in ("branches-ignore", "paths", "paths-ignore", "types"):
                         if pr_list_key in pr_trigger:
