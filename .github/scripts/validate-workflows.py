@@ -194,6 +194,7 @@ def main() -> int:
                         f"{path}: schedule trigger must be a non-empty list of mappings with non-empty cron strings"
                     )
                 else:
+                    normalized_schedule_crons: list[str] = []
                     for schedule_index, schedule_entry in enumerate(schedule_trigger):
                         if not isinstance(schedule_entry, dict):
                             errors.append(
@@ -214,6 +215,12 @@ def main() -> int:
                             errors.append(
                                 f"{path}: schedule entry #{schedule_index} cron must contain exactly 5 fields"
                             )
+                        else:
+                            normalized_schedule_crons.append(cron_value.strip())
+                    if len(set(normalized_schedule_crons)) != len(normalized_schedule_crons):
+                        errors.append(
+                            f"{path}: schedule trigger must not contain duplicate cron entries"
+                        )
             if "workflow_dispatch" in trigger_config:
                 workflow_dispatch_trigger = trigger_config.get("workflow_dispatch")
                 if not isinstance(workflow_dispatch_trigger, dict):
