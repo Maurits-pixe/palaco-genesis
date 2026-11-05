@@ -3971,6 +3971,94 @@ for (const settlement of ['resolve', 'reject']) {
   })
 }
 
+for (const action of ['clearSession', 'token change', 'scope.stop', 'disconnect', 'replacement connect']) {
+  test(`realtime factory synchronous ${action} invalidates the returned connection`, t => {
+    const connections = []
+    let state, scope
+    const deliver = (callbacks, id) => {
+      callbacks.onEntry(record(id))
+      callbacks.onStatus('error')
+      callbacks.onReset()
+    }
+    const injectedFactory = callbacks => {
+      const created = {
+        callbacks, connects: [], disconnects: 0,
+        connect(value) { this.connects.push(value) },
+        disconnect() {
+          this.disconnects++
+          const before = sessionSnapshot(state)
+          deliver(callbacks, 'stale-cleanup-entry')
+          assert.deepEqual(sessionSnapshot(state), before)
+        },
+      }
+      connections.push(created)
+      if (connections.length === 1) {
+        if (action === 'clearSession') state.clearSession()
+        else if (action === 'token change') state.token.value = 'changed-token'
+        else if (action === 'scope.stop') scope.stop()
+        else if (action === 'disconnect') state.realtime.disconnect()
+        else {
+          state.realtime.connect('winning-token')
+          connections[1].callbacks.onEntry(record('winning-entry'))
+          connections[1].callbacks.onStatus('connected')
+        }
+        const afterReentry = sessionSnapshot(state)
+        deliver(callbacks, 'stale-factory-entry')
+        assert.deepEqual(sessionSnapshot(state), afterReentry)
+      }
+      return created
+    }
+    const fixtureState = fixture(t, undefined, {}, {}, injectedFactory)
+    state = fixtureState.state
+    scope = fixtureState.scope
+    prepare(state, 'revoke')
+    const retained = sessionSnapshot(state, journalRefs)
+    state.realtime.connect('superseded-token')
+    const stale = connections[0]
+    assert.deepEqual(stale.connects, [])
+    assert.equal(stale.disconnects, 1)
+    if (action === 'clearSession' || action === 'scope.stop') assertEmpty(state)
+    else if (action === 'token change') assertEmpty(state, 'changed-token')
+    else if (action === 'disconnect') {
+      assert.deepEqual(state.commands.value, [])
+      assert.equal(state.hasLoaded.value, false)
+      assert.equal(state.journalRefreshFailed.value, false)
+      assert.equal(state.lastJournalRefreshAt.value, null)
+      assert.equal(state.realtimeStatus.value, 'disconnected')
+      assert.deepEqual(sessionSnapshot(state, journalRefs), retained)
+    }
+    const afterReturn = sessionSnapshot(state)
+    deliver(stale.callbacks, 'stale-after-return')
+    assert.deepEqual(sessionSnapshot(state), afterReturn)
+    if (action !== 'scope.stop') {
+      if (action !== 'replacement connect') {
+        state.realtime.connect('winning-token')
+        connections[1].callbacks.onEntry(record('winning-entry'))
+        connections[1].callbacks.onStatus('connected')
+      }
+      const winner = connections[1]
+      assert.deepEqual(winner.connects, ['winning-token'])
+      assert.equal(winner.disconnects, 0)
+      assert.deepEqual(state.commands.value, [record('winning-entry')])
+      assert.equal(state.realtimeStatus.value, 'connected')
+      const winning = sessionSnapshot(state)
+      deliver(stale.callbacks, 'stale-after-replacement')
+      assert.deepEqual(sessionSnapshot(state), winning)
+      scope.stop()
+      assert.equal(winner.disconnects, 1)
+      deliver(winner.callbacks, 'disposed-winning-entry')
+    }
+    scope.stop()
+    deliver(stale.callbacks, 'disposed-stale-entry')
+    state.realtime.connect('disposed-token')
+    assert.equal(connections.length, action === 'scope.stop' ? 1 : 2)
+    assert.equal(stale.disconnects, 1)
+    assertEmpty(state)
+    assert.equal(fixtureState.calls.length, 0)
+    assert.equal(fixtureState.sockets.length, 0)
+  })
+}
+
 for (const transport of ['factory', 'socket']) {
   for (const action of ['disconnect', 'disconnect and reconnect', 'connect and reconnect']) {
     test(`${transport}: ${action} clears old state before external disconnect callbacks`, t => {

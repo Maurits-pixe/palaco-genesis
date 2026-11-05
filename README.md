@@ -365,6 +365,11 @@ Bij afzonderlijk realtime verbreken wordt de lokale logboekstaat gewist
 vóór de oude disconnectcallback wordt aangeroepen. Een vanuit die callback
 expliciet gestarte vervangende verbinding wordt niet achteraf door de oude
 reset overschreven; dit voegt geen automatische herverbinding toe.
+Ook na het aanmaken van een realtimeadapter controleert de sessie opnieuw
+of de verbindingspoging nog actueel is. Een adapter die tijdens het aanmaken
+door sessiewissing, disposal of een vervangende poging is achterhaald, wordt
+opgeruimd zonder zijn verbinding te starten. Zijn callbacks worden genegeerd;
+dit is geen algemene garantie voor willekeurige synchrone Vue-watchers.
 Tijdens **Logboek vernieuwen** blijven eerder geladen records zichtbaar.
 Met **Wis lokaal logboek** verwijder je de geladen records, zoektekst en
 verversingsgegevens en verbreek je realtime. Een lopende logboekverversing

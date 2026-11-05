@@ -93,7 +93,7 @@ export function useSession({
       disconnect()
       if (disposed || generation !== connectionGeneration) return
       const current = () => !disposed && generation === connectionGeneration
-      connection = realtimeFactory({
+      const created = realtimeFactory({
         onEntry: entry => {
           if (!current()) return
           const normalized = defaultApi.normalizeCommand(entry)
@@ -108,7 +108,12 @@ export function useSession({
           if (current()) resetJournal()
         },
       })
-      connection.connect(value)
+      if (!current()) {
+        created.disconnect()
+        return
+      }
+      connection = created
+      created.connect(value)
     },
   }
   const clock = scheduler.setInterval(() => {
