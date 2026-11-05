@@ -19,6 +19,10 @@ def main() -> int:
             errors.append(f"{path}: workflow root must be a mapping")
             continue
 
+        workflow_name = data.get("name")
+        if not isinstance(workflow_name, str) or not workflow_name.strip():
+            errors.append(f"{path}: top-level workflow name must be a non-empty string")
+
         trigger_config = data.get("on", data.get(True))
         if isinstance(trigger_config, str):
             if trigger_config == "pull_request_target":
