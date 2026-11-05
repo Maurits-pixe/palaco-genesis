@@ -368,6 +368,44 @@ def main() -> int:
                 errors.append(
                     f"{path}: job '{job_name}' must set runs-on to 'ubuntu-latest'"
                 )
+            job_needs = job.get("needs")
+            if isinstance(job_needs, str):
+                normalized_need = job_needs.strip()
+                if not normalized_need:
+                    errors.append(
+                        f"{path}: job '{job_name}' needs must be a non-empty string when provided as a string"
+                    )
+                elif normalized_need == job_name:
+                    errors.append(
+                        f"{path}: job '{job_name}' must not depend on itself via needs"
+                    )
+            elif isinstance(job_needs, list):
+                if not job_needs:
+                    errors.append(
+                        f"{path}: job '{job_name}' needs must not be an empty list"
+                    )
+                else:
+                    normalized_needs: list[str] = []
+                    for need_index, need_value in enumerate(job_needs):
+                        if not isinstance(need_value, str) or not need_value.strip():
+                            errors.append(
+                                f"{path}: job '{job_name}' needs[{need_index}] must be a non-empty string"
+                            )
+                            continue
+                        normalized_need = need_value.strip()
+                        if normalized_need == job_name:
+                            errors.append(
+                                f"{path}: job '{job_name}' must not depend on itself via needs[{need_index}]"
+                            )
+                        normalized_needs.append(normalized_need)
+                    if len(set(normalized_needs)) != len(normalized_needs):
+                        errors.append(
+                            f"{path}: job '{job_name}' needs list must not contain duplicates"
+                        )
+            elif job_needs is not None:
+                errors.append(
+                    f"{path}: job '{job_name}' needs must be a string or a list of strings"
+                )
             job_if = job.get("if")
             if job_if is not None and (not isinstance(job_if, str) or not job_if.strip()):
                 errors.append(
