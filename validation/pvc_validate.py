@@ -1223,6 +1223,13 @@ def evaluate_g7(
         "repository": repository,
         "scope": scope_manifest.get("scope") if isinstance(scope_manifest, dict) else None,
         "scope_sha256": scope_artifact.get("sha256") if scope_artifact else None,
+        "system_graph_artifact_sha256": (
+            system_graph_artifact.get("sha256")
+            if isinstance(system_graph_artifact, dict)
+            else None
+        ),
+        "dependency_graph_sha256": dependency_graph.get("sha256"),
+        "execution_plan_sha256": execution_schedule.get("plan_sha256"),
         "run_id": run_id,
         "output_sha256": hashlib.sha256((test_output or "").encode("utf-8")).hexdigest()
         if test_output is not None
@@ -1918,6 +1925,10 @@ def evaluate_g9(
         )
         else None
     )
+    valid_topological_order = (
+        isinstance(topological_order, list)
+        and all(isinstance(step, str) and step for step in topological_order)
+    )
     plan_digest = schedule.get("plan_sha256")
     if (
         not isinstance(plan_digest, str)
@@ -1926,9 +1937,10 @@ def evaluate_g9(
         or not layers
         or flattened_layers is None
         or len(flattened_layers) != len(set(flattened_layers))
-        or not isinstance(topological_order, list)
-        or any(not isinstance(step, str) or not step for step in topological_order)
-        or topological_order != flattened_layers
+        or any(layer != sorted(layer) for layer in layers)
+        or not valid_topological_order
+        or len(topological_order) != len(set(topological_order))
+        or set(topological_order) != set(flattened_layers)
     ):
         return (
             {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G3 plan digest or deterministic execution schedule is missing, malformed or inconsistent."]},
@@ -2066,6 +2078,41 @@ def evaluate_g9(
                 {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G4-G7 PASS gates do not reconcile with complete, successful required scenario evidence."]},
                 evidence,
             )
+    integrated = integrated_evidence[2]
+    required_reconciliation = {
+        "G4 source revision": source_revision,
+        "G5 source revision": source_revision,
+        "G6 source revision": source_revision,
+        "G6 graph revision": source_revision,
+        "G6 graph digest": report_artifacts["system_graph"]["sha256"],
+    }
+    reconciliation_records = integrated.get("reconciliation")
+    observed_reconciliation = (
+        {
+            entry.get("item"): (entry.get("observed"), entry.get("expected"))
+            for entry in reconciliation_records
+            if isinstance(entry, dict) and isinstance(entry.get("item"), str)
+        }
+        if isinstance(reconciliation_records, list)
+        else {}
+    )
+    if (
+        integrated.get("scope_sha256") != report_artifacts["scope"]["sha256"]
+        or integrated.get("system_graph_artifact_sha256")
+        != report_artifacts["system_graph"]["sha256"]
+        or integrated.get("dependency_graph_sha256") != observed_dependency_digest
+        or integrated.get("execution_plan_sha256") != plan_digest
+        or len(observed_reconciliation) != len(required_reconciliation)
+        or set(observed_reconciliation) != set(required_reconciliation)
+        or any(
+            observed != expected or expected != required_reconciliation[label]
+            for label, (observed, expected) in observed_reconciliation.items()
+        )
+    ):
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G7 reconciliation does not bind the scope, SystemGraph, dependency graph and execution plan evidence consistently."]},
+            evidence,
+        )
     security = report.get("security_validation")
     security_environment = (
         security.get("security_environment") if isinstance(security, dict) else None

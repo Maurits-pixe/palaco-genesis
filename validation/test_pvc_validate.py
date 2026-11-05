@@ -1000,6 +1000,20 @@ class G9Tests(unittest.TestCase):
                 "repository": self.repository,
                 "exit_code": 0,
                 "output_sha256": "c" * 64,
+                "scope_sha256": "1" * 64,
+                "system_graph_artifact_sha256": "2" * 64,
+                "dependency_graph_sha256": "4" * 64,
+                "execution_plan_sha256": "2" * 64,
+                "reconciliation": [
+                    {"item": label, "observed": value, "expected": value}
+                    for label, value in (
+                        ("G4 source revision", revision or self.source_revision),
+                        ("G5 source revision", revision or self.source_revision),
+                        ("G6 source revision", revision or self.source_revision),
+                        ("G6 graph revision", revision or self.source_revision),
+                        ("G6 graph digest", "2" * 64),
+                    )
+                ],
                 "scenarios": [
                     {"name": name, "result": "ok"} for name in sorted(G7_SCENARIOS)
                 ],
@@ -1038,6 +1052,28 @@ class G9Tests(unittest.TestCase):
         report["dependency_graph"]["sha256"] = _dependency_graph_digest(
             report["dependency_graph"]
         )
+        report["integrated_validation"]["dependency_graph_sha256"] = report[
+            "dependency_graph"
+        ]["sha256"]
+        report["integrated_validation"]["scope_sha256"] = report["artifacts"][
+            "scope"
+        ]["sha256"]
+        report["integrated_validation"]["system_graph_artifact_sha256"] = report[
+            "artifacts"
+        ]["system_graph"]["sha256"]
+        report["integrated_validation"]["reconciliation"] = [
+            {"item": label, "observed": value, "expected": value}
+            for label, value in (
+                ("G4 source revision", revision or self.source_revision),
+                ("G5 source revision", revision or self.source_revision),
+                ("G6 source revision", revision or self.source_revision),
+                ("G6 graph revision", revision or self.source_revision),
+                (
+                    "G6 graph digest",
+                    report["artifacts"]["system_graph"]["sha256"],
+                ),
+            )
+        ]
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
         attestation = {
             "repository": self.repository,
@@ -1239,7 +1275,7 @@ class G9Tests(unittest.TestCase):
         self.assertEqual(result["result"], "INCONCLUSIVE")
         self.assertFalse(evidence["release_eligible"])
 
-    def test_evidence_report_execution_layers_must_match_topological_order(self):
+    def test_evidence_report_execution_layers_must_cover_topological_steps(self):
         report = json.loads(self.report_path.read_text(encoding="utf-8"))
         report["execution_schedule"]["topological_order"] = ["different-step"]
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
@@ -1247,9 +1283,48 @@ class G9Tests(unittest.TestCase):
         self.assertEqual(result["result"], "INCONCLUSIVE")
         self.assertFalse(evidence["release_eligible"])
 
+    def test_evidence_report_allows_valid_parallel_layer_ordering(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["execution_schedule"]["execution_layers"] = [["a", "z"], ["b"]]
+        report["execution_schedule"]["topological_order"] = ["a", "b", "z"]
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        attestation_path = self.root / "dist/attestation.json"
+        attestation = json.loads(attestation_path.read_text(encoding="utf-8"))
+        attestation["evidence_report_sha256"] = hashlib.sha256(
+            self.report_path.read_bytes()
+        ).hexdigest()
+        attestation_path.write_text(json.dumps(attestation), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "PASS")
+        self.assertTrue(evidence["release_eligible"])
+
     def test_evidence_report_architecture_revision_must_match(self):
         report = json.loads(self.report_path.read_text(encoding="utf-8"))
         report["architecture_compliance"]["system_graph_revision"] = "stale"
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_g7_scope_digest_must_match_input_artifact(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["integrated_validation"]["scope_sha256"] = "f" * 64
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_g7_reconciliation_must_match_system_graph(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["integrated_validation"]["reconciliation"][-1]["observed"] = "f" * 64
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_g7_plan_digest_must_match_schedule(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["integrated_validation"]["execution_plan_sha256"] = "f" * 64
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
         result, evidence = self.evaluate(release_text=self.checklist())
         self.assertEqual(result["result"], "INCONCLUSIVE")
