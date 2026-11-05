@@ -103,6 +103,7 @@ def main() -> int:
             errors.append(f"{path}: jobs mapping is missing or empty")
             continue
 
+        job_display_name_to_ids: dict[str, list[str]] = {}
         for job_name, job in jobs.items():
             if not isinstance(job, dict):
                 errors.append(f"{path}: job '{job_name}' must be a mapping")
@@ -112,6 +113,11 @@ def main() -> int:
             if not isinstance(display_name, str) or not display_name.strip():
                 errors.append(
                     f"{path}: job '{job_name}' must define a non-empty name"
+                )
+            else:
+                normalized_display_name = display_name.strip()
+                job_display_name_to_ids.setdefault(normalized_display_name, []).append(
+                    job_name
                 )
 
             runs_on = job.get("runs-on")
@@ -204,6 +210,12 @@ def main() -> int:
                         errors.append(
                             f"{path}: job '{job_name}' checkout step #{step_index} must set with.persist-credentials to false"
                         )
+
+        for display_name, job_ids in job_display_name_to_ids.items():
+            if len(job_ids) > 1:
+                errors.append(
+                    f"{path}: job display name '{display_name}' must be unique within a workflow (used by jobs: {job_ids})"
+                )
 
         print(f"OK {path}")
 
