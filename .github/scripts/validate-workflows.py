@@ -845,6 +845,15 @@ def main() -> int:
                 errors.append(
                     f"{path}: job '{job_name}' if must be a non-empty string when provided"
                 )
+            if workflow_filename == "release.yml" and job_name == "publish-release":
+                if not isinstance(job_if, str) or not job_if.strip():
+                    errors.append(
+                        f"{path}: job '{job_name}' must define an if guard referencing github.event.inputs.release_tag"
+                    )
+                elif "github.event.inputs.release_tag" not in job_if:
+                    errors.append(
+                        f"{path}: job '{job_name}' if must reference github.event.inputs.release_tag"
+                    )
 
             job_continue_on_error = job.get("continue-on-error")
             if job_continue_on_error is not None and type(job_continue_on_error) is not bool:
