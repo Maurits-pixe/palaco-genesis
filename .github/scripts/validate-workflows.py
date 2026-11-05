@@ -854,9 +854,9 @@ def main() -> int:
                     errors.append(
                         f"{path}: job '{job_name}' if must reference github.event.inputs.release_tag"
                     )
-                elif "!=" not in job_if or "''" not in job_if:
+                elif "github.event.inputs.release_tag!=''" not in job_if.replace(" ", ""):
                     errors.append(
-                        f"{path}: job '{job_name}' if must explicitly check github.event.inputs.release_tag against an empty string"
+                        f"{path}: job '{job_name}' if must explicitly contain github.event.inputs.release_tag != ''"
                     )
 
             job_continue_on_error = job.get("continue-on-error")
