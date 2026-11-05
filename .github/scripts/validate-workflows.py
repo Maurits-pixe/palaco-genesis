@@ -845,6 +845,22 @@ def main() -> int:
                         f"{path}: job '{job_name}' step #{step_index} must be a mapping"
                     )
                     continue
+                unsupported_step_keys = set(step.keys()) - {
+                    "name",
+                    "id",
+                    "if",
+                    "continue-on-error",
+                    "uses",
+                    "run",
+                    "with",
+                    "env",
+                    "working-directory",
+                    "shell",
+                }
+                if unsupported_step_keys:
+                    errors.append(
+                        f"{path}: job '{job_name}' step #{step_index} has unsupported keys: {sorted(unsupported_step_keys)}"
+                    )
                 validate_env_mapping(
                     errors,
                     path,
