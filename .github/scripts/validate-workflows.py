@@ -28,6 +28,22 @@ def main() -> int:
             workflow_name_to_paths.setdefault(normalized_name, []).append(path)
 
         trigger_config = data.get("on", data.get(True))
+        if trigger_config is None:
+            errors.append(f"{path}: top-level workflow 'on' trigger definition is required")
+        elif isinstance(trigger_config, str):
+            if not trigger_config.strip():
+                errors.append(f"{path}: top-level workflow 'on' trigger must not be empty")
+        elif isinstance(trigger_config, list):
+            if not trigger_config:
+                errors.append(f"{path}: top-level workflow 'on' trigger list must not be empty")
+        elif isinstance(trigger_config, dict):
+            if not trigger_config:
+                errors.append(f"{path}: top-level workflow 'on' trigger mapping must not be empty")
+        else:
+            errors.append(
+                f"{path}: top-level workflow 'on' trigger must be string, list, or mapping"
+            )
+
         if isinstance(trigger_config, str):
             if trigger_config == "pull_request_target":
                 errors.append(f"{path}: pull_request_target trigger is not allowed")
