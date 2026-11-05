@@ -986,6 +986,7 @@ class G9Tests(unittest.TestCase):
         self.assertTrue(evidence["release_approval_claimed"])
         self.assertFalse(evidence["decision_authority_authenticated"])
         self.assertTrue(evidence["attestation_binding_verified"])
+        self.assertFalse(evidence["attestation_authentication_verified"])
 
     def test_missing_release_checklist_holds(self):
         result, _ = self.evaluate(release_text=None, release_error="missing")
@@ -1080,6 +1081,13 @@ class G9Tests(unittest.TestCase):
     def test_evidence_report_requires_supported_validator_format(self):
         report = json.loads(self.report_path.read_text(encoding="utf-8"))
         report["validator"]["version"] = "0.9.0"
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, _ = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "FAIL")
+
+    def test_evidence_report_format_version_must_be_integer_not_boolean(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["format_version"] = True
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
         result, _ = self.evaluate(release_text=self.checklist())
         self.assertEqual(result["result"], "FAIL")

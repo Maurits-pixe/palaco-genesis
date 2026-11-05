@@ -1632,6 +1632,7 @@ def evaluate_g9(
         "release_approval_claimed": False,
         "decision_authority_authenticated": False,
         "attestation_binding_verified": False,
+        "attestation_authentication_verified": False,
         "evidence_report_g9_result": None,
     }
     if release_error == "missing":
@@ -1803,7 +1804,8 @@ def evaluate_g9(
         )
     validator = report.get("validator")
     if (
-        report.get("format_version") != 1
+        type(report.get("format_version")) is not int
+        or report.get("format_version") != 1
         or not isinstance(validator, dict)
         or validator.get("name") != "PVC-001 G0-G9 validator"
         or validator.get("version") != VALIDATOR_VERSION
@@ -2569,6 +2571,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             f"- Recorded decision: `{release['decision'] or 'unavailable'}`",
             f"- Technically release eligible: `{release['release_eligible']}`",
             f"- Attestation binds source/artifact/evidence: `{release['attestation_binding_verified']}`",
+            "- Attestation signature/authenticity verified: `not performed`",
             f"- Approval claimed: `{release['release_approval_claimed']}`",
             "- Decision-authority authentication: `not performed`",
         ]
