@@ -311,6 +311,18 @@ def main() -> int:
                         f"{path}: push trigger must be a mapping with explicit branches"
                     )
                 else:
+                    unsupported_push_trigger_keys = set(push_trigger.keys()) - {
+                        "branches",
+                        "branches-ignore",
+                        "tags",
+                        "tags-ignore",
+                        "paths",
+                        "paths-ignore",
+                    }
+                    if unsupported_push_trigger_keys:
+                        errors.append(
+                            f"{path}: push trigger has unsupported keys: {sorted(unsupported_push_trigger_keys)}"
+                        )
                     branches = push_trigger.get("branches")
                     if not isinstance(branches, list) or not branches:
                         errors.append(
@@ -335,6 +347,17 @@ def main() -> int:
                         f"{path}: pull_request trigger must be a mapping with explicit branches"
                     )
                 else:
+                    unsupported_pr_trigger_keys = set(pr_trigger.keys()) - {
+                        "branches",
+                        "branches-ignore",
+                        "paths",
+                        "paths-ignore",
+                        "types",
+                    }
+                    if unsupported_pr_trigger_keys:
+                        errors.append(
+                            f"{path}: pull_request trigger has unsupported keys: {sorted(unsupported_pr_trigger_keys)}"
+                        )
                     branches = pr_trigger.get("branches")
                     if not isinstance(branches, list) or not branches:
                         errors.append(
