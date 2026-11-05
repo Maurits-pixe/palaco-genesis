@@ -452,7 +452,12 @@ def main() -> int:
                     f"{path}: job '{job_name}' if must be a non-empty string when provided"
                 )
 
-            if job.get("continue-on-error") is True:
+            job_continue_on_error = job.get("continue-on-error")
+            if job_continue_on_error is not None and type(job_continue_on_error) is not bool:
+                errors.append(
+                    f"{path}: job '{job_name}' continue-on-error must be boolean when provided"
+                )
+            if job_continue_on_error is True:
                 errors.append(
                     f"{path}: job '{job_name}' must not set continue-on-error to true"
                 )
@@ -524,7 +529,15 @@ def main() -> int:
                     errors.append(
                         f"{path}: job '{job_name}' step #{step_index} if must be a non-empty string when provided"
                     )
-                if step.get("continue-on-error") is True:
+                step_continue_on_error = step.get("continue-on-error")
+                if (
+                    step_continue_on_error is not None
+                    and type(step_continue_on_error) is not bool
+                ):
+                    errors.append(
+                        f"{path}: job '{job_name}' step #{step_index} continue-on-error must be boolean when provided"
+                    )
+                if step_continue_on_error is True:
                     errors.append(
                         f"{path}: job '{job_name}' step #{step_index} must not set continue-on-error to true"
                     )
