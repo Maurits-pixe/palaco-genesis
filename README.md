@@ -591,6 +591,12 @@ Een ongeldig token wordt bij expliciet verbinden geweigerd; terugzetten van
 het geldige token verbindt of laadt niets automatisch en herstelt geen lokale
 ticketbevoegdheid. Dit test sessie-isolatie binnen het gedeelde operatormodel,
 geen scheiding tussen meerdere gebruikers of server-side tokenrotatie.
+Live tests gebruiken ook echte Socket.IO-clients bij een expliciete
+vervangende verbindingspoging tijdens socketaanmaak. De achterhaalde socket
+start niet en verliest zijn handshakecredentials; alleen de actuele client
+ontvangt nieuwe records. Een verbreking vanuit de verbindingsstatuscallback
+voorkomt socketaanmaak totdat opnieuw expliciet wordt verbonden. Dit zijn
+gecontroleerde synchrone callbacks in Node, geen browserlevenscyclustests.
 Live tests met afzonderlijke lokale en serverklokken controleren dat een
 lokaal nog bruikbaar ticket op de server bij de exacte verloopgrens wordt
 geweigerd. Ook externe intrekking wordt bij de commit opnieuw gecontroleerd.

@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { effectScope, watch } from 'vue'
+import { effectScope, ref, watch } from 'vue'
 import { io } from 'socket.io-client'
 import * as productionApi from '../src/api.js'
 import { createRealtime } from '../src/realtime.js'
@@ -1940,6 +1940,161 @@ test('live service: a lost successful revocation blocks authority until explicit
   assert.equal(f.count('GET', `/v1/tickets/${held.id}`), 1)
   assert.equal(f.count('POST', '/v1/commands'), 0)
   assert.equal(f.calls.length, 5)
+})
+
+test('live realtime: a reentrant socket factory retires its stale real socket and preserves only the replacement', { timeout: 20000 }, async t => {
+  const sockets = []
+  let adapter
+  // Register before the fixture so these separately owned clients close before the service.
+  t.after(() => {
+    try {
+      adapter?.disconnect()
+    } finally {
+      for (const socket of sockets) {
+        socket.removeAllListeners()
+        socket.disconnect()
+      }
+    }
+  })
+  const f = await fixture(t, { realtime: true })
+  const statuses = ref([])
+  const entries = ref([])
+  const connections = []
+  adapter = createRealtime({
+    onStatus: status => statuses.value.push(status),
+    onReset() {},
+    onEntry: entry => entries.value.push(entry),
+    createSocket(options) {
+      const socket = io(f.origin, options)
+      sockets.push(socket)
+      socket.on('connect', () => connections.push(socket))
+      if (sockets.length === 1) adapter.connect(token)
+      return socket
+    },
+  })
+
+  adapter.connect(token)
+  assert.equal(sockets.length, 2)
+  const [stale, replacement] = sockets
+  assertDisconnected(stale)
+  await waitFor(() => statuses.value.at(-1), value => value === 'connected', 'replacement connection')
+  assert.deepEqual(connections, [replacement], 'the stale socket never opens')
+  assert.deepEqual(statuses.value, ['disconnected', 'connecting', 'disconnected', 'connecting', 'connected'])
+  assert.equal(replacement.connected, true)
+  assert.equal(replacement.active, true)
+  assert.deepEqual(f.calls, [])
+  for (const table of ['tickets', 'commands', 'audit']) {
+    assert.equal(f.db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count, 0,
+      'connecting and replacing clients never issues tickets or commands')
+  }
+
+  const received = waitFor(() => entries.value.length, count => count === 1, 'replacement normalized entry')
+  const witnessed = nextCommit(f.witness, 'replacement é😀 record')
+  const record = await f.commitExternal('replacement é😀 record')
+  assert.deepEqual(await witnessed, record)
+  await received
+  assert.deepEqual(entries.value, [record], 'only the replacement delivers the real normalized record once')
+  assertDisconnected(stale)
+  assert.deepEqual(connections, [replacement])
+
+  adapter.disconnect()
+  assertDisconnected(replacement)
+  const statusesAfterDisconnect = [...statuses.value]
+  assert.equal(statusesAfterDisconnect.at(-1), 'disconnected')
+  const missedEvent = nextCommit(f.witness, 'replacement disconnected barrier')
+  const missed = await f.commitExternal('replacement disconnected barrier')
+  assert.deepEqual(await missedEvent, missed)
+  assert.deepEqual(entries.value, [record], 'a witnessed later commit cannot reach the disconnected adapter')
+  assert.deepEqual(statuses.value, statusesAfterDisconnect)
+  assert.equal(sockets.length, 2, 'disconnect never creates an automatic replacement')
+  assert.deepEqual(connections, [replacement])
+  assertDisconnected(stale)
+  assertDisconnected(replacement)
+  assert.deepEqual(f.db.prepare('SELECT id, command, committed_at FROM commands ORDER BY seq').all().map(row => ({ ...row })), [record, missed])
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM tickets WHERE consumed = 1').get().count, 2)
+  for (const table of ['tickets', 'commands', 'audit']) {
+    assert.equal(f.db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count, 2)
+  }
+  assert.deepEqual(f.calls, [], 'only the explicit external commits issue HTTP requests')
+  assert.deepEqual(f.sockets, [], 'the fixture session never connects')
+})
+
+test('live realtime: disconnecting in the connecting callback creates no socket until a deliberate manual connection', { timeout: 20000 }, async t => {
+  const sockets = []
+  let adapter
+  t.after(() => {
+    try {
+      adapter?.disconnect()
+    } finally {
+      for (const socket of sockets) {
+        socket.removeAllListeners()
+        socket.disconnect()
+      }
+    }
+  })
+  const f = await fixture(t, { realtime: true })
+  const statuses = ref([])
+  const entries = ref([])
+  const connections = []
+  let cancelConnecting = true
+  adapter = createRealtime({
+    onStatus(status) {
+      statuses.value.push(status)
+      if (status === 'connecting' && cancelConnecting) adapter.disconnect()
+    },
+    onReset() {},
+    onEntry: entry => entries.value.push(entry),
+    createSocket(options) {
+      const socket = io(f.origin, options)
+      sockets.push(socket)
+      socket.on('connect', () => connections.push(socket))
+      return socket
+    },
+  })
+
+  adapter.connect(token)
+  assert.deepEqual(statuses.value, ['disconnected', 'connecting', 'disconnected'])
+  assert.equal(sockets.length, 0, 'the connecting callback cancels before the real socket factory')
+  for (const table of ['tickets', 'commands', 'audit']) {
+    assert.equal(f.db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count, 0)
+  }
+  const missedEvent = nextCommit(f.witness, 'cancelled connection barrier')
+  const missed = await f.commitExternal('cancelled connection barrier')
+  assert.deepEqual(await missedEvent, missed)
+  assert.equal(sockets.length, 0, 'a real emission barrier does not trigger an automatic attempt')
+  assert.deepEqual(entries.value, [])
+  assert.deepEqual(connections, [])
+  assert.deepEqual(statuses.value, ['disconnected', 'connecting', 'disconnected'])
+  assert.deepEqual(f.calls, [])
+
+  cancelConnecting = false
+  adapter.connect(token)
+  await waitFor(() => statuses.value.at(-1), value => value === 'connected', 'deliberate manual connection')
+  assert.equal(sockets.length, 1)
+  const [socket] = sockets
+  assert.deepEqual(connections, [socket])
+  assert.equal(socket.connected, true)
+  assert.equal(socket.active, true)
+  assert.deepEqual(entries.value, [], 'manual connection does not replay the missed record')
+  const received = waitFor(() => entries.value.length, count => count === 1, 'manual connection normalized entry')
+  const witnessed = nextCommit(f.witness, 'manual connection é😀 record')
+  const record = await f.commitExternal('manual connection é😀 record')
+  assert.deepEqual(await witnessed, record)
+  await received
+  assert.deepEqual(entries.value, [record])
+
+  adapter.disconnect()
+  assertDisconnected(socket)
+  assert.deepEqual(statuses.value, ['disconnected', 'connecting', 'disconnected', 'disconnected', 'connecting', 'connected', 'disconnected'])
+  assert.equal(sockets.length, 1)
+  assert.deepEqual(connections, [socket])
+  assert.deepEqual(f.db.prepare('SELECT id, command, committed_at FROM commands ORDER BY seq').all().map(row => ({ ...row })), [missed, record])
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM tickets WHERE consumed = 1').get().count, 2)
+  for (const table of ['tickets', 'commands', 'audit']) {
+    assert.equal(f.db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get().count, 2)
+  }
+  assert.deepEqual(f.calls, [], 'connect and disconnect themselves send no journal or authority requests')
+  assert.deepEqual(f.sockets, [])
 })
 
 test('live realtime: clearing the journal disconnects without losing authority or status; reconnect never replays missed commits', { timeout: 20000 }, async t => {
