@@ -1889,6 +1889,46 @@ def evaluate_g9(
             {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G0-G3 input artifact paths or digests are missing or malformed."]},
             evidence,
         )
+    for key in required_artifacts:
+        artifact = report_artifacts[key]
+        try:
+            artifact_path = (ROOT / artifact["path"]).resolve()
+            artifact_path.relative_to(ROOT.resolve())
+            artifact_exists = artifact_path.is_file()
+            observed_digest = digest(artifact_path) if artifact_exists else None
+        except (OSError, RuntimeError, ValueError):
+            artifact_exists = False
+            observed_digest = None
+        if not artifact_exists or observed_digest != artifact["sha256"]:
+            return (
+                {"gate": "G9", "result": "INCONCLUSIVE", "findings": [f"Referenced G0-G3 input artifact is missing or its digest does not match the evaluated checkout: {key}."]},
+                evidence,
+            )
+    bound_inputs: dict[str, dict[str, Any]] = {}
+    for key in required_artifacts:
+        artifact = report_artifacts[key]
+        parsed, parse_error = read_json(ROOT / artifact["path"])
+        if parse_error or not isinstance(parsed, dict):
+            return (
+                {"gate": "G9", "result": "INCONCLUSIVE", "findings": [f"Referenced G0-G3 input is not a valid JSON object: {key}."]},
+                evidence,
+            )
+        bound_inputs[key] = parsed
+    scope_input = bound_inputs["scope"]
+    graph_input = bound_inputs["system_graph"]
+    ordering_input = bound_inputs["dependency_ordering"]
+    plan_input = bound_inputs["execution_plan"]
+    graph_digest = _canonical_sha256(graph_input)
+    if (
+        type(scope_input.get("schema_version")) is not int
+        or scope_input.get("schema_version") != 1
+        or scope_input.get("repository") != expected_repository
+        or graph_input.get("revision") != source_revision
+    ):
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Bound G0/G1 inputs do not identify the evaluated repository and revision."]},
+            evidence,
+        )
     dependency_graph = report.get("dependency_graph")
     if not isinstance(dependency_graph, dict):
         return (
@@ -1946,13 +1986,47 @@ def evaluate_g9(
             {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G3 plan digest or deterministic execution schedule is missing, malformed or inconsistent."]},
             evidence,
         )
+    if (
+        plan_input.get("source_revision") != source_revision
+        or plan_input.get("system_graph_sha256") != graph_digest
+        or _canonical_sha256(plan_input) != plan_digest
+    ):
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Bound G3 ExecutionPlan does not match its source revision, SystemGraph or reported plan digest."]},
+            evidence,
+        )
+    startup_constraints = ordering_input.get("startup_constraints")
+    shutdown_constraints = ordering_input.get("shutdown_constraints")
+    approved_by = ordering_input.get("approved_by")
+    decision_ref = ordering_input.get("decision_ref")
+    if (
+        ordering_input.get("status") != "approved"
+        or ordering_input.get("graph_sha256") != observed_dependency_digest
+        or not isinstance(startup_constraints, list)
+        or not isinstance(shutdown_constraints, list)
+        or not isinstance(approved_by, str)
+        or not approved_by
+        or not isinstance(decision_ref, str)
+        or not decision_ref
+        or ordering_input.get("approval_sha256")
+        != _ordering_approval_digest(
+            observed_dependency_digest,
+            startup_constraints,
+            shutdown_constraints,
+            approved_by,
+            decision_ref,
+        )
+    ):
+        return (
+            {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Bound G2 ordering approval does not match the derived dependency graph or its recorded constraints."]},
+            evidence,
+        )
     architecture = report.get("architecture_compliance")
     if (
         not isinstance(architecture, dict)
         or architecture.get("source_revision") != source_revision
         or architecture.get("system_graph_revision") != source_revision
-        or not isinstance(architecture.get("system_graph_sha256"), str)
-        or not re.fullmatch(r"[0-9a-f]{64}", architecture["system_graph_sha256"])
+        or architecture.get("system_graph_sha256") != graph_digest
     ):
         return (
             {"gate": "G9", "result": "INCONCLUSIVE", "findings": ["Referenced G1/G6 architecture evidence is not bound to the report revision and a valid SystemGraph digest."]},

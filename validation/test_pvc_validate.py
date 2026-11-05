@@ -942,20 +942,7 @@ class G9Tests(unittest.TestCase):
             "generated_at": "2026-11-05T00:00:00+00:00",
             "repository": self.repository,
             "revision": revision or self.source_revision,
-            "artifacts": {
-                key: {"path": f"validation/{key}.json", "sha256": f"{index:064x}"}
-                for index, key in enumerate(
-                    (
-                        "scope",
-                        "system_graph",
-                        "system_graph_schema",
-                        "dependency_ordering",
-                        "execution_plan",
-                        "execution_plan_schema",
-                    ),
-                    1,
-                )
-            },
+            "artifacts": {},
             "dependency_graph": {
                 "dependency_scope": "workspace-local dependencies across normal, build, and dev kinds",
                 "nodes": ["palaco-foundation"],
@@ -1052,6 +1039,83 @@ class G9Tests(unittest.TestCase):
         report["dependency_graph"]["sha256"] = _dependency_graph_digest(
             report["dependency_graph"]
         )
+        graph_input = {
+            "schema_version": 1,
+            "revision": revision or self.source_revision,
+            "nodes": [],
+            "relation_kinds": {
+                "depends_on": {
+                    "meaning": "dependency",
+                    "source_kinds": ["service"],
+                    "target_kinds": ["service"],
+                }
+            },
+            "relations": [],
+        }
+        graph_input_digest = _canonical_sha256(graph_input)
+        plan_input = {
+            "schema_version": 1,
+            "source_revision": revision or self.source_revision,
+            "system_graph_sha256": graph_input_digest,
+            "planner": {"name": "fixture", "version": "1"},
+            "dependency_relation_kinds": ["depends_on"],
+            "steps": [],
+        }
+        startup_constraints = []
+        shutdown_constraints = []
+        approved_by = "Release Authority"
+        decision_ref = "ORD-42"
+        ordering_input = {
+            "schema_version": 1,
+            "status": "approved",
+            "graph_sha256": report["dependency_graph"]["sha256"],
+            "approval_sha256": _ordering_approval_digest(
+                report["dependency_graph"]["sha256"],
+                startup_constraints,
+                shutdown_constraints,
+                approved_by,
+                decision_ref,
+            ),
+            "startup_constraints": startup_constraints,
+            "shutdown_constraints": shutdown_constraints,
+            "approved_by": approved_by,
+            "decision_ref": decision_ref,
+        }
+        input_contents = {
+            "scope": {
+                "schema_version": 1,
+                "repository": self.repository,
+                "scope": "Test",
+                "required_components": ["palaco-foundation"],
+                "excluded_paths": [],
+            },
+            "system_graph": graph_input,
+            "system_graph_schema": {"type": "object"},
+            "dependency_ordering": ordering_input,
+            "execution_plan": plan_input,
+            "execution_plan_schema": {"type": "object"},
+        }
+        for key in (
+            "scope",
+            "system_graph",
+            "system_graph_schema",
+            "dependency_ordering",
+            "execution_plan",
+            "execution_plan_schema",
+        ):
+            artifact_path = self.root / f"validation/{key}.json"
+            artifact_path.write_text(
+                json.dumps(input_contents[key]), encoding="utf-8"
+            )
+            report["artifacts"][key] = {
+                "path": f"validation/{key}.json",
+                "sha256": hashlib.sha256(artifact_path.read_bytes()).hexdigest(),
+            }
+        report["execution_schedule"]["plan_sha256"] = _canonical_sha256(plan_input)
+        report["architecture_compliance"]["system_graph_sha256"] = graph_input_digest
+        report["integrated_validation"]["execution_plan_sha256"] = report[
+            "execution_schedule"
+        ]["plan_sha256"]
         report["integrated_validation"]["dependency_graph_sha256"] = report[
             "dependency_graph"
         ]["sha256"]
@@ -1255,6 +1319,68 @@ class G9Tests(unittest.TestCase):
         report = json.loads(self.report_path.read_text(encoding="utf-8"))
         del report["artifacts"]["execution_plan"]["sha256"]
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_input_digest_must_match_checkout_file(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        report["artifacts"]["system_graph"]["sha256"] = "0" * 64
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_missing_input_file_is_inconclusive(self):
+        (self.root / "validation/execution_plan_schema.json").unlink()
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_evidence_report_input_symlink_loop_is_inconclusive(self):
+        artifact_path = self.root / "validation/system_graph.json"
+        artifact_path.unlink()
+        artifact_path.symlink_to("system_graph.json")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_execution_plan_digest_must_match_input_contents(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        plan_path = self.root / report["artifacts"]["execution_plan"]["path"]
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        plan["planner"]["version"] = "tampered"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        report["artifacts"]["execution_plan"]["sha256"] = hashlib.sha256(
+            plan_path.read_bytes()
+        ).hexdigest()
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        attestation_path = self.root / "dist/attestation.json"
+        attestation = json.loads(attestation_path.read_text(encoding="utf-8"))
+        attestation["evidence_report_sha256"] = hashlib.sha256(
+            self.report_path.read_bytes()
+        ).hexdigest()
+        attestation_path.write_text(json.dumps(attestation), encoding="utf-8")
+        result, evidence = self.evaluate(release_text=self.checklist())
+        self.assertEqual(result["result"], "INCONCLUSIVE")
+        self.assertFalse(evidence["release_eligible"])
+
+    def test_ordering_approval_digest_must_match_input_contents(self):
+        report = json.loads(self.report_path.read_text(encoding="utf-8"))
+        ordering_path = self.root / report["artifacts"]["dependency_ordering"]["path"]
+        ordering = json.loads(ordering_path.read_text(encoding="utf-8"))
+        ordering["approved_by"] = "Different Authority"
+        ordering_path.write_text(json.dumps(ordering), encoding="utf-8")
+        report["artifacts"]["dependency_ordering"]["sha256"] = hashlib.sha256(
+            ordering_path.read_bytes()
+        ).hexdigest()
+        self.report_path.write_text(json.dumps(report), encoding="utf-8")
+        attestation_path = self.root / "dist/attestation.json"
+        attestation = json.loads(attestation_path.read_text(encoding="utf-8"))
+        attestation["evidence_report_sha256"] = hashlib.sha256(
+            self.report_path.read_bytes()
+        ).hexdigest()
+        attestation_path.write_text(json.dumps(attestation), encoding="utf-8")
         result, evidence = self.evaluate(release_text=self.checklist())
         self.assertEqual(result["result"], "INCONCLUSIVE")
         self.assertFalse(evidence["release_eligible"])
