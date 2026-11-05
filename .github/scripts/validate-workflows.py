@@ -50,6 +50,10 @@ def validate(path: Path) -> list[str]:
     if not isinstance(workflow_name, str) or not workflow_name.strip():
         errors.append(f"{path.name}: top-level name must be a non-empty string")
 
+    top_env = data.get("env")
+    if top_env is not None and not isinstance(top_env, dict):
+        errors.append(f"{path.name}: top-level env must be a mapping when set")
+
     permissions = data.get("permissions")
     if not isinstance(permissions, dict) or permissions.get("contents") != "read":
         errors.append(f"{path.name}: top-level permissions.contents must be read")
