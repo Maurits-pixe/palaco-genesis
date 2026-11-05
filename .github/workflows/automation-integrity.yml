@@ -33,5 +33,8 @@ jobs:
       - name: Validate GitHub workflows
         run: python .github/scripts/validate-workflows.py
 
+      - name: Validate Python script syntax
+        run: python -m py_compile .github/scripts/*.py
+
       - name: Validate shell script syntax
         run: bash -n .github/scripts/*.sh
