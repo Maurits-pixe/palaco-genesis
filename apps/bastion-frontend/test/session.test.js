@@ -105,6 +105,7 @@ function assertEmpty(state, token = '') {
   assert.equal(state.outcomeMismatch.value, false)
   assert.equal(state.realtimeStatus.value, 'disconnected')
   assert.equal(state.canCommit.value, false)
+  assert.equal(state.canClearOutcome.value, false)
   assert.equal(state.remaining.value, 0)
   assert.equal(state.ttlMs.value, 10000)
 }
@@ -124,7 +125,7 @@ function pageTransition(type, persisted) {
 
 function retainedOutcomeState(state) {
   return structuredClone(Object.fromEntries(Object.entries(state)
-    .filter(([key, value]) => isRef(value) && !['outcome', 'outcomeReceivedAt', 'outcomeMismatch', 'message', 'error', 'busy'].includes(key))
+    .filter(([key, value]) => isRef(value) && !['outcome', 'outcomeReceivedAt', 'outcomeMismatch', 'canClearOutcome', 'message', 'error', 'busy'].includes(key))
     .map(([key, value]) => [key, JSON.parse(JSON.stringify(value.value))])))
 }
 
@@ -132,6 +133,22 @@ function commandState(state, excluded = []) {
   return Object.fromEntries(Object.entries(state)
     .filter(([key, value]) => isRef(value) && !excluded.includes(key))
     .map(([key, value]) => [key, value.value]))
+}
+
+function outcomeClearButton() {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const button = app.match(/<button[^>]*@click="clearOutcome"[^>]*>Wis ticketuitkomst<\/button>/)[0]
+  const { code } = compile(button, { mode: 'function', prefixIdentifiers: true })
+  const render = new Function('Vue', code)(Vue)
+  return async (state, enabled) => {
+    assert.equal(state.canClearOutcome.value, enabled)
+    const vnode = render(Vue.proxyRefs(state), {})
+    assert.equal(vnode.props.disabled, !enabled)
+    assert.equal(vnode.props.onClick, state.clearOutcome)
+    const html = await renderToString(Vue.createSSRApp({ setup: () => state, render }))
+    assert.equal(/\sdisabled(?:[=>\s])/.test(html), !enabled, html)
+    return vnode
+  }
 }
 
 for (const value of [0, 1050, 8_640_000_000_000_000]) {
@@ -1192,6 +1209,79 @@ test('mismatch UI is an alert inside the source-bound result without claiming al
   assert.doesNotMatch(result, /zijn geblokkeerd/)
 })
 
+for (const settlement of ['resolve', 'reject']) {
+  test(`outcome clear button follows initial, pending, ${settlement}, cleared and disposed session states`, async t => {
+    const { state, scope, calls } = fixture(t)
+    const checkButton = outcomeClearButton()
+    await checkButton(state, false)
+    state.lookupId.value = held().id
+    const checking = state.perform('status')
+    assert.equal(state.outcome.value, null)
+    await checkButton(state, true)
+    if (settlement === 'resolve') calls[0].resolve(snapshot())
+    else calls[0].reject(new Error('status unavailable'))
+    await checking
+    assert.equal(state.busy.value, '')
+    if (settlement === 'reject') {
+      assert.equal(state.outcome.value, null)
+      assert.equal(state.message.value, statusCaution)
+    }
+    const button = await checkButton(state, true)
+    button.props.onClick()
+    assert.equal(state.outcome.value, null)
+    assert.equal(state.message.value, '')
+    assert.equal(state.error.value, '')
+    await checkButton(state, false)
+    state.outcome.value = snapshot()
+    await checkButton(state, true)
+    scope.stop()
+    await checkButton(state, false)
+    state.outcome.value = snapshot()
+    state.busy.value = 'status'
+    await checkButton(state, false)
+    assert.equal(calls.length, 1)
+  })
+
+  test(`cleared pending status button remains disabled after stale ${settlement}`, async t => {
+    const { state, calls } = fixture(t)
+    const checkButton = outcomeClearButton()
+    const checking = state.perform('status')
+    const button = await checkButton(state, true)
+    button.props.onClick()
+    assert.equal(calls[0].signal.aborted, true)
+    await checkButton(state, false)
+    if (settlement === 'resolve') calls[0].resolve(snapshot())
+    else calls[0].reject(new Error('stale status failure'))
+    await checking
+    await checkButton(state, false)
+    assert.equal(state.outcome.value, null)
+    assert.equal(state.message.value, '')
+    assert.equal(state.error.value, '')
+    assert.equal(calls.length, 1)
+  })
+}
+
+for (const action of ['ticket', 'commit', 'revoke', 'list']) {
+  test(`outcome clear button blocks busy ${action} even with a prior outcome, not enabled by unrelated caution`, async t => {
+    const { state, calls } = fixture(t)
+    const checkButton = outcomeClearButton()
+    prepare(state, action)
+    await checkButton(state, true)
+    const operation = state.perform(action)
+    state.outcome.value = snapshot()
+    await checkButton(state, false)
+    calls[0].reject(new Error(`${action} unavailable`))
+    await operation
+    await checkButton(state, true)
+    const feedback = [state.message.value, state.error.value]
+    assert.ok(feedback.some(Boolean))
+    state.clearOutcome()
+    await checkButton(state, false)
+    assert.deepEqual([state.message.value, state.error.value], feedback)
+    assert.equal(calls.length, 1)
+  })
+}
+
 test('clearing an idle outcome retains the entire session, live connection and uncertainty, and is idempotent', async t => {
   const { state, calls, sockets, clock } = fixture(t)
   state.realtime.connect(state.token.value)
@@ -1759,7 +1849,8 @@ test('outcome clear UI is an explicit local-only button with status-only busy el
   const button = app.match(/<button[^>]*@click="clearOutcome"[^>]*>Wis ticketuitkomst<\/button>/)?.[0]
   assert.ok(button)
   assert.match(button, /type="button"/)
-  assert.match(button, /:disabled="\(!!busy && busy !== 'status'\) \|\| \(!outcome && busy !== 'status'\)"/)
+  assert.match(app, /canCommit, canClearOutcome, remaining,/)
+  assert.match(button, /:disabled="!canClearOutcome"/)
   assert.match(button, /aria-describedby="clear-outcome-help"/)
   assert.match(app, /id="clear-outcome-help"[^>]*>Wist alleen lokaal/)
   assert.match(app, /Ticket-ID's blijven behouden\. Geen intrekking, terugdraaien of herstel van toestemming\./)

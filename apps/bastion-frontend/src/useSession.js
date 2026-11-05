@@ -44,9 +44,12 @@ export function useSession({
   const realtimeStatus = ref('disconnected')
   const now = ref(sampleReceiptTime())
   let session = 0
-  let disposed = false
+  const disposed = ref(false)
   let pending = null
-  let feedbackAction = ''
+  const feedbackAction = ref('')
+  const canClearOutcome = computed(() => !disposed.value &&
+    (!busy.value || busy.value === 'status') &&
+    (!!outcome.value || busy.value === 'status' || feedbackAction.value === 'status'))
   let connection = null
   let connectionGeneration = 0
   let journalGeneration = 0
@@ -88,11 +91,11 @@ export function useSession({
   const realtime = {
     disconnect,
     connect(value) {
-      if (disposed) return
+      if (disposed.value) return
       const generation = connectionGeneration + 1
       disconnect()
-      if (disposed || generation !== connectionGeneration) return
-      const current = () => !disposed && generation === connectionGeneration
+      if (disposed.value || generation !== connectionGeneration) return
+      const current = () => !disposed.value && generation === connectionGeneration
       const created = realtimeFactory({
         onEntry: entry => {
           if (!current()) return
@@ -117,9 +120,9 @@ export function useSession({
     },
   }
   const clock = scheduler.setInterval(() => {
-    if (disposed) return
+    if (disposed.value) return
     const sampledAt = sampleReceiptTime()
-    if (!disposed) now.value = sampledAt
+    if (!disposed.value) now.value = sampledAt
   }, 100)
   const canCommit = computed(() => !revocationUncertain.value &&
     defaultApi.ticketUsable(ticket.value, command.value, now.value ?? null))
@@ -145,7 +148,7 @@ export function useSession({
     ttlMs.value = 10000
     message.value = ''
     error.value = ''
-    feedbackAction = ''
+    feedbackAction.value = ''
     lookupId.value = ''
     resetOutcome()
     lastSubmissionId.value = ''
@@ -154,7 +157,7 @@ export function useSession({
   watch(token, resetSession, { flush: 'sync' })
 
   function clearCommand() {
-    if (disposed || busy.value) return
+    if (disposed.value || busy.value) return
     command.value = ''
   }
 
@@ -164,40 +167,40 @@ export function useSession({
   }
 
   function clearOutcome() {
-    if (disposed || (busy.value && busy.value !== 'status')) return
+    if (disposed.value || (busy.value && busy.value !== 'status')) return
     const previous = busy.value === 'status' ? pending : null
     if (previous) {
       pending = null
       busy.value = ''
     }
     resetOutcome()
-    if (feedbackAction === 'status') {
+    if (feedbackAction.value === 'status') {
       message.value = ''
       error.value = ''
-      feedbackAction = ''
+      feedbackAction.value = ''
     }
     previous?.abort()
   }
 
   function clearJournal() {
-    if (disposed || (busy.value && busy.value !== 'list')) return
+    if (disposed.value || (busy.value && busy.value !== 'list')) return
     const previous = busy.value === 'list' ? pending : null
     pending = null
     busy.value = ''
     disconnect()
     journalRequest = null
     search.value = ''
-    if (feedbackAction === 'list') {
+    if (feedbackAction.value === 'list') {
       message.value = ''
       error.value = ''
-      feedbackAction = ''
+      feedbackAction.value = ''
     }
     previous?.abort()
   }
 
   const stopLookupWatch = watch(lookupId, (value, previous) => {
-    if (!disposed && value !== previous &&
-      (outcome.value || busy.value === 'status' || feedbackAction === 'status')) {
+    if (!disposed.value && value !== previous &&
+      (outcome.value || busy.value === 'status' || feedbackAction.value === 'status')) {
       clearOutcome()
     }
   }, { flush: 'sync' })
@@ -205,7 +208,7 @@ export function useSession({
   eventTarget?.addEventListener('pagehide', clearSession)
   onScopeDispose(() => {
     eventTarget?.removeEventListener('pagehide', clearSession)
-    disposed = true
+    disposed.value = true
     stopLookupWatch()
     scheduler.clearInterval(clock)
     token.value = ''
@@ -213,30 +216,30 @@ export function useSession({
   })
 
   function checkCurrentTicket() {
-    if (disposed || busy.value || !ticket.value || !token.value.trim()) return
+    if (disposed.value || busy.value || !ticket.value || !token.value.trim()) return
     lookupId.value = ticket.value.id
     return perform('status')
   }
 
   function checkLastSubmission() {
-    if (disposed || busy.value || !lastSubmissionId.value || !token.value.trim()) return
+    if (disposed.value || busy.value || !lastSubmissionId.value || !token.value.trim()) return
     lookupId.value = lastSubmissionId.value
     return perform('status')
   }
 
   async function perform(action) {
-    if (disposed || busy.value) return
+    if (disposed.value || busy.value) return
     const started = session
     const controller = new AbortController()
     pending = controller
-    const current = () => !disposed && started === session && pending === controller
+    const current = () => !disposed.value && started === session && pending === controller
     const refresh = action === 'list' ? { generation: journalGeneration, entries: [] } : null
     if (refresh) {
       journalRequest = refresh
       journalRefreshFailed.value = false
     }
     busy.value = action
-    feedbackAction = action
+    feedbackAction.value = action
     error.value = ''
     message.value = ''
     try {
@@ -328,6 +331,6 @@ export function useSession({
   return {
     token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, lastJournalRefreshAt, busy,
     message, error, lookupId, outcome, outcomeReceivedAt, outcomeMismatch, lastSubmissionId, realtimeStatus, now,
-    canCommit, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearCommand, clearSession, clearOutcome, clearJournal,
+    canCommit, canClearOutcome, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearCommand, clearSession, clearOutcome, clearJournal,
   }
 }

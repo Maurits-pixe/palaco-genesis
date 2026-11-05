@@ -316,6 +316,10 @@ de fout bevestigt geen vastlegging of intrekking en herstelt geen toestemming.
 Ticket-ID's, logboek en een bestaande onzekerheidsblokkering blijven behouden.
 Opnieuw controleren vereist een expliciete actie; er volgt geen automatische
 herhaling. **Wis ticketuitkomst** wist ook deze lokale statusmelding.
+Die knop blijft na een mislukte statuscontrole beschikbaar, ook zonder
+ontvangen uitkomst. Tijdens andere verzoeken is hij geblokkeerd; meldingen
+van ticketaanvragen, vastleggingen of intrekkingen maken hem op zichzelf
+niet beschikbaar. Wissen verandert geen ticket-ID of toestemming.
 Live tests laten ook succesvolle terminale statusantwoorden verloren gaan
 voor ingetrokken en al vastgelegde, later ingetrokken tickets. De lokale
 onzekerheidsblokkering blijft dan behouden, ook al is de serveruitkomst bekend
