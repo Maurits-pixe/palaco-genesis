@@ -151,6 +151,8 @@ def validate(path: Path) -> list[str]:
         errors.append(f"{path.name}: jobs must be a non-empty mapping")
         return errors
 
+    valid_job_names = {name for name in jobs.keys() if isinstance(name, str) and name.strip()}
+
     for job_name, job in jobs.items():
         if not isinstance(job_name, str) or not job_name.strip():
             errors.append(f"{path.name}: job names must be non-empty strings")
@@ -223,6 +225,10 @@ def validate(path: Path) -> list[str]:
             if isinstance(needs, str):
                 if not needs.strip():
                     errors.append(f"{path.name}:{job_name}: needs must not be an empty string")
+                elif needs == job_name:
+                    errors.append(f"{path.name}:{job_name}: needs must not reference the same job")
+                elif needs not in valid_job_names:
+                    errors.append(f"{path.name}:{job_name}: needs references unknown job {needs!r}")
             elif isinstance(needs, list):
                 if not needs:
                     errors.append(f"{path.name}:{job_name}: needs list must not be empty")
@@ -235,6 +241,16 @@ def validate(path: Path) -> list[str]:
                         break
                     if dep in seen_needs:
                         errors.append(f"{path.name}:{job_name}: needs list entries must be unique")
+                        break
+                    if dep == job_name:
+                        errors.append(
+                            f"{path.name}:{job_name}: needs list must not reference the same job"
+                        )
+                        break
+                    if dep not in valid_job_names:
+                        errors.append(
+                            f"{path.name}:{job_name}: needs list references unknown job {dep!r}"
+                        )
                         break
                     seen_needs.add(dep)
             else:
