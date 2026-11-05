@@ -197,6 +197,11 @@ invoerhulp en blokkeert de aanvraagknop. Ook zonder geldig token of
 commandotekst, tijdens een verzoek of bij een onzekere intrekking blijft
 de knop geblokkeerd. Deze lokale invoercontrole vervangt de API- en
 servervalidatie niet en geeft geen toestemming om vast te leggen.
+De commandotekst krijgt gekoppelde invoerfeedback bij alleen witruimte of
+meer dan 1024 UTF-16-tekeneenheden (een emoji telt meestal als twee).
+Een leeg veld blijft neutraal en verplicht. De interface past de tekst niet
+aan: geldige begin- en eindspaties blijven deel van de exacte ticketbinding.
+Invoerfeedback verstuurt geen verzoek en herstelt geen lokaal ticket.
 Live HTTP/SQLite-tests controleren dat ongeldige duur lokaal wordt afgewezen
 zonder verzoek, en dat de grenzen van 1 en 60000 ms worden geaccepteerd.
 Op de exacte serververvaltijd wordt vastlegging geweigerd, ook wanneer de

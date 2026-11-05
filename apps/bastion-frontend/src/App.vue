@@ -52,8 +52,9 @@ function receiptIso(value) {
         <h2 id="ticket-title">1. Ticket aanvragen</h2>
         <form @submit.prevent="perform('ticket')">
           <label for="command">Commando als tekst</label>
-          <textarea id="command" v-model="command" rows="4" :maxlength="MAX_COMMAND_LENGTH" required :disabled="!!busy" aria-describedby="command-limit" />
+          <textarea id="command" v-model="command" rows="4" :maxlength="MAX_COMMAND_LENGTH" required :disabled="!!busy" :aria-invalid="command !== '' && (!command.trim() || commandLength(command) > MAX_COMMAND_LENGTH)" :aria-describedby="command !== '' && (!command.trim() || commandLength(command) > MAX_COMMAND_LENGTH) ? 'command-limit command-error' : 'command-limit'" />
           <p id="command-limit" class="muted">{{ commandLength(command) }} / {{ MAX_COMMAND_LENGTH }} UTF-16-tekeneenheden (een emoji telt meestal als twee).</p>
+          <p v-if="command !== '' && (!command.trim() || commandLength(command) > MAX_COMMAND_LENGTH)" id="command-error" class="error">{{ commandLength(command) > MAX_COMMAND_LENGTH ? `Commando te lang: maximaal ${MAX_COMMAND_LENGTH} UTF-16-tekeneenheden.` : 'Commando mag niet alleen uit witruimte bestaan.' }}</p>
           <label for="ttl">Geldigheidsduur (milliseconden)</label>
           <input id="ttl" v-model="ttlMs" type="number" min="1" max="60000" step="1" required :disabled="!!busy" aria-describedby="ttl-help" :aria-invalid="!validTtl" />
           <div id="ttl-help">

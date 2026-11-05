@@ -178,6 +178,29 @@ function ticketForm() {
     }
     const button = find(vnode, node => node.type === 'button')
     const input = find(vnode, node => node.props?.id === 'ttl')
+    const textarea = find(vnode, node => node.props?.id === 'command')
+    const commandError = find(vnode, node => node.props?.id === 'command-error')
+    const invalidCommand = state.command.value !== '' &&
+      (!state.command.value.trim() || state.command.value.length > MAX_COMMAND_LENGTH)
+    const commandDescription = invalidCommand ? 'command-limit command-error' : 'command-limit'
+    assert.equal(textarea.props['aria-invalid'], invalidCommand)
+    assert.equal(textarea.props['aria-describedby'], commandDescription)
+    assert.equal(textarea.props.maxlength, MAX_COMMAND_LENGTH)
+    assert.equal(textarea.props.required, '')
+    assert.equal(textarea.props.disabled, !!state.busy.value)
+    assert.equal(!!commandError, invalidCommand)
+    const renderedTextarea = html.match(/<textarea[^>]*id="command"[^>]*>[\s\S]*?<\/textarea>/)[0]
+    assert.ok(renderedTextarea.includes(`aria-invalid="${invalidCommand}"`))
+    assert.ok(renderedTextarea.includes(`aria-describedby="${commandDescription}"`))
+    assert.equal(html.includes('id="command-error"'), invalidCommand)
+    assert.ok(html.includes(`${state.command.value.length} / ${MAX_COMMAND_LENGTH} UTF-16-tekeneenheden`))
+    if (invalidCommand) {
+      const expected = state.command.value.length > MAX_COMMAND_LENGTH
+        ? `Commando te lang: maximaal ${MAX_COMMAND_LENGTH} UTF-16-tekeneenheden.`
+        : 'Commando mag niet alleen uit witruimte bestaan.'
+      assert.equal(commandError.children, expected)
+      assert.ok(html.includes(expected))
+    }
     assert.equal(state.canRequestTicket.value, enabled)
     assert.equal(state.validTtl.value, valid)
     assert.equal(button.props.disabled, !enabled)
@@ -197,7 +220,7 @@ function ticketForm() {
     assert.match(html, /id="ttl-help"/)
     assert.match(html, /Vul een geheel aantal milliseconden in van 1 tot en met 60000\./)
     assert.equal(html.includes('Ongeldige duur: kies een geheel getal van 1 tot en met 60000.'), !valid)
-    return { vnode, input }
+    return { vnode, input, textarea, html }
   }
 }
 
@@ -391,6 +414,40 @@ test('ticket eligibility and compiled form react to every non-TTL guard', async 
   assert.equal(state.revocationUncertain.value, false)
   await checkForm(state, false, true)
   assert.equal(calls.length, 0)
+})
+
+test('compiled command model preserves exact text and reacts without requests or restored authority', async t => {
+  const { state, calls, sockets } = fixture(t)
+  const checkForm = ticketForm()
+  const { textarea } = await checkForm(state, false)
+  assert.equal(state.command.value, '')
+  state.command.value = held().command
+  state.ticket.value = held()
+  assert.equal(state.canCommit.value, true)
+
+  for (const [command, enabled] of [
+    [' \t\n\u00a0', false],
+    ['a'.repeat(1024), true],
+    ['a'.repeat(1025), false],
+    ['😀'.repeat(512), true],
+    ['😀'.repeat(513), false],
+    [' \t😀 <script>alert("tekst")</script> & \n ', true],
+    ['', false],
+    [' journal only ', true],
+    [held().command, true],
+  ]) {
+    textarea.props['onUpdate:modelValue'](command)
+    const { html } = await checkForm(state, enabled)
+    assert.equal(state.command.value, command, 'the compiled model never trims or normalizes text')
+    const escaped = command.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+    assert.ok(html.includes(`>${escaped}</textarea>`), 'the textarea renders exact text as escaped markup')
+    assert.ok(!html.includes('<script>'))
+    assert.equal(state.ticket.value, null)
+    assert.equal(state.canCommit.value, false, 'returning to the original text does not restore authority')
+    assert.equal(calls.length, 0)
+    assert.equal(sockets.length, 0)
+  }
 })
 
 test('compiled TTL model updates eligibility without changing the ticket submit action', async t => {
