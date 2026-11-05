@@ -552,7 +552,6 @@ test('live service: unknown status returns HTTP 404 without resolving retained u
   assert.equal(f.losses, 1)
   assert.equal(s.revocationUncertain.value, true)
   s.command.value = 'retained edited draft'
-  s.lookupId.value = 'unknown-ticket'
   const retained = () => ({
     command: s.command.value, ttlMs: s.ttlMs.value, commands: [...s.commands.value],
     search: s.search.value, hasLoaded: s.hasLoaded.value,
@@ -560,11 +559,49 @@ test('live service: unknown status returns HTTP 404 without resolving retained u
     lastJournalRefreshAt: s.lastJournalRefreshAt.value,
     lookupId: s.lookupId.value, lastSubmissionId: s.lastSubmissionId.value,
   })
-  const before = retained()
   const database = () => Object.fromEntries(['tickets', 'commands', 'audit'].map(table =>
     [table, f.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]))
   const persisted = database()
   const requests = f.calls.length
+  const draft = retained()
+  for (const id of ['', ' ' + held.id, held.id + ' ', 'é', '../tickets', 'x'.repeat(129), 'id\r\n']) {
+    s.lookupId.value = id
+    assert.equal(s.lookupId.value, id, 'editing preserves the exact ID without trimming')
+    assert.equal(s.validLookupId.value, false)
+    assert.equal(s.canCheckStatus.value, false)
+    assert.equal(f.calls.length, requests, 'editing an invalid ID sends no request')
+    const invalid = { ...draft, lookupId: id }
+    assert.deepEqual(retained(), invalid)
+
+    await f.run('status')
+    assert.equal(s.error.value, 'Vul een geldig ticket-ID in.')
+    assert.equal(s.message.value, statusCaution)
+    assert.equal(s.busy.value, '')
+    assert.equal(s.outcome.value, null)
+    assert.equal(s.outcomeReceivedAt.value, null)
+    assert.equal(s.ticket.value, held)
+    assert.equal(s.revocationUncertain.value, true)
+    assert.equal(s.canCommit.value, false)
+    assert.deepEqual(retained(), invalid)
+    assert.deepEqual(database(), persisted)
+    assert.equal(f.calls.length, requests, 'invalid status is rejected locally without HTTP')
+    f.tick()
+    assert.equal(f.calls.length, requests, 'a clock tick never retries an invalid status')
+    assert.equal(s.ticket.value, held)
+    assert.equal(s.revocationUncertain.value, true)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.outcome.value, null)
+    assert.equal(s.outcomeReceivedAt.value, null)
+    assert.deepEqual(retained(), invalid)
+    assert.deepEqual(database(), persisted)
+  }
+
+  s.lookupId.value = 'unknown-ticket'
+  assert.equal(s.validLookupId.value, true)
+  assert.equal(s.canCheckStatus.value, true, 'uncertain revocation does not block a valid status lookup')
+  assert.equal(f.calls.length, requests, 'editing a valid ID sends no request')
+  const before = { ...draft, lookupId: 'unknown-ticket' }
+  assert.deepEqual(retained(), before)
   await f.run('status')
   assert.deepEqual(f.calls.at(-1), { path: '/v1/tickets/unknown-ticket', method: 'GET', status: 404 })
   assert.equal(s.error.value, 'Ticket niet gevonden.')

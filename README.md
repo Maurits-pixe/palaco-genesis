@@ -296,6 +296,11 @@ ID krijgt gekoppelde invoerfeedback en blokkeert de controleknop; een leeg
 veld blijft neutraal maar kan niet worden ingestuurd. Invoer wordt niet
 getrimd of genormaliseerd. Bewerken verstuurt geen automatisch verzoek en
 de formaatcontrole bewijst niet dat het ticket bestaat of geldig is.
+Een live HTTP/SQLite-test onderscheidt ongeldige invoer (geen verzoek)
+van een correct gevormd maar onbekend ID (HTTP 404). Beide behouden een
+bestaande onzekerheidsblokkering en veranderen geen serverrecords of
+auditregels. Alleen een expliciete passende terminale statuscontrole sluit
+de onzekerheid af, zonder toestemming te herstellen.
 Met **Controleer laatste inzending** vraag je direct de status van dat
 bewaarde ID op, ook wanneer het lokale ticket na de inzendpoging al is
 verwijderd. Deze knop dient niets opnieuw in en herstelt geen toestemming.
