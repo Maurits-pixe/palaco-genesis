@@ -54,6 +54,10 @@ def validate(path: Path) -> list[str]:
     if top_env is not None and not isinstance(top_env, dict):
         errors.append(f"{path.name}: top-level env must be a mapping when set")
 
+    top_defaults = data.get("defaults")
+    if top_defaults is not None and not isinstance(top_defaults, dict):
+        errors.append(f"{path.name}: top-level defaults must be a mapping when set")
+
     permissions = data.get("permissions")
     if not isinstance(permissions, dict) or permissions.get("contents") != "read":
         errors.append(f"{path.name}: top-level permissions.contents must be read")
@@ -123,6 +127,10 @@ def validate(path: Path) -> list[str]:
         job_env = job.get("env")
         if job_env is not None and not isinstance(job_env, dict):
             errors.append(f"{path.name}:{job_name}: job env must be a mapping when set")
+
+        job_defaults = job.get("defaults")
+        if job_defaults is not None and not isinstance(job_defaults, dict):
+            errors.append(f"{path.name}:{job_name}: job defaults must be a mapping when set")
 
         job_outputs = job.get("outputs")
         if job_outputs is not None:
