@@ -584,6 +584,15 @@ def main() -> int:
         if not isinstance(permissions, dict):
             errors.append(f"{path}: missing top-level permissions mapping")
         else:
+            for permission_key, permission_value in permissions.items():
+                if not isinstance(permission_key, str) or not permission_key.strip():
+                    errors.append(
+                        f"{path}: permissions keys must be non-empty strings"
+                    )
+                if not isinstance(permission_value, str) or not permission_value.strip():
+                    errors.append(
+                        f"{path}: permissions['{permission_key}'] must be a non-empty string"
+                    )
             filename = os.path.basename(path)
             contents_permission = permissions.get("contents")
             if contents_permission != "read":
