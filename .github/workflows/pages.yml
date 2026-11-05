@@ -1,7 +1,7 @@
 name: PALACO Pages
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
     inputs:
       custom_domain:
         description: "Optional custom domain override for this run (e.g. docs.example.com)"
