@@ -216,12 +216,17 @@ def validate(path: Path) -> list[str]:
             elif isinstance(needs, list):
                 if not needs:
                     errors.append(f"{path.name}:{job_name}: needs list must not be empty")
+                seen_needs: set[str] = set()
                 for dep in needs:
                     if not isinstance(dep, str) or not dep.strip():
                         errors.append(
                             f"{path.name}:{job_name}: needs list entries must be non-empty strings"
                         )
                         break
+                    if dep in seen_needs:
+                        errors.append(f"{path.name}:{job_name}: needs list entries must be unique")
+                        break
+                    seen_needs.add(dep)
             else:
                 errors.append(
                     f"{path.name}:{job_name}: needs must be a string or list of strings when set"
