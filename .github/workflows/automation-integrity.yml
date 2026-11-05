@@ -71,11 +71,32 @@ jobs:
               if not isinstance(permissions, dict):
                   errors.append(f"{path}: missing top-level permissions mapping")
               else:
+                  filename = os.path.basename(path)
                   contents_permission = permissions.get("contents")
                   if contents_permission != "read":
                       errors.append(
                           f"{path}: permissions.contents must be explicitly set to 'read'"
                       )
+                  if filename == "pages.yml":
+                      if permissions.get("pages") != "write":
+                          errors.append(
+                              f"{path}: pages workflow must set top-level permissions.pages to 'write'"
+                          )
+                      if permissions.get("id-token") != "write":
+                          errors.append(
+                              f"{path}: pages workflow must set top-level permissions.id-token to 'write'"
+                          )
+                      extra_permissions = set(permissions.keys()) - {"contents", "pages", "id-token"}
+                      if extra_permissions:
+                          errors.append(
+                              f"{path}: pages workflow has unsupported top-level permissions: {sorted(extra_permissions)}"
+                          )
+                  else:
+                      extra_permissions = set(permissions.keys()) - {"contents"}
+                      if extra_permissions:
+                          errors.append(
+                              f"{path}: only permissions.contents is allowed at top-level for non-pages workflows, found: {sorted(extra_permissions)}"
+                          )
           
               jobs = data.get("jobs")
               if not isinstance(jobs, dict) or not jobs:
@@ -86,6 +107,23 @@ jobs:
                   if not isinstance(job, dict):
                       errors.append(f"{path}: job '{job_name}' must be a mapping")
                       continue
+
+                  job_permissions = job.get("permissions")
+                  filename = os.path.basename(path)
+                  if job_permissions is not None:
+                      if filename == "release.yml" and job_name == "publish-release":
+                          if not isinstance(job_permissions, dict) or job_permissions.get("contents") != "write":
+                              errors.append(
+                                  f"{path}: job '{job_name}' must set permissions.contents to 'write'"
+                              )
+                          elif set(job_permissions.keys()) != {"contents"}:
+                              errors.append(
+                                  f"{path}: job '{job_name}' may only define permissions.contents"
+                              )
+                      else:
+                          errors.append(
+                              f"{path}: job '{job_name}' must not define job-level permissions"
+                          )
           
                   timeout = job.get("timeout-minutes")
                   if not isinstance(timeout, int) or timeout <= 0:
