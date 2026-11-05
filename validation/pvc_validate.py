@@ -1942,7 +1942,7 @@ def evaluate_g9(
     evidence["release_eligible"] = True
     if evidence["decision"] == "REJECT":
         return (
-            {"gate": "G9", "result": "PASS", "findings": ["Release candidate is technically eligible, but the recorded decision is REJECT."]},
+            {"gate": "G9", "result": "HOLD", "findings": ["Release candidate is technically eligible, but the recorded decision is REJECT."]},
             evidence,
         )
     return (

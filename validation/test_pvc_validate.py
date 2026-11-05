@@ -1280,7 +1280,7 @@ class G9Tests(unittest.TestCase):
 
     def test_rejection_does_not_claim_approval(self):
         result, evidence = self.evaluate(release_text=self.checklist(decision="REJECT"))
-        self.assertEqual(result["result"], "PASS")
+        self.assertEqual(result["result"], "HOLD")
         self.assertTrue(evidence["release_eligible"])
         self.assertFalse(evidence["release_approval_claimed"])
 
