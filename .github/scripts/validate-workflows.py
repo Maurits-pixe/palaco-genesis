@@ -147,6 +147,9 @@ def validate(path: Path) -> list[str]:
         return errors
 
     for job_name, job in jobs.items():
+        if not isinstance(job_name, str) or not job_name.strip():
+            errors.append(f"{path.name}: job names must be non-empty strings")
+            continue
         if not isinstance(job, dict):
             errors.append(f"{path.name}:{job_name}: job must be a mapping")
             continue
