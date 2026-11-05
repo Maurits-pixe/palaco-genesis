@@ -316,6 +316,12 @@ dit is de exacte tekst uit de ontvangen statusmomentopname, niet de huidige
 concepttekst of het huidige ticket. Een concept wissen wist deze aparte
 momentopname niet. De tekst wordt uitsluitend als tekst weergegeven, zonder
 uitvoering of nieuwe toestemming.
+Een live HTTP/SQLite-test combineert een historische commituitkomst met een
+ander actief ticket. De oude statuscontrole trekt dat nieuwe ticket niet in.
+Concept en lokaal logboek wissen behouden de historische momentopname;
+uitkomst wissen verwijdert alleen die lokale weergave. Expliciet opnieuw
+opzoeken herstelt geen lokaal ticket en voegt geen historisch record aan het
+gewiste logboek toe. De wisacties veranderen geen serverrecords of auditregels.
 Ook bij statusantwoorden moeten alle tijdstippen, inclusief de eventuele
 committijd, niet-negatieve veilige gehele epochmilliseconden zijn die als
 JavaScript-datum kunnen worden weergegeven. Een ongeldig antwoord wordt

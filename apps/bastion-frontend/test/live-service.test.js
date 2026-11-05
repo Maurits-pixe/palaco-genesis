@@ -835,6 +835,158 @@ test('live service: ticket, commit, explicit status and journal use the same per
   assert.equal(f.calls.length, 4)
 })
 
+test('live service: historical committed status stays isolated from a different current ticket and local clears', { timeout: 15000 }, async t => {
+  const f = await fixture(t)
+  const s = f.session
+  const original = ' \t<note>café e\u0301 😀 & historie</note>\r\n  regel twee\n\t '
+  s.command.value = original
+  await f.run('ticket')
+  const a = { ...s.ticket.value }
+  await f.run('commit')
+  assert.equal(s.error.value, '')
+  assert.equal(s.lastSubmissionId.value, a.id)
+  assert.equal(s.lookupId.value, a.id)
+  const record = { ...s.commands.value[0] }
+  assert.deepEqual(record, { id: record.id, command: original, committed_at: now })
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+
+  await f.run('status')
+  const historical = {
+    ...a, checked_at: now, status: 'committed', revoked: false, record,
+  }
+  assert.deepEqual(s.outcome.value, historical)
+  assert.equal(s.outcomeReceivedAt.value, now)
+  assert.equal(s.outcomeMismatch.value, false)
+  assert.equal(s.lastSubmissionId.value, a.id)
+
+  s.command.value = ' \t<draft>B: andere opdracht 🧭</draft>\n '
+  await f.run('ticket')
+  assert.equal(s.error.value, '')
+  const b = { ...s.ticket.value }
+  assert.notEqual(b.id, a.id)
+  assert.notEqual(b.command, original)
+  assert.equal(s.canCommit.value, true)
+  assert.deepEqual(s.outcome.value, historical)
+  assert.equal(s.outcomeReceivedAt.value, now)
+  assert.equal(s.outcomeMismatch.value, false, 'different ticket IDs are not an authority mismatch')
+  assert.equal(s.lastSubmissionId.value, a.id, 'ticket issuance is not a submission')
+  assert.equal(s.lookupId.value, a.id)
+
+  const snapshot = () => Object.fromEntries(['tickets', 'commands', 'audit'].map(table =>
+    [table, f.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]))
+  const persisted = snapshot()
+  assert.equal(persisted.tickets.length, 2)
+  assert.equal(persisted.commands.length, 1)
+  assert.equal(persisted.audit.length, 1)
+  assert.equal(persisted.tickets.find(ticket => ticket.id === a.id).consumed, 1)
+  assert.equal(persisted.tickets.find(ticket => ticket.id === b.id).consumed, 0)
+  assert.equal(persisted.tickets.find(ticket => ticket.id === b.id).revoked, 0)
+  assert.equal(persisted.commands[0].command, original)
+  assert.equal(persisted.commands[0].ticket_id, a.id)
+  assert.equal(persisted.audit[0].ticket_id, a.id)
+  const expectedCalls = [
+    { path: '/v1/tickets', method: 'POST', status: 201 },
+    { path: '/v1/commands', method: 'POST', status: 201 },
+    { path: `/v1/tickets/${a.id}`, method: 'GET', status: 200 },
+    { path: '/v1/tickets', method: 'POST', status: 201 },
+  ]
+  const assertUnchanged = () => {
+    assert.deepEqual(snapshot(), persisted, 'local operations and status reads preserve every persisted row')
+    assert.deepEqual(f.calls, expectedCalls, 'only explicitly requested HTTP operations occur')
+    assert.equal(s.lastSubmissionId.value, a.id)
+    assert.equal(s.revocationUncertain.value, false)
+    assert.equal(s.error.value, '')
+    assert.equal(s.busy.value, '')
+  }
+  assertUnchanged()
+
+  f.setLocalNow(now + 100)
+  await f.run('status')
+  expectedCalls.push({ path: `/v1/tickets/${a.id}`, method: 'GET', status: 200 })
+  assert.deepEqual(s.outcome.value, historical)
+  assert.equal(s.outcomeReceivedAt.value, now + 100)
+  assert.deepEqual(s.ticket.value, b, 'rechecking historical A must not retire current B')
+  assert.equal(s.canCommit.value, true)
+  assert.equal(s.outcomeMismatch.value, false)
+  assertUnchanged()
+  const outcome = s.outcome.value
+  const receipt = s.outcomeReceivedAt.value
+  const assertHistorical = () => {
+    assert.strictEqual(s.outcome.value, outcome)
+    assert.deepEqual(s.outcome.value, historical)
+    assert.equal(s.outcomeReceivedAt.value, receipt)
+    assert.equal(s.lookupId.value, a.id)
+    assert.equal(s.outcomeMismatch.value, false)
+    assertUnchanged()
+  }
+
+  s.clearCommand()
+  assert.equal(s.command.value, '')
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.deepEqual(s.commands.value, [record])
+  assertHistorical()
+  s.command.value = b.command
+  assert.equal(s.ticket.value, null, 'restoring draft bytes does not restore cleared authority')
+  assert.equal(s.canCommit.value, false)
+  assertHistorical()
+
+  s.clearJournal()
+  assert.deepEqual(s.commands.value, [])
+  assert.deepEqual(s.outcome.value.record, record, 'historical record is independent of the local journal')
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assertHistorical()
+
+  s.clearOutcome()
+  assert.equal(s.outcome.value, null)
+  assert.equal(s.outcomeReceivedAt.value, null)
+  assert.equal(s.lookupId.value, a.id)
+  assert.equal(s.lastSubmissionId.value, a.id)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.deepEqual(s.commands.value, [])
+  assertUnchanged()
+
+  f.setLocalNow(now + 200)
+  await bounded(s.checkLastSubmission(), 'historical submission after local clears')
+  expectedCalls.push({ path: `/v1/tickets/${a.id}`, method: 'GET', status: 200 })
+  assert.deepEqual(s.outcome.value, historical)
+  assert.equal(s.outcomeReceivedAt.value, now + 200)
+  assert.equal(s.lookupId.value, a.id)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.outcomeMismatch.value, false)
+  assert.deepEqual(s.commands.value, [], 'status recovery must not repopulate the cleared journal')
+  assertUnchanged()
+
+  s.lookupId.value = b.id
+  assert.equal(s.outcome.value, null)
+  assert.equal(s.outcomeReceivedAt.value, null)
+  assertUnchanged()
+  await f.run('status')
+  expectedCalls.push({ path: `/v1/tickets/${b.id}`, method: 'GET', status: 200 })
+  assert.deepEqual(s.outcome.value, {
+    ...b, checked_at: now, status: 'active', revoked: false, record: null,
+  })
+  assert.equal(s.outcomeReceivedAt.value, now + 200)
+  assert.equal(s.lookupId.value, b.id)
+  assert.equal(s.command.value, b.command)
+  assert.equal(s.ticket.value, null, 'server-side active B is not restored local authority')
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.outcomeMismatch.value, false)
+  assert.deepEqual(s.commands.value, [])
+  assertUnchanged()
+  assert.equal(f.calls.length, 7)
+  assert.equal(f.count('POST', '/v1/tickets'), 2)
+  assert.equal(f.count('POST', '/v1/commands'), 1)
+  assert.equal(f.count('GET', `/v1/tickets/${a.id}`), 3)
+  assert.equal(f.count('GET', `/v1/tickets/${b.id}`), 1)
+  assert.equal(f.count('GET', '/v1/commands'), 0)
+  assert.equal(f.count('DELETE', `/v1/tickets/${b.id}`), 0)
+})
+
 for (const { label, original, altered } of [
   {
     label: 'NFC versus NFD unicode',
