@@ -148,9 +148,13 @@ function receiptIso(value) {
       <section aria-labelledby="journal-title" :aria-busy="busy === 'list'">
         <h2 id="journal-title">Commandologboek</h2>
         <p class="muted">Maximaal 100 records. Realtime is optioneel en gebruikt het ingevoerde token; geen automatische herverbinding.</p>
-        <p role="status">{{ realtimeLabels[realtimeStatus] }}</p>
+        <p role="status" aria-describedby="realtime-help">{{ realtimeLabels[realtimeStatus] }}</p>
+        <p id="realtime-help" class="muted">Realtime ontvangt alleen nieuwe gebeurtenissen zolang de verbinding actief is.
+          Verbinden of opnieuw verbinden haalt geen eerdere of gemiste records op. Verbonden betekent geen volledige historie.
+          Kies expliciet Logboek vernieuwen voor een momentopname van de nieuwste maximaal 100 records, niet de hele historie.
+          Geen garantie op ontvangst zonder gaten of precies één ontvangst per live record.</p>
         <div class="actions">
-          <button :disabled="!!busy || !token.trim() || realtimeStatus === 'connecting' || realtimeStatus === 'connected'" @click="realtime.connect(token)">Realtime verbinden</button>
+          <button :disabled="!!busy || !token.trim() || realtimeStatus === 'connecting' || realtimeStatus === 'connected'" aria-describedby="realtime-help" @click="realtime.connect(token)">Realtime verbinden</button>
           <button class="secondary" :disabled="!!busy || (realtimeStatus !== 'connecting' && realtimeStatus !== 'connected')" @click="realtime.disconnect()">Verbinding verbreken</button>
         </div>
         <button :disabled="!!busy || !token.trim()" @click="perform('list')">Logboek vernieuwen</button>

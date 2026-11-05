@@ -5,7 +5,7 @@ import { effectScope, isRef } from 'vue'
 import * as Vue from 'vue'
 import { compile } from '@vue/compiler-dom'
 import { renderToString } from 'vue/server-renderer'
-import { useSession } from '../src/useSession.js'
+import { realtimeLabels, useSession } from '../src/useSession.js'
 import { createRealtime } from '../src/realtime.js'
 import { listCommands, validateTicketStatus } from '../src/api.js'
 
@@ -3187,6 +3187,51 @@ test('journal UI wires local search, accessible controls, counts, distinct empty
   assert.match(app, /maximaal 100 lokaal geladen records/)
   assert.match(app, /Niet in de hele database of ticket-ID's/)
   assert.match(app, /alleen in sessiegeheugen/)
+})
+
+test('compiled realtime controls retain scoped guidance in every connection and busy state', async t => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const panel = app.match(/<p role="status"[^>]*>{{ realtimeLabels\[realtimeStatus\] }}<\/p>[\s\S]*?<\/div>/)?.[0]
+  assert.ok(panel)
+  assert.equal(app.match(/\bid="realtime-help"/g)?.length, 1)
+  assert.equal(app.match(/\baria-describedby="realtime-help"/g)?.length, 2)
+  const help = panel.match(/<p id="realtime-help" class="muted">([\s\S]*?)<\/p>/)?.[1]
+  assert.ok(help)
+  assert.doesNotMatch(help, /v-if|v-html|v-text|\{\{|@|v-on/)
+  const text = help.replace(/\s+/g, ' ').trim()
+  assert.equal(text, 'Realtime ontvangt alleen nieuwe gebeurtenissen zolang de verbinding actief is. Verbinden of opnieuw verbinden haalt geen eerdere of gemiste records op. Verbonden betekent geen volledige historie. Kies expliciet Logboek vernieuwen voor een momentopname van de nieuwste maximaal 100 records, niet de hele historie. Geen garantie op ontvangst zonder gaten of precies één ontvangst per live record.')
+  const { code } = compile(panel, { mode: 'function', prefixIdentifiers: true })
+  const render = new Function('Vue', code)(Vue)
+
+  for (const realtimeStatus of ['disconnected', 'connecting', 'connected', 'error']) {
+    for (const busy of ['', 'list']) {
+      await t.test(`${realtimeStatus}, busy=${!!busy}`, async t => {
+        const { state, calls, sockets } = fixture(t)
+        state.realtimeStatus.value = realtimeStatus
+        state.busy.value = busy
+        const before = commandState(state)
+        const html = await renderToString(Vue.createSSRApp({
+          setup: () => ({ ...state, realtimeLabels }), render,
+        }))
+        assert.equal(html.match(/\bid="realtime-help"/g)?.length, 1)
+        assert.equal(html.match(/\baria-describedby="realtime-help"/g)?.length, 2)
+        assert.ok(html.includes(`<p role="status" aria-describedby="realtime-help">${realtimeLabels[realtimeStatus]}</p>`))
+        assert.equal(html.match(/<p id="realtime-help" class="muted">([\s\S]*?)<\/p>/)?.[1].replace(/\s+/g, ' ').trim(), text)
+        const connect = html.match(/<button\b[^>]*>Realtime verbinden<\/button>/)?.[0]
+        assert.ok(connect)
+        assert.match(connect, /aria-describedby="realtime-help"/)
+        assert.equal(connect.includes(' disabled'), !!busy || ['connecting', 'connected'].includes(realtimeStatus))
+        const disconnect = html.match(/<button\b[^>]*>Verbinding verbreken<\/button>/)?.[0]
+        assert.ok(disconnect)
+        assert.equal(disconnect.includes(' disabled'), !!busy || !['connecting', 'connected'].includes(realtimeStatus))
+        assert.deepEqual(commandState(state), before)
+        assert.equal(state.realtimeStatus.value, realtimeStatus)
+        assert.equal(state.busy.value, busy)
+        assert.equal(calls.length, 0)
+        assert.equal(sockets.length, 0)
+      })
+    }
+  }
 })
 
 test('compiled journal limit notice depends only on loaded count, including realtime-only and failed-refresh states', async t => {

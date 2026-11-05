@@ -401,7 +401,12 @@ ander tabblad openen wist niets. De browser garandeert `pagehide` niet bij
 bijvoorbeeld een procescrash. Dit is geen veilige geheugenwissing, server-side
 ticketintrekking of terugdraaiing van een al verstuurde mutatie.
 De BASTION-interface kan met hetzelfde token verbinden voor realtime-events;
-vernieuw het logboek na een verbindingsonderbreking.
+vernieuw het logboek na een verbindingsonderbreking. De interface licht bij
+de verbindingsbediening toe dat verbinden geen historie of gemiste records
+ophaalt. **Verbonden** betekent niet dat het lokale logboek volledig is.
+Kies expliciet **Logboek vernieuwen** voor een momentopname van maximaal
+100 recente records, niet de volledige historie. De live herverbindingstest
+controleert dat gemiste records pas na die expliciete verversing verschijnen.
 Bij afzonderlijk realtime verbreken wordt de lokale logboekstaat gewist
 vóór de oude disconnectcallback wordt aangeroepen. Een vanuit die callback
 expliciet gestarte vervangende verbinding wordt niet achteraf door de oude
