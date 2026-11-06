@@ -1204,6 +1204,13 @@ def main() -> int:
                 if isinstance(step_uses, str) and step_uses.startswith(
                     "actions/checkout@"
                 ):
+                    if (
+                        workflow_filename == "release.yml"
+                        and job_name == "publish-release"
+                    ):
+                        errors.append(
+                            f"{path}: job '{job_name}' must not use actions/checkout steps"
+                        )
                     if step_uses != "actions/checkout@v4":
                         errors.append(
                             f"{path}: job '{job_name}' checkout step #{step_index} must use actions/checkout@v4"
