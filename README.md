@@ -453,6 +453,12 @@ Kopieer het ticket-ID vóór het wissen als je een onzekere uitkomst later
 handmatig wilt controleren. Wissen verwijdert ook de lokale blokkering
 bij een onzekere intrekking, maar bewijst niet dat het ticket is ingetrokken.
 Dien een onzekere inzending niet automatisch opnieuw in.
+Live HTTP/SQLite-tests volgen deze herstelroute na een verloren commit- of
+intrekkingsantwoord. Na **Wis sessie** start herinvoer van het token niets
+automatisch. Alleen handmatige invoer van het vooraf bewaarde ticket-ID en
+een expliciete statuscontrole halen de uitkomst op, zonder lokaal ticket,
+laatste-inzending-ID of logboek te herstellen of servergegevens te wijzigen.
+De tests bewaren het ontvangen ID buiten de sessie; ze testen geen klembord.
 Bij `pagehide` voert BASTION dezelfde lokale sessiewissing uit, ook wanneer
 de browser de pagina in de terug-/vooruitcache bewaart. Dit verbreekt realtime
 en wist ook lokaal bewaarde ticket-ID's; bewaar zo nodig vooraf het ID voor

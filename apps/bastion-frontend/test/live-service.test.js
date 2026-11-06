@@ -2607,6 +2607,109 @@ test('live service: a lost successful commit consumes local authority without re
   assert.equal(f.calls.length, 4)
 })
 
+for (const action of ['commit', 'revoke']) {
+  test(`live service: operator manually recovers a lost ${action} outcome after clearSession`, { timeout: 15000 }, async t => {
+    const f = await fixture(t)
+    const s = f.session
+    const committing = action === 'commit'
+    const snapshot = () => Object.fromEntries(['tickets', 'commands', 'audit', 'clock_state'].map(table =>
+      [table, f.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]))
+    await f.run('ticket')
+    assert.equal(s.error.value, '')
+    const held = { ...s.ticket.value }
+    const operatorCopiedId = s.ticket.value.id // Operator copies the received ID before clearing local state.
+    const path = `/v1/tickets/${operatorCopiedId}`
+    assert.equal(s.canCommit.value, true)
+    const operation = { path: committing ? '/v1/commands' : path, method: committing ? 'POST' : 'DELETE', status: committing ? 201 : 200 }
+    f.loseNext(operation.method, operation.path)
+    await f.run(action)
+    assert.equal(f.losses, 1)
+    assert.match(s.error.value, /Geen geldig antwoord/)
+    assert.equal(s.message.value, committing ? commitCaution : revokeCaution)
+    assert.deepEqual(s.ticket.value, committing ? null : held)
+    assert.equal(s.lastSubmissionId.value, committing ? operatorCopiedId : '')
+    assert.equal(s.revocationUncertain.value, !committing)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.outcome.value, null)
+    assert.equal(s.outcomeReceivedAt.value, null)
+    assert.deepEqual(s.commands.value, [])
+    const persisted = snapshot()
+    assert.equal(persisted.tickets.length, 1)
+    assert.equal(persisted.tickets[0].id, operatorCopiedId)
+    assert.equal(persisted.tickets[0].command, held.command)
+    assert.equal(persisted.tickets[0].consumed, Number(committing))
+    assert.equal(persisted.tickets[0].revoked, Number(!committing))
+    assert.equal(persisted.commands.length, Number(committing))
+    const record = committing ? {
+      id: persisted.commands[0].id, command: held.command, committed_at: now,
+    } : null
+    if (committing) {
+      assert.equal(persisted.commands[0].ticket_id, operatorCopiedId)
+      assert.equal(persisted.commands[0].command, record.command)
+      assert.equal(persisted.commands[0].committed_at, record.committed_at)
+    }
+    assert.equal(persisted.audit.length, 1)
+    assert.equal(persisted.audit[0].ticket_id, operatorCopiedId)
+    assert.equal(persisted.audit[0].action, committing ? 'journal:append' : 'ticket:revoke')
+    const mutationCalls = [{ path: '/v1/tickets', method: 'POST', status: 201 }, operation]
+    assert.deepEqual(f.calls, mutationCalls)
+    const assertCleared = () => {
+      assert.equal(s.command.value, '')
+      assert.equal(s.ticket.value, null)
+      assert.equal(s.lookupId.value, '')
+      assert.equal(s.lastSubmissionId.value, '')
+      assert.equal(s.outcome.value, null)
+      assert.equal(s.outcomeReceivedAt.value, null)
+      assert.equal(s.revocationUncertain.value, false)
+      assert.equal(s.canCommit.value, false)
+      assert.equal(s.canCheckStatus.value, false)
+      assert.deepEqual(s.commands.value, [])
+      assert.equal(s.hasLoaded.value, false)
+      assert.equal(s.lastJournalRefreshAt.value, null)
+    }
+    s.clearSession()
+    assert.equal(s.token.value, '')
+    assert.equal(s.validToken.value, false)
+    assertCleared()
+    assert.deepEqual(f.calls, mutationCalls, 'local clearing does not revoke or fetch')
+    assert.deepEqual(snapshot(), persisted)
+    s.token.value = token
+    assert.equal(s.validToken.value, true)
+    assertCleared()
+    assert.deepEqual(f.calls, mutationCalls, 'restoring credentials does not restore IDs or fetch')
+    assert.deepEqual(snapshot(), persisted)
+    await s.checkLastSubmission()
+    assertCleared()
+    assert.deepEqual(f.calls, mutationCalls, 'the cleared last-submission shortcut is a no-op')
+    s.lookupId.value = operatorCopiedId
+    assert.equal(s.canCheckStatus.value, true)
+    assert.equal(s.outcome.value, null)
+    assert.equal(s.outcomeReceivedAt.value, null)
+    assert.deepEqual(f.calls, mutationCalls, 'manually entering the copied ID does not fetch')
+    assert.deepEqual(snapshot(), persisted)
+    await f.run('status')
+    assert.equal(s.error.value, '')
+    assert.deepEqual(s.outcome.value, {
+      id: operatorCopiedId, command: held.command, not_before: held.not_before,
+      expires_at: held.expires_at, checked_at: now,
+      status: committing ? 'committed' : 'revoked', revoked: !committing, record,
+    })
+    assert.equal(s.outcomeReceivedAt.value, now)
+    assert.equal(s.ticket.value, null)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.revocationUncertain.value, false)
+    assert.equal(s.lastSubmissionId.value, '')
+    assert.deepEqual(s.commands.value, [])
+    assert.equal(s.hasLoaded.value, false)
+    f.tick()
+    await Promise.resolve()
+    assert.deepEqual(f.calls, [...mutationCalls, { path, method: 'GET', status: 200 }],
+      'one issue, one lost operation and one manual lookup; no retries, new issues or extra revokes')
+    assert.deepEqual(snapshot(), persisted, 'manual recovery and clock ticks leave all persisted rows unchanged')
+    assert.equal(f.losses, 1)
+  })
+}
+
 test('live service: explicit lookup finds a lost successful commit after service close and recreation on the same database', { timeout: 15000 }, async t => {
   const f = await fixture(t)
   const s = f.session
