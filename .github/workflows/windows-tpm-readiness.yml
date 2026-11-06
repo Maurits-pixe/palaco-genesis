@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - orch-059-windows-tpm-readiness
+      - orch-060-windows-tbs-counter-public
 permissions:
   contents: read
 jobs:
@@ -13,11 +14,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test Windows PowerShell
         shell: powershell
-        run: ./tools/windows/Test-PalacoTpmReadiness.ps1
+        run: |
+          ./tools/windows/Test-PalacoTpmReadiness.ps1
+          ./tools/windows/Test-PalacoTpmCounterPublic.ps1
   powershell-core:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - name: Test PowerShell Core
         shell: pwsh
-        run: ./tools/windows/Test-PalacoTpmReadiness.ps1
+        run: |
+          ./tools/windows/Test-PalacoTpmReadiness.ps1
+          ./tools/windows/Test-PalacoTpmCounterPublic.ps1
