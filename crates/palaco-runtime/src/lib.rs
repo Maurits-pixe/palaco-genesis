@@ -56,7 +56,9 @@ impl RuntimePlan {
         at: Timestamp,
         context: &DecisionContext,
     ) -> Result<bool, RevalidationError> {
-        if self.current_validity(at) != CurrentValidity::Valid {
+        if self.current_validity(at) != CurrentValidity::Valid
+            || context != &self.boundary.decision.context
+        {
             return Ok(false);
         }
 
