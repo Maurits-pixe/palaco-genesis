@@ -1336,6 +1336,14 @@ def main() -> int:
             if (
                 workflow_filename == "release.yml"
                 and job_name == "publish-release"
+                and len(steps) != 2
+            ):
+                errors.append(
+                    f"{path}: job '{job_name}' must define exactly 2 steps"
+                )
+            if (
+                workflow_filename == "release.yml"
+                and job_name == "publish-release"
                 and publish_release_download_steps != 1
             ):
                 errors.append(
