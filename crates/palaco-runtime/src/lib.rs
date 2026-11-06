@@ -56,7 +56,8 @@ impl RuntimePlan {
         at: Timestamp,
         context: &DecisionContext,
     ) -> Result<bool, RevalidationError> {
-        if self.current_validity(at) != CurrentValidity::Valid
+        if at < self.boundary.decision.issued_at
+            || self.current_validity(at) != CurrentValidity::Valid
             || context != &self.boundary.decision.context
         {
             return Ok(false);
@@ -216,6 +217,13 @@ mod tests {
         assert_eq!(
             execute_plan.execution_ready(
                 timestamp(2026, 2, 1, 0, 0, 0)?,
+                &execute_plan.boundary.decision.context
+            ),
+            Ok(false)
+        );
+        assert_eq!(
+            execute_plan.execution_ready(
+                timestamp(2026, 1, 14, 0, 0, 0)?,
                 &execute_plan.boundary.decision.context
             ),
             Ok(false)
