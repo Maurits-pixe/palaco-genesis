@@ -65,6 +65,19 @@ proof that a human review was executed.
    ID and archive SHA-256. Recompute and compare manifest digests using the
    downloaded bytes and preserved metadata; distinguish an archive digest
    from the digest of the SPDX document itself.
+   Run the **read-only** ZIP verifier without extracting the archive:
+
+   ```bash
+   python3 verification/provenance/verify_artifact.py \
+     --artifact /path/to/downloaded-artifact.zip \
+     --archive-sha256 EXPECTED_64_HEX_SHA256 \
+     --commit EXACT_40_HEX_HEAD_SHA
+   ```
+
+   Obtain `EXPECTED_64_HEX_SHA256` from the GitHub Actions artifact metadata
+   for the chosen run, independently of the downloaded ZIP. The verifier
+   rejects unexpected entries, duplicate names, oversized entries, digest
+   mismatches and inconsistencies between Cargo metadata and SPDX content.
 5. Confirm the evidence contains `signed: false` and
    `release_authorized: false`. Any claim of signature, authenticity, or
    production authority requires a different, separately governed process.
