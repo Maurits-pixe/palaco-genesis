@@ -1218,6 +1218,19 @@ def main() -> int:
                     and step_uses.strip() == "actions/download-artifact@v4"
                 ):
                     publish_release_download_steps += 1
+                    if not isinstance(step_with, dict):
+                        errors.append(
+                            f"{path}: job '{job_name}' actions/download-artifact@v4 step #{step_index} must define with.name and with.path"
+                        )
+                    else:
+                        if step_with.get("name") != "release-binaries":
+                            errors.append(
+                                f"{path}: job '{job_name}' actions/download-artifact@v4 step #{step_index} must set with.name to 'release-binaries'"
+                            )
+                        if step_with.get("path") != "release-binaries":
+                            errors.append(
+                                f"{path}: job '{job_name}' actions/download-artifact@v4 step #{step_index} must set with.path to 'release-binaries'"
+                            )
                 if (
                     workflow_filename == "release.yml"
                     and job_name == "publish-release"
