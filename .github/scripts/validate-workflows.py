@@ -1223,6 +1223,14 @@ def main() -> int:
                             f"{path}: job '{job_name}' actions/download-artifact@v4 step #{step_index} must define with.name and with.path"
                         )
                     else:
+                        unsupported_download_with_keys = set(step_with.keys()) - {
+                            "name",
+                            "path",
+                        }
+                        if unsupported_download_with_keys:
+                            errors.append(
+                                f"{path}: job '{job_name}' actions/download-artifact@v4 step #{step_index} has unsupported with keys: {sorted(unsupported_download_with_keys)}"
+                            )
                         if step_with.get("name") != "release-binaries":
                             errors.append(
                                 f"{path}: job '{job_name}' actions/download-artifact@v4 step #{step_index} must set with.name to 'release-binaries'"
