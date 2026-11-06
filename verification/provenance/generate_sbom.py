@@ -3,12 +3,23 @@
 import argparse
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
 
 def canonical(value):
     return (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n").encode()
+
+
+def license_expression(value):
+    if not value:
+        return "NOASSERTION"
+    # Historic Cargo manifests allow `MIT/Apache-2.0` for a license choice;
+    # SPDX 2.3 requires an explicit operator. Do not reinterpret other syntax.
+    if "/" in value and re.fullmatch(r"[A-Za-z0-9.+-]+(?:/[A-Za-z0-9.+-]+)+", value):
+        return value.replace("/", " OR ")
+    return value
 
 
 def generate(metadata, commit, epoch):
@@ -32,7 +43,7 @@ def generate(metadata, commit, epoch):
             "downloadLocation": "NOASSERTION",
             "filesAnalyzed": False,
             "licenseConcluded": "NOASSERTION",
-            "licenseDeclared": package.get("license") or "NOASSERTION",
+            "licenseDeclared": license_expression(package.get("license")),
             "copyrightText": "NOASSERTION",
         })
     relations = [{"spdxElementId": "SPDXRef-DOCUMENT", "relatedSpdxElement": references[item], "relationshipType": "DESCRIBES"}
