@@ -9,8 +9,9 @@ or replace the constitutional admission and execution boundaries.
 
 ## Fail-closed semantics
 
-1. Runtime readiness requires current validity `Valid` at the supplied UTC
-   timestamp, an exact match with the recorded decision context, and
+1. Runtime readiness requires an evaluation time no earlier than the decision's
+   issuance, current validity `Valid` at the supplied UTC timestamp,
+   an exact match with the recorded decision context, and
    constitutional revalidation `Confirmed` for that context.
 2. Kernel readiness also requires its local disposition `Execute`; it delegates
    to runtime readiness and cannot override a runtime `SafeState` or `Escalate`.
