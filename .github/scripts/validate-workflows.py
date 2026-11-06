@@ -1041,6 +1041,8 @@ def main() -> int:
             step_id_to_indexes: dict[str, list[int]] = {}
             publish_release_action_steps = 0
             publish_release_download_steps = 0
+            publish_release_download_step_index: int | None = None
+            publish_release_action_step_index: int | None = None
             for step_index, step in enumerate(steps):
                 if not isinstance(step, dict):
                     errors.append(
@@ -1218,6 +1220,7 @@ def main() -> int:
                     and step_uses.strip() == "actions/download-artifact@v4"
                 ):
                     publish_release_download_steps += 1
+                    publish_release_download_step_index = step_index
                     if not isinstance(step_with, dict):
                         errors.append(
                             f"{path}: job '{job_name}' actions/download-artifact@v4 step #{step_index} must define with.name and with.path"
@@ -1246,6 +1249,7 @@ def main() -> int:
                     and step_uses.strip() == "softprops/action-gh-release@v2"
                 ):
                     publish_release_action_steps += 1
+                    publish_release_action_step_index = step_index
                     required_release_files = [
                         "release-binaries/citadel-a1",
                         "release-binaries/citadel-a1-canonical",
@@ -1336,6 +1340,16 @@ def main() -> int:
             ):
                 errors.append(
                     f"{path}: job '{job_name}' must contain exactly one step using softprops/action-gh-release@v2"
+                )
+            if (
+                workflow_filename == "release.yml"
+                and job_name == "publish-release"
+                and publish_release_download_step_index is not None
+                and publish_release_action_step_index is not None
+                and publish_release_download_step_index > publish_release_action_step_index
+            ):
+                errors.append(
+                    f"{path}: job '{job_name}' must place actions/download-artifact@v4 before softprops/action-gh-release@v2"
                 )
 
         for display_name, job_ids in job_display_name_to_ids.items():
