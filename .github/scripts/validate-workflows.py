@@ -214,6 +214,10 @@ def main() -> int:
                 errors.append(
                     f"{path}: top-level workflow 'on' mapping has unsupported triggers: {sorted(unsupported_trigger_keys)}"
                 )
+            if os.path.basename(path) == "release.yml" and "workflow_dispatch" not in trigger_config:
+                errors.append(
+                    f"{path}: release workflow must define workflow_dispatch trigger"
+                )
             if "schedule" in trigger_config:
                 schedule_trigger = trigger_config.get("schedule")
                 if not isinstance(schedule_trigger, list) or not schedule_trigger:
