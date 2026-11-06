@@ -8,6 +8,12 @@ does not change runtime authority.
 
 - Input: `cargo metadata --locked --format-version 1`, a 40-character commit SHA,
   and the commit timestamp.
+- On a `pull_request` workflow, `GITHUB_SHA` may identify GitHub's temporary
+  **merge commit**, while the artifact listing's `workflow_run.head_sha`
+  identifies the PR **head commit**. These are different identities. Use the
+  `commit` actually recorded in `evidence.json` for artifact reconstruction,
+  and separately confirm it matches the run's checkout/`GITHUB_SHA` from logs.
+  Never substitute the PR head SHA as the verifier's `--commit` argument.
 - Output: deterministic `sbom.spdx.json` (SPDX 2.3 Cargo package/dependency
   inventory), `evidence.json` (digests and explicit non-authority flags), and
   a copy of the raw Cargo metadata in the uploaded CI artifact.
@@ -56,7 +62,7 @@ proof that a human review was executed.
 
 1. Record the PR URL, exact head SHA, base SHA, workflow file revision, and
    whether the PR remains draft. Re-check after any commit; do not reuse older
-   green runs for a new head.
+   green runs for a new head. Also record the checkout/merge commit separately.
 2. Inspect the full diff for workflow permissions, dependency pin, Cargo input
    coverage, license-expression handling, and fail-closed behavior.
 3. Check that **all** required workflow runs succeeded on that exact head.
@@ -71,11 +77,13 @@ proof that a human review was executed.
    python3 verification/provenance/verify_artifact.py \
      --artifact /path/to/downloaded-artifact.zip \
      --archive-sha256 EXPECTED_64_HEX_SHA256 \
-     --commit EXACT_40_HEX_HEAD_SHA
+     --commit EXACT_40_HEX_EVIDENCE_COMMIT
    ```
 
    Obtain `EXPECTED_64_HEX_SHA256` from the GitHub Actions artifact metadata
-   for the chosen run, independently of the downloaded ZIP. The verifier
+   for the chosen run, independently of the downloaded ZIP. Obtain the evidence
+   commit from `evidence.json`, then independently bind it to the workflow
+   checkout SHA; it may differ from the PR head SHA. The verifier
    rejects unexpected entries, duplicate names, oversized entries, digest
    mismatches and inconsistencies between Cargo metadata and SPDX content.
 5. Confirm the evidence contains `signed: false` and
