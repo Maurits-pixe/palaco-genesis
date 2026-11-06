@@ -24,6 +24,11 @@ jobs:
             --commit "$GITHUB_SHA" \
             --source-epoch "$(git show -s --format=%ct "$GITHUB_SHA")" \
             --output-dir "$RUNNER_TEMP/palaco-sbom"
+          python3 verification/provenance/verify_evidence.py \
+            --output-dir "$RUNNER_TEMP/palaco-sbom" \
+            --commit "$GITHUB_SHA" \
+            --metadata "$RUNNER_TEMP/cargo-metadata.json"
+          cp "$RUNNER_TEMP/cargo-metadata.json" "$RUNNER_TEMP/palaco-sbom/cargo-metadata.json"
       - name: Upload unsigned evidence
         uses: actions/upload-artifact@v4
         with:
