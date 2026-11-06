@@ -1,0 +1,32 @@
+name: PALACO SBOM Evidence Candidate
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test generator
+        run: python3 -m unittest discover -s verification/provenance -p 'test_*.py'
+      - name: Generate candidate evidence
+        shell: bash
+        run: |
+          cargo metadata --locked --format-version 1 > "$RUNNER_TEMP/cargo-metadata.json"
+          python3 verification/provenance/generate_sbom.py \
+            --metadata "$RUNNER_TEMP/cargo-metadata.json" \
+            --commit "$GITHUB_SHA" \
+            --source-epoch "$(git show -s --format=%ct "$GITHUB_SHA")" \
+            --output-dir "$RUNNER_TEMP/palaco-sbom"
+      - name: Upload unsigned evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: palaco-spdx-unsigned
+          path: ${{ runner.temp }}/palaco-sbom/
+          if-no-files-found: error
