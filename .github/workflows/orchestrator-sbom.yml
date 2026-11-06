@@ -15,6 +15,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Test generator
         run: python3 -m unittest discover -s verification/provenance -p 'test_*.py'
+      - name: Install independent SPDX validator
+        run: python3 -m pip install spdx-tools==0.8.3
       - name: Generate candidate evidence
         shell: bash
         run: |
@@ -28,6 +30,7 @@ jobs:
             --output-dir "$RUNNER_TEMP/palaco-sbom" \
             --commit "$GITHUB_SHA" \
             --metadata "$RUNNER_TEMP/cargo-metadata.json"
+          pyspdxtools -i "$RUNNER_TEMP/palaco-sbom/sbom.spdx.json"
           cp "$RUNNER_TEMP/cargo-metadata.json" "$RUNNER_TEMP/palaco-sbom/cargo-metadata.json"
       - name: Upload unsigned evidence
         uses: actions/upload-artifact@v4
