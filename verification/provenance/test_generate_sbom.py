@@ -2,7 +2,7 @@
 
 import unittest
 
-from generate_sbom import canonical, generate
+from generate_sbom import canonical, generate, license_expression
 
 
 COMMIT = "a" * 40
@@ -17,6 +17,11 @@ METADATA = {
 
 
 class SbomTests(unittest.TestCase):
+    def test_legacy_cargo_license_choice_is_spdx_expression(self):
+        self.assertEqual(license_expression("MIT/Apache-2.0"), "MIT OR Apache-2.0")
+        self.assertEqual(license_expression("Apache-2.0"), "Apache-2.0")
+        self.assertEqual(license_expression(None), "NOASSERTION")
+
     def test_deterministic_under_input_reordering(self):
         first = generate(METADATA, COMMIT, 0)
         reversed_input = {**METADATA, "packages": list(reversed(METADATA["packages"]))}
