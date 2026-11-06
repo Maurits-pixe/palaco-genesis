@@ -1,0 +1,23 @@
+name: Windows TPM readiness
+on:
+  pull_request:
+  push:
+    branches:
+      - orch-059-windows-tpm-readiness
+permissions:
+  contents: read
+jobs:
+  windows-powershell:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test Windows PowerShell
+        shell: powershell
+        run: ./tools/windows/Test-PalacoTpmReadiness.ps1
+  powershell-core:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test PowerShell Core
+        shell: pwsh
+        run: ./tools/windows/Test-PalacoTpmReadiness.ps1
