@@ -1141,6 +1141,84 @@ test('held ticket ID focus only selects text without state mutation or requests'
   assert.equal(sockets.length, 0)
 })
 
+test('last submission ID renders labelled, linked readonly manual-copy help only with a retained ID', async t => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const panel = app.match(/<div v-if="lastSubmissionId">[\s\S]*?<\/div>/)[0]
+  const label = panel.match(/<label for="last-submission">[^<]*<\/label>/)[0]
+  const input = panel.match(/<input id="last-submission"[^>]*\/>/)[0]
+  const help = panel.match(/<p id="last-submission-help" class="muted">[\s\S]*?<\/p>/)[0]
+  assert.match(label, /Laatste ingezonden ticket-ID \(selecteer en kopieer\)/)
+  assert.match(input, /:value="lastSubmissionId"/)
+  assert.match(input, /\sreadonly\s/)
+  assert.match(input, /@focus="\$event.target.select\(\)"/)
+  assert.match(input, /aria-describedby="last-submission-help"/)
+  assert.doesNotMatch(input, /disabled|v-model|@(?!focus=)|v-on|v-bind|v-if/)
+  assert.match(help, /ID van de laatste inzendpoging, geen bevestiging van geslaagde opslag\./)
+  assert.match(help, /Selecteer en kopieer dit exacte ID handmatig vóór Wis sessie om later de status op te zoeken/)
+  assert.match(help, /kopieën op het klembord worden niet lokaal gewist/)
+  assert.match(help, /Selecteren en kopiëren versturen geen verzoeken en herstellen geen toestemming; controleer de status expliciet\./)
+  assert.doesNotMatch(help, /\{\{|v-|@/)
+  for (const id of ['last-submission', 'last-submission-help']) {
+    assert.equal(app.match(new RegExp(`\\bid="${id}"`, 'g')).length, 1)
+  }
+  const render = compileFragment(panel)
+  const { state, calls, sockets } = fixture(t)
+  prepare(state, 'revoke')
+  state.lastSubmissionId.value = ' \t exact-É🚀<&"ticket>\n '
+  state.lookupId.value = 'different-lookup-id'
+  state.ticket.value = { ...held(), id: 'different-current-id' }
+  state.outcome.value = snapshot({ id: 'different-outcome-id' })
+  for (const busy of ['', 'ticket', 'commit', 'revoke', 'status', 'list']) {
+    state.busy.value = busy
+    const before = JSON.parse(JSON.stringify(commandState(state)))
+    const { html, find } = await render(state)
+    const field = find(node => node.type === 'input' && node.props?.id === 'last-submission')
+    assert.equal(field.props.value, state.lastSubmissionId.value, busy)
+    assert.equal(field.props.readonly, '', busy)
+    assert.equal(field.props.disabled, undefined, busy)
+    assert.equal(typeof field.props.onFocus, 'function', busy)
+    assert.equal(field.props['aria-describedby'], 'last-submission-help')
+    assert.ok(html.includes('<input id="last-submission" value=" \t exact-É🚀&lt;&amp;&quot;ticket&gt;\n " readonly aria-describedby="last-submission-help">'), busy)
+    assert.ok(html.includes(label))
+    assert.ok(html.includes(help.replace(/\s+/g, ' ')))
+    assert.doesNotMatch(html, /different-lookup-id|different-current-id|different-outcome-id/)
+    assert.deepEqual(commandState(state), before)
+    state.lastSubmissionId.value = ''
+    const emptyBefore = JSON.parse(JSON.stringify(commandState(state)))
+    const empty = await render(state)
+    assert.doesNotMatch(empty.html, /last-submission|Laatste ingezonden ticket-ID|Selecteer en kopieer|Controleer laatste inzending/, busy)
+    assert.equal(empty.find(node => node.type === 'div'), undefined, busy)
+    assert.deepEqual(commandState(state), emptyBefore)
+    state.lastSubmissionId.value = before.lastSubmissionId
+  }
+  assert.equal(calls.length, 0)
+  assert.equal(sockets.length, 0)
+})
+
+test('last submission ID compiled focus only selects text without state mutation or requests', t => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const input = app.match(/<input id="last-submission"[^>]*\/>/)[0]
+  const { code } = compile(input, { mode: 'function', prefixIdentifiers: true })
+  const render = new Function('Vue', code)(Vue)
+  const { state, calls, sockets } = fixture(t)
+  prepare(state, 'revoke')
+  state.lastSubmissionId.value = ' \t exact-É🚀<&"ticket>\n '
+  for (const busy of ['', 'ticket', 'commit', 'revoke', 'status', 'list']) {
+    state.busy.value = busy
+    const before = JSON.parse(JSON.stringify(commandState(state)))
+    const vnode = render(Vue.proxyRefs(state), {})
+    assert.deepEqual(Object.keys(vnode.props).sort(), ['aria-describedby', 'id', 'onFocus', 'readonly', 'value'])
+    assert.equal(vnode.props.value, state.lastSubmissionId.value)
+    let selections = 0
+    const target = { select() { assert.equal(this, target); selections++ } }
+    vnode.props.onFocus({ target })
+    assert.equal(selections, 1, busy)
+    assert.deepEqual(commandState(state), before, busy)
+  }
+  assert.equal(calls.length, 0)
+  assert.equal(sockets.length, 0)
+})
+
 test('outcome ticket ID renders exact escaped text with accessible manual-copy help only with an outcome', async () => {
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
   const panel = app.match(/<div v-if="outcome" class="result">[\s\S]*?<\/div>/)[0]
@@ -3421,7 +3499,7 @@ for (const reset of ['clear', 'token', 'dispose']) {
 test('last-submission button is an explicit manual read beside the readonly retained ID', () => {
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
   assert.match(app, /checkLastSubmission,[\s\S]*} = useSession\(\)/)
-  assert.match(app, /<div v-if="lastSubmissionId">\s*<label[^>]*>[^<]*<\/label>\s*<input id="last-submission" :value="lastSubmissionId" readonly @focus="\$event.target.select\(\)" \/>\s*<button type="button" class="secondary" :disabled="!!busy \|\| !validToken" @click="checkLastSubmission">Controleer laatste inzending<\/button>\s*<\/div>/)
+  assert.match(app, /<div v-if="lastSubmissionId">\s*<label[^>]*>[^<]*<\/label>\s*<input id="last-submission" :value="lastSubmissionId" readonly @focus="\$event.target.select\(\)" aria-describedby="last-submission-help" \/>\s*<p id="last-submission-help" class="muted">[^<]*<\/p>\s*<button type="button" class="secondary" :disabled="!!busy \|\| !validToken" @click="checkLastSubmission">Controleer laatste inzending<\/button>\s*<\/div>/)
   assert.match(app, /@click="checkCurrentTicket">Controleer huidig ticket<\/button>/)
   assert.match(app, /<form @submit.prevent="perform\('status'\)">/)
   assert.doesNotMatch(app, /clipboard|localStorage|sessionStorage/)

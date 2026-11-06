@@ -326,6 +326,11 @@ de onzekerheid af, zonder toestemming te herstellen.
 Met **Controleer laatste inzending** vraag je direct de status van dat
 bewaarde ID op, ook wanneer het lokale ticket na de inzendpoging al is
 verwijderd. Deze knop dient niets opnieuw in en herstelt geen toestemming.
+Het alleen-lezen veld heeft gekoppelde kopieerhulp: dit ID hoort bij een
+inzendpoging en bewijst geen geslaagde opslag. Focus selecteert de volledige
+waarde, ook tijdens een verzoek. Kopieer het exacte ID handmatig vóór
+**Wis sessie**; een klembordkopie valt buiten de sessiewissing. Selecteren
+en kopiëren starten geen statuscontrole en herstellen geen toestemming.
 Bij een mislukte vastleggingsactie toont BASTION naast de fout **Vastlegging
 niet bevestigd**, met het advies de laatste inzending te controleren en niet
 automatisch opnieuw in te dienen. Dit bewijst geen commit of rollback.

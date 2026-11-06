@@ -105,7 +105,10 @@ function receiptIso(value) {
         <h2 id="status-title">Ticketuitkomst controleren</h2>
         <div v-if="lastSubmissionId">
           <label for="last-submission">Laatste ingezonden ticket-ID (selecteer en kopieer)</label>
-          <input id="last-submission" :value="lastSubmissionId" readonly @focus="$event.target.select()" />
+          <input id="last-submission" :value="lastSubmissionId" readonly @focus="$event.target.select()" aria-describedby="last-submission-help" />
+          <p id="last-submission-help" class="muted">ID van de laatste inzendpoging, geen bevestiging van geslaagde opslag.
+            Selecteer en kopieer dit exacte ID handmatig vóór Wis sessie om later de status op te zoeken; kopieën op het klembord worden niet lokaal gewist.
+            Selecteren en kopiëren versturen geen verzoeken en herstellen geen toestemming; controleer de status expliciet.</p>
           <button type="button" class="secondary" :disabled="!!busy || !validToken" @click="checkLastSubmission">Controleer laatste inzending</button>
         </div>
         <form @submit.prevent="perform('status')">
