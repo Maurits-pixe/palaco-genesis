@@ -383,6 +383,12 @@ momentopname en lokale vastlegmogelijkheid binnen het tijdvenster staan:
 lokale geschiktheid bewijst geen actuele toestemming op de server.
 Een expliciete statuscontrole ontvangt de terminale uitkomst en verwijdert
 het lokale ticket, zonder extra mutaties of toevoeging aan het recente logboek.
+Aanvullende live tests proberen vóór hercontrole expliciet vast te leggen
+met zo'n verouderd lokaal ticket. De server weigert de aanvraag zonder extra
+logboek- of auditrecords. De poging verbruikt het lokale ticket en behoudt
+het ingezonden ID; nogmaals vastleggen zonder ticket verstuurt geen verzoek.
+Alleen een expliciete controle van de laatste inzending haalt de terminale
+uitkomst op, zonder toestemming te herstellen of het logboek aan te vullen.
 De commandotekst in de ticketuitkomst heeft een eigen toegankelijk label:
 dit is de exacte tekst uit de ontvangen statusmomentopname, niet de huidige
 concepttekst of het huidige ticket. Een concept wissen wist deze aparte
