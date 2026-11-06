@@ -1040,6 +1040,7 @@ def main() -> int:
             step_display_name_to_indexes: dict[str, list[int]] = {}
             step_id_to_indexes: dict[str, list[int]] = {}
             publish_release_action_steps = 0
+            publish_release_download_steps = 0
             for step_index, step in enumerate(steps):
                 if not isinstance(step, dict):
                     errors.append(
@@ -1214,6 +1215,13 @@ def main() -> int:
                     workflow_filename == "release.yml"
                     and job_name == "publish-release"
                     and isinstance(step_uses, str)
+                    and step_uses.strip() == "actions/download-artifact@v4"
+                ):
+                    publish_release_download_steps += 1
+                if (
+                    workflow_filename == "release.yml"
+                    and job_name == "publish-release"
+                    and isinstance(step_uses, str)
                     and step_uses.strip() == "softprops/action-gh-release@v2"
                 ):
                     publish_release_action_steps += 1
@@ -1251,6 +1259,14 @@ def main() -> int:
                     errors.append(
                         f"{path}: job '{job_name}' step id '{step_id}' must be unique within the job (used at indexes: {step_indexes})"
                     )
+            if (
+                workflow_filename == "release.yml"
+                and job_name == "publish-release"
+                and publish_release_download_steps != 1
+            ):
+                errors.append(
+                    f"{path}: job '{job_name}' must contain exactly one step using actions/download-artifact@v4"
+                )
             if (
                 workflow_filename == "release.yml"
                 and job_name == "publish-release"
