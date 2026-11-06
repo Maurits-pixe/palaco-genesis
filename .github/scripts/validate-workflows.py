@@ -406,6 +406,13 @@ def main() -> int:
                                 f"{path}: release workflow must define workflow_dispatch input 'release_tag'"
                             )
                         else:
+                            unsupported_release_inputs = set(workflow_inputs.keys()) - {
+                                "release_tag"
+                            }
+                            if unsupported_release_inputs:
+                                errors.append(
+                                    f"{path}: release workflow_dispatch inputs has unsupported keys: {sorted(unsupported_release_inputs)}"
+                                )
                             release_tag_input = workflow_inputs.get("release_tag")
                             if not isinstance(release_tag_input, dict):
                                 errors.append(
