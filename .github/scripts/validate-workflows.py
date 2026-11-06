@@ -910,6 +910,11 @@ def main() -> int:
                     errors.append(
                         f"{path}: job '{job_name}' must set needs to exactly 'release-readiness'"
                     )
+            if workflow_filename == "release.yml" and job_name == "release-readiness":
+                if job_needs is not None:
+                    errors.append(
+                        f"{path}: job '{job_name}' must not define needs"
+                    )
             job_if = job.get("if")
             if job_if is not None and (not isinstance(job_if, str) or not job_if.strip()):
                 errors.append(
