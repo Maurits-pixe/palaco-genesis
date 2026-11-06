@@ -1160,6 +1160,14 @@ def main() -> int:
                     errors.append(
                         f"{path}: job '{job_name}' step #{step_index} run must be a non-empty string when provided"
                     )
+                if (
+                    workflow_filename == "release.yml"
+                    and job_name == "publish-release"
+                    and step_run is not None
+                ):
+                    errors.append(
+                        f"{path}: job '{job_name}' step #{step_index} must use 'uses' and must not define 'run'"
+                    )
                 if step_shell is not None and (
                     not isinstance(step_shell, str) or not step_shell.strip()
                 ):
