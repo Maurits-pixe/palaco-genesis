@@ -119,6 +119,15 @@ def main() -> int:
 
         validate_env_mapping(errors, path, "workflow", data.get("env"))
         validate_defaults_run(errors, path, "workflow", data.get("defaults"))
+        if os.path.basename(path) == "release.yml":
+            workflow_env = data.get("env")
+            if (
+                not isinstance(workflow_env, dict)
+                or workflow_env.get("CARGO_TERM_COLOR") != "always"
+            ):
+                errors.append(
+                    f"{path}: release workflow must set env.CARGO_TERM_COLOR to 'always'"
+                )
 
         trigger_config = data.get("on", data.get(True))
         if trigger_config is None:
