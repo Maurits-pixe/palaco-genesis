@@ -1166,7 +1166,7 @@ test('outcome ticket ID renders exact escaped text with accessible manual-copy h
         lookupId: 'different-lookup-id', ticket: { ...held(), id: 'different-current-id' },
         lastSubmissionId: 'different-submission-id',
       }),
-      methods: { date: value => String(value) },
+      methods: { date: value => String(value), receiptIso: value => String(value) },
       render,
     }))
     assert.ok(html.includes('<input id="outcome-ticket-id" value=" exact-É🚀&lt;&amp;&quot;ticket&gt; " readonly aria-describedby="outcome-ticket-id-help">'), busy)
@@ -1287,7 +1287,7 @@ test('outcome explanations render the validated server status without restoring 
   assert.ok(panel)
   assert.ok(panel.includes("<p>Status: {{ outcome.status }} · ingetrokken: {{ outcome.revoked ? 'ja' : 'nee' }}</p>"))
   assert.match(panel, /<pre aria-labelledby="outcome-command-label" aria-describedby="outcome-command-help">{{ outcome\.command }}<\/pre>/)
-  for (const id of ['outcome-command-label', 'outcome-command-help', 'outcome-record-help']) {
+  for (const id of ['outcome-command-label', 'outcome-command-help', 'outcome-record-help', 'outcome-server-time-help', 'outcome-window-help', 'outcome-receipt-help']) {
     assert.equal(app.match(new RegExp(`\\bid="${id}"`, 'g')).length, 1)
   }
   const helpers = app.match(/function date\(value\) \{[\s\S]*?\n\}[\s\S]*?function receiptIso\(value\) \{[\s\S]*?\n\}/)?.[0]
@@ -1308,6 +1308,9 @@ test('outcome explanations render the validated server status without restoring 
   const label = '<p id="outcome-command-label">Commandotekst van deze ticketuitkomst</p>'
   const help = '<p id="outcome-command-help" class="muted">De exacte tekst uit de ontvangen statusmomentopname, niet de huidige concepttekst of het huidige ticket. Kan na Wis commandotekst zichtbaar blijven. Alleen tekst: geen uitvoering of nieuwe toestemming.</p>'
   const recordHelp = '<p id="outcome-record-help" class="muted">Het record-ID identificeert het opgeslagen logboekrecord, niet het ticket-ID voor statuscontrole. Alleen-lezen historie: herstelt geen toestemming en voegt niets toe aan het recente logboek.</p>'
+  const serverHelp = '<p id="outcome-server-time-help" class="muted">Het tijdstip waarop de server deze statusmomentopname controleerde, niet de lokale ontvangsttijd of de huidige tijd. Geen garantie dat de uitkomst actueel is. Controleer de status handmatig opnieuw voor een nieuwe momentopname.</p>'
+  const windowHelp = '<p id="outcome-window-help" class="muted">Begintijd inbegrepen, vervaltijd uitgesloten. Het historische geldigheidsvenster van deze ticketuitkomst, niet van de huidige concepttekst. Geeft geen nieuwe toestemming.</p>'
+  const receiptHelp = '<p id="outcome-receipt-help" class="muted">Volgens de lokale klok; geen server- of audittijd en geen garantie dat de uitkomst actueel is. Controleer de status handmatig opnieuw voor een nieuwe momentopname.</p>'
   const cases = [
     { status: 'pending', checked_at: 999 },
     ...[1000, 1099].map(checked_at => ({ status: 'active', checked_at })),
@@ -1320,20 +1323,44 @@ test('outcome explanations render the validated server status without restoring 
       status: 'committed', revoked, not_before: committed_at, expires_at: committed_at + 1,
       checked_at: committed_at + 1, record: { ...record('distinct-record-id'), command, committed_at },
     }))),
+    ...[0, 8_640_000_000_000_000 - 60_000].flatMap(not_before => {
+      const expires_at = not_before + 60_000
+      return [
+        { status: 'pending', checked_at: not_before, not_before: not_before + 1, expires_at },
+        { status: 'active', checked_at: not_before, not_before, expires_at },
+        { status: 'expired', checked_at: expires_at, not_before, expires_at },
+        { status: 'revoked', revoked: true, checked_at: expires_at, not_before, expires_at },
+      ]
+    }),
   ]
   for (const changes of cases) {
-    await t.test(`${changes.status}, revoked ${changes.revoked ?? false}, checked at ${changes.checked_at}`, async () => {
+    await t.test(`${changes.status}, revoked ${changes.revoked ?? false}, checked at ${changes.checked_at}`, async t => {
       const outcome = snapshot({ command, ...changes })
       assert.equal(validateTicketStatus(outcome, outcome.id), outcome)
       const before = structuredClone(outcome)
+      const { state, calls, sockets, clock } = fixture(t)
+      prepare(state, 'status')
+      state.command.value = 'different current draft'
+      state.ticket.value = { ...held(), command: 'different held ticket' }
+      state.revocationUncertain.value = true
+      state.outcome.value = outcome
+      state.outcomeReceivedAt.value = null
+      const stateBefore = sessionSnapshot(state)
+      const readsBefore = clock.reads
       const html = await renderToString(Vue.createSSRApp({
-        data: () => ({
-          outcome, outcomeMismatch: false, outcomeReceivedAt: null,
-          command: 'different current draft', ticket: { ...held(), command: 'different held ticket' },
-        }),
-        methods: formatters,
+        setup: () => ({ ...state, ...formatters }),
         render,
       }))
+      const time = value => `<time datetime="${new Date(timestamp(value)).toISOString()}">${formatters.date(value)}</time>`
+      assert.ok(html.includes(`<p aria-describedby="outcome-server-time-help">Gecontroleerd door server: ${time(outcome.checked_at)}</p>`))
+      assert.ok(html.includes(`<p aria-describedby="outcome-window-help">Geldig vanaf: ${time(outcome.not_before)} · verloopt: ${time(outcome.expires_at)}</p>`))
+      for (const help of [serverHelp, windowHelp, receiptHelp]) assert.ok(html.includes(help))
+      for (const id of ['outcome-server-time-help', 'outcome-window-help', 'outcome-receipt-help']) {
+        assert.equal(html.match(new RegExp(`\\bid="${id}"`, 'g')).length, 1)
+        assert.equal(html.match(new RegExp(`aria-describedby="${id}"`, 'g')).length, 1)
+      }
+      assert.ok(html.includes('<p aria-describedby="outcome-receipt-help">Uitkomst lokaal ontvangen: <span>Geen ontvangsttijdstip beschikbaar.</span></p>'))
+      assert.equal(html.match(/<time\b/g).length, outcome.record ? 4 : 3)
       assert.ok(html.includes(`Status: ${outcome.status} · ingetrokken: ${outcome.revoked ? 'ja' : 'nee'}`))
       for (const [status, explanation] of Object.entries(explanations)) {
         assert.equal(html.includes(explanation), status === outcome.status, status)
@@ -1354,7 +1381,7 @@ test('outcome explanations render the validated server status without restoring 
         assert.ok(html.includes(`Record-ID: <code>${outcome.record.id}</code>`))
         assert.ok(!html.includes(`Record-ID: <code>${outcome.id}</code>`))
       } else {
-        assert.doesNotMatch(html, /outcome-record-help|<code\b|<time\b/)
+        assert.doesNotMatch(html, /outcome-record-help|<code\b/)
       }
       assert.equal(html.match(/<pre\b[^>]*>[\s\S]*?<\/pre>/)[0], '<pre aria-labelledby="outcome-command-label" aria-describedby="outcome-command-help"> \n  één 🚀\n&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &lt;b&gt;tekst&lt;/b&gt;\n  </pre>')
       assert.ok(html.includes(label))
@@ -1365,11 +1392,33 @@ test('outcome explanations render the validated server status without restoring 
       assert.doesNotMatch(html, /different current draft|different held ticket/)
       assert.doesNotMatch(html, /<script>|<b>|teruggedraaid|ongedaan gemaakt|geen (?:eerder |eerdere )?(?:logboekrecord|vastlegging)/i)
       assert.deepEqual(outcome, before)
+      assert.deepEqual(sessionSnapshot(state), stateBefore)
+      assert.equal(clock.reads, readsBefore)
+      assert.equal(calls.length, 0)
+      assert.equal(sockets.length, 0)
+      for (const receivedAt of [0, 8_640_000_000_000_000]) {
+        state.outcomeReceivedAt.value = receivedAt
+        const receivedBefore = sessionSnapshot(state)
+        const receivedHtml = await renderToString(Vue.createSSRApp({
+          setup: () => ({ ...state, ...formatters }),
+          render,
+        }))
+        assert.ok(receivedHtml.includes(`<p aria-describedby="outcome-receipt-help">Uitkomst lokaal ontvangen: ${time(receivedAt)}</p>`))
+        assert.ok(receivedHtml.includes(`<p aria-describedby="outcome-server-time-help">Gecontroleerd door server: ${time(outcome.checked_at)}</p>`))
+        assert.ok(receivedHtml.includes(receiptHelp))
+        assert.doesNotMatch(receivedHtml, /Geen ontvangsttijdstip beschikbaar/)
+        assert.equal(receivedHtml.match(/<time\b/g).length, outcome.record ? 5 : 4)
+        assert.deepEqual(sessionSnapshot(state), receivedBefore)
+        assert.equal(clock.reads, readsBefore)
+        assert.equal(calls.length, 0)
+        assert.equal(sockets.length, 0)
+      }
     })
   }
   await t.test('no outcome hides the panel and all explanations', async () => {
     const html = await renderToString(Vue.createSSRApp({ data: () => ({ outcome: null }), render }))
     assert.doesNotMatch(html, /Status:|statuscontrole|logboekrecord|servercontrole/)
+    assert.doesNotMatch(html, /outcome-server-time-help|outcome-window-help|outcome-receipt-help|Gecontroleerd door server:|Geldig vanaf:|verloopt:|Uitkomst lokaal ontvangen:|Geen ontvangsttijdstip beschikbaar|historische geldigheidsvenster|lokale ontvangsttijd/)
     assert.doesNotMatch(html, /outcome-command-label|outcome-command-help|outcome-record-help|Vastgelegd:|Record-ID:|<time\b|<code\b|Commandotekst van deze ticketuitkomst|exacte tekst uit de ontvangen statusmomentopname|<pre/)
   })
   await t.test('record IDs remain escaped text even outside validated server input', async () => {
@@ -4757,7 +4806,8 @@ test('outcome UI separates server check time from local receipt with semantic ti
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
   assert.match(app, /outcomeReceivedAt,[\s\S]*} = useSession\(\)/)
   const result = app.match(/<div v-if="outcome" class="result">([\s\S]*?)<\/div>/)[1]
-  assert.match(result, /Gecontroleerd door server: \{\{ date\(outcome.checked_at\) \}\}/)
+  assert.match(result, /<p aria-describedby="outcome-server-time-help">Gecontroleerd door server: <time :datetime="receiptIso\(outcome.checked_at\)">{{ date\(outcome.checked_at\) }}<\/time><\/p>/)
+  assert.match(result, /<p aria-describedby="outcome-window-help">Geldig vanaf: <time :datetime="receiptIso\(outcome.not_before\)">{{ date\(outcome.not_before\) }}<\/time> · verloopt: <time :datetime="receiptIso\(outcome.expires_at\)">{{ date\(outcome.expires_at\) }}<\/time><\/p>/)
   assert.match(result, /aria-describedby="outcome-receipt-help">Uitkomst lokaal ontvangen:/)
   assert.match(result, /<time v-if="outcomeReceivedAt !== null" :datetime="receiptIso\(outcomeReceivedAt\)">{{ date\(outcomeReceivedAt\) }}<\/time>/)
   assert.match(result, /v-else>Geen ontvangsttijdstip beschikbaar\./)

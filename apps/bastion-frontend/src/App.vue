@@ -135,14 +135,18 @@ function receiptIso(value) {
           </p>
           <p class="muted">Deze statuscontrole geeft geen nieuwe toestemming en herstelt geen lokaal ticket.
             Geen uitvoering of automatische herinzending.</p>
-          <p>Gecontroleerd door server: {{ date(outcome.checked_at) }}</p>
+          <p aria-describedby="outcome-server-time-help">Gecontroleerd door server: <time :datetime="receiptIso(outcome.checked_at)">{{ date(outcome.checked_at) }}</time></p>
+          <p id="outcome-server-time-help" class="muted">Het tijdstip waarop de server deze statusmomentopname controleerde, niet de lokale ontvangsttijd of de huidige tijd.
+            Geen garantie dat de uitkomst actueel is. Controleer de status handmatig opnieuw voor een nieuwe momentopname.</p>
           <p aria-describedby="outcome-receipt-help">Uitkomst lokaal ontvangen:
             <time v-if="outcomeReceivedAt !== null" :datetime="receiptIso(outcomeReceivedAt)">{{ date(outcomeReceivedAt) }}</time>
             <span v-else>Geen ontvangsttijdstip beschikbaar.</span>
           </p>
           <p id="outcome-receipt-help" class="muted">Volgens de lokale klok; geen server- of audittijd en geen garantie dat de uitkomst actueel is.
             Controleer de status handmatig opnieuw voor een nieuwe momentopname.</p>
-          <p>Geldig vanaf: {{ date(outcome.not_before) }} · verloopt: {{ date(outcome.expires_at) }}</p>
+          <p aria-describedby="outcome-window-help">Geldig vanaf: <time :datetime="receiptIso(outcome.not_before)">{{ date(outcome.not_before) }}</time> · verloopt: <time :datetime="receiptIso(outcome.expires_at)">{{ date(outcome.expires_at) }}</time></p>
+          <p id="outcome-window-help" class="muted">Begintijd inbegrepen, vervaltijd uitgesloten. Het historische geldigheidsvenster van deze ticketuitkomst, niet van de huidige concepttekst.
+            Geeft geen nieuwe toestemming.</p>
           <p id="outcome-command-label">Commandotekst van deze ticketuitkomst</p>
           <pre aria-labelledby="outcome-command-label" aria-describedby="outcome-command-help">{{ outcome.command }}</pre>
           <p id="outcome-command-help" class="muted">De exacte tekst uit de ontvangen statusmomentopname, niet de huidige concepttekst of het huidige ticket.

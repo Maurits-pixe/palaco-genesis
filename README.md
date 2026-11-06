@@ -355,6 +355,10 @@ voor een latere statuscontrole. **Wis ticketuitkomst** behoudt het invoerveld
 voor het opzoeken; **Wis sessie** verwijdert ook lokale ID's.
 Klembordkopieën vallen buiten de sessie en worden niet meegewist.
 Selecteren of kopiëren verstuurt geen verzoek en herstelt geen toestemming.
+De servercontroletijd en geldigheidsgrenzen van de ticketuitkomst zijn
+machineleesbare tijdstippen. Gekoppelde uitleg onderscheidt de
+servermomentopname van lokale ontvangst en de huidige tijd; het getoonde
+venster is inclusief begintijd en exclusief vervaltijd, geen nieuwe toestemming.
 Naast de servercontroletijd toont de uitkomst wanneer de interface het
 antwoord lokaal heeft ontvangen. Dit ontvangsttijdstip hoort uitsluitend bij
 de zichtbare uitkomst en verdwijnt bij wissen of een nieuwe statuscontrole,
