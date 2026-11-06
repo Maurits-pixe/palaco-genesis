@@ -263,6 +263,9 @@ vensterwaarden verschijnt **Resterende tijd niet beschikbaar**, niet een
 verlopenmelding of onbetrouwbare duur. Bij geldige waarden telt hij afgerond
 naar boven tot de eindtijd, ook als de begintijd nog niet is bereikt.
 Dit is uitsluitend een lokale indicatie, geen serverbeslissing of toestemming.
+De ticketweergave toont beide venstergrenzen als machineleesbare tijdstippen
+met gekoppelde uitleg: de begintijd telt mee, de vervaltijd niet. Alleen de
+server beslist over geldigheid; de lokale aftelling garandeert die niet.
 Ook bij nul seconden zegt de interface alleen dat volgens de lokale klok de
 vervaltijd is bereikt. Bij onzekere intrekking blijft het advies de status
 van hetzelfde ticket te controleren of de intrekking expliciet te herhalen;

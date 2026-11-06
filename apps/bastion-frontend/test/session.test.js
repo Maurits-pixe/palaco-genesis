@@ -7,7 +7,7 @@ import { compile } from '@vue/compiler-dom'
 import { renderToString } from 'vue/server-renderer'
 import { realtimeLabels, useSession } from '../src/useSession.js'
 import { createRealtime } from '../src/realtime.js'
-import { commandLength, isValidToken, MAX_COMMAND_LENGTH, listCommands, normalizeCommand, timestamp, validateTicketStatus } from '../src/api.js'
+import { commandLength, isValidToken, MAX_COMMAND_LENGTH, listCommands, normalizeCommand, timestamp, ticketUsable, validateTicketStatus } from '../src/api.js'
 
 const held = () => ({ id: 'ticket-1', command: 'journal only', not_before: 1000, expires_at: 1100 })
 const record = (id = 'record-1') => ({ id, command: 'journal only', committed_at: 1050 })
@@ -1222,6 +1222,63 @@ test('issued ticket text is labelled, explained and rendered as escaped text rat
     render,
   }))
   assert.equal(html, '<pre aria-labelledby="ticket-command-label" aria-describedby="ticket-command-help">één 🚀\n&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &lt;b&gt;tekst&lt;/b&gt;</pre>')
+})
+
+test('compiled held-ticket window times link static half-open guidance without changing local authority', async t => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const panel = app.match(/<div v-if="ticket" class="result">[\s\S]*?<\/div>/)?.[0]
+  assert.ok(panel)
+  assert.match(panel, /<p aria-describedby="ticket-window-help">Geldig vanaf: <time :datetime="receiptIso\(ticket.not_before\)">{{ date\(ticket.not_before\) }}<\/time><\/p>/)
+  assert.match(panel, /<p aria-describedby="ticket-window-help">Verloopt: <time :datetime="receiptIso\(ticket.expires_at\)">{{ date\(ticket.expires_at\) }}<\/time><\/p>/)
+  const help = panel.match(/<p id="ticket-window-help" class="muted">[\s\S]*?<\/p>/)?.[0]
+  assert.ok(help)
+  assert.match(help, /Begintijd inbegrepen, vervaltijd uitgesloten\./)
+  assert.match(help, /Alleen de server beslist over geldigheid; de lokale aftelling geeft geen garantie\./)
+  assert.doesNotMatch(help, /\{\{|v-|@/)
+  assert.equal(app.match(/\bid="ticket-window-help"/g).length, 1)
+  assert.equal(app.match(/\baria-describedby="ticket-window-help"/g).length, 2)
+  const helpers = app.match(/function date\(value\) \{[\s\S]*?\n\}[\s\S]*?function receiptIso\(value\) \{[\s\S]*?\n\}/)?.[0]
+  assert.ok(helpers)
+  const formatters = new Function('timestamp', `${helpers}; return { date, receiptIso }`)(timestamp)
+  const render = compileFragment(panel)
+  const maxDate = 8_640_000_000_000_000
+  for (const [notBefore, expiresAt] of [[0, 1], [1000, 3000], [maxDate - 1, maxDate]]) {
+    for (const iso of [false, true]) {
+      await t.test(`window=${notBefore}/${expiresAt}, ISO=${iso}`, async t => {
+        const { state, calls, sockets } = fixture(t)
+        prepare(state, 'commit')
+        state.ticket.value = {
+          ...held(),
+          not_before: iso ? new Date(notBefore).toISOString() : notBefore,
+          expires_at: iso ? new Date(expiresAt).toISOString() : expiresAt,
+        }
+        assert.equal(ticketUsable(state.ticket.value, state.command.value, notBefore), true)
+        assert.equal(ticketUsable(state.ticket.value, state.command.value, expiresAt), false)
+        state.now.value = notBefore
+        const before = commandState(state)
+        const { html, find } = await render({ ...state, ...formatters })
+        assert.equal(html.match(/\bid="ticket-window-help"/g).length, 1)
+        assert.equal(html.match(/\baria-describedby="ticket-window-help"/g).length, 2)
+        assert.ok(find(node => node.type === 'p' && node.props?.id === 'ticket-window-help'))
+        for (const [label, value] of [['Geldig vanaf', state.ticket.value.not_before], ['Verloopt', state.ticket.value.expires_at]]) {
+          const datetime = new Date(timestamp(value)).toISOString()
+          const paragraph = find(node => node.type === 'p' &&
+            node.props?.['aria-describedby'] === 'ticket-window-help' &&
+            node.children?.some(child => child.type === 'time' && child.props?.datetime === datetime))
+          assert.ok(paragraph, label)
+          assert.ok(html.includes(`<p aria-describedby="ticket-window-help">${label}: <time datetime="${datetime}">${formatters.date(value)}</time></p>`))
+        }
+        assert.ok(html.includes(help))
+        assert.deepEqual(commandState(state), before)
+        assert.equal(calls.length, 0)
+        assert.equal(sockets.length, 0)
+        state.ticket.value = null
+        const { html: hidden, find: findHidden } = await render({ ...state, ...formatters })
+        assert.doesNotMatch(hidden, /<time|Geldig vanaf|Verloopt|ticket-window-help|Begintijd inbegrepen/)
+        assert.equal(findHidden(node => node.type === 'time' || node.props?.id === 'ticket-window-help'), undefined)
+      })
+    }
+  }
 })
 
 test('outcome explanations render the validated server status without restoring authority', async t => {

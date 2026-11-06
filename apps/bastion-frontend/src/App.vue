@@ -81,8 +81,9 @@ function receiptIso(value) {
           <p id="ticket-command-help" class="muted">De exacte tekst waarvoor dit ticket is uitgegeven, niet de huidige concepttekst.
             Bij een onzekere intrekking kan deze tekst ook na Wis commandotekst zichtbaar blijven.
             Alleen tekst: geen uitvoering of nieuwe toestemming.</p>
-          <p>Geldig vanaf: {{ date(ticket.not_before) }}</p>
-          <p>Verloopt: {{ date(ticket.expires_at) }}</p>
+          <p aria-describedby="ticket-window-help">Geldig vanaf: <time :datetime="receiptIso(ticket.not_before)">{{ date(ticket.not_before) }}</time></p>
+          <p aria-describedby="ticket-window-help">Verloopt: <time :datetime="receiptIso(ticket.expires_at)">{{ date(ticket.expires_at) }}</time></p>
+          <p id="ticket-window-help" class="muted">Begintijd inbegrepen, vervaltijd uitgesloten. Alleen de server beslist over geldigheid; de lokale aftelling geeft geen garantie.</p>
           <p v-if="remaining === null">Resterende tijd niet beschikbaar. Controleer de lokale klok en ticketgegevens.</p>
           <p v-else-if="remaining > 0">Volgens de lokale klok nog circa {{ remaining }} seconden.</p>
           <p v-else>Volgens de lokale klok is de vervaltijd bereikt.
