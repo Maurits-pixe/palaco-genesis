@@ -10,8 +10,8 @@ or replace the constitutional admission and execution boundaries.
 ## Fail-closed semantics
 
 1. Runtime readiness requires current validity `Valid` at the supplied UTC
-   timestamp and constitutional revalidation `Confirmed` for the supplied
-   decision context.
+   timestamp, an exact match with the recorded decision context, and
+   constitutional revalidation `Confirmed` for that context.
 2. Kernel readiness also requires its local disposition `Execute`; it delegates
    to runtime readiness and cannot override a runtime `SafeState` or `Escalate`.
 3. Expired, pending, revoked, insufficient or safe-state validity returns
