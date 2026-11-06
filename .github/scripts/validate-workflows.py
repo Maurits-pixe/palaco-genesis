@@ -918,6 +918,10 @@ def main() -> int:
                 errors.append(
                     f"{path}: job '{job_name}' timeout-minutes must be <= 60"
                 )
+            if workflow_filename == "release.yml" and timeout != 30:
+                errors.append(
+                    f"{path}: job '{job_name}' in release workflow must set timeout-minutes to 30"
+                )
             job_environment = job.get("environment")
             if job_environment is not None:
                 if isinstance(job_environment, str):
