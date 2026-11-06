@@ -918,9 +918,12 @@ def main() -> int:
                     errors.append(
                         f"{path}: job '{job_name}' if must reference github.event.inputs.release_tag"
                     )
-                elif "github.event.inputs.release_tag!=''" not in job_if.replace(" ", ""):
+                elif job_if.replace(" ", "") not in {
+                    "github.event.inputs.release_tag!=''",
+                    "${{github.event.inputs.release_tag!=''}}",
+                }:
                     errors.append(
-                        f"{path}: job '{job_name}' if must explicitly contain github.event.inputs.release_tag != ''"
+                        f"{path}: job '{job_name}' if must be exactly github.event.inputs.release_tag != '' (optionally wrapped in ${{ }})"
                     )
 
             job_continue_on_error = job.get("continue-on-error")
