@@ -925,6 +925,11 @@ def main() -> int:
                     errors.append(
                         f"{path}: job '{job_name}' must not define if"
                     )
+            if workflow_filename == "release.yml" and job_name == "release-readiness":
+                if job_if is not None:
+                    errors.append(
+                        f"{path}: job '{job_name}' must not define if"
+                    )
             if workflow_filename == "release.yml" and job_name == "publish-release":
                 if not isinstance(job_if, str) or not job_if.strip():
                     errors.append(
