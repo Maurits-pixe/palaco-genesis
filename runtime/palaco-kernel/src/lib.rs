@@ -49,6 +49,18 @@ impl KernelCycle {
             disposition,
         }
     }
+
+    /// Checks both kernel and runtime readiness without authorizing execution.
+    pub fn execution_ready(
+        &self,
+        at: Timestamp,
+        context: &DecisionContext,
+    ) -> Result<bool, RevalidationError> {
+        if self.disposition != KernelDisposition::Execute {
+            return Ok(false);
+        }
+        self.runtime_plan.execution_ready(at, context)
+    }
 }
 
 impl Validatable for KernelCycle {
@@ -97,7 +109,7 @@ mod tests {
         },
     };
     use palaco_oracle::PlausibleState;
-    use palaco_runtime::RuntimePlan;
+    use palaco_runtime::{RuntimeDisposition, RuntimePlan};
     use palaco_trias::{AuthorizationScope, GovernanceDecision};
     use palaco_types::DomainMarker;
 
@@ -188,6 +200,38 @@ mod tests {
             CurrentValidity::InsufficientEvidence
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn kernel_readiness_never_overrides_runtime_safe_state() -> Result<(), &'static str> {
+        let current = timestamp(2026, 1, 20, 0, 0, 0)?;
+        let mut cycle = kernel_cycle(AuthorizationScope::Execute)?;
+        assert_eq!(
+            cycle.execution_ready(current, &cycle.runtime_plan.boundary.decision.context),
+            Ok(true)
+        );
+
+        cycle.runtime_plan.disposition = RuntimeDisposition::SafeState;
+        assert_eq!(
+            cycle.execution_ready(current, &cycle.runtime_plan.boundary.decision.context),
+            Ok(false)
+        );
+
+        cycle.disposition = KernelDisposition::Escalate;
+        assert_eq!(
+            cycle.execution_ready(current, &cycle.runtime_plan.boundary.decision.context),
+            Ok(false)
+        );
+
+        let expired = kernel_cycle(AuthorizationScope::Execute)?;
+        assert_eq!(
+            expired.execution_ready(
+                timestamp(2026, 2, 1, 0, 0, 0)?,
+                &expired.runtime_plan.boundary.decision.context
+            ),
+            Ok(false)
+        );
         Ok(())
     }
 }

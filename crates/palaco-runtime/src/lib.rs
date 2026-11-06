@@ -46,6 +46,25 @@ impl RuntimePlan {
             disposition,
         }
     }
+
+    /// Checks readiness without executing or granting any authority.
+    ///
+    /// A valid time window alone is insufficient: the original decision context
+    /// must still be confirmed by the constitutional boundary.
+    pub fn execution_ready(
+        &self,
+        at: Timestamp,
+        context: &DecisionContext,
+    ) -> Result<bool, RevalidationError> {
+        if at < self.boundary.decision.issued_at
+            || self.current_validity(at) != CurrentValidity::Valid
+            || context != &self.boundary.decision.context
+        {
+            return Ok(false);
+        }
+
+        Ok(self.revalidate(context)? == RevalidationOutcome::Confirmed)
+    }
 }
 
 impl Validatable for RuntimePlan {
@@ -184,6 +203,55 @@ mod tests {
             CurrentValidity::InsufficientEvidence
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn readiness_requires_current_validity_and_confirmed_context() -> Result<(), &'static str> {
+        let execute_plan = plan(AuthorizationScope::Execute)?;
+        let current = timestamp(2026, 1, 20, 0, 0, 0)?;
+        assert_eq!(
+            execute_plan.execution_ready(current, &execute_plan.boundary.decision.context),
+            Ok(true)
+        );
+        assert_eq!(
+            execute_plan.execution_ready(
+                timestamp(2026, 2, 1, 0, 0, 0)?,
+                &execute_plan.boundary.decision.context
+            ),
+            Ok(false)
+        );
+        assert_eq!(
+            execute_plan.execution_ready(
+                timestamp(2026, 1, 14, 0, 0, 0)?,
+                &execute_plan.boundary.decision.context
+            ),
+            Ok(false)
+        );
+        assert_ne!(
+            execute_plan.execution_ready(current, &context(current)),
+            Ok(true)
+        );
+
+        let mut safe = execute_plan;
+        safe.disposition = RuntimeDisposition::SafeState;
+        assert_eq!(
+            safe.execution_ready(current, &safe.boundary.decision.context),
+            Ok(false)
+        );
+
+        let observe = plan(AuthorizationScope::Observe)?;
+        assert_eq!(
+            observe.execution_ready(current, &observe.boundary.decision.context),
+            Ok(false)
+        );
+
+        let mut downgraded = plan(AuthorizationScope::Execute)?;
+        downgraded.boundary.disposition = palaco_citadel::BoundaryDisposition::SafeState;
+        assert_eq!(
+            downgraded.execution_ready(current, &downgraded.boundary.decision.context),
+            Ok(false)
+        );
         Ok(())
     }
 }
