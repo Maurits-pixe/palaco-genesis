@@ -205,22 +205,25 @@ mod tests {
 
     #[test]
     fn readiness_requires_current_validity_and_confirmed_context() -> Result<(), &'static str> {
-        let plan = plan(AuthorizationScope::Execute)?;
+        let execute_plan = plan(AuthorizationScope::Execute)?;
         let current = timestamp(2026, 1, 20, 0, 0, 0)?;
         assert_eq!(
-            plan.execution_ready(current, &plan.boundary.decision.context),
+            execute_plan.execution_ready(current, &execute_plan.boundary.decision.context),
             Ok(true)
         );
         assert_eq!(
-            plan.execution_ready(
+            execute_plan.execution_ready(
                 timestamp(2026, 2, 1, 0, 0, 0)?,
-                &plan.boundary.decision.context
+                &execute_plan.boundary.decision.context
             ),
             Ok(false)
         );
-        assert_ne!(plan.execution_ready(current, &context(current)), Ok(true));
+        assert_ne!(
+            execute_plan.execution_ready(current, &context(current)),
+            Ok(true)
+        );
 
-        let mut safe = plan;
+        let mut safe = execute_plan;
         safe.disposition = RuntimeDisposition::SafeState;
         assert_eq!(
             safe.execution_ready(current, &safe.boundary.decision.context),
