@@ -1487,6 +1487,78 @@ for (const clockFailure of ['invalid', 'throwing']) {
   })
 }
 
+test('live service: local expiry ticks preserve the active snapshot until an explicit expired status', { timeout: 15000 }, async t => {
+  const f = await fixture(t)
+  const s = f.session
+  await f.run('ticket')
+  const held = s.ticket.value
+  const path = `/v1/tickets/${held.id}`
+  await bounded(s.checkCurrentTicket(), 'initial active status before expiry')
+  assert.equal(s.error.value, '')
+  const active = s.outcome.value
+  const checkedAt = active.checked_at
+  const receipt = s.outcomeReceivedAt.value
+  assert.equal(active.status, 'active')
+  assert.equal(checkedAt, now)
+  assert.equal(receipt, now)
+  assert.equal(s.canCommit.value, true)
+  const persisted = () => Object.fromEntries(['tickets', 'commands', 'audit'].map(table =>
+    [table, f.db.prepare(`SELECT * FROM ${table}`).all()]))
+  const before = persisted()
+  const initialCalls = [
+    { path: '/v1/tickets', method: 'POST', status: 201 },
+    { path, method: 'GET', status: 200 },
+  ]
+  assert.deepEqual(f.calls, initialCalls)
+
+  f.setServerNow(held.expires_at)
+  for (const localNow of [held.expires_at, held.expires_at + 100]) {
+    f.setLocalNow(localNow)
+    f.tick()
+    assert.equal(s.now.value, localNow)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.remaining.value, 0)
+    assert.equal(s.ticket.value, held)
+    assert.equal(s.outcome.value, active)
+    assert.equal(s.outcome.value.status, 'active')
+    assert.equal(s.outcome.value.checked_at, checkedAt)
+    assert.equal(s.outcomeReceivedAt.value, receipt)
+    assert.deepEqual(f.calls, initialCalls, 'ticks never request status or mutate remotely')
+    assert.deepEqual(persisted(), before)
+  }
+
+  await bounded(s.checkCurrentTicket(), 'explicit expired status at fixed server expiry')
+  assert.equal(s.error.value, '')
+  const expired = s.outcome.value
+  const expiredReceipt = s.outcomeReceivedAt.value
+  assert.notEqual(expired, active)
+  assert.equal(expired.id, held.id)
+  assert.equal(expired.status, 'expired')
+  assert.equal(expired.checked_at, held.expires_at)
+  assert.equal(expiredReceipt, held.expires_at + 100)
+  assert.notEqual(expiredReceipt, receipt)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.revocationUncertain.value, false)
+  assert.equal(s.lastSubmissionId.value, '')
+  assert.deepEqual(s.commands.value, [])
+  assert.deepEqual(persisted(), before)
+  const finalCalls = [...initialCalls, { path, method: 'GET', status: 200 }]
+  assert.deepEqual(f.calls, finalCalls)
+
+  f.setLocalNow(held.expires_at + 200)
+  f.tick()
+  assert.equal(s.outcome.value, expired)
+  assert.equal(s.outcome.value.status, 'expired')
+  assert.equal(s.outcome.value.checked_at, held.expires_at)
+  assert.equal(s.outcomeReceivedAt.value, expiredReceipt)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.deepEqual(s.commands.value, [])
+  assert.deepEqual(persisted(), before)
+  assert.deepEqual(f.calls, finalCalls)
+})
+
 for (const sample of ['expiry', 'invalid', 'throwing']) {
   test(`live service: fresh commit clock rejects ${sample} without a tick or any persisted mutation`, { timeout: 15000 }, async t => {
     const f = await fixture(t)

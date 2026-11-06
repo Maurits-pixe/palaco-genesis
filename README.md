@@ -367,6 +367,11 @@ niet. Bij een ongeldige of falende lokale klok is geen ontvangsttijdstip
 beschikbaar, maar blijft een geldig serverantwoord bruikbaar.
 Dit is geen server- of audittijd, garantie op actuele status of nieuwe
 toestemming; vraag voor een nieuwe momentopname de status handmatig op.
+Een live HTTP/SQLite-test laat beide klokken de vervaltijd bereiken:
+de lokale vastlegmogelijkheid vervalt, maar de eerder ontvangen actieve
+status en het ontvangsttijdstip blijven ongewijzigd. Pas een expliciete
+hercontrole ontvangt de verlopen status en sluit het lokale ticket af.
+Kloktikken versturen geen verzoek en wijzigen geen ticket-, logboek- of auditrijen.
 De commandotekst in de ticketuitkomst heeft een eigen toegankelijk label:
 dit is de exacte tekst uit de ontvangen statusmomentopname, niet de huidige
 concepttekst of het huidige ticket. Een concept wissen wist deze aparte
