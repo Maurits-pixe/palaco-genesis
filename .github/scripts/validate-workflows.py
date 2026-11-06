@@ -128,6 +128,10 @@ def main() -> int:
                 errors.append(
                     f"{path}: release workflow must set env.CARGO_TERM_COLOR to 'always'"
                 )
+            elif set(workflow_env.keys()) != {"CARGO_TERM_COLOR"}:
+                errors.append(
+                    f"{path}: release workflow env may only define CARGO_TERM_COLOR"
+                )
 
         trigger_config = data.get("on", data.get(True))
         if trigger_config is None:
