@@ -1238,17 +1238,39 @@ def main() -> int:
                     and step_uses.strip() == "softprops/action-gh-release@v2"
                 ):
                     publish_release_action_steps += 1
+                    required_release_files = [
+                        "release-binaries/citadel-a1",
+                        "release-binaries/citadel-a1-canonical",
+                        "release-binaries/SHA256SUMS",
+                        "release-binaries/release-manifest.json",
+                    ]
                     if not isinstance(step_with, dict):
                         errors.append(
-                            f"{path}: job '{job_name}' softprops/action-gh-release@v2 step #{step_index} must define with.tag_name"
+                            f"{path}: job '{job_name}' softprops/action-gh-release@v2 step #{step_index} must define with.tag_name and with.files"
                         )
-                    elif (
-                        step_with.get("tag_name")
-                        != "${{ github.event.inputs.release_tag }}"
-                    ):
-                        errors.append(
-                            f"{path}: job '{job_name}' softprops/action-gh-release@v2 step #{step_index} must set with.tag_name to '${{ github.event.inputs.release_tag }}'"
-                        )
+                    else:
+                        if (
+                            step_with.get("tag_name")
+                            != "${{ github.event.inputs.release_tag }}"
+                        ):
+                            errors.append(
+                                f"{path}: job '{job_name}' softprops/action-gh-release@v2 step #{step_index} must set with.tag_name to '${{ github.event.inputs.release_tag }}'"
+                            )
+                        files_value = step_with.get("files")
+                        if not isinstance(files_value, str) or not files_value.strip():
+                            errors.append(
+                                f"{path}: job '{job_name}' softprops/action-gh-release@v2 step #{step_index} must define with.files with all release artifacts"
+                            )
+                        else:
+                            normalized_files = [
+                                line.strip()
+                                for line in files_value.splitlines()
+                                if line.strip()
+                            ]
+                            if normalized_files != required_release_files:
+                                errors.append(
+                                    f"{path}: job '{job_name}' softprops/action-gh-release@v2 step #{step_index} must set with.files to exactly {required_release_files}"
+                                )
                 if isinstance(step_uses, str) and step_uses.startswith(
                     "actions/checkout@"
                 ):
