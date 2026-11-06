@@ -218,10 +218,7 @@ mod tests {
             ),
             Ok(false)
         );
-        assert_ne!(
-            plan.execution_ready(current, &context(current)),
-            Ok(true)
-        );
+        assert_ne!(plan.execution_ready(current, &context(current)), Ok(true));
 
         let mut safe = plan;
         safe.disposition = RuntimeDisposition::SafeState;
