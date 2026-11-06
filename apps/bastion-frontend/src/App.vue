@@ -94,7 +94,10 @@ function receiptIso(value) {
           <p v-if="remaining > 0 && !canCommit && !revocationUncertain">Niet geldig voor de huidige invoer of begintijd.</p>
         </div>
         <p v-else class="muted">Nog geen ticket. Tekst of duur wijzigen maakt het lokale ticket ongeldig.</p>
-        <button :disabled="!!busy || !canCommit || !validToken" @click="perform('commit')">Commando vastleggen</button>
+        <button :disabled="!!busy || !canCommit || !validToken" aria-describedby="commit-help" @click="perform('commit')">Commando vastleggen</button>
+        <p id="commit-help" class="muted">Lokale geschiktheid en een eerdere actieve status garanderen geen actuele servertoestemming: een andere client kan het ticket al hebben ingetrokken of verbruikt.
+          De server controleert opnieuw bij vastleggen; een statuscontrole reserveert het ticket niet.
+          Geen automatische herhaling.</p>
         <button class="secondary" :disabled="!!busy || !ticket || !validToken" @click="perform('revoke')">Ticket intrekken</button>
         <button class="secondary" :disabled="!!busy || !ticket || !validToken" @click="checkCurrentTicket">Controleer huidig ticket</button>
         <p v-if="revocationUncertain" role="alert" class="error">Intrekking nog niet bevestigd. Vastleggen en nieuwe tickets zijn geblokkeerd. Trek dit ticket opnieuw in of controleer de status van hetzelfde ticket.</p>

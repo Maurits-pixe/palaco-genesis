@@ -381,6 +381,10 @@ Live tests dekken ook intrekking of vastlegging van hetzelfde ticket door
 een onafhankelijke HTTP-client. Zonder hercontrole blijven de oude actieve
 momentopname en lokale vastlegmogelijkheid binnen het tijdvenster staan:
 lokale geschiktheid bewijst geen actuele toestemming op de server.
+Gekoppelde hulp bij **Commando vastleggen** maakt dit onderscheid ook in
+de interface zichtbaar: een andere client kan het ticket al hebben ingetrokken
+of verbruikt. Een statuscontrole reserveert het ticket niet; de server
+controleert opnieuw tijdens vastlegging. Er volgt geen automatische herhaling.
 Een expliciete statuscontrole ontvangt de terminale uitkomst en verwijdert
 het lokale ticket, zonder extra mutaties of toevoeging aan het recente logboek.
 Aanvullende live tests proberen vóór hercontrole expliciet vast te leggen

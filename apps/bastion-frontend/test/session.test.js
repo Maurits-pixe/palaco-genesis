@@ -211,6 +211,82 @@ test('compiled token input exposes neutral empty and linked static invalid feedb
   assert.deepEqual(sockets, [])
 })
 
+test('compiled commit help stays linked and static across real session guards without side effects', async t => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const panel = app.slice(app.indexOf('<h2>2. Apart bevestigen</h2>'), app.indexOf('</section>', app.indexOf('<h2>2. Apart bevestigen</h2>')))
+  const button = panel.match(/<button[^>]*>Commando vastleggen<\/button>/)[0]
+  assert.equal(button, '<button :disabled="!!busy || !canCommit || !validToken" aria-describedby="commit-help" @click="perform(\'commit\')">Commando vastleggen</button>')
+  const help = panel.match(/<p id="commit-help" class="muted">[\s\S]*?<\/p>/)[0]
+  assert.doesNotMatch(help, /\{\{|v-|@/)
+  assert.equal(app.match(/\bid="commit-help"/g).length, 1)
+  assert.equal(app.match(/\baria-describedby="commit-help"/g).length, 1)
+  assert.ok(panel.indexOf(help) > panel.indexOf('<p v-else class="muted">Nog geen ticket.'))
+  const expectedHelp = 'Lokale geschiktheid en een eerdere actieve status garanderen geen actuele servertoestemming: een andere client kan het ticket al hebben ingetrokken of verbruikt. De server controleert opnieuw bij vastleggen; een statuscontrole reserveert het ticket niet. Geen automatische herhaling.'
+  const helpers = app.match(/function date\(value\) \{[\s\S]*?\n\}[\s\S]*?function receiptIso\(value\) \{[\s\S]*?\n\}/)[0]
+  const formatters = new Function('timestamp', `${helpers}; return { date, receiptIso }`)(timestamp)
+  const render = compileFragment(`<div>${panel}</div>`)
+  for (const [scenario, canCommit, disabled] of [
+    ['eligible without status', true, false],
+    ['earlier active status', true, false],
+    ['absent ticket', false, true],
+    ['expired ticket', false, true],
+    ['uncertain revocation', false, true],
+    ['busy', true, true],
+    ['invalid token', true, true],
+  ]) {
+    await t.test(scenario, async t => {
+      const { state, calls, sockets, clock } = fixture(t)
+      if (scenario === 'invalid token') state.token.value = 'invalid\nformat'
+      prepare(state, 'commit')
+      let pending
+      if (scenario === 'eligible without status') {
+        state.clearOutcome()
+        assert.equal(state.outcome.value, null)
+      } else if (scenario === 'absent ticket') {
+        state.clearCommand()
+        assert.equal(state.ticket.value, null)
+      } else if (scenario === 'expired ticket') {
+        clock.time = held().expires_at
+        clock.tick()
+      } else if (scenario === 'uncertain revocation') {
+        pending = state.perform('revoke')
+        calls[0].reject(new Error('Revocation not confirmed'))
+        await pending
+        assert.equal(state.revocationUncertain.value, true)
+      } else if (scenario === 'busy') {
+        pending = state.perform('status')
+        assert.equal(state.busy.value, 'status')
+      }
+      assert.equal(state.canCommit.value, canCommit)
+      assert.equal(state.validToken.value, scenario !== 'invalid token')
+      const before = JSON.stringify(commandState(state))
+      const callsBefore = calls.slice()
+      const readsBefore = clock.reads
+      for (let pass = 0; pass < 2; pass++) {
+        const { html, find } = await render({ ...state, ...formatters })
+        const renderedButton = find(node => node.type === 'button' && node.children === 'Commando vastleggen')
+        assert.equal(renderedButton.props.disabled, disabled)
+        assert.equal(renderedButton.props['aria-describedby'], 'commit-help')
+        assert.equal(/\sdisabled(?:[=>\s])/.test(html.match(/<button[^>]*>Commando vastleggen<\/button>/)[0]), disabled)
+        assert.equal(html.match(/\bid="commit-help"/g).length, 1)
+        assert.equal(html.match(/\baria-describedby="commit-help"/g).length, 1)
+        const renderedHelp = find(node => node.props?.id === 'commit-help')
+        assert.equal(renderedHelp.type, 'p')
+        assert.equal(renderedHelp.props.class, 'muted')
+        assert.equal(renderedHelp.children, expectedHelp)
+        assert.equal(JSON.stringify(commandState(state)), before)
+        assert.deepEqual(calls, callsBefore)
+        assert.deepEqual(sockets, [])
+        assert.equal(clock.reads, readsBefore)
+      }
+      if (scenario === 'busy') {
+        calls[0].resolve(snapshot())
+        await pending
+      }
+    })
+  }
+})
+
 test('compiled action buttons consistently gate on token format while retaining their other guards', async t => {
   const { state, calls, sockets } = fixture(t)
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
