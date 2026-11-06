@@ -1238,6 +1238,17 @@ def main() -> int:
                     and step_uses.strip() == "softprops/action-gh-release@v2"
                 ):
                     publish_release_action_steps += 1
+                    if not isinstance(step_with, dict):
+                        errors.append(
+                            f"{path}: job '{job_name}' softprops/action-gh-release@v2 step #{step_index} must define with.tag_name"
+                        )
+                    elif (
+                        step_with.get("tag_name")
+                        != "${{ github.event.inputs.release_tag }}"
+                    ):
+                        errors.append(
+                            f"{path}: job '{job_name}' softprops/action-gh-release@v2 step #{step_index} must set with.tag_name to '${{ github.event.inputs.release_tag }}'"
+                        )
                 if isinstance(step_uses, str) and step_uses.startswith(
                     "actions/checkout@"
                 ):
