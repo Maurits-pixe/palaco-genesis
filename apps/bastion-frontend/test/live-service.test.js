@@ -1559,6 +1559,121 @@ test('live service: local expiry ticks preserve the active snapshot until an exp
   assert.deepEqual(f.calls, finalCalls)
 })
 
+for (const terminal of ['committed', 'revoked']) {
+  test(`live service: local ticks retain an active snapshot until explicit status discovers external ${terminal}`, { timeout: 15000 }, async t => {
+    const f = await fixture(t)
+    const s = f.session
+    await f.run('ticket')
+    const held = s.ticket.value
+    const path = `/v1/tickets/${held.id}`
+    await bounded(s.checkCurrentTicket(), 'initial active status before remote operation')
+    const active = s.outcome.value
+    const checkedAt = active.checked_at
+    const receipt = s.outcomeReceivedAt.value
+    assert.equal(active.id, held.id)
+    assert.equal(active.status, 'active')
+    assert.equal(active.record, null)
+    assert.equal(checkedAt, now)
+    assert.equal(receipt, now)
+    const initialCalls = [
+      { path: '/v1/tickets', method: 'POST', status: 201 },
+      { path, method: 'GET', status: 200 },
+    ]
+    assert.deepEqual(f.calls, initialCalls)
+    const revokeExternal = t.mock.method(f, 'revokeExternal')
+    const externalCalls = []
+    const externalFetch = async (path, options) => {
+      const call = { path, method: options.method, ticketId: JSON.parse(options.body).ticket_id }
+      externalCalls.push(call)
+      const response = await f.externalFetch(path, options)
+      call.status = response.status
+      return response
+    }
+    const record = terminal === 'committed'
+      ? await bounded(productionApi.commitCommand(held, held.command, token, externalFetch), 'external same-ticket commit')
+      : (await bounded(f.revokeExternal(held), 'external same-ticket revocation'), null)
+    const persisted = () => Object.fromEntries(['tickets', 'commands', 'audit'].map(table =>
+      [table, f.db.prepare(`SELECT * FROM ${table}`).all()]))
+    const remote = persisted()
+    assert.equal(remote.tickets.length, 1)
+    assert.equal(remote.tickets[0].id, held.id)
+    assert.equal(remote.tickets[0].command, held.command)
+    assert.equal(remote.tickets[0].consumed, terminal === 'committed' ? 1 : 0)
+    assert.equal(remote.tickets[0].revoked, terminal === 'revoked' ? 1 : 0)
+    assert.equal(remote.commands.length, record ? 1 : 0)
+    if (record) {
+      assert.equal(record.command, held.command)
+      assert.equal(record.committed_at, now)
+      const { id, command, committed_at, ticket_id } = remote.commands[0]
+      assert.equal(ticket_id, held.id)
+      assert.deepEqual({ id, command, committed_at }, record)
+    }
+    assert.equal(remote.audit.length, 1)
+    assert.equal(remote.audit[0].ticket_id, held.id)
+    assert.equal(remote.audit[0].action, record ? remote.tickets[0].action : 'ticket:revoke')
+    assert.equal(remote.audit[0].checked_at, now)
+    const expectedExternal = record
+      ? [{ path: '/v1/commands', method: 'POST', ticketId: held.id, status: 201 }] : []
+    assert.deepEqual(externalCalls, expectedExternal)
+    assert.equal(revokeExternal.mock.callCount(), record ? 0 : 1)
+    if (!record) assert.equal(revokeExternal.mock.calls[0].arguments[0], held)
+
+    for (const localNow of [now + 100, now + 200]) {
+      assert.ok(localNow >= held.not_before && localNow < held.expires_at)
+      f.setLocalNow(localNow)
+      f.tick()
+      assert.equal(s.now.value, localNow)
+      assert.equal(s.ticket.value, held)
+      assert.equal(s.canCommit.value, true, 'local preflight is not server authority')
+      assert.equal(s.outcome.value, active)
+      assert.equal(active.status, 'active')
+      assert.equal(active.checked_at, checkedAt)
+      assert.equal(s.outcomeReceivedAt.value, receipt)
+      assert.equal(s.lastSubmissionId.value, '')
+      assert.equal(s.revocationUncertain.value, false)
+      assert.deepEqual(s.commands.value, [])
+      assert.deepEqual(f.calls, initialCalls, 'no automatic status or journal requests')
+      assert.deepEqual(externalCalls, expectedExternal)
+      assert.deepEqual(persisted(), remote)
+    }
+
+    await bounded(s.checkCurrentTicket(), 'explicit status discovers remote terminal state')
+    const outcome = s.outcome.value
+    assert.equal(s.error.value, '')
+    assert.notEqual(outcome, active)
+    assert.equal(outcome.id, held.id)
+    assert.equal(outcome.command, held.command)
+    assert.equal(outcome.not_before, held.not_before)
+    assert.equal(outcome.expires_at, held.expires_at)
+    assert.equal(outcome.status, terminal)
+    assert.equal(outcome.revoked, terminal === 'revoked')
+    assert.equal(outcome.checked_at, now, 'server clock stayed constant')
+    assert.deepEqual(outcome.record, record)
+    assert.equal(s.outcomeReceivedAt.value, now + 200)
+    assert.equal(s.ticket.value, null)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.lastSubmissionId.value, '', 'no local submission occurred')
+    assert.equal(s.revocationUncertain.value, false)
+    assert.deepEqual(s.commands.value, [], 'status is not a journal refresh')
+    assert.deepEqual(persisted(), remote, 'GET preserves the remote mutation exactly')
+    const finalCalls = [...initialCalls, { path, method: 'GET', status: 200 }]
+    assert.deepEqual(f.calls, finalCalls)
+    f.setLocalNow(now + 300)
+    f.tick()
+    assert.equal(s.outcome.value, outcome)
+    assert.equal(outcome.checked_at, now)
+    assert.equal(s.outcomeReceivedAt.value, now + 200)
+    assert.equal(s.ticket.value, null)
+    assert.equal(s.canCommit.value, false)
+    assert.deepEqual(persisted(), remote)
+    assert.deepEqual(f.calls, finalCalls)
+    assert.deepEqual(externalCalls, expectedExternal)
+    assert.equal(revokeExternal.mock.callCount(), record ? 0 : 1)
+    assert.deepEqual(f.sockets, [])
+    assert.equal(f.witness, undefined)
+  })
+}
+
 for (const sample of ['expiry', 'invalid', 'throwing']) {
   test(`live service: fresh commit clock rejects ${sample} without a tick or any persisted mutation`, { timeout: 15000 }, async t => {
     const f = await fixture(t)

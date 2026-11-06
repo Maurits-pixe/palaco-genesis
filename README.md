@@ -377,6 +377,12 @@ de lokale vastlegmogelijkheid vervalt, maar de eerder ontvangen actieve
 status en het ontvangsttijdstip blijven ongewijzigd. Pas een expliciete
 hercontrole ontvangt de verlopen status en sluit het lokale ticket af.
 Kloktikken versturen geen verzoek en wijzigen geen ticket-, logboek- of auditrijen.
+Live tests dekken ook intrekking of vastlegging van hetzelfde ticket door
+een onafhankelijke HTTP-client. Zonder hercontrole blijven de oude actieve
+momentopname en lokale vastlegmogelijkheid binnen het tijdvenster staan:
+lokale geschiktheid bewijst geen actuele toestemming op de server.
+Een expliciete statuscontrole ontvangt de terminale uitkomst en verwijdert
+het lokale ticket, zonder extra mutaties of toevoeging aan het recente logboek.
 De commandotekst in de ticketuitkomst heeft een eigen toegankelijk label:
 dit is de exacte tekst uit de ontvangen statusmomentopname, niet de huidige
 concepttekst of het huidige ticket. Een concept wissen wist deze aparte
