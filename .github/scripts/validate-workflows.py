@@ -689,6 +689,8 @@ def main() -> int:
             errors.append(f"{path}: jobs mapping is missing or empty")
             continue
         workflow_filename = os.path.basename(path)
+        if workflow_filename == "release.yml" and "release-readiness" not in jobs:
+            errors.append(f"{path}: release workflow must define job 'release-readiness'")
         if workflow_filename == "release.yml" and "build-binaries" not in jobs:
             errors.append(f"{path}: release workflow must define job 'build-binaries'")
         if workflow_filename == "release.yml" and "publish-release" not in jobs:
