@@ -270,6 +270,13 @@ Ook bij nul seconden zegt de interface alleen dat volgens de lokale klok de
 vervaltijd is bereikt. Bij onzekere intrekking blijft het advies de status
 van hetzelfde ticket te controleren of de intrekking expliciet te herhalen;
 de lokale aftelling heft de blokkering op nieuwe tickets niet op.
+Gekoppelde hulp bij **Ticket intrekken** onderscheidt de serverwijziging
+van lokale sessiewissing en invoerwijzigingen. Eerder opgeslagen records
+blijven behouden. Een verloren antwoord bewijst geen intrekking: controleer
+hetzelfde ticket expliciet of kies bewust opnieuw intrekken, zonder
+automatische herhaling. De knop blijft bij een verlopen lokaal ticket of
+onzekere intrekking beschikbaar zolang het tokenformaat geldig is en geen
+verzoek loopt.
 Vlak vóór vastleggen leest BASTION de lokale klok opnieuw, onafhankelijk van
 de laatste afteltick. Is het ticket dan verlopen of de klok ongeldig, dan
 volgt geen commitverzoek en wordt het lokale ticket niet verbruikt.

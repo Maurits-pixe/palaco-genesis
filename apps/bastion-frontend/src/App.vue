@@ -98,10 +98,12 @@ function receiptIso(value) {
         <p id="commit-help" class="muted">Lokale geschiktheid en een eerdere actieve status garanderen geen actuele servertoestemming: een andere client kan het ticket al hebben ingetrokken of verbruikt.
           De server controleert opnieuw bij vastleggen; een statuscontrole reserveert het ticket niet.
           Geen automatische herhaling.</p>
-        <button class="secondary" :disabled="!!busy || !ticket || !validToken" @click="perform('revoke')">Ticket intrekken</button>
+        <button class="secondary" :disabled="!!busy || !ticket || !validToken" aria-describedby="revoke-help" @click="perform('revoke')">Ticket intrekken</button>
         <button class="secondary" :disabled="!!busy || !ticket || !validToken" @click="checkCurrentTicket">Controleer huidig ticket</button>
         <p v-if="revocationUncertain" role="alert" class="error">Intrekking nog niet bevestigd. Vastleggen en nieuwe tickets zijn geblokkeerd. Trek dit ticket opnieuw in of controleer de status van hetzelfde ticket.</p>
-        <p class="muted">Intrekken wijzigt het ticket op de server. Een sessie wissen of invoer wijzigen trekt geen toestemming in.</p>
+        <p id="revoke-help" class="muted">Intrekken wijzigt het ticket op de server; eerder opgeslagen records blijven behouden.
+          Een sessie wissen of invoer wijzigen is geen intrekking. Een verloren antwoord bewijst geen intrekking:
+          controleer expliciet hetzelfde ticket of trek het bewust opnieuw in. Geen automatische herhaling.</p>
         <p class="muted">Na iedere inzendpoging vervalt het lokale ticket. Geen automatische herhaling.</p>
       </section>
       <section aria-labelledby="status-title" :aria-busy="busy === 'status'">

@@ -287,6 +287,68 @@ test('compiled commit help stays linked and static across real session guards wi
   }
 })
 
+test('compiled revoke help stays linked and static across real session guards without side effects', async t => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const panel = app.slice(app.indexOf('<h2>2. Apart bevestigen</h2>'), app.indexOf('</section>', app.indexOf('<h2>2. Apart bevestigen</h2>')))
+  const button = panel.match(/<button[^>]*>Ticket intrekken<\/button>/)[0]
+  assert.equal(button, '<button class="secondary" :disabled="!!busy || !ticket || !validToken" aria-describedby="revoke-help" @click="perform(\'revoke\')">Ticket intrekken</button>')
+  const help = panel.match(/<p id="revoke-help" class="muted">[\s\S]*?<\/p>/)[0]
+  assert.doesNotMatch(help, /\{\{|v-|@/)
+  assert.equal(app.match(/\bid="revoke-help"/g).length, 1)
+  assert.equal(app.match(/\baria-describedby="revoke-help"/g).length, 1)
+  assert.ok(panel.indexOf(help) > panel.indexOf('<p v-else class="muted">Nog geen ticket.'))
+  const expectedHelp = 'Intrekken wijzigt het ticket op de server; eerder opgeslagen records blijven behouden. Een sessie wissen of invoer wijzigen is geen intrekking. Een verloren antwoord bewijst geen intrekking: controleer expliciet hetzelfde ticket of trek het bewust opnieuw in. Geen automatische herhaling.'
+  const helpers = app.match(/function date\(value\) \{[\s\S]*?\n\}[\s\S]*?function receiptIso\(value\) \{[\s\S]*?\n\}/)[0]
+  const formatters = new Function('timestamp', `${helpers}; return { date, receiptIso }`)(timestamp)
+  const render = compileFragment(`<div>${panel}</div>`)
+  for (const [scenario, disabled] of [
+    ['eligible ticket', false],
+    ['absent ticket', true],
+    ['expired ticket', false],
+    ['uncertain revocation', false],
+    ['busy', true],
+    ['empty token', true],
+    ['invalid token', true],
+  ]) {
+    await t.test(scenario, async t => {
+      const { state, calls, sockets, clock } = fixture(t)
+      if (scenario === 'empty token') state.token.value = ''
+      if (scenario === 'invalid token') state.token.value = 'invalid\nformat'
+      prepare(state, scenario === 'uncertain revocation' ? 'revoke' : 'commit')
+      if (scenario === 'absent ticket') state.clearCommand()
+      if (scenario === 'expired ticket') {
+        clock.time = held().expires_at
+        clock.tick()
+        assert.equal(state.canCommit.value, false)
+      }
+      if (scenario === 'uncertain revocation') {
+        assert.equal(state.revocationUncertain.value, true)
+        assert.equal(state.canCommit.value, false)
+      }
+      if (scenario === 'busy') state.busy.value = 'status'
+      const before = JSON.stringify(commandState(state))
+      const readsBefore = clock.reads
+      for (let pass = 0; pass < 2; pass++) {
+        const { html, find } = await render({ ...state, ...formatters })
+        const renderedButton = find(node => node.type === 'button' && node.children === 'Ticket intrekken')
+        assert.equal(renderedButton.props.disabled, disabled)
+        assert.equal(renderedButton.props['aria-describedby'], 'revoke-help')
+        assert.equal(/\sdisabled(?:[=>\s])/.test(html.match(/<button[^>]*>Ticket intrekken<\/button>/)[0]), disabled)
+        assert.equal(html.match(/\bid="revoke-help"/g).length, 1)
+        assert.equal(html.match(/\baria-describedby="revoke-help"/g).length, 1)
+        const renderedHelp = find(node => node.props?.id === 'revoke-help')
+        assert.equal(renderedHelp.type, 'p')
+        assert.equal(renderedHelp.props.class, 'muted')
+        assert.equal(renderedHelp.children, expectedHelp)
+        assert.equal(JSON.stringify(commandState(state)), before)
+        assert.deepEqual(calls, [])
+        assert.deepEqual(sockets, [])
+        assert.equal(clock.reads, readsBefore)
+      }
+    })
+  }
+})
+
 test('compiled action buttons consistently gate on token format while retaining their other guards', async t => {
   const { state, calls, sockets } = fixture(t)
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
