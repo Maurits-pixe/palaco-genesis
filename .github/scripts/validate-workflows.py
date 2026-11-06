@@ -1249,6 +1249,14 @@ def main() -> int:
                             f"{path}: job '{job_name}' softprops/action-gh-release@v2 step #{step_index} must define with.tag_name and with.files"
                         )
                     else:
+                        unsupported_release_with_keys = set(step_with.keys()) - {
+                            "tag_name",
+                            "files",
+                        }
+                        if unsupported_release_with_keys:
+                            errors.append(
+                                f"{path}: job '{job_name}' softprops/action-gh-release@v2 step #{step_index} has unsupported with keys: {sorted(unsupported_release_with_keys)}"
+                            )
                         if (
                             step_with.get("tag_name")
                             != "${{ github.event.inputs.release_tag }}"
