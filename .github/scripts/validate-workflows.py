@@ -400,6 +400,26 @@ def main() -> int:
                                         errors.append(
                                             f"{path}: workflow_dispatch input '{input_name}' default must be a string for type '{input_type}'"
                                         )
+                    if os.path.basename(path) == "release.yml":
+                        if not isinstance(workflow_inputs, dict) or "release_tag" not in workflow_inputs:
+                            errors.append(
+                                f"{path}: release workflow must define workflow_dispatch input 'release_tag'"
+                            )
+                        else:
+                            release_tag_input = workflow_inputs.get("release_tag")
+                            if not isinstance(release_tag_input, dict):
+                                errors.append(
+                                    f"{path}: workflow_dispatch input 'release_tag' must be a mapping"
+                                )
+                            else:
+                                if release_tag_input.get("type") != "string":
+                                    errors.append(
+                                        f"{path}: workflow_dispatch input 'release_tag' must set type to 'string'"
+                                    )
+                                if release_tag_input.get("required") is not False:
+                                    errors.append(
+                                        f"{path}: workflow_dispatch input 'release_tag' must set required to false"
+                                    )
             if "push" in trigger_config:
                 push_trigger = trigger_config.get("push")
                 if not isinstance(push_trigger, dict):
