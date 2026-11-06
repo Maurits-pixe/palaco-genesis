@@ -427,6 +427,10 @@ def main() -> int:
                                     errors.append(
                                         f"{path}: workflow_dispatch input 'release_tag' must set required to false"
                                     )
+                                if "default" in release_tag_input:
+                                    errors.append(
+                                        f"{path}: workflow_dispatch input 'release_tag' must not define default"
+                                    )
             if "push" in trigger_config:
                 push_trigger = trigger_config.get("push")
                 if not isinstance(push_trigger, dict):
