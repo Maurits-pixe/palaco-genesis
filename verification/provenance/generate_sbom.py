@@ -46,14 +46,22 @@ def generate(metadata, commit, epoch):
             "licenseDeclared": license_expression(package.get("license")),
             "copyrightText": "NOASSERTION",
         })
+    # Cargo metadata must be internally complete. Missing links would make
+    # the generated evidence look valid while omitting real dependencies.
+    workspace_members = metadata.get("workspace_members", [])
+    unknown_members = set(workspace_members) - references.keys()
+    if unknown_members:
+        raise ValueError("unknown workspace member IDs: " + ", ".join(sorted(unknown_members)))
     relations = [{"spdxElementId": "SPDXRef-DOCUMENT", "relatedSpdxElement": references[item], "relationshipType": "DESCRIBES"}
-                 for item in sorted(metadata.get("workspace_members", [])) if item in references]
+                 for item in sorted(workspace_members)]
     for node in (metadata.get("resolve") or {}).get("nodes", []):
-        if node["id"] not in references:
-            continue
+        node_id = node["id"]
+        if node_id not in references:
+            raise ValueError("unknown resolve node ID: " + node_id)
         for dependency in node.get("dependencies", []):
-            if dependency in references:
-                relations.append({"spdxElementId": references[node["id"]], "relatedSpdxElement": references[dependency], "relationshipType": "DEPENDS_ON"})
+            if dependency not in references:
+                raise ValueError("unknown dependency ID: " + dependency + " from " + node_id)
+            relations.append({"spdxElementId": references[node_id], "relatedSpdxElement": references[dependency], "relationshipType": "DEPENDS_ON"})
     relations.sort(key=lambda item: (item["spdxElementId"], item["relationshipType"], item["relatedSpdxElement"]))
     sbom = {
         "spdxVersion": "SPDX-2.3",

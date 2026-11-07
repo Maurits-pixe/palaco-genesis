@@ -30,6 +30,17 @@ class SbomTests(unittest.TestCase):
         self.assertEqual(len(first["packages"]), 2)
         self.assertEqual(len(first["relationships"]), 2)
 
+    def test_unresolved_cargo_references_fail_closed(self):
+        cases = (
+            ("workspace member", {**METADATA, "workspace_members": ["pkg-a", "pkg-unknown"]}),
+            ("resolve node", {**METADATA, "resolve": {"nodes": [{"id": "pkg-unknown", "dependencies": []}]}}),
+            ("dependency", {**METADATA, "resolve": {"nodes": [{"id": "pkg-a", "dependencies": ["pkg-unknown"]}]}}),
+        )
+        for label, metadata in cases:
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(ValueError, "unknown"):
+                    generate(metadata, COMMIT, 0)
+
     def test_missing_or_duplicate_input_fails_closed(self):
         with self.assertRaises(ValueError):
             generate({"packages": []}, COMMIT, 0)
