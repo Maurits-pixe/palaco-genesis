@@ -1428,6 +1428,10 @@ def main() -> int:
                         errors.append(
                             f"{path}: job '{job_name}' step #{step_index} named 'Prepare release binaries' must not define id"
                         )
+                    if step_working_directory is not None:
+                        errors.append(
+                            f"{path}: job '{job_name}' step #{step_index} named 'Prepare release binaries' must not define working-directory"
+                        )
                 if (
                     workflow_filename == "release.yml"
                     and job_name == "build-binaries"
