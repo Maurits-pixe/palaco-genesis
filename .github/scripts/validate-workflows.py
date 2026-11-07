@@ -757,6 +757,14 @@ def main() -> int:
                 errors.append(
                     f"{path}: job '{job_name}' must not define job-level defaults"
                 )
+            if (
+                workflow_filename == "release.yml"
+                and job_name == "publish-release"
+                and job.get("environment") is not None
+            ):
+                errors.append(
+                    f"{path}: job '{job_name}' must not define job-level environment"
+                )
             validate_defaults_run(errors, path, f"job '{job_name}'", job.get("defaults"))
 
             runs_on = job.get("runs-on")
