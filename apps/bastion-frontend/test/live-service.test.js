@@ -2025,6 +2025,117 @@ test('live service: a throwing countdown tick fails closed, then fresh preflight
   ])
 })
 
+for (const uncertain of [false, true]) {
+  test(`live service: TTL edits retire only normal authority without restoration, uncertainty=${uncertain}`, { timeout: 15000 }, async t => {
+    const f = await fixture(t)
+    const s = f.session
+    await f.run('ticket')
+    assert.equal(s.error.value, '')
+    const held = s.ticket.value
+    const originalTtl = s.ttlMs.value
+    const issuedWindow = structuredClone({ ...held })
+    const path = `/v1/tickets/${held.id}`
+    await bounded(s.checkCurrentTicket(), 'initial active status before TTL edits')
+    assert.equal(s.error.value, '')
+    const active = s.outcome.value
+    const activeSnapshot = structuredClone({ ...active })
+    const receipt = s.outcomeReceivedAt.value
+    assert.deepEqual(active, { ...held, checked_at: now, status: 'active', revoked: false, record: null })
+    assert.equal(receipt, now)
+    assert.equal(s.canCommit.value, true)
+    const expectedCalls = [
+      { path: '/v1/tickets', method: 'POST', status: 201 },
+      { path, method: 'GET', status: 200 },
+    ]
+    if (uncertain) {
+      f.loseNext('DELETE', path)
+      await f.run('revoke')
+      assert.match(s.error.value, /Geen geldig antwoord/)
+      assert.equal(s.message.value, revokeCaution)
+      expectedCalls.push({ path, method: 'DELETE', status: 200 })
+    }
+    assert.equal(f.losses, Number(uncertain))
+    assert.equal(s.ticket.value, held)
+    assert.equal(s.revocationUncertain.value, uncertain)
+    const persisted = () => Object.fromEntries(['tickets', 'commands', 'audit'].map(table =>
+      [table, f.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]))
+    const baseline = persisted()
+    assert.equal(baseline.tickets.length, 1)
+    for (const [key, value] of Object.entries({ ...issuedWindow, revoked: Number(uncertain), consumed: 0 })) {
+      assert.equal(baseline.tickets[0][key], value)
+    }
+    assert.equal(held.not_before, now)
+    assert.equal(held.expires_at, now + originalTtl)
+    assert.deepEqual(baseline.commands, [])
+    assert.equal(baseline.audit.length, Number(uncertain))
+    if (uncertain) {
+      assert.equal(baseline.audit[0].ticket_id, held.id)
+      assert.equal(baseline.audit[0].action, 'ticket:revoke')
+      assert.equal(baseline.audit[0].checked_at, now)
+    }
+    const journal = s.commands.value
+    const command = s.command.value
+    const lastSubmissionId = s.lastSubmissionId.value
+    const feedback = { message: s.message.value, error: s.error.value }
+    const assertPreserved = () => {
+      assert.equal(s.ticket.value, uncertain ? held : null)
+      assert.equal(s.revocationUncertain.value, uncertain)
+      assert.equal(s.canCommit.value, false, 'restoring the original TTL never restores commit authority')
+      if (uncertain) assert.equal(s.canRequestTicket.value, false)
+      assert.equal(s.outcome.value, active)
+      assert.deepEqual(s.outcome.value, activeSnapshot)
+      assert.equal(s.outcomeReceivedAt.value, receipt)
+      assert.equal(s.lastSubmissionId.value, lastSubmissionId)
+      assert.equal(s.command.value, command)
+      assert.equal(s.commands.value, journal)
+      assert.deepEqual(s.commands.value, [])
+      assert.deepEqual(held, issuedWindow, 'TTL edits never alter the exact issued window')
+      assert.deepEqual(persisted(), baseline)
+      assert.deepEqual(f.calls, expectedCalls, 'edits, ticks and local rejection never send requests')
+      assert.equal(f.sockets.length, 0)
+      assert.equal(s.realtimeStatus.value, 'disconnected')
+    }
+    for (const value of [originalTtl + 1, '', originalTtl]) {
+      s.ttlMs.value = value
+      assert.equal(s.ttlMs.value, value)
+      assertPreserved()
+      f.setLocalNow(now + 100)
+      f.tick()
+      assert.equal(s.now.value, now + 100)
+      assertPreserved()
+      assert.deepEqual({ message: s.message.value, error: s.error.value }, feedback)
+    }
+    await f.run('commit')
+    assert.equal(s.message.value, localCommitBlocked)
+    assert.equal(s.error.value, '')
+    assert.equal(s.busy.value, '')
+    assertPreserved()
+    if (uncertain) {
+      await bounded(s.checkCurrentTicket(), 'explicit revoked status after TTL edits')
+    } else {
+      s.lookupId.value = held.id
+      assertPreserved()
+      await f.run('status')
+    }
+    assert.equal(s.error.value, '')
+    assert.deepEqual(s.outcome.value, {
+      ...held, checked_at: now, status: uncertain ? 'revoked' : 'active', revoked: uncertain, record: null,
+    })
+    assert.equal(s.outcomeReceivedAt.value, now + 100)
+    assert.equal(s.ticket.value, null, 'even a fresh active GET never restores the retired ticket')
+    assert.equal(s.revocationUncertain.value, false)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.lastSubmissionId.value, lastSubmissionId)
+    assert.equal(s.command.value, command)
+    assert.equal(s.commands.value, journal)
+    assert.deepEqual(s.commands.value, [])
+    assert.deepEqual(persisted(), baseline, 'explicit status neither inserts journal rows nor mutates SQLite')
+    assert.deepEqual(f.calls, [...expectedCalls, { path, method: 'GET', status: 200 }])
+    assert.equal(f.sockets.length, 0)
+    assert.equal(f.losses, Number(uncertain))
+  })
+}
+
 for (const ttl of ['', 0, 60001, 1.5, NaN, Infinity]) {
   test(`live service: invalid TTL ${JSON.stringify(String(ttl))} rejects explicit issuance locally without retry`, { timeout: 15000 }, async t => {
     const f = await fixture(t)

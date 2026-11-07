@@ -213,6 +213,11 @@ Terugzetten van de duur herstelt dat ticket niet. Bij onzekere intrekking
 blijven het oorspronkelijke ticket en de blokkering behouden. Gecompileerde
 Vue-invoertests controleren dit zonder verzoeken of wijzigingen aan het
 logboek, de ticketuitkomst of het laatst ingezonden ID.
+Live HTTP/SQLite-tests wijzigen en herstellen de duur bij een normaal ticket
+en na een verloren intrekkingsantwoord. De uitgegeven vensters en serverrijen
+blijven ongewijzigd; invoerwijzigingen veroorzaken geen verzoeken. Een
+expliciete actieve status herstelt het verdwenen lokale ticket niet. Alleen
+een passende ingetrokken status sluit de behouden onzekerheidsblokkering af.
 De commandotekst krijgt gekoppelde invoerfeedback bij alleen witruimte of
 meer dan 1024 UTF-16-tekeneenheden (een emoji telt meestal als twee).
 Een leeg veld blijft neutraal en verplicht. De interface past de tekst niet
