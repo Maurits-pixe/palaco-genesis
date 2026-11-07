@@ -1393,6 +1393,31 @@ def main() -> int:
                         errors.append(
                             f"{path}: job '{job_name}' step #{step_index} named 'Generate checksums and manifest' must define run"
                         )
+                    elif isinstance(step_run, str):
+                        normalized_manifest_commands = [
+                            line.strip()
+                            for line in step_run.splitlines()
+                            if line.strip()
+                        ]
+                        required_manifest_commands = [
+                            "sha256sum release-binaries/citadel-a1 > release-binaries/SHA256SUMS",
+                            "sha256sum release-binaries/citadel-a1-canonical >> release-binaries/SHA256SUMS",
+                            "cat > release-binaries/release-manifest.json <<'JSON'",
+                            "{",
+                            '"artifacts": [',
+                            '"citadel-a1",',
+                            '"citadel-a1-canonical",',
+                            '"SHA256SUMS"',
+                            "],",
+                            '"source_package": "palaco-citadel-contracts",',
+                            '"workflow": "release.yml"',
+                            "}",
+                            "JSON",
+                        ]
+                        if normalized_manifest_commands != required_manifest_commands:
+                            errors.append(
+                                f"{path}: job '{job_name}' step #{step_index} named 'Generate checksums and manifest' must set run to exactly {required_manifest_commands}"
+                            )
                 if (
                     workflow_filename == "release.yml"
                     and job_name == "build-binaries"
