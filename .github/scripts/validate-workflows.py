@@ -1440,6 +1440,10 @@ def main() -> int:
                         errors.append(
                             f"{path}: job '{job_name}' step #{step_index} named 'Prepare release binaries' must not define env"
                         )
+                    if step_continue_on_error is not None:
+                        errors.append(
+                            f"{path}: job '{job_name}' step #{step_index} named 'Prepare release binaries' must not define continue-on-error"
+                        )
                 if (
                     workflow_filename == "release.yml"
                     and job_name == "build-binaries"
