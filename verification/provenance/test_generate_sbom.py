@@ -12,7 +12,7 @@ METADATA = {
         {"id": "pkg-a", "name": "a", "version": "0.1.0", "license": "MIT"},
     ],
     "workspace_members": ["pkg-a"],
-    "resolve": {"nodes": [{"id": "pkg-a", "dependencies": ["pkg-b"]}]},
+    "resolve": {"nodes": [{"id": "pkg-a", "dependencies": ["pkg-b"]}, {"id": "pkg-b", "dependencies": []}]},
 }
 
 
@@ -40,6 +40,17 @@ class SbomTests(unittest.TestCase):
             with self.subTest(label=label):
                 with self.assertRaisesRegex(ValueError, "unknown"):
                     generate(metadata, COMMIT, 0)
+
+    def test_incomplete_or_duplicate_resolve_nodes_fail_closed(self):
+        cases = (
+            ("missing dependency package node", {"nodes": [{"id": "pkg-a", "dependencies": ["pkg-b"]}]}),
+            ("missing workspace package node", {"nodes": [{"id": "pkg-b", "dependencies": []}]}),
+            ("duplicate node", {"nodes": METADATA["resolve"]["nodes"] + [METADATA["resolve"]["nodes"][0]]}),
+        )
+        for label, resolve in cases:
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(ValueError, "resolve node"):
+                    generate({**METADATA, "resolve": resolve}, COMMIT, 0)
 
     def test_missing_or_empty_resolve_graph_fails_closed(self):
         cases = (
