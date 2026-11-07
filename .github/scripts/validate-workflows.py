@@ -1221,6 +1221,10 @@ def main() -> int:
                 ):
                     publish_release_download_steps += 1
                     publish_release_download_step_index = step_index
+                    if step.get("env") is not None:
+                        errors.append(
+                            f"{path}: job '{job_name}' actions/download-artifact@v4 step #{step_index} must not define env"
+                        )
                     if step_if is not None:
                         errors.append(
                             f"{path}: job '{job_name}' actions/download-artifact@v4 step #{step_index} must not define if"
@@ -1258,6 +1262,10 @@ def main() -> int:
                 ):
                     publish_release_action_steps += 1
                     publish_release_action_step_index = step_index
+                    if step.get("env") is not None:
+                        errors.append(
+                            f"{path}: job '{job_name}' softprops/action-gh-release@v2 step #{step_index} must not define env"
+                        )
                     if step_if is not None:
                         errors.append(
                             f"{path}: job '{job_name}' softprops/action-gh-release@v2 step #{step_index} must not define if"
