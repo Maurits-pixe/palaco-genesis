@@ -540,6 +540,10 @@ en het lokale verversingsontvangsttijdstip verdwijnen, terwijl zoekfilter,
 tickets en de aparte ticketuitkomst behouden blijven. Gecompileerde Vue-tests
 controleren de knopactie zonder databaseverwijdering, intrekking of
 automatische verzoeken.
+Een live HTTP/SQLite/Socket.IO-test controleert rechtstreeks verbreken met
+een actief ticket en zoekfilter. Handmatig herverbinden haalt gemiste records
+niet op; een expliciete logboekverversing doet dat wel en past het behouden
+filter toe, zonder ticketgegevens of de aparte statusmomentopname te wijzigen.
 Ook na het aanmaken van een realtimeadapter controleert de sessie opnieuw
 of de verbindingspoging nog actueel is. Een adapter die tijdens het aanmaken
 door sessiewissing, disposal of een vervangende poging is achterhaald, wordt

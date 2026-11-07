@@ -3711,6 +3711,99 @@ test('live realtime: disconnecting in the connecting callback creates no socket 
   assert.deepEqual(f.sockets, [])
 })
 
+test('live realtime: direct disconnect preserves the filter and held authority; only explicit listing recovers missed history', { timeout: 20000 }, async t => {
+  const f = await fixture(t, { realtime: true })
+  const s = f.session
+  const socket = await f.connect()
+  await f.run('ticket')
+  await bounded(s.checkCurrentTicket(), 'active held ticket status')
+  assert.equal(s.outcome.value.status, 'active')
+  assert.equal(s.outcomeReceivedAt.value, now)
+  assert.equal(s.canCommit.value, true)
+  assert.equal(s.lastSubmissionId.value, '')
+
+  const firstEntry = waitFor(s.commands, rows => rows.length === 1, 'seed live journal entry')
+  const first = await f.commitExternal('seed before direct disconnect')
+  await firstEntry
+  assert.deepEqual(s.commands.value, [first])
+  await f.run('list')
+  assert.equal(s.hasLoaded.value, true)
+  assert.equal(s.lastJournalRefreshAt.value, now)
+  assert.equal(s.journalRefreshFailed.value, false)
+  s.search.value = '  MISSED  '
+  assert.deepEqual(s.filteredCommands.value, [])
+
+  const keys = [
+    'ticket', 'outcome', 'outcomeReceivedAt', 'lastSubmissionId', 'lookupId',
+    'token', 'command', 'search', 'canCommit', 'canRequestTicket', 'canCheckStatus',
+    'revocationUncertain', 'outcomeMismatch', 'ttlMs', 'remaining', 'busy',
+  ]
+  const preserved = JSON.parse(JSON.stringify(Object.fromEntries(keys.map(key => [key, s[key].value]))))
+  const feedback = { message: s.message.value, error: s.error.value }
+  const tables = ['tickets', 'commands', 'audit']
+  const before = tables.map(table => f.db.prepare(`SELECT * FROM ${table}`).all().map(row => ({ ...row })))
+  const requests = f.calls.map(call => ({ ...call }))
+  assert.deepEqual(requests, [
+    { path: '/v1/tickets', method: 'POST', status: 201 },
+    { path: `/v1/tickets/${preserved.ticket.id}`, method: 'GET', status: 200 },
+    { path: '/v1/commands', method: 'GET', status: 200 },
+  ])
+  assert.equal(f.sockets.length, 1)
+
+  s.realtime.disconnect()
+  assertDisconnected(socket)
+  assert.equal(s.realtimeStatus.value, 'disconnected')
+  assert.deepEqual(s.commands.value, [])
+  assert.deepEqual(s.filteredCommands.value, [])
+  assert.equal(s.hasLoaded.value, false)
+  assert.equal(s.lastJournalRefreshAt.value, null)
+  assert.equal(s.journalRefreshFailed.value, false)
+  for (const key of keys) assert.deepEqual(s[key].value, preserved[key], key)
+  assert.deepEqual({ message: s.message.value, error: s.error.value }, feedback)
+  assert.deepEqual(f.calls, requests, 'disconnect sends no requests')
+  assert.equal(f.sockets.length, 1, 'disconnect does not replace the socket')
+  assert.deepEqual(tables.map(table => f.db.prepare(`SELECT * FROM ${table}`).all().map(row => ({ ...row }))), before)
+
+  const missedEvent = nextCommit(f.witness, 'missed during direct disconnect')
+  const missed = await f.commitExternal('missed during direct disconnect')
+  assert.deepEqual(await missedEvent, missed)
+  assert.deepEqual(s.commands.value, [], 'a witnessed independent commit cannot refill the disconnected session')
+  assert.deepEqual(f.calls, requests)
+  assert.equal(f.sockets.length, 1)
+  for (const key of keys) assert.deepEqual(s[key].value, preserved[key], key)
+  const afterExternal = tables.map(table => f.db.prepare(`SELECT * FROM ${table}`).all().map(row => ({ ...row })))
+  for (const [index, table] of tables.entries()) {
+    assert.deepEqual(afterExternal[index].slice(0, before[index].length), before[index], table)
+    assert.equal(afterExternal[index].length, before[index].length + 1, `${table}: only the independent commit mutated storage`)
+  }
+
+  const reconnected = await f.connect()
+  assert.notEqual(reconnected, socket)
+  assert.equal(s.realtimeStatus.value, 'connected')
+  assert.equal(f.sockets.length, 2)
+  assert.deepEqual(s.commands.value, [], 'explicit reconnect does not replay seed or missed history')
+  assert.deepEqual(s.filteredCommands.value, [])
+  assert.equal(s.hasLoaded.value, false)
+  assert.equal(s.lastJournalRefreshAt.value, null)
+  assert.equal(s.journalRefreshFailed.value, false)
+  assert.deepEqual(f.calls, requests, 'reconnect neither lists nor mutates automatically')
+  for (const key of keys) assert.deepEqual(s[key].value, preserved[key], key)
+
+  await f.run('list')
+  assert.deepEqual(s.commands.value, [missed, first])
+  assert.deepEqual(s.filteredCommands.value, [missed], 'the preserved filter applies to explicitly recovered history')
+  assert.equal(s.hasLoaded.value, true)
+  assert.equal(s.lastJournalRefreshAt.value, now)
+  assert.equal(s.journalRefreshFailed.value, false)
+  for (const key of keys) assert.deepEqual(s[key].value, preserved[key], key)
+  assert.deepEqual(f.calls, [...requests, { path: '/v1/commands', method: 'GET', status: 200 }])
+  assert.equal(f.calls.length, 4)
+  assert.equal(f.count('POST', '/v1/commands'), 0)
+  assert.equal(f.count('DELETE', `/v1/tickets/${preserved.ticket.id}`), 0)
+  assert.equal(f.sockets.length, 2)
+  assert.deepEqual(tables.map(table => f.db.prepare(`SELECT * FROM ${table}`).all().map(row => ({ ...row }))), afterExternal)
+})
+
 test('live realtime: clearing the journal disconnects without losing authority or status; reconnect never replays missed commits', { timeout: 20000 }, async t => {
   const f = await fixture(t, { realtime: true })
   const s = f.session
