@@ -1097,6 +1097,8 @@ def main() -> int:
             step_id_to_indexes: dict[str, list[int]] = {}
             release_readiness_upload_steps = 0
             release_readiness_upload_step_index: int | None = None
+            release_readiness_capture_steps = 0
+            release_readiness_capture_step_index: int | None = None
             build_binaries_upload_steps = 0
             build_binaries_upload_step_index: int | None = None
             publish_release_action_steps = 0
@@ -1272,6 +1274,17 @@ def main() -> int:
                     if action_ref in {"main", "master", "HEAD", "latest"}:
                         errors.append(
                             f"{path}: job '{job_name}' step #{step_index} uses disallowed floating action ref '{action_ref}'"
+                        )
+                if (
+                    workflow_filename == "release.yml"
+                    and job_name == "release-readiness"
+                    and step_name == "Capture release context"
+                ):
+                    release_readiness_capture_steps += 1
+                    release_readiness_capture_step_index = step_index
+                    if step_run is None:
+                        errors.append(
+                            f"{path}: job '{job_name}' step #{step_index} named 'Capture release context' must define run"
                         )
                 if (
                     workflow_filename == "release.yml"
@@ -1526,6 +1539,14 @@ def main() -> int:
             if (
                 workflow_filename == "release.yml"
                 and job_name == "release-readiness"
+                and release_readiness_capture_steps != 1
+            ):
+                errors.append(
+                    f"{path}: job '{job_name}' must contain exactly one step named 'Capture release context'"
+                )
+            if (
+                workflow_filename == "release.yml"
+                and job_name == "release-readiness"
                 and release_readiness_upload_steps != 1
             ):
                 errors.append(
@@ -1539,6 +1560,17 @@ def main() -> int:
             ):
                 errors.append(
                     f"{path}: job '{job_name}' must place actions/upload-artifact@v4 as the last step"
+                )
+            if (
+                workflow_filename == "release.yml"
+                and job_name == "release-readiness"
+                and release_readiness_capture_step_index is not None
+                and release_readiness_upload_step_index is not None
+                and release_readiness_capture_step_index
+                != release_readiness_upload_step_index - 1
+            ):
+                errors.append(
+                    f"{path}: job '{job_name}' must place step 'Capture release context' directly before actions/upload-artifact@v4"
                 )
             if (
                 workflow_filename == "release.yml"
