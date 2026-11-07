@@ -34,7 +34,7 @@ class SbomTests(unittest.TestCase):
         cases = (
             ("workspace member", {**METADATA, "workspace_members": ["pkg-a", "pkg-unknown"]}),
             ("resolve node", {**METADATA, "resolve": {"nodes": [{"id": "pkg-unknown", "dependencies": []}]}}),
-            ("dependency", {**METADATA, "resolve": {"nodes": [{"id": "pkg-a", "dependencies": ["pkg-unknown"]}]}}),
+            ("dependency", {**METADATA, "resolve": {"nodes": [{"id": "pkg-a", "dependencies": ["pkg-unknown"]}, {"id": "pkg-b", "dependencies": []}]}}),
         )
         for label, metadata in cases:
             with self.subTest(label=label):
