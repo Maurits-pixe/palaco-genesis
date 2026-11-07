@@ -594,6 +594,10 @@ en einde worden genegeerd. De teller toont zichtbare versus geladen records.
 Alleen de maximaal 100 momenteel geladen records worden doorzocht, niet
 de volledige database of ticket-ID's. Het filter verandert de records en
 hun volgorde niet en blijft actief bij vernieuwen en realtime-updates.
+**Wis zoekopdracht** heeft gekoppelde uitleg: alleen het lokale filter
+verdwijnt. Geladen records, ticketstaat en verbinding blijven behouden;
+er volgt geen verversing. Gecompileerde Vue-tests controleren deze knopactie
+ook tijdens een verzoek.
 Bij 100 geladen records meldt de interface expliciet dat de lokale limiet
 is bereikt en oudere serverrecords buiten beeld kunnen vallen. Dit bewijst
 niet dat zulke records bestaan. De melding blijft ook zichtbaar als het

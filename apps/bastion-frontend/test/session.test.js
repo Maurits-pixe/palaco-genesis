@@ -4412,6 +4412,91 @@ test('compiled journal limit notice depends only on loaded count, including real
   }
 })
 
+test('compiled clear-search button links static muted help and only disables for an empty search, even while busy', async t => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const pair = app.match(/<button[^>]*>Wis zoekopdracht<\/button>\s*<p id="clear-search-help" class="muted">[\s\S]*?<\/p>/)?.[0]
+  assert.ok(pair)
+  assert.equal(app.match(/\bid="clear-search-help"/g).length, 1)
+  assert.equal(app.match(/\baria-describedby="clear-search-help"/g).length, 1)
+  assert.doesNotMatch(pair.slice(pair.indexOf('<p ')), /\{\{|v-|@/)
+  const render = compileFragment(pair)
+  const { state, calls, sockets } = fixture(t)
+  for (const busy of ['', ...Object.keys(actions)]) {
+    state.busy.value = busy
+    for (const search of ['', 'journal', ' ']) {
+      state.search.value = search
+      const before = commandState(state)
+      const { html, find } = await render(state)
+      const button = find(node => node.type === 'button')
+      assert.equal(button.props.disabled, !search)
+      assert.equal(button.props['aria-describedby'], 'clear-search-help')
+      assert.equal(html.match(/<button[^>]*>/)[0].includes(' disabled'), !search)
+      const help = find(node => node.props?.id === 'clear-search-help')
+      assert.equal(help.type, 'p')
+      assert.equal(help.props.class, 'muted')
+      assert.equal(help.children, 'Wist alleen het lokale zoekfilter; geladen records blijven behouden. Geen verversing, onderbreking van de verbinding of wijziging van tickets.')
+      assert.deepEqual(commandState(state), before)
+      assert.equal(calls.length, 0)
+      assert.equal(sockets.length, 0)
+    }
+  }
+})
+
+test('compiled clear-search click reveals all loaded records without changing session state, pending refresh or active realtime', async t => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const panel = app.match(/<button[^>]*>Wis zoekopdracht<\/button>[\s\S]*?<\/ol>/)?.[0]
+  assert.ok(panel)
+  const render = compileFragment(panel)
+  for (const busy of [false, true]) {
+    const { state, calls, sockets, clock } = fixture(t)
+    state.realtime.connect(state.token.value)
+    const socket = sockets[0]
+    socket.handlers.connect()
+    prepare(state, 'list')
+    state.commands.value = [record(), { ...record('other-record'), command: 'other text' }]
+    const pending = busy ? state.perform('list') : null
+    const before = commandState(state, ['search', 'filteredCommands'])
+    const callsBefore = calls.slice()
+    const socketBefore = structuredClone({
+      auth: socket.auth, options: socket.io.opts, connects: socket.connects,
+      disconnects: socket.disconnects, removed: socket.removed,
+    })
+    const readsBefore = clock.reads
+    const viewState = { ...state, date: value => String(value), receiptIso: value => new Date(value).toISOString() }
+    const { html, find } = await render(viewState)
+    assert.match(html, /1 van 2 geladen records/)
+    assert.doesNotMatch(html, /<code>other-record<\/code>/)
+    const button = find(node => node.type === 'button' && node.children === 'Wis zoekopdracht')
+    assert.equal(button.props.disabled, false)
+    button.props.onClick()
+    assert.equal(state.search.value, '')
+    assert.deepEqual(state.filteredCommands.value, state.commands.value)
+    const cleared = await render(viewState)
+    assert.match(cleared.html, /2 van 2 geladen records/)
+    for (const entry of state.commands.value) {
+      assert.ok(cleared.html.includes(`<code>${entry.id}</code>`))
+      assert.ok(cleared.html.includes(`<pre>${entry.command}</pre>`))
+    }
+    assert.equal(cleared.find(node => node.type === 'button').props.disabled, true)
+    const after = commandState(state, ['search', 'filteredCommands'])
+    for (const key of Object.keys(before)) assert.strictEqual(after[key], before[key], key)
+    assert.deepEqual(calls, callsBefore)
+    assert.equal(calls.some(call => call.signal.aborted), false)
+    assert.equal(sockets.length, 1)
+    assert.equal(sockets[0], socket)
+    assert.equal(state.realtimeStatus.value, 'connected')
+    assert.deepEqual({
+      auth: socket.auth, options: socket.io.opts, connects: socket.connects,
+      disconnects: socket.disconnects, removed: socket.removed,
+    }, socketBefore)
+    assert.equal(clock.reads, readsBefore)
+    if (pending) {
+      calls[0].resolve(state.commands.value)
+      await pending
+    }
+  }
+})
+
 test('snapshot receipt time uses successful response time, survives failure and search, and advances on empty retry', async t => {
   const { state, calls, clock } = fixture(t)
   assert.equal(state.lastJournalRefreshAt.value, null)

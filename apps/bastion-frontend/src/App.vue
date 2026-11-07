@@ -208,7 +208,9 @@ function receiptIso(value) {
         <input id="journal-search" v-model="search" type="search" autocomplete="off" spellcheck="false" maxlength="1024" aria-describedby="journal-search-help" />
         <p id="journal-search-help" class="muted">Zoekt letterlijk, zonder hoofdletterverschil, in commandotekst of record-ID van maximaal 100 lokaal geladen records.
           Niet in de hele database of ticket-ID's. De zoekopdracht blijft alleen in sessiegeheugen.</p>
-        <button type="button" class="secondary" :disabled="!search" @click="search = ''">Wis zoekopdracht</button>
+        <button type="button" class="secondary" :disabled="!search" aria-describedby="clear-search-help" @click="search = ''">Wis zoekopdracht</button>
+        <p id="clear-search-help" class="muted">Wist alleen het lokale zoekfilter; geladen records blijven behouden.
+          Geen verversing, onderbreking van de verbinding of wijziging van tickets.</p>
         <p role="status" aria-live="polite">{{ filteredCommands.length }} van {{ commands.length }} geladen records</p>
         <p v-if="commands.length === 100" id="journal-limit-help" class="muted" role="status">De lokale limiet van 100 records is bereikt. Er kunnen oudere records op de server staan die hier niet zichtbaar zijn. Zoeken doorzoekt alleen de geladen records, niet de volledige historie.</p>
         <p v-if="!commands.length" class="muted">{{ journalRefreshFailed ? 'Geen records beschikbaar na mislukte verversing.' : hasLoaded ? 'Het logboek is leeg.' : 'Nog geen records geladen.' }}</p>
