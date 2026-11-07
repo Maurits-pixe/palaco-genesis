@@ -1098,6 +1098,7 @@ def main() -> int:
             release_readiness_upload_steps = 0
             release_readiness_upload_step_index: int | None = None
             build_binaries_upload_steps = 0
+            build_binaries_upload_step_index: int | None = None
             publish_release_action_steps = 0
             publish_release_download_steps = 0
             publish_release_download_step_index: int | None = None
@@ -1328,6 +1329,7 @@ def main() -> int:
                     and step_uses.strip() == "actions/upload-artifact@v4"
                 ):
                     build_binaries_upload_steps += 1
+                    build_binaries_upload_step_index = step_index
                     if step_id is not None:
                         errors.append(
                             f"{path}: job '{job_name}' actions/upload-artifact@v4 step #{step_index} must not define id"
@@ -1545,6 +1547,15 @@ def main() -> int:
             ):
                 errors.append(
                     f"{path}: job '{job_name}' must contain exactly one step using actions/upload-artifact@v4"
+                )
+            if (
+                workflow_filename == "release.yml"
+                and job_name == "build-binaries"
+                and build_binaries_upload_step_index is not None
+                and build_binaries_upload_step_index != len(steps) - 1
+            ):
+                errors.append(
+                    f"{path}: job '{job_name}' must place actions/upload-artifact@v4 as the last step"
                 )
             if (
                 workflow_filename == "release.yml"
