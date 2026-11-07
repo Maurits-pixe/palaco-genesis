@@ -1292,6 +1292,24 @@ def main() -> int:
                         errors.append(
                             f"{path}: job '{job_name}' step #{step_index} named 'Capture release context' must define run"
                         )
+                    elif isinstance(step_run, str):
+                        normalized_capture_commands = [
+                            line.strip()
+                            for line in step_run.splitlines()
+                            if line.strip()
+                        ]
+                        required_capture_commands = [
+                            "mkdir -p release-evidence",
+                            "{",
+                            'echo "release_tag=${{ github.event.inputs.release_tag }}"',
+                            'echo "commit=${{ github.sha }}"',
+                            'echo "run_id=${{ github.run_id }}"',
+                            "} > release-evidence/context.txt",
+                        ]
+                        if normalized_capture_commands != required_capture_commands:
+                            errors.append(
+                                f"{path}: job '{job_name}' step #{step_index} named 'Capture release context' must set run to exactly {required_capture_commands}"
+                            )
                 if (
                     workflow_filename == "release.yml"
                     and job_name == "release-readiness"
