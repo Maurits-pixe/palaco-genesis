@@ -598,6 +598,10 @@ hun volgorde niet en blijft actief bij vernieuwen en realtime-updates.
 verdwijnt. Geladen records, ticketstaat en verbinding blijven behouden;
 er volgt geen verversing. Gecompileerde Vue-tests controleren deze knopactie
 ook tijdens een verzoek.
+De bestaande live HTTP/SQLite/Socket.IO-test wist het filter bij 100 geladen
+records: een aparte historische ticketuitkomst en ontvangsttijden blijven
+behouden, zonder extra verzoeken of databasewijzigingen. Oudere records
+worden niet opgehaald; een volgend realtime-record komt nog steeds binnen.
 Bij 100 geladen records meldt de interface expliciet dat de lokale limiet
 is bereikt en oudere serverrecords buiten beeld kunnen vallen. Dit bewijst
 niet dat zulke records bestaan. De melding blijft ook zichtbaar als het

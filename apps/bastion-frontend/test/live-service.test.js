@@ -3496,6 +3496,34 @@ test('live realtime: newest 100 records stay bounded without deleting older subm
   assert.deepEqual(s.commands.value, recent, 'status does not insert an older record into recent history')
   assert.deepEqual(s.filteredCommands.value, [])
   assert.deepEqual(snapshot(), stored101, 'listing, search and status do not mutate persisted history')
+  const beforeClearSearch = {
+    commands: s.commands.value, outcome: s.outcome.value,
+    outcomeSnapshot: JSON.parse(JSON.stringify(s.outcome.value)), outcomeReceipt: s.outcomeReceivedAt.value,
+    journalReceipt: s.lastJournalRefreshAt.value, lastSubmission: s.lastSubmissionId.value,
+    lookup: s.lookupId.value, sockets: [...f.sockets], realtime: s.realtimeStatus.value,
+    requests: f.calls.length, lists: f.count('GET', '/v1/commands'),
+  }
+  s.search.value = ''
+  assert.equal(s.commands.value, beforeClearSearch.commands)
+  assert.deepEqual(s.filteredCommands.value, recent, 'clearing search reveals the same ordered 100 records')
+  assert.equal(s.filteredCommands.value.length, 100)
+  assert.equal(s.filteredCommands.value.some(row => row.id === original.id), false)
+  assert.equal(s.outcome.value, beforeClearSearch.outcome)
+  assert.deepEqual(s.outcome.value, beforeClearSearch.outcomeSnapshot)
+  assert.equal(s.outcomeReceivedAt.value, beforeClearSearch.outcomeReceipt)
+  assert.equal(s.lastJournalRefreshAt.value, beforeClearSearch.journalReceipt)
+  assert.equal(s.lastSubmissionId.value, beforeClearSearch.lastSubmission)
+  assert.equal(s.lookupId.value, beforeClearSearch.lookup)
+  assert.equal(s.ticket.value, null)
+  assert.equal(s.canCommit.value, false)
+  assert.equal(s.revocationUncertain.value, false)
+  assert.equal(f.calls.length, beforeClearSearch.requests)
+  assert.equal(f.count('GET', '/v1/commands'), beforeClearSearch.lists)
+  assert.deepEqual(snapshot(), stored101, 'clearing search does not mutate persisted history')
+  assert.deepEqual(f.sockets, beforeClearSearch.sockets)
+  assert.equal(s.realtimeStatus.value, beforeClearSearch.realtime)
+  assert.equal(s.realtimeStatus.value, 'connected')
+  assert.ok(f.sockets.every(socket => socket.connected))
   s.clearOutcome()
   assert.equal(s.outcome.value, null)
   assert.equal(s.outcomeReceivedAt.value, null)
@@ -3503,7 +3531,6 @@ test('live realtime: newest 100 records stay bounded without deleting older subm
   assert.equal(s.lastSubmissionId.value, issued.id)
   assert.equal(s.ticket.value, null)
   assert.equal(s.canCommit.value, false)
-  s.search.value = ''
 
   assert.equal(s.realtimeStatus.value, 'connected')
   const finalCommand = 'bounded final live record 102'
@@ -3518,6 +3545,7 @@ test('live realtime: newest 100 records stay bounded without deleting older subm
   assert.equal(s.commands.value.some(row => row.id === recent.at(-1).id), false,
     'exactly the oldest visible record is evicted by the next live insert')
   assertStored(102)
+  assert.equal(s.lastJournalRefreshAt.value, beforeClearSearch.journalReceipt)
   assert.equal(s.lastSubmissionId.value, issued.id)
   assert.equal(s.ticket.value, null)
   assert.equal(s.canCommit.value, false)
