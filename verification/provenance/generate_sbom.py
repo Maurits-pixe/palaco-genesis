@@ -63,6 +63,9 @@ def generate(metadata, commit, epoch):
     node_ids = [node["id"] for node in nodes]
     if len(node_ids) != len(set(node_ids)):
         raise ValueError("duplicate resolve node IDs")
+    unknown_nodes = set(node_ids) - references.keys()
+    if unknown_nodes:
+        raise ValueError("unknown resolve node IDs: " + ", ".join(sorted(unknown_nodes)))
     missing_nodes = references.keys() - set(node_ids)
     if missing_nodes:
         raise ValueError("missing resolve node IDs: " + ", ".join(sorted(missing_nodes)))
