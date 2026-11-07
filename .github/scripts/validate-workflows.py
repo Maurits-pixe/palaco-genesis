@@ -765,6 +765,14 @@ def main() -> int:
                     f"{path}: job '{job_name}' must set runs-on to 'ubuntu-latest'"
                 )
             job_strategy = job.get("strategy")
+            if (
+                workflow_filename == "release.yml"
+                and job_name == "publish-release"
+                and job_strategy is not None
+            ):
+                errors.append(
+                    f"{path}: job '{job_name}' must not define job-level strategy"
+                )
             if job_strategy is not None:
                 if not isinstance(job_strategy, dict):
                     errors.append(
