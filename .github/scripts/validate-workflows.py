@@ -1095,6 +1095,7 @@ def main() -> int:
                 continue
             step_display_name_to_indexes: dict[str, list[int]] = {}
             step_id_to_indexes: dict[str, list[int]] = {}
+            release_readiness_upload_steps = 0
             build_binaries_upload_steps = 0
             publish_release_action_steps = 0
             publish_release_download_steps = 0
@@ -1270,6 +1271,54 @@ def main() -> int:
                         errors.append(
                             f"{path}: job '{job_name}' step #{step_index} uses disallowed floating action ref '{action_ref}'"
                         )
+                if (
+                    workflow_filename == "release.yml"
+                    and job_name == "release-readiness"
+                    and isinstance(step_uses, str)
+                    and step_uses.strip() == "actions/upload-artifact@v4"
+                ):
+                    release_readiness_upload_steps += 1
+                    if step_id is not None:
+                        errors.append(
+                            f"{path}: job '{job_name}' actions/upload-artifact@v4 step #{step_index} must not define id"
+                        )
+                    if step_continue_on_error is not None:
+                        errors.append(
+                            f"{path}: job '{job_name}' actions/upload-artifact@v4 step #{step_index} must not define continue-on-error"
+                        )
+                    if step.get("env") is not None:
+                        errors.append(
+                            f"{path}: job '{job_name}' actions/upload-artifact@v4 step #{step_index} must not define env"
+                        )
+                    if step_if is not None:
+                        errors.append(
+                            f"{path}: job '{job_name}' actions/upload-artifact@v4 step #{step_index} must not define if"
+                        )
+                    if step_name != "Upload release evidence":
+                        errors.append(
+                            f"{path}: job '{job_name}' actions/upload-artifact@v4 step #{step_index} must set name to 'Upload release evidence'"
+                        )
+                    if not isinstance(step_with, dict):
+                        errors.append(
+                            f"{path}: job '{job_name}' actions/upload-artifact@v4 step #{step_index} must define with.name and with.path"
+                        )
+                    else:
+                        unsupported_upload_with_keys = set(step_with.keys()) - {
+                            "name",
+                            "path",
+                        }
+                        if unsupported_upload_with_keys:
+                            errors.append(
+                                f"{path}: job '{job_name}' actions/upload-artifact@v4 step #{step_index} has unsupported with keys: {sorted(unsupported_upload_with_keys)}"
+                            )
+                        if step_with.get("name") != "release-evidence":
+                            errors.append(
+                                f"{path}: job '{job_name}' actions/upload-artifact@v4 step #{step_index} must set with.name to 'release-evidence'"
+                            )
+                        if step_with.get("path") != "release-evidence/":
+                            errors.append(
+                                f"{path}: job '{job_name}' actions/upload-artifact@v4 step #{step_index} must set with.path to 'release-evidence/'"
+                            )
                 if (
                     workflow_filename == "release.yml"
                     and job_name == "build-binaries"
@@ -1470,6 +1519,14 @@ def main() -> int:
                     errors.append(
                         f"{path}: job '{job_name}' step id '{step_id}' must be unique within the job (used at indexes: {step_indexes})"
                     )
+            if (
+                workflow_filename == "release.yml"
+                and job_name == "release-readiness"
+                and release_readiness_upload_steps != 1
+            ):
+                errors.append(
+                    f"{path}: job '{job_name}' must contain exactly one step using actions/upload-artifact@v4"
+                )
             if (
                 workflow_filename == "release.yml"
                 and job_name == "build-binaries"
