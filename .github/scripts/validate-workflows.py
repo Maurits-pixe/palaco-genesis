@@ -741,6 +741,14 @@ def main() -> int:
                 )
 
             validate_env_mapping(errors, path, f"job '{job_name}'", job.get("env"))
+            if (
+                workflow_filename == "release.yml"
+                and job_name == "publish-release"
+                and job.get("env") is not None
+            ):
+                errors.append(
+                    f"{path}: job '{job_name}' must not define job-level env"
+                )
             validate_defaults_run(errors, path, f"job '{job_name}'", job.get("defaults"))
 
             runs_on = job.get("runs-on")
