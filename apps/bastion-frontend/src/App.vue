@@ -61,6 +61,9 @@ function receiptIso(value) {
           <input id="ttl" v-model="ttlMs" type="number" min="1" max="60000" step="1" required :disabled="!!busy" aria-describedby="ttl-help" :aria-invalid="!validTtl" />
           <div id="ttl-help">
             <p class="muted">Vul een geheel aantal milliseconden in van 1 tot en met 60000.</p>
+            <p class="muted">Duur wijzigen maakt een normaal lokaal ticket ongeldig; het uitgegeven geldigheidsvenster op de server verandert niet en het ticket wordt niet ingetrokken.
+              Een onzekere intrekking behoudt het oorspronkelijke ticket en blijft vastleggen en nieuwe tickets blokkeren.
+              Terugwijzigen herstelt geen verloren toestemming. Geen automatische verzoeken.</p>
             <p v-if="!validTtl" class="error">Ongeldige duur: kies een geheel getal van 1 tot en met 60000.</p>
           </div>
           <button :disabled="!canRequestTicket">Ticket aanvragen</button>

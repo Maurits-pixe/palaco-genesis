@@ -446,6 +446,7 @@ function ticketForm() {
   const { code } = compile(form, { mode: 'function', prefixIdentifiers: true })
   const render = new Function('Vue', code)(Vue)
   return async (state, enabled, valid = state.validTtl.value) => {
+    const before = sessionSnapshot(state)
     const context = { ...state, commandLength, MAX_COMMAND_LENGTH }
     let vnode
     const html = await renderToString(Vue.createSSRApp({
@@ -504,7 +505,14 @@ function ticketForm() {
     assert.match(renderedInput, /aria-describedby="ttl-help"/)
     assert.match(html, /id="ttl-help"/)
     assert.match(html, /Vul een geheel aantal milliseconden in van 1 tot en met 60000\./)
+    const help = find(vnode, node => node.props?.id === 'ttl-help')
+    const guidance = help.children.find(node => node.type === 'p' &&
+      typeof node.children === 'string' && node.children.startsWith('Duur wijzigen'))
+    assert.equal(guidance.props.class, 'muted')
+    assert.equal(guidance.children, 'Duur wijzigen maakt een normaal lokaal ticket ongeldig; het uitgegeven geldigheidsvenster op de server verandert niet en het ticket wordt niet ingetrokken. Een onzekere intrekking behoudt het oorspronkelijke ticket en blijft vastleggen en nieuwe tickets blokkeren. Terugwijzigen herstelt geen verloren toestemming. Geen automatische verzoeken.')
+    assert.ok(html.includes(guidance.children))
     assert.equal(html.includes('Ongeldige duur: kies een geheel getal van 1 tot en met 60000.'), !valid)
+    assert.deepEqual(sessionSnapshot(state), before, 'rendering the TTL form has no session side effects')
     return { vnode, input, textarea, html }
   }
 }
@@ -755,6 +763,43 @@ test('compiled TTL model updates eligibility without changing the ticket submit 
   await operation
   await checkForm(state, true, true)
 })
+
+for (const uncertain of [false, true]) {
+  test(`compiled TTL edits retire only normal local authority without restoring it, uncertainty=${uncertain}`, async t => {
+    const { state, calls, sockets, clock } = fixture(t)
+    prepare(state, uncertain ? 'revoke' : 'ticket')
+    const checkForm = ticketForm()
+    const { input } = await checkForm(state, !uncertain)
+    const originalTicket = state.ticket.value
+    const issuedWindow = structuredClone(held())
+    const outcome = state.outcome.value
+    const journal = state.commands.value
+    const retained = sessionSnapshot(state, [
+      'ttlMs', 'validTtl', 'canRequestTicket', 'ticket', 'canCommit', 'remaining',
+    ])
+    const reads = clock.reads
+    assert.equal(state.canCommit.value, !uncertain)
+
+    for (const value of [51, '', 50]) {
+      input.props['onUpdate:modelValue'](value)
+      assert.equal(state.ttlMs.value, value)
+      assert.equal(state.ticket.value, uncertain ? originalTicket : null)
+      assert.equal(state.revocationUncertain.value, uncertain)
+      assert.equal(state.canCommit.value, false, 'returning to the original duration never restores authority')
+      await checkForm(state, !uncertain && value !== '', value !== '')
+      assert.deepEqual(originalTicket, issuedWindow, 'duration edits never change the issued server window')
+      assert.deepEqual(sessionSnapshot(state, [
+        'ttlMs', 'validTtl', 'canRequestTicket', 'ticket', 'canCommit', 'remaining',
+      ]), retained, 'outcome, submission ID, journal and other session state remain unchanged')
+      assert.equal(state.outcome.value, outcome)
+      assert.equal(state.commands.value, journal)
+      assert.equal(calls.length, 0, 'edits and renders send no requests')
+      assert.equal(sockets.length, 0, 'edits and renders create no sockets')
+      assert.equal(clock.reads, reads)
+      assert.deepEqual(clock.cleared, [])
+    }
+  })
+}
 
 test('eligible numeric TTL strings retain the existing request Number conversion', async t => {
   const { state, calls } = fixture(t)
