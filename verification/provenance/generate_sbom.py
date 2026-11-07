@@ -73,7 +73,12 @@ def generate(metadata, commit, epoch):
         node_id = node["id"]
         if node_id not in references:
             raise ValueError("unknown resolve node ID: " + node_id)
-        for dependency in node.get("dependencies", []):
+        dependencies = node.get("dependencies")
+        if not isinstance(dependencies, list):
+            raise ValueError("resolve node dependencies must be a list: " + node_id)
+        if any(not isinstance(dependency, str) for dependency in dependencies):
+            raise ValueError("resolve node dependencies must contain IDs: " + node_id)
+        for dependency in dependencies:
             if dependency not in references:
                 raise ValueError("unknown dependency ID: " + dependency + " from " + node_id)
             relations.append({"spdxElementId": references[node_id], "relatedSpdxElement": references[dependency], "relationshipType": "DEPENDS_ON"})

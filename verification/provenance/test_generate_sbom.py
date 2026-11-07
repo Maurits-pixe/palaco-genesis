@@ -52,6 +52,23 @@ class SbomTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "resolve node"):
                     generate({**METADATA, "resolve": resolve}, COMMIT, 0)
 
+    def test_malformed_resolve_dependencies_fail_closed(self):
+        cases = (
+            ("missing", {"id": "pkg-b"}),
+            ("null", {"id": "pkg-b", "dependencies": None}),
+            ("string", {"id": "pkg-b", "dependencies": "pkg-a"}),
+            ("object", {"id": "pkg-b", "dependencies": {"pkg-a": True}}),
+            ("non-string item", {"id": "pkg-b", "dependencies": [None]}),
+        )
+        for label, invalid_node in cases:
+            with self.subTest(label=label):
+                resolve = {"nodes": [METADATA["resolve"]["nodes"][0], invalid_node]}
+                with self.assertRaisesRegex(ValueError, "resolve node dependencies"):
+                    generate({**METADATA, "resolve": resolve}, COMMIT, 0)
+
+    def test_explicit_empty_dependencies_are_valid(self):
+        self.assertEqual(len(generate(METADATA, COMMIT, 0)["relationships"]), 2)
+
     def test_missing_or_empty_resolve_graph_fails_closed(self):
         cases = (
             ("missing", {key: value for key, value in METADATA.items() if key != "resolve"}),
