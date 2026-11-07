@@ -1,0 +1,848 @@
+use super::*;
+use std::fs;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+const TEST_TOKEN: &str = "aether-test-only-bearer-token-0001";
+
+struct Database(PathBuf);
+
+impl Database {
+    fn new() -> Self {
+        let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".test-data");
+        fs::create_dir_all(&directory).unwrap();
+        Self(directory.join(format!("{}.db", random_id(&SystemRandom::new()).unwrap())))
+    }
+
+    fn temporary() -> Self {
+        Self(env::temp_dir().join(format!(
+            "aether-http-{}.db",
+            random_id(&SystemRandom::new()).unwrap()
+        )))
+    }
+
+    fn store(&self, key: &[u8; 32]) -> Store {
+        Store::open(&self.0, key).unwrap()
+    }
+
+    fn encrypted_records(&self) -> Vec<(String, Vec<u8>, Vec<u8>)> {
+        let connection = Connection::open(&self.0).unwrap();
+        connection
+            .prepare("SELECT id, nonce, ciphertext FROM records ORDER BY id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    }
+}
+
+impl Drop for Database {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
+fn config() -> Config {
+    Config::parse(Some(TEST_TOKEN.into()), Some("00".repeat(32)), None, None).unwrap()
+}
+
+#[test]
+fn config_requires_credentials() {
+    assert!(Config::parse(None, Some("00".repeat(32)), None, None).is_err());
+    assert!(Config::parse(Some(TEST_TOKEN.into()), None, None, None).is_err());
+    for token in ["", "short", "with space", "line\nbreak", "nonascii-é"] {
+        assert!(Config::parse(Some(token.into()), Some("00".repeat(32)), None, None).is_err());
+    }
+    for token in [
+        "x".repeat(31),
+        "x".repeat(4097),
+        format!("{} ", "x".repeat(32)),
+        format!("{}\t", "x".repeat(32)),
+        format!("{}é", "x".repeat(32)),
+    ] {
+        assert!(Config::parse(Some(token), Some("00".repeat(32)), None, None).is_err());
+    }
+    for length in [32, 4096] {
+        assert!(Config::parse(Some("x".repeat(length)), Some("00".repeat(32)), None, None).is_ok());
+    }
+}
+
+#[test]
+fn config_rejects_bad_keys_and_optional_values() {
+    for key in ["".into(), "00".repeat(31), "00".repeat(33), "gg".repeat(32)] {
+        assert!(Config::parse(Some(TEST_TOKEN.into()), Some(key), None, None).is_err());
+    }
+    for port in ["", "0", "65536", "-1", "abc", "127.0.0.1:8787"] {
+        assert!(
+            Config::parse(
+                Some(TEST_TOKEN.into()),
+                Some("00".repeat(32)),
+                None,
+                Some(port.into())
+            )
+            .is_err()
+        );
+    }
+    assert!(
+        Config::parse(
+            Some(TEST_TOKEN.into()),
+            Some("00".repeat(32)),
+            Some(" ".into()),
+            None
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn config_defaults_and_overrides_are_loopback_only() {
+    let default = config();
+    assert_eq!(default.address().to_string(), "127.0.0.1:8787");
+    assert_eq!(default.db, PathBuf::from("aether.db"));
+    let override_config = Config::parse(
+        Some(TEST_TOKEN.into()),
+        Some("aB".repeat(32)),
+        Some("custom.db".into()),
+        Some("9876".into()),
+    )
+    .unwrap();
+    assert_eq!(override_config.address().to_string(), "127.0.0.1:9876");
+    assert_eq!(override_config.key, [0xab; 32]);
+    assert_eq!(override_config.db, PathBuf::from("custom.db"));
+}
+
+#[test]
+fn roundtrip_and_reopen() {
+    let database = Database::new();
+    let id = {
+        let mut store = database.store(&[1; 32]);
+        let id = store.insert("Hello, 世界 🦀").unwrap();
+        assert_eq!(store.get(&id).unwrap().plaintext, "Hello, 世界 🦀");
+        id
+    };
+    let store = database.store(&[1; 32]);
+    let record = store.get(&id).unwrap();
+    assert_eq!(record.id, id);
+    assert_eq!(record.plaintext, "Hello, 世界 🦀");
+}
+
+#[test]
+fn plaintext_and_key_are_absent_at_rest() {
+    let database = Database::new();
+    let plaintext = "PRIVATE-RECORD-MARKER-that-must-never-be-written-as-plaintext";
+    let key = [0x6d; 32];
+    {
+        let mut store = database.store(&key);
+        store.insert(plaintext).unwrap();
+        let columns: Vec<String> = store
+            .connection
+            .prepare("PRAGMA table_info(records)")
+            .unwrap()
+            .query_map([], |row| row.get(1))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(columns, ["id", "nonce", "ciphertext"]);
+    }
+    let bytes = fs::read(&database.0).unwrap();
+    assert!(
+        !bytes
+            .windows(plaintext.len())
+            .any(|w| w == plaintext.as_bytes())
+    );
+    assert!(!bytes.windows(key.len()).any(|w| w == key));
+}
+
+#[cfg(unix)]
+#[test]
+fn database_permissions_are_private_for_new_and_existing_files() {
+    use std::os::unix::fs::PermissionsExt;
+    let database = Database::new();
+    drop(database.store(&[1; 32]));
+    assert_eq!(
+        fs::metadata(&database.0).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    fs::set_permissions(&database.0, fs::Permissions::from_mode(0o666)).unwrap();
+    drop(database.store(&[1; 32]));
+    assert_eq!(
+        fs::metadata(&database.0).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+}
+
+#[test]
+fn wrong_key_cannot_decrypt() {
+    let database = Database::new();
+    let id = database.store(&[1; 32]).insert("private").unwrap();
+    assert!(matches!(
+        database.store(&[2; 32]).get(&id),
+        Err(ApiError::Internal)
+    ));
+}
+
+#[test]
+fn ciphertext_tampering_is_rejected() {
+    let database = Database::new();
+    let mut store = database.store(&[1; 32]);
+    let id = store.insert("private").unwrap();
+    store
+        .connection
+        .execute(
+            "UPDATE records SET ciphertext = zeroblob(length(ciphertext)) WHERE id = ?1",
+            params![id],
+        )
+        .unwrap();
+    assert!(matches!(store.get(&id), Err(ApiError::Internal)));
+}
+
+#[test]
+fn nonce_tampering_and_malformed_nonce_are_rejected() {
+    let database = Database::new();
+    let mut store = database.store(&[1; 32]);
+    let id = store.insert("private").unwrap();
+    let mut nonce: Vec<u8> = store
+        .connection
+        .query_row("SELECT nonce FROM records WHERE id = ?1", [&id], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    nonce[0] ^= 1;
+    store
+        .connection
+        .execute(
+            "UPDATE records SET nonce = ?1 WHERE id = ?2",
+            params![nonce, id],
+        )
+        .unwrap();
+    assert!(matches!(store.get(&id), Err(ApiError::Internal)));
+    store
+        .connection
+        .execute_batch("PRAGMA ignore_check_constraints = ON")
+        .unwrap();
+    store
+        .connection
+        .execute("UPDATE records SET nonce = x'01' WHERE id = ?1", [&id])
+        .unwrap();
+    assert!(matches!(store.get(&id), Err(ApiError::Internal)));
+}
+
+#[test]
+fn id_is_bound_by_authenticated_data() {
+    let database = Database::new();
+    let mut store = database.store(&[1; 32]);
+    let id = store.insert("private").unwrap();
+    let replacement = random_id(&SystemRandom::new()).unwrap();
+    store
+        .connection
+        .execute(
+            "UPDATE records SET id = ?1 WHERE id = ?2",
+            params![replacement, id],
+        )
+        .unwrap();
+    assert!(matches!(store.get(&replacement), Err(ApiError::Internal)));
+}
+
+#[test]
+fn nonces_are_random_unique_and_database_enforces_uniqueness() {
+    let database = Database::new();
+    let mut store = database.store(&[1; 32]);
+    for _ in 0..64 {
+        store.insert("same plaintext").unwrap();
+    }
+    let (count, unique): (u32, u32) = store
+        .connection
+        .query_row(
+            "SELECT count(*), count(DISTINCT nonce) FROM records",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!((count, unique), (64, 64));
+    assert!(
+        store
+            .connection
+            .execute(
+                "INSERT INTO records SELECT ?1, nonce, ciphertext FROM records LIMIT 1",
+                [random_id(&SystemRandom::new()).unwrap()]
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn storage_bounds_empty_and_missing_records() {
+    let database = Database::new();
+    let mut store = database.store(&[1; 32]);
+    let empty = store.insert("").unwrap();
+    assert_eq!(store.get(&empty).unwrap().plaintext, "");
+    let boundary = store.insert(&"a".repeat(MAX_PLAINTEXT)).unwrap();
+    assert_eq!(store.get(&boundary).unwrap().plaintext.len(), MAX_PLAINTEXT);
+    assert_eq!(
+        store.insert(&"a".repeat(MAX_PLAINTEXT + 1)),
+        Err(ApiError::TooLarge)
+    );
+    for id in ["0".repeat(32), "' OR 1=1 --".into(), "".into()] {
+        assert!(matches!(store.get(&id), Err(ApiError::NotFound)));
+    }
+}
+
+struct Server {
+    address: SocketAddr,
+    task: tokio::task::JoinHandle<()>,
+    shutdown: Option<tokio::sync::oneshot::Sender<()>>,
+    _database: Option<Database>,
+}
+
+impl Server {
+    async fn start() -> Self {
+        Self::start_with(Database::new(), [0; 32]).await
+    }
+
+    async fn start_with(database: Database, key: [u8; 32]) -> Self {
+        let mut config = config();
+        config.db = database.0.clone();
+        config.key = key;
+        let listener = tokio::time::timeout(
+            Duration::from_secs(5),
+            tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let address = listener.local_addr().unwrap();
+        let router = app(&config).unwrap();
+        let (shutdown, receiver) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(async move {
+            axum::serve(listener, router)
+                .with_graceful_shutdown(async {
+                    let _ = receiver.await;
+                })
+                .await
+                .unwrap();
+        });
+        Self {
+            address,
+            task,
+            shutdown: Some(shutdown),
+            _database: Some(database),
+        }
+    }
+
+    async fn stop(mut self) -> Database {
+        self.shutdown.take().unwrap().send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), &mut self.task)
+            .await
+            .expect("HTTP server did not shut down")
+            .expect("HTTP server task failed");
+        self._database.take().unwrap()
+    }
+
+    async fn request(&self, method: &str, path: &str, headers: &str, body: &str) -> (u16, String) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let mut stream = tokio::net::TcpStream::connect(self.address).await.unwrap();
+            let request = format!(
+                "{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: {}\r\n{headers}\r\n{body}",
+                body.len()
+            );
+            stream.write_all(request.as_bytes()).await.unwrap();
+            let mut response = Vec::new();
+            stream.read_to_end(&mut response).await.unwrap();
+            let response = String::from_utf8(response).unwrap();
+            let status = response.split_whitespace().nth(1).unwrap().parse().unwrap();
+            (status, response)
+        })
+        .await
+        .expect("HTTP request timed out")
+    }
+}
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+const AUTH: &str = concat!(
+    "Authorization: ",
+    "Bearer ",
+    "aether-test-only-bearer-token-0001",
+    "\r\n"
+);
+const AUTH_JSON: &str = concat!(
+    "Authorization: ",
+    "Bearer ",
+    "aether-test-only-bearer-token-0001",
+    "\r\nContent-Type: application/json\r\n"
+);
+
+fn json_body(response: &str) -> serde_json::Value {
+    serde_json::from_str(response.split_once("\r\n\r\n").unwrap().1).unwrap()
+}
+
+#[tokio::test]
+async fn http_public_manifest_and_health() {
+    let server = Server::start().await;
+    for path in ["/health", "/.well-known/palaco-app.json"] {
+        let (status, response) = server.request("GET", path, "", "").await;
+        assert_eq!(status, 200);
+        assert!(response.contains("cache-control: no-store"));
+        assert!(!response.contains("access-control-allow-origin"));
+        if path != "/health" {
+            assert_eq!(
+                json_body(&response),
+                serde_json::json!({"id":"aether","name":"AETHER","protocol":"palaco-app/v1"})
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn http_roundtrip_and_not_found() {
+    let server = Server::start().await;
+    let (status, response) = server
+        .request(
+            "POST",
+            "/v1/records",
+            AUTH_JSON,
+            r#"{"plaintext":"hello 🦀"}"#,
+        )
+        .await;
+    assert_eq!(status, 201);
+    let id = json_body(&response)["id"].as_str().unwrap().to_owned();
+    let (status, response) = server
+        .request("GET", &format!("/v1/records/{id}"), AUTH_JSON, "")
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"id":id,"plaintext":"hello 🦀"})
+    );
+    for id in ["0".repeat(32), "invalid-id".into()] {
+        let (status, _) = server
+            .request("GET", &format!("/v1/records/{id}"), AUTH_JSON, "")
+            .await;
+        assert_eq!(status, 404);
+    }
+}
+
+#[tokio::test]
+async fn http_records_survive_orderly_restart_and_allow_new_creates() {
+    let key = [0x6d; 32];
+    let server = Server::start_with(Database::temporary(), key).await;
+    let plaintext = "Hello, 世界 🦀 — café";
+    let body = serde_json::json!({"plaintext": plaintext}).to_string();
+    let (status, response) = server
+        .request("POST", "/v1/records", AUTH_JSON, &body)
+        .await;
+    assert_eq!(status, 201);
+    let id = json_body(&response)["id"].as_str().unwrap().to_owned();
+    let path = format!("/v1/records/{id}");
+    let expected = serde_json::json!({"id": id, "plaintext": plaintext});
+    let (status, response) = server.request("GET", &path, AUTH, "").await;
+    assert_eq!(status, 200);
+    assert_eq!(json_body(&response), expected);
+
+    let database = server.stop().await;
+    let server = Server::start_with(database, key).await;
+    let (status, response) = server.request("GET", &path, AUTH, "").await;
+    assert_eq!(status, 200);
+    assert_eq!(json_body(&response), expected);
+
+    let (status, response) = server
+        .request(
+            "POST",
+            "/v1/records",
+            AUTH_JSON,
+            r#"{"plaintext":"new after restart 🌱"}"#,
+        )
+        .await;
+    assert_eq!(status, 201);
+    let new_id = json_body(&response)["id"].as_str().unwrap().to_owned();
+    assert_ne!(new_id, id);
+    let (status, response) = server
+        .request("GET", &format!("/v1/records/{new_id}"), AUTH, "")
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"id": new_id, "plaintext": "new after restart 🌱"})
+    );
+    let (status, response) = server.request("GET", &path, AUTH, "").await;
+    assert_eq!(status, 200);
+    assert_eq!(json_body(&response), expected);
+    let database = server.stop().await;
+    assert_eq!(database.encrypted_records().len(), 2);
+}
+
+#[tokio::test]
+async fn http_wrong_key_restart_is_generic_and_preserves_encrypted_records() {
+    let key = [0x6d; 32];
+    let wrong_key = [0x7e; 32];
+    let plaintext = "PRIVATE HTTP restart marker 世界 🦀";
+    let server = Server::start_with(Database::temporary(), key).await;
+    let body = serde_json::json!({"plaintext": plaintext}).to_string();
+    let (status, response) = server
+        .request("POST", "/v1/records", AUTH_JSON, &body)
+        .await;
+    assert_eq!(status, 201);
+    let id = json_body(&response)["id"].as_str().unwrap().to_owned();
+    let path = format!("/v1/records/{id}");
+    let database = server.stop().await;
+    let before = database.encrypted_records();
+    assert_eq!(before.len(), 1);
+    assert_eq!(before[0].0, id);
+
+    let server = Server::start_with(database, wrong_key).await;
+    let (status, response) = server.request("GET", &path, AUTH, "").await;
+    assert_eq!(status, 500);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"error": "record operation failed"})
+    );
+    for secret_or_detail in [
+        plaintext,
+        &"6d".repeat(32),
+        &"7e".repeat(32),
+        &"m".repeat(32),
+        &"~".repeat(32),
+        "SQLite",
+        "decrypt",
+        "ciphertext",
+        "nonce",
+        "aead",
+    ] {
+        assert!(!response.contains(secret_or_detail));
+    }
+    let database = server.stop().await;
+    assert_eq!(database.encrypted_records(), before);
+
+    let server = Server::start_with(database, key).await;
+    let (status, response) = server.request("GET", &path, AUTH, "").await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"id": id, "plaintext": plaintext})
+    );
+    let database = server.stop().await;
+    assert_eq!(database.encrypted_records(), before);
+}
+
+#[tokio::test]
+async fn http_ciphertext_tampering_is_isolated_and_preserves_encrypted_records() {
+    let key = [0x6d; 32];
+    let plaintexts = [
+        "PRIVATE tamper target 世界 🦀",
+        "Unaffected ciphertext neighbor 🌱",
+    ];
+    let server = Server::start_with(Database::temporary(), key).await;
+    let mut ids = Vec::new();
+    for plaintext in plaintexts {
+        let body = serde_json::json!({"plaintext": plaintext}).to_string();
+        let (status, response) = server
+            .request("POST", "/v1/records", AUTH_JSON, &body)
+            .await;
+        assert_eq!(status, 201);
+        ids.push(json_body(&response)["id"].as_str().unwrap().to_owned());
+    }
+    assert_ne!(ids[0], ids[1]);
+    let database = server.stop().await;
+    let original = database.encrypted_records();
+    assert_eq!(original.len(), 2);
+    let target = original.iter().find(|row| row.0 == ids[0]).unwrap();
+    let mut ciphertext = target.2.clone();
+    ciphertext[0] ^= 1;
+    {
+        let connection = Connection::open(&database.0).unwrap();
+        assert_eq!(
+            connection
+                .execute(
+                    "UPDATE records SET ciphertext = ?1 WHERE id = ?2",
+                    params![ciphertext, ids[0]],
+                )
+                .unwrap(),
+            1
+        );
+    }
+    let tampered = database.encrypted_records();
+    let mut expected = original.clone();
+    expected.iter_mut().find(|row| row.0 == ids[0]).unwrap().2 = ciphertext;
+    assert_eq!(tampered, expected);
+
+    let server = Server::start_with(database, key).await;
+    let (status, response) = server
+        .request("GET", &format!("/v1/records/{}", ids[0]), AUTH, "")
+        .await;
+    assert_eq!(status, 500);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"error": "record operation failed"})
+    );
+    for secret_or_detail in [
+        plaintexts[0],
+        plaintexts[1],
+        "SQLite",
+        "decrypt",
+        "ciphertext",
+        "nonce",
+        "aead",
+    ] {
+        assert!(!response.contains(secret_or_detail));
+    }
+    let (status, response) = server
+        .request("GET", &format!("/v1/records/{}", ids[1]), AUTH, "")
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"id": ids[1], "plaintext": plaintexts[1]})
+    );
+    let database = server.stop().await;
+    assert_eq!(database.encrypted_records(), tampered);
+
+    {
+        let connection = Connection::open(&database.0).unwrap();
+        assert_eq!(
+            connection
+                .execute(
+                    "UPDATE records SET ciphertext = ?1 WHERE id = ?2",
+                    params![target.2, ids[0]],
+                )
+                .unwrap(),
+            1
+        );
+    }
+    let server = Server::start_with(database, key).await;
+    let (status, response) = server
+        .request("GET", &format!("/v1/records/{}", ids[0]), AUTH, "")
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"id": ids[0], "plaintext": plaintexts[0]})
+    );
+    let database = server.stop().await;
+    assert_eq!(database.encrypted_records(), original);
+}
+
+#[tokio::test]
+async fn http_record_id_relocation_rejects_aad_mismatch_and_preserves_encrypted_records() {
+    let key = [0x6d; 32];
+    let plaintexts = ["PRIVATE AAD target 世界 🦀", "Unaffected AAD neighbor 🌱"];
+    let server = Server::start_with(Database::temporary(), key).await;
+    let mut ids = Vec::new();
+    for plaintext in plaintexts {
+        let body = serde_json::json!({"plaintext": plaintext}).to_string();
+        let (status, response) = server
+            .request("POST", "/v1/records", AUTH_JSON, &body)
+            .await;
+        assert_eq!(status, 201);
+        ids.push(json_body(&response)["id"].as_str().unwrap().to_owned());
+    }
+    assert_ne!(ids[0], ids[1]);
+    let database = server.stop().await;
+    let original = database.encrypted_records();
+    assert_eq!(original.len(), 2);
+    let replacement = ["0".repeat(32), "1".repeat(32), "2".repeat(32)]
+        .into_iter()
+        .find(|id| !ids.contains(id))
+        .unwrap();
+    {
+        let connection = Connection::open(&database.0).unwrap();
+        assert_eq!(
+            connection
+                .execute(
+                    "UPDATE records SET id = ?1 WHERE id = ?2",
+                    params![replacement, ids[0]],
+                )
+                .unwrap(),
+            1
+        );
+    }
+    let relocated = database.encrypted_records();
+    let mut expected = original.clone();
+    expected.iter_mut().find(|row| row.0 == ids[0]).unwrap().0 = replacement.clone();
+    expected.sort_by(|left, right| left.0.cmp(&right.0));
+    assert_eq!(relocated, expected);
+
+    let server = Server::start_with(database, key).await;
+    let (status, response) = server
+        .request("GET", &format!("/v1/records/{replacement}"), AUTH, "")
+        .await;
+    assert_eq!(status, 500);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"error": "record operation failed"})
+    );
+    for secret_or_detail in [
+        plaintexts[0],
+        plaintexts[1],
+        "SQLite",
+        "decrypt",
+        "ciphertext",
+        "nonce",
+        "aead",
+    ] {
+        assert!(!response.contains(secret_or_detail));
+    }
+    let (status, response) = server
+        .request("GET", &format!("/v1/records/{}", ids[0]), AUTH, "")
+        .await;
+    assert_eq!(status, 404);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"error": "record not found"})
+    );
+    let (status, response) = server
+        .request("GET", &format!("/v1/records/{}", ids[1]), AUTH, "")
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"id": ids[1], "plaintext": plaintexts[1]})
+    );
+    let database = server.stop().await;
+    assert_eq!(database.encrypted_records(), relocated);
+
+    {
+        let connection = Connection::open(&database.0).unwrap();
+        assert_eq!(
+            connection
+                .execute(
+                    "UPDATE records SET id = ?1 WHERE id = ?2",
+                    params![ids[0], replacement],
+                )
+                .unwrap(),
+            1
+        );
+    }
+    let server = Server::start_with(database, key).await;
+    let (status, response) = server
+        .request("GET", &format!("/v1/records/{}", ids[0]), AUTH, "")
+        .await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"id": ids[0], "plaintext": plaintexts[0]})
+    );
+    let database = server.stop().await;
+    assert_eq!(database.encrypted_records(), original);
+}
+
+#[tokio::test]
+async fn http_auth_rejects_missing_wrong_and_duplicate_tokens() {
+    let server = Server::start().await;
+    for headers in [
+        "",
+        concat!("Authorization: ", "Bearer ", "wrong", "\r\n"),
+        "Authorization: Basic test-only-bearer\r\n",
+        concat!("Authorization: ", "Bearer ", "\r\n"),
+        concat!(
+            "Authorization: ",
+            "Bearer ",
+            "aether-test-only-bearer-token-0001",
+            "\r\n",
+            "Authorization: ",
+            "Bearer ",
+            "aether-test-only-bearer-token-0001",
+            "\r\n"
+        ),
+    ] {
+        for (method, path) in [("POST", "/v1/records"), ("GET", "/v1/records/unknown")] {
+            let (status, response) = server.request(method, path, headers, "not json").await;
+            assert_eq!(status, 401);
+            assert!(response.contains("www-authenticate: Bearer"));
+            assert_eq!(
+                json_body(&response),
+                serde_json::json!({"error":"unauthorized"})
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn http_malformed_json_and_plaintext_limits() {
+    let server = Server::start().await;
+    for body in [
+        "{",
+        "{}",
+        r#"{"plaintext":1}"#,
+        r#"{"plaintext":"x","extra":true}"#,
+    ] {
+        let (status, response) = server.request("POST", "/v1/records", AUTH_JSON, body).await;
+        assert_eq!(status, 400);
+        assert_eq!(
+            json_body(&response),
+            serde_json::json!({"error":"invalid request body"})
+        );
+    }
+    let (status, _) = server.request("POST", "/v1/records", AUTH, "{}").await;
+    assert_eq!(status, 400);
+    for (length, expected) in [
+        (MAX_PLAINTEXT, 201),
+        (MAX_PLAINTEXT + 1, 413),
+        (MAX_BODY, 413),
+    ] {
+        let body = serde_json::json!({"plaintext":"x".repeat(length)}).to_string();
+        let (status, _) = server
+            .request("POST", "/v1/records", AUTH_JSON, &body)
+            .await;
+        assert_eq!(status, expected);
+    }
+    let body = serde_json::json!({"plaintext":"é".repeat(MAX_PLAINTEXT / 2 + 1)}).to_string();
+    assert_eq!(
+        server
+            .request("POST", "/v1/records", AUTH_JSON, &body)
+            .await
+            .0,
+        413
+    );
+}
+
+#[tokio::test]
+async fn http_chunked_body_limit() {
+    let server = Server::start().await;
+    let mut stream = tokio::net::TcpStream::connect(server.address)
+        .await
+        .unwrap();
+    let chunk = "x".repeat(MAX_BODY + 1);
+    let request = format!(
+        "POST /v1/records HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nTransfer-Encoding: chunked\r\n{AUTH_JSON}\r\n{:x}\r\n{chunk}\r\n0\r\n\r\n",
+        chunk.len()
+    );
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut response = Vec::new();
+    tokio::time::timeout(Duration::from_secs(5), stream.read_to_end(&mut response))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        String::from_utf8(response)
+            .unwrap()
+            .starts_with("HTTP/1.1 413")
+    );
+}
+
+#[tokio::test]
+async fn http_storage_errors_are_generic() {
+    let server = Server::start().await;
+    let mut store = server._database.as_ref().unwrap().store(&[0; 32]);
+    let id = store.insert("private").unwrap();
+    store
+        .connection
+        .execute(
+            "UPDATE records SET ciphertext = zeroblob(16) WHERE id = ?1",
+            [&id],
+        )
+        .unwrap();
+    let (status, response) = server
+        .request("GET", &format!("/v1/records/{id}"), AUTH_JSON, "")
+        .await;
+    assert_eq!(status, 500);
+    assert_eq!(
+        json_body(&response),
+        serde_json::json!({"error":"record operation failed"})
+    );
+    assert!(!response.contains("SQLite"));
+    assert!(!response.contains("private"));
+}

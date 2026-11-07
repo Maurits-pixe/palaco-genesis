@@ -1,0 +1,348 @@
+import { computed, onScopeDispose, ref, watch } from 'vue'
+import * as defaultApi from './api.js'
+import { createRealtime } from './realtime.js'
+
+export const realtimeLabels = {
+  disconnected: 'Niet verbonden. Ontvangst van nieuwe records staat uit.',
+  connecting: 'Verbinding maken…',
+  connected: 'Verbonden. Nieuwe logboekrecords verschijnen automatisch.',
+  error: 'Verbinding mislukt. Controleer token en lokale service; verbind handmatig opnieuw.',
+}
+
+export function useSession({
+  api = defaultApi,
+  realtimeFactory = createRealtime,
+  scheduler = { now: () => Date.now(), setInterval, clearInterval },
+  eventTarget = globalThis.window,
+} = {}) {
+  const token = ref('')
+  const command = ref('')
+  const ttlMs = ref(10000)
+  const ticket = ref(null)
+  const revocationUncertain = ref(false)
+  const commands = ref([])
+  const search = ref('')
+  const filteredCommands = computed(() => {
+    const query = search.value.trim().toLowerCase()
+    return commands.value.filter(entry =>
+      entry.command.toLowerCase().includes(query) || entry.id.toLowerCase().includes(query))
+  })
+  const hasLoaded = ref(false)
+  const journalRefreshFailed = ref(false)
+  const lastJournalRefreshAt = ref(null)
+  const busy = ref('')
+  const message = ref('')
+  const error = ref('')
+  const lookupId = ref('')
+  const outcome = ref(null)
+  const outcomeReceivedAt = ref(null)
+  const outcomeMismatch = computed(() => {
+    const valid = defaultApi.validateTicketStatus(outcome.value, outcome.value?.id)
+    return !!valid && ticket.value?.id === valid.id && !defaultApi.ticketMatchesStatus(ticket.value, valid)
+  })
+  const lastSubmissionId = ref('')
+  const realtimeStatus = ref('disconnected')
+  const now = ref(sampleReceiptTime())
+  let session = 0
+  const disposed = ref(false)
+  const validToken = computed(() => defaultApi.isValidToken(token.value))
+  const validLookupId = computed(() => defaultApi.isValidTicketId(lookupId.value))
+  const canCheckStatus = computed(() => !disposed.value && !busy.value &&
+    validToken.value && validLookupId.value)
+  const validTtl = computed(() => {
+    const ttl = Number(ttlMs.value)
+    return Number.isInteger(ttl) && ttl >= 1 && ttl <= 60_000
+  })
+  const canRequestTicket = computed(() => !disposed.value && !busy.value &&
+    !revocationUncertain.value && validToken.value &&
+    typeof command.value === 'string' && !!command.value.trim() &&
+    defaultApi.commandLength(command.value) <= defaultApi.MAX_COMMAND_LENGTH && validTtl.value)
+  let pending = null
+  const feedbackAction = ref('')
+  const canClearOutcome = computed(() => !disposed.value &&
+    (!busy.value || busy.value === 'status') &&
+    (!!outcome.value || busy.value === 'status' || feedbackAction.value === 'status'))
+  let connection = null
+  let connectionGeneration = 0
+  let journalGeneration = 0
+  let journalRequest = null
+
+  function resetOutcome() {
+    outcome.value = null
+    outcomeReceivedAt.value = null
+  }
+
+  function sampleReceiptTime() {
+    try {
+      const receivedAt = scheduler.now()
+      return Number.isSafeInteger(receivedAt) && receivedAt >= 0 &&
+        Number.isFinite(new Date(receivedAt).getTime()) ? receivedAt : null
+    } catch {
+      return null
+    }
+  }
+
+  function resetJournal() {
+    journalGeneration++
+    if (journalRequest) journalRequest.entries = []
+    commands.value = []
+    hasLoaded.value = false
+    journalRefreshFailed.value = false
+    lastJournalRefreshAt.value = null
+  }
+
+  function disconnect() {
+    connectionGeneration++
+    const previous = connection
+    connection = null
+    resetJournal()
+    realtimeStatus.value = 'disconnected'
+    previous?.disconnect()
+  }
+
+  const realtime = {
+    disconnect,
+    connect(value) {
+      if (disposed.value) return
+      const generation = connectionGeneration + 1
+      disconnect()
+      if (disposed.value || generation !== connectionGeneration) return
+      const current = () => !disposed.value && generation === connectionGeneration
+      const created = realtimeFactory({
+        onEntry: entry => {
+          if (!current()) return
+          const normalized = defaultApi.normalizeCommand(entry)
+          if (!normalized) return
+          commands.value = defaultApi.mergeCommands(commands.value, normalized)
+          if (journalRequest?.generation === journalGeneration) {
+            journalRequest.entries = defaultApi.mergeCommands(journalRequest.entries, normalized)
+          }
+        },
+        onStatus: status => { if (current()) realtimeStatus.value = status },
+        onReset: () => {
+          if (current()) resetJournal()
+        },
+      })
+      if (!current()) {
+        created.disconnect()
+        return
+      }
+      connection = created
+      created.connect(value)
+    },
+  }
+  const clock = scheduler.setInterval(() => {
+    if (disposed.value) return
+    const sampledAt = sampleReceiptTime()
+    if (!disposed.value) now.value = sampledAt
+  }, 100)
+  const canCommit = computed(() => !revocationUncertain.value &&
+    defaultApi.ticketUsable(ticket.value, command.value, now.value ?? null))
+  const remaining = computed(() => defaultApi.ticketRemainingSeconds(ticket.value, now.value ?? null))
+
+  watch([command, ttlMs], () => {
+    if (!revocationUncertain.value) ticket.value = null
+  }, { flush: 'sync' })
+
+  function resetSession() {
+    session++
+    const previous = pending
+    pending = null
+    busy.value = ''
+    disconnect()
+    journalRequest = null
+    ticket.value = null
+    revocationUncertain.value = false
+    commands.value = []
+    hasLoaded.value = false
+    command.value = ''
+    search.value = ''
+    ttlMs.value = 10000
+    message.value = ''
+    error.value = ''
+    feedbackAction.value = ''
+    lookupId.value = ''
+    resetOutcome()
+    lastSubmissionId.value = ''
+    previous?.abort()
+  }
+  watch(token, resetSession, { flush: 'sync' })
+
+  function clearCommand() {
+    if (disposed.value || busy.value) return
+    command.value = ''
+  }
+
+  function clearSession() {
+    if (token.value) token.value = ''
+    else resetSession()
+  }
+
+  function clearOutcome() {
+    if (disposed.value || (busy.value && busy.value !== 'status')) return
+    const previous = busy.value === 'status' ? pending : null
+    if (previous) {
+      pending = null
+      busy.value = ''
+    }
+    resetOutcome()
+    if (feedbackAction.value === 'status') {
+      message.value = ''
+      error.value = ''
+      feedbackAction.value = ''
+    }
+    previous?.abort()
+  }
+
+  function clearJournal() {
+    if (disposed.value || (busy.value && busy.value !== 'list')) return
+    const previous = busy.value === 'list' ? pending : null
+    pending = null
+    busy.value = ''
+    disconnect()
+    journalRequest = null
+    search.value = ''
+    if (feedbackAction.value === 'list') {
+      message.value = ''
+      error.value = ''
+      feedbackAction.value = ''
+    }
+    previous?.abort()
+  }
+
+  const stopLookupWatch = watch(lookupId, (value, previous) => {
+    if (!disposed.value && value !== previous &&
+      (outcome.value || busy.value === 'status' || feedbackAction.value === 'status')) {
+      clearOutcome()
+    }
+  }, { flush: 'sync' })
+
+  eventTarget?.addEventListener('pagehide', clearSession)
+  onScopeDispose(() => {
+    eventTarget?.removeEventListener('pagehide', clearSession)
+    disposed.value = true
+    stopLookupWatch()
+    scheduler.clearInterval(clock)
+    token.value = ''
+    resetSession()
+  })
+
+  function checkCurrentTicket() {
+    if (disposed.value || busy.value || !ticket.value || !validToken.value) return
+    lookupId.value = ticket.value.id
+    return perform('status')
+  }
+
+  function checkLastSubmission() {
+    if (disposed.value || busy.value || !lastSubmissionId.value || !validToken.value) return
+    lookupId.value = lastSubmissionId.value
+    return perform('status')
+  }
+
+  async function perform(action) {
+    if (disposed.value || busy.value) return
+    const started = session
+    const controller = new AbortController()
+    pending = controller
+    const current = () => !disposed.value && started === session && pending === controller
+    const refresh = action === 'list' ? { generation: journalGeneration, entries: [] } : null
+    if (refresh) {
+      journalRequest = refresh
+      journalRefreshFailed.value = false
+    }
+    busy.value = action
+    feedbackAction.value = action
+    error.value = ''
+    message.value = ''
+    try {
+      if (action === 'ticket') {
+        if (revocationUncertain.value) return
+        ticket.value = null
+        const issued = await api.issueTicket(command.value, Number(ttlMs.value), token.value, undefined, controller.signal)
+        if (!current()) return
+        const receivedAt = sampleReceiptTime()
+        if (!current()) return
+        ticket.value = issued
+        now.value = receivedAt
+        message.value = 'Ticket ontvangen. Bevestig het commando in een aparte stap.'
+      } else if (action === 'revoke') {
+        // Een onzekere intrekking blokkeert nieuwe toestemming tot bevestiging.
+        revocationUncertain.value = true
+        await api.revokeTicket(ticket.value, token.value, undefined, controller.signal)
+        if (!current()) return
+        ticket.value = null
+        revocationUncertain.value = false
+        message.value = "Ticket door de server ingetrokken. Eerder vastgelegde commando's blijven behouden."
+      } else if (action === 'commit') {
+        const sampledAt = sampleReceiptTime()
+        if (!current()) return
+        now.value = sampledAt
+        if (!canCommit.value) {
+          message.value = 'Niet ingezonden: de lokale ticketcontrole blokkeert vastleggen. Voor deze actie is geen commitverzoek verstuurd. Dit zegt niets over eerdere inzendingen.'
+          return
+        }
+        const currentTicket = ticket.value
+        // Een onzekere netwerkuitkomst mag nooit een automatische tweede inzending veroorzaken.
+        const submission = defaultApi.beginSubmission(currentTicket)
+        ticket.value = submission.ticket
+        lastSubmissionId.value = submission.lastSubmissionId
+        lookupId.value = submission.lastSubmissionId
+        resetOutcome()
+        revocationUncertain.value = false
+        const committed = await api.commitCommand(currentTicket, command.value, token.value, undefined, controller.signal)
+        if (!current()) return
+        commands.value = defaultApi.mergeCommands(commands.value, committed)
+        message.value = 'Commando vastgelegd in het logboek; er is niets uitgevoerd.'
+      } else if (action === 'status') {
+        resetOutcome()
+        const checked = await api.getTicketStatus(lookupId.value, token.value, undefined, controller.signal)
+        if (!current()) return
+        const receivedAt = sampleReceiptTime()
+        if (!current()) return
+        outcome.value = checked
+        outcomeReceivedAt.value = receivedAt
+        const reconciled = defaultApi.reconcileTicketStatus(ticket.value, revocationUncertain.value, commands.value, checked)
+        ticket.value = reconciled.ticket
+        revocationUncertain.value = reconciled.revocationUncertain
+        message.value = 'Ticketstatus opgehaald. Dit is een momentopname, geen nieuwe toestemming.'
+      } else {
+        const loaded = await api.listCommands(token.value, undefined, controller.signal)
+        if (!current() || refresh.generation !== journalGeneration) return
+        const receivedAt = sampleReceiptTime()
+        if (!current() || refresh.generation !== journalGeneration) return
+        // Alleen events uit deze verversing aanvullen, nooit de oude snapshot.
+        commands.value = [...refresh.entries].reverse().reduce(defaultApi.mergeCommands, loaded)
+        lastJournalRefreshAt.value = receivedAt
+        hasLoaded.value = true
+        journalRefreshFailed.value = false
+        message.value = 'Logboek bijgewerkt.'
+      }
+    } catch (failure) {
+      if (current() && (!refresh || refresh.generation === journalGeneration)) {
+        error.value = failure.message
+        if (action === 'ticket') {
+          message.value = 'Ticketuitgifte niet bevestigd. Er kan al een serverticket bestaan. Zonder ontvangen ticket is lokaal vastleggen niet mogelijk. Geen automatische nieuwe aanvraag.'
+        } else if (action === 'commit') {
+          message.value = 'Vastlegging niet bevestigd. Controleer de laatste inzending via het ticket-ID. Dien niet automatisch opnieuw in.'
+        } else if (action === 'revoke') {
+          message.value = 'Intrekking niet bevestigd. Vastleggen en nieuwe tickets blijven geblokkeerd. Controleer dit ticket of trek het expliciet opnieuw in.'
+        } else if (action === 'status') {
+          message.value = 'Ticketstatus niet bevestigd. Er is geen geldige nieuwe momentopname ontvangen. Deze fout bevestigt geen vastlegging of intrekking en herstelt geen toestemming. Controleer het ticket expliciet opnieuw; geen automatische herhaling.'
+        }
+        if (refresh) journalRefreshFailed.value = true
+      }
+    } finally {
+      if (refresh && journalRequest === refresh) journalRequest = null
+      if (current()) {
+        pending = null
+        busy.value = ''
+      }
+    }
+  }
+
+  return {
+    token, command, ttlMs, ticket, revocationUncertain, commands, search, filteredCommands, hasLoaded, journalRefreshFailed, lastJournalRefreshAt, busy,
+    message, error, lookupId, outcome, outcomeReceivedAt, outcomeMismatch, lastSubmissionId, realtimeStatus, now,
+    validToken, validLookupId, canCheckStatus, validTtl, canRequestTicket, canCommit, canClearOutcome, remaining, realtime, perform, checkLastSubmission, checkCurrentTicket, clearCommand, clearSession, clearOutcome, clearJournal,
+  }
+}

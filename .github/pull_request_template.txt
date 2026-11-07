@@ -1,0 +1,19 @@
+Samenvatting
+- Wat verandert er en waarom?
+- Gerelateerd issue:
+
+Validatie
+- [ ] cargo fmt --all -- --check
+- [ ] cargo clippy --workspace --all-targets -- -D warnings
+- [ ] cargo test --workspace
+- [ ] cargo build --workspace --locked
+- Vermeld werkelijke resultaten; leg niet-uitgevoerde of niet-relevante controles uit.
+
+Veiligheid en compatibiliteit
+- [ ] Diff gecontroleerd op secrets, persoonsgegevens en gegenereerde bestanden.
+- [ ] Tests en documentatie aangepast voor gewijzigd gedrag, waar relevant.
+- [ ] Ontwerpdoelen niet gepresenteerd als geïmplementeerde beveiligingsgaranties.
+- Beschrijf gewijzigde API's, migraties en bekende beperkingen:
+
+Meld kwetsbaarheden niet in deze publieke pull request.
+Zie de beveiligingsmeldrichtlijnen in de README voor het privékanaal.

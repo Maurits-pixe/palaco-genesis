@@ -36,3 +36,63 @@ jobs:
 
       - name: Architecture Validation
         run: cargo metadata --no-deps --format-version 1 > /dev/null
+
+  aether:
+    name: Validate AETHER
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/aether-engine
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Rust Setup
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Lint
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --locked
+      - name: Build
+        run: cargo build --locked
+
+  node:
+    name: Validate ${{ matrix.project }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - apps/neo-launcher
+          - apps/aether-frontend
+          - apps/bastion-frontend
+          - services/bastion-core
+    defaults:
+      run:
+        working-directory: ${{ matrix.project }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node Setup
+        uses: actions/setup-node@v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ${{ matrix.project }}/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Install frontend dependencies for live BASTION client tests
+        if: matrix.project == 'services/bastion-core'
+        working-directory: apps/bastion-frontend
+        run: npm ci
+      - name: Install backend dependencies for live BASTION session tests
+        if: matrix.project == 'apps/bastion-frontend'
+        working-directory: services/bastion-core
+        run: npm ci
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build --if-present

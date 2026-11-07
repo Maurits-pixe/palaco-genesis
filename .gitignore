@@ -1,1 +1,26 @@
-/target/
+# Dependencies and build output
+node_modules/
+target/
+dist/
+build/
+
+# Local databases and secrets
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*

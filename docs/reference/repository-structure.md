@@ -4,7 +4,9 @@ This repository follows a standard Rust workspace layout.
 
 ## Principles
 
-- Keep all Rust crates under `crates/`.
+- Keep shared Rust domain crates under `crates/` and the kernel under `runtime/`.
+- Keep the standalone AETHER service workspace under `services/aether-engine/`;
+  it has its own Cargo lockfile and must be validated separately.
 - Keep canonical specifications under `specs/`.
 - Keep CI configuration under `.github/workflows/`.
 - Keep long-form governance and architectural material under `docs/`.
@@ -48,5 +50,9 @@ This repository follows a standard Rust workspace layout.
 - `engine/` — ENGINE COMPLEET assembly layout
 - `services/` — service boundary layout
 - `apps/` — user-facing surface layout
+- `apps/neo-launcher/`, `apps/aether-frontend/`, `apps/bastion-frontend/` —
+  local Vue applications, each with its own npm lockfile
+- `services/aether-engine/`, `services/bastion-core/` —
+  local Rust cryptography and Node.js command-journal services
 - `database/` — data and persistence layout
 - `verification/` — verification and evidence layout

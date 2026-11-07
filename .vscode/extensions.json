@@ -1,0 +1,7 @@
+{
+  "recommendations": [
+    "rust-lang.rust-analyzer",
+    "Vue.volar",
+    "GitHub.vscode-pull-request-github"
+  ]
+}
