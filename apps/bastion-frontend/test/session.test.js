@@ -4362,6 +4362,110 @@ test('compiled realtime controls retain scoped guidance in every connection and 
   }
 })
 
+function journalRefreshPanel() {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const button = app.match(/<button\b[^>]*>Logboek vernieuwen<\/button>/)[0]
+  const help = ['realtime-help', 'journal-receipt-help']
+    .map(id => app.match(new RegExp(`<p id="${id}" class="muted">[\\s\\S]*?<\\/p>`))[0])
+  return { app, button, help, render: compileFragment(`<div>${button}${help.join('')}</div>`) }
+}
+
+test('compiled journal refresh links existing static guidance and retains idle, busy and token guards without effects', async t => {
+  const { app, button: source, help, render } = journalRefreshPanel()
+  assert.match(source, /:disabled="!!busy \|\| !validToken"/)
+  assert.match(source, /@click="perform\('list'\)"/)
+  for (const explanation of help) assert.doesNotMatch(explanation, /\{\{|v-|@/)
+  for (const token of ['test-session-token', '', ' ', 'invalid\ntoken']) {
+    for (const busy of ['', ...Object.keys(actions)]) {
+      await t.test(`token=${JSON.stringify(token)}, busy=${busy || 'idle'}`, async t => {
+        const { state, calls, sockets, clock } = fixture(t)
+        state.token.value = token
+        prepare(state, 'commit')
+        state.busy.value = busy
+        const before = JSON.stringify(commandState(state))
+        const reads = clock.reads
+        const { html, find } = await render(state)
+        const button = find(node => node.type === 'button')
+        assert.equal(button.props['aria-describedby'], 'realtime-help journal-receipt-help')
+        assert.equal(button.props.disabled, !!busy || !state.validToken.value)
+        assert.equal(html.match(/<button\b[^>]*>/)[0].includes(' disabled'), !!busy || !state.validToken.value)
+        for (const [index, id] of ['realtime-help', 'journal-receipt-help'].entries()) {
+          assert.equal(app.match(new RegExp(`\\bid="${id}"`, 'g')).length, 1)
+          assert.equal(html.match(new RegExp(`\\bid="${id}"`, 'g')).length, 1)
+          const explanation = find(node => node.props?.id === id)
+          assert.equal(explanation.type, 'p')
+          assert.equal(explanation.props.class, 'muted')
+          assert.equal(explanation.children, help[index].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim())
+        }
+        assert.equal(JSON.stringify(commandState(state)), before)
+        assert.equal(clock.reads, reads)
+        assert.deepEqual(calls, [])
+        assert.deepEqual(sockets, [])
+      })
+    }
+  }
+})
+
+test('compiled eligible journal refresh click requests one snapshot without changing authority or the existing connection', async t => {
+  const { render } = journalRefreshPanel()
+  const { state, calls, sockets, clock } = fixture(t)
+  state.realtime.connect(state.token.value)
+  const socket = sockets[0]
+  socket.handlers.connect()
+  prepare(state, 'commit')
+  assert.equal(state.canCommit.value, true)
+  const retained = commandState(state, [
+    'commands', 'filteredCommands', 'hasLoaded', 'journalRefreshFailed', 'lastJournalRefreshAt', 'busy', 'message', 'error',
+    'canCheckStatus', 'canClearOutcome', 'canRequestTicket',
+  ])
+  const connection = structuredClone({
+    auth: socket.auth, options: socket.io.opts, connects: socket.connects,
+    disconnects: socket.disconnects, removed: socket.removed,
+  })
+  const assertRetained = () => {
+    assert.deepEqual(commandState(state, [
+      'commands', 'filteredCommands', 'hasLoaded', 'journalRefreshFailed', 'lastJournalRefreshAt', 'busy', 'message', 'error',
+      'canCheckStatus', 'canClearOutcome', 'canRequestTicket',
+    ]), retained)
+    assert.deepEqual(sockets, [socket])
+    assert.deepEqual({
+      auth: socket.auth, options: socket.io.opts, connects: socket.connects,
+      disconnects: socket.disconnects, removed: socket.removed,
+    }, connection)
+  }
+  const { find } = await render(state)
+  const button = find(node => node.type === 'button')
+  assert.equal(button.props.disabled, false)
+  assert.equal(calls.length, 0)
+  assertRetained()
+  const pending = button.props.onClick()
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].action, 'list')
+  assert.deepEqual(calls[0].args.slice(0, 2), ['test-session-token', undefined])
+  assert.equal(calls[0].signal.aborted, false)
+  assert.equal(state.busy.value, 'list')
+  assert.deepEqual(state.commands.value, [record()])
+  assert.equal(state.lastJournalRefreshAt.value, 1000)
+  assertRetained()
+  clock.time = 1075
+  calls[0].resolve([record('new-record')])
+  await pending
+  assert.deepEqual(state.commands.value, [record('new-record')])
+  assert.deepEqual(state.filteredCommands.value, [record('new-record')])
+  assert.equal(state.hasLoaded.value, true)
+  assert.equal(state.journalRefreshFailed.value, false)
+  assert.equal(state.lastJournalRefreshAt.value, 1075)
+  assert.equal(state.busy.value, '')
+  assert.equal(state.canCheckStatus.value, true)
+  assert.equal(state.canClearOutcome.value, true)
+  assert.equal(state.canRequestTicket.value, true)
+  assertRetained()
+  await render(state)
+  await Vue.nextTick()
+  assert.equal(calls.length, 1, 'settlement and rendering never automatically follow up')
+  assertRetained()
+})
+
 test('compiled journal limit notice depends only on loaded count, including realtime-only and failed-refresh states', async t => {
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
   const notice = app.match(/<p\b[^>]*\bid="journal-limit-help"[^>]*>[\s\S]*?<\/p>/)?.[0]

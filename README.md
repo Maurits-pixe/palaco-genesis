@@ -527,6 +527,10 @@ ophaalt. **Verbonden** betekent niet dat het lokale logboek volledig is.
 Kies expliciet **Logboek vernieuwen** voor een momentopname van maximaal
 100 recente records, niet de volledige historie. De live herverbindingstest
 controleert dat gemiste records pas na die expliciete verversing verschijnen.
+De verversknop is toegankelijk gekoppeld aan de bestaande uitleg over
+begrensde historie en lokale ontvangsttijd. Gecompileerde Vue-tests controleren
+dat alleen een expliciete klik verversing start, met behoud van het zoekfilter,
+de ticketstaat en een bestaande realtimeverbinding.
 Bij afzonderlijk realtime verbreken wordt de lokale logboekstaat gewist
 vóór de oude disconnectcallback wordt aangeroepen. Een vanuit die callback
 expliciet gestarte vervangende verbinding wordt niet achteraf door de oude
