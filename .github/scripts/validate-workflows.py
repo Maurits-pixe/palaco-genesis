@@ -1424,6 +1424,10 @@ def main() -> int:
                             errors.append(
                                 f"{path}: job '{job_name}' step #{step_index} named 'Prepare release binaries' must set run to exactly {required_prepare_commands}"
                             )
+                    if step_id is not None:
+                        errors.append(
+                            f"{path}: job '{job_name}' step #{step_index} named 'Prepare release binaries' must not define id"
+                        )
                 if (
                     workflow_filename == "release.yml"
                     and job_name == "build-binaries"
