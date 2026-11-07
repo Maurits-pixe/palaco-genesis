@@ -749,6 +749,14 @@ def main() -> int:
                     )
                 if (
                     workflow_filename == "release.yml"
+                    and job_name == "build-binaries"
+                    and normalized_display_name != "Build release binaries"
+                ):
+                    errors.append(
+                        f"{path}: job '{job_name}' must set name to 'Build release binaries'"
+                    )
+                if (
+                    workflow_filename == "release.yml"
                     and job_name == "publish-release"
                     and normalized_display_name != "Publish GitHub release"
                 ):
