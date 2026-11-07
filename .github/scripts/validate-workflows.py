@@ -1390,6 +1390,10 @@ def main() -> int:
                         errors.append(
                             f"{path}: job '{job_name}' step #{step_index} named 'Build palaco-citadel-contracts binaries' must not define continue-on-error"
                         )
+                    if step_if is not None:
+                        errors.append(
+                            f"{path}: job '{job_name}' step #{step_index} named 'Build palaco-citadel-contracts binaries' must not define if"
+                        )
                 if (
                     workflow_filename == "release.yml"
                     and job_name == "build-binaries"
