@@ -60,6 +60,15 @@ def generate(metadata, commit, epoch):
     nodes = resolve.get("nodes")
     if not isinstance(nodes, list) or not nodes:
         raise ValueError("cargo metadata resolve graph must include nodes")
+    node_ids = [node["id"] for node in nodes]
+    if len(node_ids) != len(set(node_ids)):
+        raise ValueError("duplicate resolve node IDs")
+    unknown_nodes = set(node_ids) - references.keys()
+    if unknown_nodes:
+        raise ValueError("unknown resolve node IDs: " + ", ".join(sorted(unknown_nodes)))
+    missing_nodes = references.keys() - set(node_ids)
+    if missing_nodes:
+        raise ValueError("missing resolve node IDs: " + ", ".join(sorted(missing_nodes)))
     for node in nodes:
         node_id = node["id"]
         if node_id not in references:
