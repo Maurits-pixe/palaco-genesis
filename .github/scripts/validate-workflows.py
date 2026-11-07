@@ -1225,6 +1225,10 @@ def main() -> int:
                         errors.append(
                             f"{path}: job '{job_name}' actions/download-artifact@v4 step #{step_index} must not define id"
                         )
+                    if step_continue_on_error is not None:
+                        errors.append(
+                            f"{path}: job '{job_name}' actions/download-artifact@v4 step #{step_index} must not define continue-on-error"
+                        )
                     if step.get("env") is not None:
                         errors.append(
                             f"{path}: job '{job_name}' actions/download-artifact@v4 step #{step_index} must not define env"
@@ -1269,6 +1273,10 @@ def main() -> int:
                     if step_id is not None:
                         errors.append(
                             f"{path}: job '{job_name}' softprops/action-gh-release@v2 step #{step_index} must not define id"
+                        )
+                    if step_continue_on_error is not None:
+                        errors.append(
+                            f"{path}: job '{job_name}' softprops/action-gh-release@v2 step #{step_index} must not define continue-on-error"
                         )
                     if step.get("env") is not None:
                         errors.append(
