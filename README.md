@@ -277,6 +277,12 @@ hetzelfde ticket expliciet of kies bewust opnieuw intrekken, zonder
 automatische herhaling. De knop blijft bij een verlopen lokaal ticket of
 onzekere intrekking beschikbaar zolang het tokenformaat geldig is en geen
 verzoek loopt.
+Live HTTP/SQLite-tests trekken een lokaal bewaard ticket expliciet in op
+de serververvaltijd, met een ontvangen of verloren antwoord. Er ontstaat
+alleen een intrekkingsauditregel, geen commando. Bij een verloren antwoord
+blijft de onzekerheidsblokkering staan tot een expliciete passende
+statuscontrole de ingetrokken uitkomst ontvangt; kloktikken herstellen
+geen toestemming en veroorzaken geen extra verzoeken.
 Vlak vóór vastleggen leest BASTION de lokale klok opnieuw, onafhankelijk van
 de laatste afteltick. Is het ticket dan verlopen of de klok ongeldig, dan
 volgt geen commitverzoek en wordt het lokale ticket niet verbruikt.

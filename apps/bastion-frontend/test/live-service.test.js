@@ -1487,6 +1487,102 @@ for (const clockFailure of ['invalid', 'throwing']) {
   })
 }
 
+for (const response of ['received', 'lost']) {
+  test(`live service: explicit revoke at exact expiry persists revoked status with response ${response}`, { timeout: 15000 }, async t => {
+    const f = await fixture(t)
+    const s = f.session
+    const lost = response === 'lost'
+    const snapshot = () => Object.fromEntries(['tickets', 'commands', 'audit'].map(table =>
+      [table, f.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]))
+    await f.run('ticket')
+    assert.equal(s.error.value, '')
+    const held = s.ticket.value
+    assert.ok(held)
+    assert.equal(s.canCommit.value, true)
+    const path = `/v1/tickets/${held.id}`
+    const issued = [{ path: '/v1/tickets', method: 'POST', status: 201 }]
+    const before = snapshot()
+    f.setServerNow(held.expires_at)
+    f.setLocalNow(held.expires_at)
+    f.tick()
+    assert.equal(s.now.value, held.expires_at)
+    assert.equal(s.remaining.value, 0)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.ticket.value, held)
+    assert.equal(s.outcome.value, null)
+    assert.deepEqual(f.calls, issued, 'expiry ticks must not fetch status and retire the held ticket')
+    assert.deepEqual(snapshot(), before)
+
+    if (lost) f.loseNext('DELETE', path)
+    await f.run('revoke')
+    assert.equal(f.losses, Number(lost))
+    assert.equal(s.ticket.value, lost ? held : null)
+    assert.equal(s.revocationUncertain.value, lost)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.outcome.value, null)
+    if (lost) {
+      assert.match(s.error.value, /Geen geldig antwoord/)
+      assert.equal(s.message.value, revokeCaution)
+    } else {
+      assert.equal(s.error.value, '')
+    }
+    const revoked = snapshot()
+    assert.equal(revoked.tickets.length, 1)
+    assert.equal(revoked.tickets[0].id, held.id)
+    assert.equal(revoked.tickets[0].revoked, 1)
+    assert.equal(revoked.tickets[0].consumed, 0)
+    assert.deepEqual(revoked.commands, [])
+    assert.equal(revoked.audit.length, 1)
+    assert.equal(revoked.audit[0].ticket_id, held.id)
+    assert.equal(revoked.audit[0].action, 'ticket:revoke')
+    assert.equal(revoked.audit[0].checked_at, held.expires_at)
+    const mutations = [...issued, { path, method: 'DELETE', status: 200 }]
+    assert.deepEqual(f.calls, mutations)
+    for (const localNow of [held.expires_at, held.expires_at + 100]) {
+      f.setLocalNow(localNow)
+      f.tick()
+      assert.equal(s.ticket.value, lost ? held : null)
+      assert.equal(s.revocationUncertain.value, lost)
+      assert.equal(s.canCommit.value, false)
+      if (lost) {
+        await f.run('ticket')
+        await f.run('commit')
+        assert.equal(s.ticket.value, held)
+        assert.equal(s.revocationUncertain.value, true)
+      }
+      assert.deepEqual(f.calls, mutations, 'ticks and uncertain authority checks never retry or issue')
+      assert.deepEqual(snapshot(), revoked)
+    }
+
+    if (lost) {
+      await bounded(s.checkCurrentTicket(), 'explicit revoked status at server expiry')
+    } else {
+      s.lookupId.value = held.id
+      assert.deepEqual(f.calls, mutations, 'entering the same ticket ID does not automatically fetch')
+      await f.run('status')
+    }
+    assert.equal(s.error.value, '')
+    assert.deepEqual(s.outcome.value, {
+      ...held, checked_at: held.expires_at, status: 'revoked', revoked: true, record: null,
+    })
+    assert.equal(s.ticket.value, null)
+    assert.equal(s.revocationUncertain.value, false)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.lastSubmissionId.value, '')
+    assert.deepEqual(s.commands.value, [])
+    f.setLocalNow(held.expires_at + 200)
+    f.tick()
+    await f.run('commit')
+    assert.equal(s.ticket.value, null)
+    assert.equal(s.revocationUncertain.value, false)
+    assert.equal(s.canCommit.value, false)
+    assert.equal(s.outcome.value.status, 'revoked')
+    assert.equal(s.outcome.value.checked_at, held.expires_at)
+    assert.deepEqual(snapshot(), revoked, 'ticks and the explicit GET never duplicate mutation or audit')
+    assert.deepEqual(f.calls, [...mutations, { path, method: 'GET', status: 200 }])
+  })
+}
+
 test('live service: local expiry ticks preserve the active snapshot until an explicit expired status', { timeout: 15000 }, async t => {
   const f = await fixture(t)
   const s = f.session
