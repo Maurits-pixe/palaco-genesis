@@ -739,6 +739,14 @@ def main() -> int:
                 job_display_name_to_ids.setdefault(normalized_display_name, []).append(
                     job_name
                 )
+                if (
+                    workflow_filename == "release.yml"
+                    and job_name == "publish-release"
+                    and normalized_display_name != "Publish GitHub release"
+                ):
+                    errors.append(
+                        f"{path}: job '{job_name}' must set name to 'Publish GitHub release'"
+                    )
 
             validate_env_mapping(errors, path, f"job '{job_name}'", job.get("env"))
             if (
