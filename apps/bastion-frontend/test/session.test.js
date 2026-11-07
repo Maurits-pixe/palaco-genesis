@@ -4319,7 +4319,7 @@ test('compiled journal labels stored records with ISO times, escaped exact text 
 
 test('compiled realtime controls retain scoped guidance in every connection and busy state', async t => {
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
-  const panel = app.match(/<p role="status"[^>]*>{{ realtimeLabels\[realtimeStatus\] }}<\/p>[\s\S]*?<\/div>/)?.[0]
+  const panel = app.match(/<p role="status"[^>]*>{{ realtimeLabels\[realtimeStatus\] }}<\/p>[\s\S]*?<p id="disconnect-help" class="muted">[\s\S]*?<\/p>/)?.[0]
   assert.ok(panel)
   assert.equal(app.match(/\bid="realtime-help"/g)?.length, 1)
   assert.equal(app.match(/\baria-describedby="realtime-help"/g)?.length, 2)
@@ -4351,6 +4351,7 @@ test('compiled realtime controls retain scoped guidance in every connection and 
         assert.equal(connect.includes(' disabled'), !!busy || ['connecting', 'connected'].includes(realtimeStatus))
         const disconnect = html.match(/<button\b[^>]*>Verbinding verbreken<\/button>/)?.[0]
         assert.ok(disconnect)
+        assert.match(disconnect, /aria-describedby="disconnect-help"/)
         assert.equal(disconnect.includes(' disabled'), !!busy || !['connecting', 'connected'].includes(realtimeStatus))
         assert.deepEqual(commandState(state), before)
         assert.equal(state.realtimeStatus.value, realtimeStatus)
@@ -4360,6 +4361,96 @@ test('compiled realtime controls retain scoped guidance in every connection and 
       })
     }
   }
+})
+
+function disconnectPanel() {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const button = app.match(/<button\b[^>]*>Verbinding verbreken<\/button>/)[0]
+  const help = app.match(/<p id="disconnect-help" class="muted">[\s\S]*?<\/p>/)[0]
+  return { app, button, help, render: compileFragment(`<div>${button}${help}</div>`) }
+}
+
+test('compiled disconnect button links stable static help and retains every status and busy guard without effects', async t => {
+  const { app, button: source, help, render } = disconnectPanel()
+  assert.match(source, /:disabled="!!busy \|\| \(realtimeStatus !== 'connecting' && realtimeStatus !== 'connected'\)"/)
+  assert.match(source, /@click="realtime\.disconnect\(\)"/)
+  assert.doesNotMatch(help, /\{\{|v-|@/)
+  assert.equal(app.match(/\bid="disconnect-help"/g).length, 1)
+  assert.equal(app.match(/\baria-describedby="disconnect-help"/g).length, 1)
+  const expectedHelp = 'Verbreekt realtime en wist alleen lokaal de geladen logboekrecords en het verversingstijdstip. Het zoekfilter, het huidige ticket en de aparte ticketuitkomst blijven behouden. Geen verwijdering uit de database of intrekking van tickets. Geen automatische herverbinding of verzoeken om gegevens op te halen.'
+  const { state, calls, sockets, clock } = fixture(t)
+  prepare(state, 'commit')
+  for (const status of ['disconnected', 'connecting', 'connected', 'error']) {
+    for (const busy of ['', ...Object.keys(actions)]) {
+      state.realtimeStatus.value = status
+      state.busy.value = busy
+      const before = commandState(state)
+      const reads = clock.reads
+      for (let pass = 0; pass < 2; pass++) {
+        const { html, find } = await render(state)
+        const button = find(node => node.type === 'button')
+        const disabled = !!busy || !['connecting', 'connected'].includes(status)
+        assert.equal(button.props['aria-describedby'], 'disconnect-help')
+        assert.equal(button.props.disabled, disabled)
+        assert.equal(html.match(/<button\b[^>]*>/)[0].includes(' disabled'), disabled)
+        const explanation = find(node => node.props?.id === 'disconnect-help')
+        assert.equal(explanation.type, 'p')
+        assert.equal(explanation.props.class, 'muted')
+        assert.equal(explanation.children, expectedHelp)
+        assert.equal(html.match(/\bid="disconnect-help"/g).length, 1)
+        assert.equal(html.match(/\baria-describedby="disconnect-help"/g).length, 1)
+        assert.deepEqual(commandState(state), before)
+        assert.equal(clock.reads, reads)
+        assert.deepEqual(calls, [])
+        assert.deepEqual(sockets, [])
+      }
+    }
+  }
+})
+
+test('compiled active disconnect click clears only local journal and socket authentication without fetching or reconnecting', async t => {
+  const { render } = disconnectPanel()
+  const { state, calls, sockets, clock } = fixture(t)
+  state.realtime.connect(state.token.value)
+  const socket = sockets[0]
+  socket.handlers.connect()
+  prepare(state, 'commit')
+  const excluded = ['commands', 'filteredCommands', 'hasLoaded', 'journalRefreshFailed', 'lastJournalRefreshAt', 'realtimeStatus']
+  const retained = commandState(state, excluded)
+  const reads = clock.reads
+  assert.deepEqual(state.commands.value, [record()])
+  assert.equal(state.hasLoaded.value, true)
+  assert.equal(state.journalRefreshFailed.value, true)
+  assert.equal(state.lastJournalRefreshAt.value, 1000)
+  assert.equal(state.realtimeStatus.value, 'connected')
+  assert.deepEqual(socket.auth, { token: state.token.value })
+  assert.deepEqual(socket.io.opts.auth, socket.auth)
+  const { find } = await render(state)
+  const button = find(node => node.type === 'button')
+  assert.equal(button.props.disabled, false)
+  button.props.onClick()
+  const assertReset = () => {
+    assert.deepEqual(state.commands.value, [])
+    assert.deepEqual(state.filteredCommands.value, [])
+    assert.equal(state.hasLoaded.value, false)
+    assert.equal(state.journalRefreshFailed.value, false)
+    assert.equal(state.lastJournalRefreshAt.value, null)
+    assert.equal(state.realtimeStatus.value, 'disconnected')
+    const after = commandState(state, excluded)
+    for (const key of Object.keys(retained)) assert.strictEqual(after[key], retained[key], key)
+    assertDisconnected(socket)
+    assert.equal(socket.connects, 1)
+    assert.deepEqual(sockets, [socket])
+    assert.deepEqual(calls, [])
+    assert.equal(clock.reads, reads)
+  }
+  assertReset()
+  socket.handlers['command:committed'](record('late-record'))
+  socket.handlers.connect()
+  await Vue.nextTick()
+  const disconnected = await render(state)
+  assert.equal(disconnected.find(node => node.type === 'button').props.disabled, true)
+  assertReset()
 })
 
 function journalRefreshPanel() {

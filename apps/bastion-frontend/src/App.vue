@@ -187,8 +187,11 @@ function receiptIso(value) {
           Geen garantie op ontvangst zonder gaten of precies één ontvangst per live record.</p>
         <div class="actions">
           <button :disabled="!!busy || !validToken || realtimeStatus === 'connecting' || realtimeStatus === 'connected'" aria-describedby="realtime-help" @click="realtime.connect(token)">Realtime verbinden</button>
-          <button class="secondary" :disabled="!!busy || (realtimeStatus !== 'connecting' && realtimeStatus !== 'connected')" @click="realtime.disconnect()">Verbinding verbreken</button>
+          <button class="secondary" :disabled="!!busy || (realtimeStatus !== 'connecting' && realtimeStatus !== 'connected')" aria-describedby="disconnect-help" @click="realtime.disconnect()">Verbinding verbreken</button>
         </div>
+        <p id="disconnect-help" class="muted">Verbreekt realtime en wist alleen lokaal de geladen logboekrecords en het verversingstijdstip.
+          Het zoekfilter, het huidige ticket en de aparte ticketuitkomst blijven behouden.
+          Geen verwijdering uit de database of intrekking van tickets. Geen automatische herverbinding of verzoeken om gegevens op te halen.</p>
         <button :disabled="!!busy || !validToken" aria-describedby="realtime-help journal-receipt-help" @click="perform('list')">Logboek vernieuwen</button>
         <button type="button" class="secondary" :disabled="!!busy && busy !== 'list'" aria-describedby="clear-journal-help" @click="clearJournal">Wis lokaal logboek</button>
         <p id="clear-journal-help" class="muted">Wist alleen lokaal de geladen records en zoekopdracht, verbreekt realtime en breekt een lopende verversing lokaal af.
