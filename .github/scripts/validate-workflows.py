@@ -1436,6 +1436,10 @@ def main() -> int:
                         errors.append(
                             f"{path}: job '{job_name}' step #{step_index} named 'Prepare release binaries' must not define shell"
                         )
+                    if step.get("env") is not None:
+                        errors.append(
+                            f"{path}: job '{job_name}' step #{step_index} named 'Prepare release binaries' must not define env"
+                        )
                 if (
                     workflow_filename == "release.yml"
                     and job_name == "build-binaries"
