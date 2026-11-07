@@ -11,8 +11,8 @@ jobs:
   sbom:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable toolchain, master-history action commit
       - name: Test generator
         run: python3 -m unittest discover -s verification/provenance -p 'test_*.py'
       - name: Install independent SPDX validator
@@ -33,7 +33,7 @@ jobs:
           pyspdxtools -i "$RUNNER_TEMP/palaco-sbom/sbom.spdx.json"
           cp "$RUNNER_TEMP/cargo-metadata.json" "$RUNNER_TEMP/palaco-sbom/cargo-metadata.json"
       - name: Upload unsigned evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: palaco-spdx-unsigned
           path: ${{ runner.temp }}/palaco-sbom/
