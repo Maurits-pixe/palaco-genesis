@@ -99,7 +99,10 @@ function receiptIso(value) {
           De server controleert opnieuw bij vastleggen; een statuscontrole reserveert het ticket niet.
           Geen automatische herhaling.</p>
         <button class="secondary" :disabled="!!busy || !ticket || !validToken" aria-describedby="revoke-help" @click="perform('revoke')">Ticket intrekken</button>
-        <button class="secondary" :disabled="!!busy || !ticket || !validToken" @click="checkCurrentTicket">Controleer huidig ticket</button>
+        <button class="secondary" :disabled="!!busy || !ticket || !validToken" aria-describedby="current-ticket-status-help" @click="checkCurrentTicket">Controleer huidig ticket</button>
+        <p id="current-ticket-status-help" class="muted">Kiest expliciet het bewaarde huidige ticket-ID in het opzoekveld en vraagt een statusmomentopname op.
+          Geen vastlegging, intrekking, reservering of herstel van toestemming.
+          Alleen een geldige, passende terminale uitkomst sluit het lokale ticket en de onzekerheidsblokkering af; een fout, afwijkende uitkomst, active of pending niet.</p>
         <p v-if="revocationUncertain" role="alert" class="error">Intrekking nog niet bevestigd. Vastleggen en nieuwe tickets zijn geblokkeerd. Trek dit ticket opnieuw in of controleer de status van hetzelfde ticket.</p>
         <p id="revoke-help" class="muted">Intrekken wijzigt het ticket op de server; eerder opgeslagen records blijven behouden.
           Een sessie wissen of invoer wijzigen is geen intrekking. Een verloren antwoord bewijst geen intrekking:

@@ -3456,10 +3456,111 @@ for (const reset of ['clear', 'token', 'dispose']) {
   }
 }
 
+test('compiled current-ticket help stays linked and static across real session guards without side effects', async t => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const panel = app.slice(app.indexOf('<h2>2. Apart bevestigen</h2>'), app.indexOf('</section>', app.indexOf('<h2>2. Apart bevestigen</h2>')))
+  const button = panel.match(/<button[^>]*>Controleer huidig ticket<\/button>/)[0]
+  assert.equal(button, '<button class="secondary" :disabled="!!busy || !ticket || !validToken" aria-describedby="current-ticket-status-help" @click="checkCurrentTicket">Controleer huidig ticket</button>')
+  const help = panel.match(/<p id="current-ticket-status-help" class="muted">[\s\S]*?<\/p>/)[0]
+  assert.doesNotMatch(help, /\{\{|v-|@/)
+  assert.equal(app.match(/\bid="current-ticket-status-help"/g).length, 1)
+  assert.equal(app.match(/\baria-describedby="current-ticket-status-help"/g).length, 1)
+  assert.ok(panel.indexOf(help) > panel.indexOf('<p v-else class="muted">Nog geen ticket.'))
+  const expectedHelp = 'Kiest expliciet het bewaarde huidige ticket-ID in het opzoekveld en vraagt een statusmomentopname op. Geen vastlegging, intrekking, reservering of herstel van toestemming. Alleen een geldige, passende terminale uitkomst sluit het lokale ticket en de onzekerheidsblokkering af; een fout, afwijkende uitkomst, active of pending niet.'
+  const helpers = app.match(/function date\(value\) \{[\s\S]*?\n\}[\s\S]*?function receiptIso\(value\) \{[\s\S]*?\n\}/)[0]
+  const formatters = new Function('timestamp', `${helpers}; return { date, receiptIso }`)(timestamp)
+  const render = compileFragment(`<div>${panel}</div>`)
+  for (const [scenario, disabled] of [
+    ['eligible ticket', false],
+    ['expired ticket', false],
+    ['uncertain revocation', false],
+    ['busy', true],
+    ['absent ticket', true],
+    ['empty token', true],
+    ['invalid token', true],
+  ]) {
+    await t.test(scenario, async t => {
+      const { state, calls, sockets, clock } = fixture(t)
+      if (scenario === 'empty token') state.token.value = ''
+      if (scenario === 'invalid token') state.token.value = 'invalid\nformat'
+      prepare(state, scenario === 'uncertain revocation' ? 'revoke' : 'commit')
+      state.lookupId.value = 'unrelated-ticket'
+      if (scenario === 'expired ticket') {
+        clock.time = held().expires_at
+        clock.tick()
+        assert.equal(state.canCommit.value, false)
+      }
+      if (scenario === 'uncertain revocation') {
+        assert.equal(state.revocationUncertain.value, true)
+        assert.equal(state.canCommit.value, false)
+      }
+      if (scenario === 'absent ticket') state.clearCommand()
+      if (scenario === 'busy') state.busy.value = 'status'
+      const before = JSON.stringify(commandState(state))
+      const readsBefore = clock.reads
+      for (let pass = 0; pass < 2; pass++) {
+        const { html, find } = await render({ ...state, ...formatters })
+        const renderedButton = find(node => node.type === 'button' && node.children === 'Controleer huidig ticket')
+        assert.equal(renderedButton.props.disabled, disabled)
+        assert.equal(renderedButton.props['aria-describedby'], 'current-ticket-status-help')
+        assert.equal(/\sdisabled(?:[=>\s])/.test(html.match(/<button[^>]*>Controleer huidig ticket<\/button>/)[0]), disabled)
+        assert.equal(html.match(/\bid="current-ticket-status-help"/g).length, 1)
+        assert.equal(html.match(/\baria-describedby="current-ticket-status-help"/g).length, 1)
+        const renderedHelp = find(node => node.props?.id === 'current-ticket-status-help')
+        assert.equal(renderedHelp.type, 'p')
+        assert.equal(renderedHelp.props.class, 'muted')
+        assert.equal(renderedHelp.children, expectedHelp)
+        assert.equal(JSON.stringify(commandState(state)), before)
+        assert.deepEqual(calls, [])
+        assert.deepEqual(sockets, [])
+        assert.equal(clock.reads, readsBefore)
+      }
+    })
+  }
+})
+
+test('compiled current-ticket click explicitly selects the held ID and checks once without restoring authority', async t => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const render = compileFragment(app.match(/<button[^>]*>Controleer huidig ticket<\/button>/)[0])
+  const { state, calls, sockets } = fixture(t)
+  prepare(state, 'commit')
+  state.lookupId.value = 'unrelated-ticket'
+  assert.equal(state.canCommit.value, true)
+  const before = JSON.stringify(commandState(state))
+  const { find } = await render(state)
+  const button = find(node => node.type === 'button')
+  assert.equal(button.props.disabled, false)
+  assert.equal(JSON.stringify(commandState(state)), before)
+  assert.deepEqual(calls, [])
+  const checking = button.props.onClick()
+  assert.equal(state.lookupId.value, held().id)
+  assert.equal(state.busy.value, 'status')
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].action, 'status')
+  assert.equal(calls[0].args[0], held().id)
+  assert.equal(calls[0].args[1], state.token.value)
+  const terminal = snapshot({ status: 'revoked', revoked: true })
+  calls[0].resolve(terminal)
+  await checking
+  assert.deepEqual(state.outcome.value, terminal)
+  assert.equal(state.ticket.value, null)
+  assert.equal(state.revocationUncertain.value, false)
+  assert.equal(state.canCommit.value, false)
+  assert.deepEqual(state.commands.value, [record()])
+  assert.equal(state.lastSubmissionId.value, 'retained-id')
+  assert.match(state.message.value, /geen nieuwe toestemming/)
+  await render(state)
+  assert.equal(state.ticket.value, null)
+  assert.equal(state.canCommit.value, false)
+  assert.equal(calls.length, 1)
+  assert.ok(calls.every(call => call.action === 'status'))
+  assert.deepEqual(sockets, [])
+})
+
 test('current-ticket button delegates to the composable without gating on expiry or uncertainty; manual lookup remains', () => {
   const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
   assert.match(app, /checkCurrentTicket, clearCommand, clearSession,[\s\S]*} = useSession\(\)/)
-  assert.match(app, /Ticket intrekken<\/button>\s*<button class="secondary" :disabled="!!busy \|\| !ticket \|\| !validToken" @click="checkCurrentTicket">Controleer huidig ticket<\/button>/)
+  assert.match(app, /Ticket intrekken<\/button>\s*<button class="secondary" :disabled="!!busy \|\| !ticket \|\| !validToken" aria-describedby="current-ticket-status-help" @click="checkCurrentTicket">Controleer huidig ticket<\/button>/)
   assert.match(app, /<form @submit.prevent="perform\('status'\)">/)
   assert.match(app, /<input id="lookup-id" v-model="lookupId"/)
 })
