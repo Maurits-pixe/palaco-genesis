@@ -741,6 +741,14 @@ def main() -> int:
                 )
                 if (
                     workflow_filename == "release.yml"
+                    and job_name == "release-readiness"
+                    and normalized_display_name != "Release readiness checks"
+                ):
+                    errors.append(
+                        f"{path}: job '{job_name}' must set name to 'Release readiness checks'"
+                    )
+                if (
+                    workflow_filename == "release.yml"
                     and job_name == "publish-release"
                     and normalized_display_name != "Publish GitHub release"
                 ):
