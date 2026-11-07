@@ -168,6 +168,76 @@ function tokenAccess() {
   return compileFragment(app.match(/<section aria-labelledby="access-title">[\s\S]*?<\/section>/)[0])
 }
 
+test('compiled clear-session button links unique static help and stays enabled idle and during every request without side effects', async t => {
+  const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+  const pair = app.match(/<button[^>]*>Wis sessie<\/button>\s*<p id="clear-session-help" class="muted">[\s\S]*?<\/p>/)[0]
+  const help = pair.slice(pair.indexOf('<p '))
+  assert.doesNotMatch(help, /\{\{|v-|@/)
+  assert.equal(app.match(/\bid="clear-session-help"/g).length, 1)
+  assert.equal(app.match(/\baria-describedby="clear-session-help"/g).length, 1)
+  const expectedHelp = "Wissen en afbreken zijn alleen lokaal: geen intrekking van servertickets of terugdraaien. Een al verzonden wijziging kan nog worden voltooid. Wissen verwijdert ook lokale ID's: kopieer het ticket-ID vóór het wissen om later handmatig de status op te zoeken. Dien nooit automatisch opnieuw in."
+  const render = tokenAccess()
+  for (const action of ['', ...Object.keys(actions)]) {
+    const { state, calls, sockets, clock } = fixture(t)
+    prepare(state, action)
+    const pending = action ? state.perform(action) : null
+    assert.equal(state.busy.value, action)
+    const before = JSON.stringify(commandState(state))
+    const callsBefore = calls.slice()
+    const readsBefore = clock.reads
+    for (let pass = 0; pass < 2; pass++) {
+      const { html, find } = await render(state)
+      const button = find(node => node.type === 'button' && node.children === 'Wis sessie')
+      assert.equal(button.props['aria-describedby'], 'clear-session-help')
+      assert.equal(Object.hasOwn(button.props, 'disabled'), false)
+      assert.doesNotMatch(html.match(/<button[^>]*>Wis sessie<\/button>/)[0], /\sdisabled(?:[=>\s])/)
+      const renderedHelp = find(node => node.props?.id === 'clear-session-help')
+      assert.equal(renderedHelp.type, 'p')
+      assert.equal(renderedHelp.props.class, 'muted')
+      assert.equal(renderedHelp.children, expectedHelp)
+      assert.equal(html.match(/\bid="clear-session-help"/g).length, 1)
+      assert.equal(html.match(/\baria-describedby="clear-session-help"/g).length, 1)
+      assert.equal(JSON.stringify(commandState(state)), before)
+      assert.deepEqual(calls, callsBefore)
+      assert.deepEqual(sockets, [])
+      assert.equal(clock.reads, readsBefore)
+    }
+    if (pending) {
+      calls[0].resolve(results[action])
+      await pending
+    }
+  }
+})
+
+test('compiled clear-session click aborts pending status once and late resolution cannot refill the cleared session', async t => {
+  const { state, calls, sockets } = fixture(t)
+  state.realtime.connect(state.token.value)
+  prepare(state, 'status')
+  const pending = state.perform('status')
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].action, 'status')
+  assert.equal(state.busy.value, 'status')
+  assert.equal(calls[0].signal.aborted, false)
+  let aborts = 0
+  calls[0].signal.addEventListener('abort', () => {
+    aborts++
+    assertEmpty(state)
+  })
+  const { find } = await tokenAccess()(state)
+  find(node => node.type === 'button' && node.children === 'Wis sessie').props.onClick()
+  assert.equal(aborts, 1)
+  assert.equal(calls[0].signal.aborted, true)
+  assertEmpty(state)
+  assertDisconnected(sockets[0])
+  calls[0].resolve(snapshot({ status: 'committed', record: record() }))
+  await pending
+  assertEmpty(state)
+  assert.equal(aborts, 1)
+  assert.equal(calls.length, 1)
+  assert.equal(sockets.length, 1)
+  assertDisconnected(sockets[0])
+})
+
 test('compiled token input exposes neutral empty and linked static invalid feedback without changing input', async t => {
   const { state, calls, sockets } = fixture(t)
   const render = tokenAccess()

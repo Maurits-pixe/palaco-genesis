@@ -494,6 +494,10 @@ de interface. De realtimeverbinding wordt verbroken en lopende HTTP-verzoeken
 worden lokaal geannuleerd. Vertraagde antwoorden herstellen de gewiste
 sessie niet. Dit trekt geen server-side ticket in en draait geen mutatie
 terug; een al verstuurd verzoek kan alsnog worden verwerkt.
+De knop heeft gekoppelde toegankelijke waarschuwing over deze lokale
+begrenzing en het vooraf bewaren van ticket-ID's. Gecompileerde Vue-tests
+controleren beschikbaarheid tijdens verzoeken en lokaal afbreken via de
+knop; een vertraagd statusantwoord vult de gewiste sessie niet opnieuw.
 Bij volledig wissen of tokenwisseling wordt de oude sessiestaat verwijderd
 voordat het lopende verzoek een abortmelding ontvangt. Ook directe
 abortcallbacks kunnen daardoor geen halfgewiste staat waarnemen; oude

@@ -42,8 +42,8 @@ function receiptIso(value) {
         Bij pagehide (ook bij terug/vooruit-cache) wissen we de lokale sessie. Voer na terugkeer het token opnieuw in
         en kies zelf een actie; geen automatische verzoeken of herverbinding.
         De browser levert pagehide niet gegarandeerd; dit garandeert geen veilige geheugenwissing.</p>
-      <button class="secondary" @click="clearSession">Wis sessie</button>
-      <p class="muted">Wissen en afbreken zijn alleen lokaal: geen intrekking van servertickets of terugdraaien.
+      <button class="secondary" aria-describedby="clear-session-help" @click="clearSession">Wis sessie</button>
+      <p id="clear-session-help" class="muted">Wissen en afbreken zijn alleen lokaal: geen intrekking van servertickets of terugdraaien.
         Een al verzonden wijziging kan nog worden voltooid. Wissen verwijdert ook lokale ID's:
         kopieer het ticket-ID vóór het wissen om later handmatig de status op te zoeken. Dien nooit automatisch opnieuw in.</p>
     </section>
