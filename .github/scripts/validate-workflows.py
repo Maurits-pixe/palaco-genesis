@@ -1374,6 +1374,10 @@ def main() -> int:
                         errors.append(
                             f"{path}: job '{job_name}' step #{step_index} named 'Build palaco-citadel-contracts binaries' must set run to 'cargo build --release -p palaco-citadel-contracts --bins'"
                         )
+                    if step_working_directory is not None:
+                        errors.append(
+                            f"{path}: job '{job_name}' step #{step_index} named 'Build palaco-citadel-contracts binaries' must not define working-directory"
+                        )
                 if (
                     workflow_filename == "release.yml"
                     and job_name == "build-binaries"
