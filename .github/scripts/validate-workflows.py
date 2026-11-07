@@ -1101,6 +1101,8 @@ def main() -> int:
             release_readiness_capture_step_index: int | None = None
             build_binaries_upload_steps = 0
             build_binaries_upload_step_index: int | None = None
+            build_binaries_prepare_steps = 0
+            build_binaries_prepare_step_index: int | None = None
             build_binaries_manifest_steps = 0
             build_binaries_manifest_step_index: int | None = None
             publish_release_action_steps = 0
@@ -1337,6 +1339,17 @@ def main() -> int:
                             errors.append(
                                 f"{path}: job '{job_name}' actions/upload-artifact@v4 step #{step_index} must set with.path to 'release-evidence/'"
                             )
+                if (
+                    workflow_filename == "release.yml"
+                    and job_name == "build-binaries"
+                    and step_name == "Prepare release binaries"
+                ):
+                    build_binaries_prepare_steps += 1
+                    build_binaries_prepare_step_index = step_index
+                    if step_run is None:
+                        errors.append(
+                            f"{path}: job '{job_name}' step #{step_index} named 'Prepare release binaries' must define run"
+                        )
                 if (
                     workflow_filename == "release.yml"
                     and job_name == "build-binaries"
@@ -1588,6 +1601,14 @@ def main() -> int:
             if (
                 workflow_filename == "release.yml"
                 and job_name == "build-binaries"
+                and build_binaries_prepare_steps != 1
+            ):
+                errors.append(
+                    f"{path}: job '{job_name}' must contain exactly one step named 'Prepare release binaries'"
+                )
+            if (
+                workflow_filename == "release.yml"
+                and job_name == "build-binaries"
                 and build_binaries_manifest_steps != 1
             ):
                 errors.append(
@@ -1620,6 +1641,17 @@ def main() -> int:
             ):
                 errors.append(
                     f"{path}: job '{job_name}' must place step 'Generate checksums and manifest' directly before actions/upload-artifact@v4"
+                )
+            if (
+                workflow_filename == "release.yml"
+                and job_name == "build-binaries"
+                and build_binaries_prepare_step_index is not None
+                and build_binaries_manifest_step_index is not None
+                and build_binaries_prepare_step_index
+                != build_binaries_manifest_step_index - 1
+            ):
+                errors.append(
+                    f"{path}: job '{job_name}' must place step 'Prepare release binaries' directly before step 'Generate checksums and manifest'"
                 )
             if (
                 workflow_filename == "release.yml"
