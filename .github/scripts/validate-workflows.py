@@ -1367,6 +1367,21 @@ def main() -> int:
                         errors.append(
                             f"{path}: job '{job_name}' step #{step_index} named 'Prepare release binaries' must define run"
                         )
+                    elif isinstance(step_run, str):
+                        normalized_prepare_commands = [
+                            line.strip()
+                            for line in step_run.splitlines()
+                            if line.strip()
+                        ]
+                        required_prepare_commands = [
+                            "mkdir -p release-binaries",
+                            "cp target/release/citadel-a1 release-binaries/",
+                            "cp target/release/citadel-a1-canonical release-binaries/",
+                        ]
+                        if normalized_prepare_commands != required_prepare_commands:
+                            errors.append(
+                                f"{path}: job '{job_name}' step #{step_index} named 'Prepare release binaries' must set run to exactly {required_prepare_commands}"
+                            )
                 if (
                     workflow_filename == "release.yml"
                     and job_name == "build-binaries"
