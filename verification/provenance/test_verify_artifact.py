@@ -11,7 +11,7 @@ from verify_artifact import verify_artifact
 
 
 COMMIT = "d" * 40
-METADATA = {"packages": [{"id": "root", "name": "root", "version": "1.0.0"}], "workspace_members": ["root"]}
+METADATA = {"packages": [{"id": "root", "name": "root", "version": "1.0.0"}], "workspace_members": ["root"], "resolve": {"nodes": [{"id": "root", "dependencies": []}]}}
 
 
 def archive_bytes(extra=None):

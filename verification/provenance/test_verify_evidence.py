@@ -9,7 +9,7 @@ from verify_evidence import verify
 
 
 COMMIT = "b" * 40
-METADATA = {"packages": [{"id": "root", "name": "root", "version": "1.0.0"}], "workspace_members": ["root"]}
+METADATA = {"packages": [{"id": "root", "name": "root", "version": "1.0.0"}], "workspace_members": ["root"], "resolve": {"nodes": [{"id": "root", "dependencies": []}]}}
 
 
 def sample():

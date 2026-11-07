@@ -41,6 +41,19 @@ class SbomTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "unknown"):
                     generate(metadata, COMMIT, 0)
 
+    def test_missing_or_empty_resolve_graph_fails_closed(self):
+        cases = (
+            ("missing", {key: value for key, value in METADATA.items() if key != "resolve"}),
+            ("null", {**METADATA, "resolve": None}),
+            ("empty object", {**METADATA, "resolve": {}}),
+            ("empty nodes", {**METADATA, "resolve": {"nodes": []}}),
+            ("invalid nodes", {**METADATA, "resolve": {"nodes": None}}),
+        )
+        for label, metadata in cases:
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(ValueError, "resolve"):
+                    generate(metadata, COMMIT, 0)
+
     def test_missing_or_duplicate_input_fails_closed(self):
         with self.assertRaises(ValueError):
             generate({"packages": []}, COMMIT, 0)

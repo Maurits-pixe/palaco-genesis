@@ -54,7 +54,13 @@ def generate(metadata, commit, epoch):
         raise ValueError("unknown workspace member IDs: " + ", ".join(sorted(unknown_members)))
     relations = [{"spdxElementId": "SPDXRef-DOCUMENT", "relatedSpdxElement": references[item], "relationshipType": "DESCRIBES"}
                  for item in sorted(workspace_members)]
-    for node in (metadata.get("resolve") or {}).get("nodes", []):
+    resolve = metadata.get("resolve")
+    if not isinstance(resolve, dict):
+        raise ValueError("cargo metadata must include a resolve graph")
+    nodes = resolve.get("nodes")
+    if not isinstance(nodes, list) or not nodes:
+        raise ValueError("cargo metadata resolve graph must include nodes")
+    for node in nodes:
         node_id = node["id"]
         if node_id not in references:
             raise ValueError("unknown resolve node ID: " + node_id)
