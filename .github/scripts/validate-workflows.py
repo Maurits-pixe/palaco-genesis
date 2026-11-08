@@ -1492,6 +1492,10 @@ def main() -> int:
                         errors.append(
                             f"{path}: job '{job_name}' step #{step_index} named 'Generate checksums and manifest' must not define working-directory"
                         )
+                    if step_shell is not None:
+                        errors.append(
+                            f"{path}: job '{job_name}' step #{step_index} named 'Generate checksums and manifest' must not define shell"
+                        )
                 if (
                     workflow_filename == "release.yml"
                     and job_name == "build-binaries"
