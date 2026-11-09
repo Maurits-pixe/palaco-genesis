@@ -60,11 +60,22 @@ def generate(metadata, commit, epoch):
     nodes = resolve.get("nodes")
     if not isinstance(nodes, list) or not nodes:
         raise ValueError("cargo metadata resolve graph must include nodes")
+    node_ids = [node.get("id") for node in nodes if isinstance(node, dict)]
+    if len(node_ids) != len(nodes) or any(not isinstance(identifier, str) for identifier in node_ids):
+        raise ValueError("malformed resolve node")
+    if len(node_ids) != len(set(node_ids)):
+        raise ValueError("duplicate resolve node IDs")
+    missing_nodes = references.keys() - set(node_ids)
+    if missing_nodes:
+        raise ValueError("packages missing from resolve graph: " + ", ".join(sorted(missing_nodes)))
     for node in nodes:
         node_id = node["id"]
         if node_id not in references:
             raise ValueError("unknown resolve node ID: " + node_id)
-        for dependency in node.get("dependencies", []):
+        dependencies = node.get("dependencies")
+        if not isinstance(dependencies, list) or any(not isinstance(dep, str) for dep in dependencies):
+            raise ValueError("malformed dependencies for resolve node: " + node_id)
+        for dependency in dependencies:
             if dependency not in references:
                 raise ValueError("unknown dependency ID: " + dependency + " from " + node_id)
             relations.append({"spdxElementId": references[node_id], "relatedSpdxElement": references[dependency], "relationshipType": "DEPENDS_ON"})
@@ -107,3 +118,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
