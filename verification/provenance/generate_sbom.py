@@ -23,6 +23,10 @@ def license_expression(value):
 
 
 def generate(metadata, commit, epoch):
+    if not isinstance(metadata, dict):
+        raise ValueError("cargo metadata must be an object")
+    if "format_version" in metadata and metadata["format_version"] != 1:
+        raise ValueError("unsupported cargo metadata format_version")
     if len(commit) != 40 or any(character not in "0123456789abcdef" for character in commit):
         raise ValueError("commit must be a 40-character lowercase Git SHA")
     if epoch < 0:
@@ -65,6 +69,9 @@ def generate(metadata, commit, epoch):
         raise ValueError("malformed resolve node")
     if len(node_ids) != len(set(node_ids)):
         raise ValueError("duplicate resolve node IDs")
+    root = resolve.get("root")
+    if root is not None and (not isinstance(root, str) or root not in references or root not in workspace_members):
+        raise ValueError("invalid resolve root")
     missing_nodes = references.keys() - set(node_ids)
     if missing_nodes:
         raise ValueError("packages missing from resolve graph: " + ", ".join(sorted(missing_nodes)))
@@ -80,6 +87,8 @@ def generate(metadata, commit, epoch):
         # Cargo metadata exposes both flattened package IDs and detailed
         # dependency records. Compare them when detailed records are present;
         # otherwise a forged flattened list could silently alter the SBOM.
+        if metadata.get("format_version") == 1 and "deps" not in node:
+            raise ValueError("missing detailed dependencies for Cargo format 1 resolve node: " + node_id)
         if "deps" in node:
             details = node["deps"]
             if not isinstance(details, list) or any(

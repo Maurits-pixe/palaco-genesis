@@ -99,6 +99,25 @@ class SbomTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, error):
                     generate({**METADATA, "resolve": {"nodes": invalid_nodes}}, COMMIT, 0)
 
+    def test_cargo_format_one_requires_complete_details_and_valid_root(self):
+        nodes = METADATA["resolve"]["nodes"]
+        valid_nodes = [
+            {**nodes[0], "deps": [{"name": "b", "pkg": "pkg-b", "dep_kinds": []}]},
+            {**nodes[1], "deps": []},
+        ]
+        good = {**METADATA, "format_version": 1, "resolve": {"root": "pkg-a", "nodes": valid_nodes}}
+        self.assertEqual(len(generate(good, COMMIT, 0)["packages"]), 2)
+        cases = (
+            ("absent detail", {**good, "resolve": {"root": "pkg-a", "nodes": nodes}}, "missing detailed"),
+            ("unknown root", {**good, "resolve": {"root": "unknown", "nodes": valid_nodes}}, "invalid resolve root"),
+            ("external root", {**good, "resolve": {"root": "pkg-b", "nodes": valid_nodes}}, "invalid resolve root"),
+            ("invalid format", {**good, "format_version": 2}, "unsupported"),
+        )
+        for label, invalid, error in cases:
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(ValueError, error):
+                    generate(invalid, COMMIT, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
