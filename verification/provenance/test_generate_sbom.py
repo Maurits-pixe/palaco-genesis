@@ -12,7 +12,7 @@ METADATA = {
         {"id": "pkg-a", "name": "a", "version": "0.1.0", "license": "MIT"},
     ],
     "workspace_members": ["pkg-a"],
-    "resolve": {"nodes": [{"id": "pkg-a", "dependencies": ["pkg-b"]}]},
+    "resolve": {"nodes": [{"id": "pkg-a", "dependencies": ["pkg-b"]}, {"id": "pkg-b", "dependencies": []}]},
 }
 
 
@@ -33,8 +33,8 @@ class SbomTests(unittest.TestCase):
     def test_unresolved_cargo_references_fail_closed(self):
         cases = (
             ("workspace member", {**METADATA, "workspace_members": ["pkg-a", "pkg-unknown"]}),
-            ("resolve node", {**METADATA, "resolve": {"nodes": [{"id": "pkg-unknown", "dependencies": []}]}}),
-            ("dependency", {**METADATA, "resolve": {"nodes": [{"id": "pkg-a", "dependencies": ["pkg-unknown"]}]}}),
+            ("resolve node", {**METADATA, "resolve": {"nodes": METADATA["resolve"]["nodes"] + [{"id": "pkg-unknown", "dependencies": []}]}}),
+            ("dependency", {**METADATA, "resolve": {"nodes": [{"id": "pkg-a", "dependencies": ["pkg-unknown"]}, METADATA["resolve"]["nodes"][1]]}}),
         )
         for label, metadata in cases:
             with self.subTest(label=label):
@@ -54,6 +54,21 @@ class SbomTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "resolve"):
                     generate(metadata, COMMIT, 0)
 
+    def test_incomplete_or_malformed_resolve_graph_fails_closed(self):
+        good_nodes = METADATA["resolve"]["nodes"]
+        cases = (
+            ("package omitted", [good_nodes[0]], "missing from resolve"),
+            ("duplicate node", good_nodes + [good_nodes[0]], "duplicate resolve"),
+            ("non-object node", good_nodes + [None], "malformed resolve"),
+            ("missing dependencies", [{"id": "pkg-a"}, good_nodes[1]], "malformed dependencies"),
+            ("null dependencies", [{"id": "pkg-a", "dependencies": None}, good_nodes[1]], "malformed dependencies"),
+            ("non-string dependency", [{"id": "pkg-a", "dependencies": [None]}, good_nodes[1]], "malformed dependencies"),
+        )
+        for label, nodes, error in cases:
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(ValueError, error):
+                    generate({**METADATA, "resolve": {"nodes": nodes}}, COMMIT, 0)
+
     def test_missing_or_duplicate_input_fails_closed(self):
         with self.assertRaises(ValueError):
             generate({"packages": []}, COMMIT, 0)
@@ -65,3 +80,4 @@ class SbomTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
