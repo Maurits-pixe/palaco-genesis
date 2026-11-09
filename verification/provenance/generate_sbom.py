@@ -75,6 +75,22 @@ def generate(metadata, commit, epoch):
         dependencies = node.get("dependencies")
         if not isinstance(dependencies, list) or any(not isinstance(dep, str) for dep in dependencies):
             raise ValueError("malformed dependencies for resolve node: " + node_id)
+        if len(dependencies) != len(set(dependencies)):
+            raise ValueError("duplicate dependencies for resolve node: " + node_id)
+        # Cargo metadata exposes both flattened package IDs and detailed
+        # dependency records. Compare them when detailed records are present;
+        # otherwise a forged flattened list could silently alter the SBOM.
+        if "deps" in node:
+            details = node["deps"]
+            if not isinstance(details, list) or any(
+                not isinstance(item, dict) or not isinstance(item.get("pkg"), str)
+                or not isinstance(item.get("name"), str) or not item["name"]
+                or not isinstance(item.get("dep_kinds"), list)
+                for item in details
+            ):
+                raise ValueError("malformed detailed dependencies for resolve node: " + node_id)
+            if set(dependencies) != {item["pkg"] for item in details}:
+                raise ValueError("dependency records disagree for resolve node: " + node_id)
         for dependency in dependencies:
             if dependency not in references:
                 raise ValueError("unknown dependency ID: " + dependency + " from " + node_id)
