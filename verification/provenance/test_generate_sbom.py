@@ -77,6 +77,28 @@ class SbomTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             generate(METADATA, "not-a-sha", 0)
 
+    def test_detailed_dependency_records_are_consistent(self):
+        nodes = METADATA["resolve"]["nodes"]
+        detailed = [
+            {**nodes[0], "deps": [{"name": "alias_b", "pkg": "pkg-b", "dep_kinds": []}]},
+            {**nodes[1], "deps": []},
+        ]
+        self.assertEqual(canonical(generate(METADATA, COMMIT, 0)), canonical(generate(
+            {**METADATA, "resolve": {"nodes": detailed}}, COMMIT, 0
+        )))
+        cases = (
+            ("missing detail", [{**detailed[0], "deps": []}, detailed[1]], "disagree"),
+            ("unexpected detail", [{**detailed[0], "deps": detailed[0]["deps"] + [{"name": "self", "pkg": "pkg-a", "dep_kinds": []}]}, detailed[1]], "disagree"),
+            ("null detail", [{**detailed[0], "deps": None}, detailed[1]], "malformed detailed"),
+            ("bad package id", [{**detailed[0], "deps": [{"name": "b", "pkg": None, "dep_kinds": []}]}, detailed[1]], "malformed detailed"),
+            ("bad dep kinds", [{**detailed[0], "deps": [{"name": "b", "pkg": "pkg-b", "dep_kinds": None}]}, detailed[1]], "malformed detailed"),
+            ("duplicate flat edge", [{**detailed[0], "dependencies": ["pkg-b", "pkg-b"]}, detailed[1]], "duplicate dependencies"),
+        )
+        for label, invalid_nodes, error in cases:
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(ValueError, error):
+                    generate({**METADATA, "resolve": {"nodes": invalid_nodes}}, COMMIT, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
