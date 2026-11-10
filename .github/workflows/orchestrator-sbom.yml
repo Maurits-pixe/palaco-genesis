@@ -37,6 +37,19 @@ jobs:
           python3 verification/provenance/verify_local_archive.py \
             --output-dir "$RUNNER_TEMP/palaco-sbom" \
             --commit "$GITHUB_SHA"
+      - name: Publish non-authoritative review identities
+        shell: bash
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          {
+            echo '### Unsigned SBOM evidence — review identities'
+            echo
+            echo "- Workflow checkout / evidence commit: \`$GITHUB_SHA\`"
+            echo "- Pull request head commit: \`${PR_HEAD_SHA:-not-a-pull-request}\`"
+            echo '- Artifact digest: obtain separately from the trusted GitHub Actions artifact listing after upload.'
+            echo '- Status: **unsigned evidence only; GO-13 HOLD; no release authority**.'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload unsigned evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
