@@ -8,7 +8,7 @@ Decision: **GO-13 HOLD**, release and authority **DENY**.
 - Baseline: `6ca294d2f6361a60b353e7bdf335886c5c616fd3` (the recorded #229 base, not an assertion about current `main`).
 - Tip: PR #249 head `4e90767465292396fd49deb507450fba4d3b2c49`.
 - GitHub compare: `ahead`, **51** commits ahead, **0** behind; merge base equals the stated baseline.
-- Compare enumerates **13** changed files: one workflow, four review/guide Markdown documents, three implementation scripts, four unit-test scripts and one end-to-end test script.
+- Compare enumerates **13** changed files: one workflow, four review/guide Markdown documents, four implementation scripts, three unit-test scripts and one end-to-end test script.
 - `.github/workflows/orchestrator-sbom.yml` is new, with 59 added lines and no deletion. The only existing file modified within this comparison is `verification/provenance/README.md` (105 additions, 2 deletions); other 12 files are added.
 
 ## Workflow and implementation inspection
