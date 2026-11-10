@@ -27,6 +27,31 @@ def sample():
 
 
 class VerifyEvidenceTests(unittest.TestCase):
+    def test_wrong_top_level_and_malformed_spdx_structures_rejected(self):
+        sbom, evidence, metadata = sample()
+        cases = (
+            ("array document", b"[]", evidence, "JSON objects"),
+            ("array evidence", sbom, b"[]", "JSON objects"),
+            ("invalid commit", sbom, evidence, "expected commit"),
+        )
+        for label, document_bytes, evidence_bytes, error in cases:
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(ValueError, error):
+                    verify(document_bytes, evidence_bytes, None if label == "invalid commit" else COMMIT, metadata)
+
+        for label, change, error in (
+            ("bad package", {"packages": [None]}, "malformed SPDX package"),
+            ("bad relationships", {"relationships": None}, "malformed SPDX relationships"),
+            ("bad relationship item", {"relationships": [None]}, "malformed SPDX relationships"),
+        ):
+            with self.subTest(label=label):
+                modified = {**json.loads(sbom), **change}
+                modified_sbom = canonical(modified)
+                manifest = json.loads(evidence)
+                manifest["sbom_sha256"] = hashlib.sha256(modified_sbom).hexdigest()
+                with self.assertRaisesRegex(ValueError, error):
+                    verify(modified_sbom, canonical(manifest), COMMIT, metadata)
+
     def test_valid_unsigned_candidate(self):
         sbom, evidence, metadata = sample()
         self.assertTrue(verify(sbom, evidence, COMMIT, metadata))
