@@ -12,6 +12,19 @@ def canonical(value):
     return (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n").encode()
 
 
+def strict_json_loads(data):
+    """Reject ambiguous JSON keys at every nesting level."""
+    def unique_pairs(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate JSON key: " + key)
+            result[key] = value
+        return result
+
+    return json.loads(data, object_pairs_hook=unique_pairs)
+
+
 def license_expression(value):
     if not value:
         return "NOASSERTION"
@@ -126,7 +139,7 @@ def main():
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
     metadata_bytes = args.metadata.read_bytes()
-    document = generate(json.loads(metadata_bytes), args.commit, args.source_epoch)
+    document = generate(strict_json_loads(metadata_bytes), args.commit, args.source_epoch)
     output = canonical(document)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     (args.output_dir / "sbom.spdx.json").write_bytes(output)
