@@ -1,6 +1,8 @@
 """Regression tests for deterministic SBOM generation."""
 
 import unittest
+import os
+import stat
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -38,16 +40,34 @@ class SbomTests(unittest.TestCase):
             # Simulate a file that changes after path resolution: the opened
             # descriptor, not a separately statted pathname, is authoritative.
             with patch("generate_sbom.MAX_METADATA_BYTES", 8):
-                with patch("generate_sbom.os.fstat", return_value=SimpleNamespace(st_size=9)) as fstat:
+                with patch("generate_sbom.os.fstat", return_value=SimpleNamespace(st_size=9, st_mode=stat.S_IFREG)) as fstat:
                     with self.assertRaisesRegex(ValueError, "oversized Cargo metadata"):
                         read_bounded_metadata(path)
                     fstat.assert_called_once()
                 # A file that grows after fstat must still be rejected by
                 # the bounded limit-plus-one read.
                 path.write_bytes(b"123456789")
-                with patch("generate_sbom.os.fstat", return_value=SimpleNamespace(st_size=7)):
+                with patch("generate_sbom.os.fstat", return_value=SimpleNamespace(st_size=7, st_mode=stat.S_IFREG)):
                     with self.assertRaisesRegex(ValueError, "oversized Cargo metadata"):
                         read_bounded_metadata(path)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo") and hasattr(os, "O_NONBLOCK"), "POSIX FIFO required")
+    def test_cargo_metadata_rejects_fifo_without_blocking(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "metadata.fifo"
+            os.mkfifo(path)
+            with self.assertRaisesRegex(ValueError, "regular file"):
+                read_bounded_metadata(path)
+
+    @unittest.skipUnless(hasattr(os, "O_NOFOLLOW"), "nofollow required")
+    def test_cargo_metadata_rejects_symlink(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "metadata.json"
+            target = Path(directory) / "target.json"
+            target.write_bytes(b"{}")
+            path.symlink_to(target)
+            with self.assertRaises(OSError):
+                read_bounded_metadata(path)
 
     def test_non_finite_json_values_rejected(self):
         for literal in (b"NaN", b"Infinity", b"-Infinity"):

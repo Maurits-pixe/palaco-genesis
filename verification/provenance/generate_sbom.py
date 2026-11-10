@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,13 +14,22 @@ MAX_METADATA_BYTES = 20 * 1024 * 1024
 
 
 def read_bounded_metadata(path):
-    """Bound Cargo input using the size of the opened file descriptor."""
-    with path.open("rb") as source:
-        # The path can be replaced between stat() and open(); bind the
-        # pre-read check to the descriptor that will actually be read.
-        if os.fstat(source.fileno()).st_size > MAX_METADATA_BYTES:
+    """Read only a regular Cargo metadata file within the byte limit."""
+    # O_NONBLOCK avoids waiting at open() on POSIX FIFOs; O_NOFOLLOW rejects
+    # a final-component symlink where the platform supports it.
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+    flags |= getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError("Cargo metadata must be a regular file")
+        if info.st_size > MAX_METADATA_BYTES:
             raise ValueError("oversized Cargo metadata")
-        content = source.read(MAX_METADATA_BYTES + 1)
+        with os.fdopen(fd, "rb", closefd=False) as source:
+            content = source.read(MAX_METADATA_BYTES + 1)
+    finally:
+        os.close(fd)
     if len(content) > MAX_METADATA_BYTES:
         raise ValueError("oversized Cargo metadata")
     return content
