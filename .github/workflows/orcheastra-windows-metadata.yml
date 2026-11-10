@@ -1,0 +1,28 @@
+name: ORCHEASTRA Windows metadata regression
+
+on:
+  pull_request:
+    paths:
+      - "verification/provenance/generate_sbom.py"
+      - "verification/provenance/test_generate_sbom.py"
+      - ".github/workflows/orcheastra-windows-metadata.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-metadata:
+    name: Windows metadata path and descriptor checks
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run metadata regression suite on native Windows
+        shell: pwsh
+        run: python -m unittest discover -s verification/provenance -p test_generate_sbom.py -v
