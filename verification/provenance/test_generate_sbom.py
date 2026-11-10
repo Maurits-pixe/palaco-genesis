@@ -69,6 +69,13 @@ class SbomTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 read_bounded_metadata(path)
 
+    def test_cargo_metadata_regular_file_accepted_without_nofollow(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "metadata.json"
+            path.write_bytes(b"{}")
+            with patch("generate_sbom.os.O_NOFOLLOW", 0, create=True):
+                self.assertEqual(read_bounded_metadata(path), b"{}")
+
     def test_cargo_metadata_symlink_rejected_without_nofollow(self):
         with TemporaryDirectory() as directory:
             path = Path(directory) / "metadata.json"
