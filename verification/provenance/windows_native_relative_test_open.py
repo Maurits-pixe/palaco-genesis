@@ -62,7 +62,7 @@ _NT_CREATE.restype = ctypes.c_long
 
 _READ = 0x80000000
 _SYNCHRONIZE = 0x00100000
-_SHARE = 0x1 | 0x4
+_SHARE = 0x1 | 0x2 | 0x4  # test-only: allow concurrent replacement to exercise race gates
 _EXISTING = 3
 _OPEN_REPARSE = 0x00200000
 _BACKUP = 0x02000000
