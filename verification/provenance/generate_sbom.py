@@ -43,13 +43,20 @@ def generate(metadata, commit, epoch):
         raise ValueError("cargo metadata must be an object")
     if "format_version" in metadata and metadata["format_version"] != 1:
         raise ValueError("unsupported cargo metadata format_version")
-    if len(commit) != 40 or any(character not in "0123456789abcdef" for character in commit):
+    if not isinstance(commit, str) or len(commit) != 40 or any(character not in "0123456789abcdef" for character in commit):
         raise ValueError("commit must be a 40-character lowercase Git SHA")
-    if epoch < 0:
-        raise ValueError("source epoch must be nonnegative")
+    if type(epoch) is not int or epoch < 0:
+        raise ValueError("source epoch must be a nonnegative integer")
     packages = metadata.get("packages")
     if not isinstance(packages, list) or not packages:
         raise ValueError("cargo metadata must include packages")
+    if any(
+        not isinstance(package, dict)
+        or any(not isinstance(package.get(key), str) or not package[key] for key in ("id", "name", "version"))
+        or (package.get("license") is not None and not isinstance(package["license"], str))
+        for package in packages
+    ):
+        raise ValueError("malformed cargo package record")
     ids = [package["id"] for package in packages]
     if len(ids) != len(set(ids)):
         raise ValueError("duplicate package IDs")
@@ -68,7 +75,11 @@ def generate(metadata, commit, epoch):
         })
     # Cargo metadata must be internally complete. Missing links would make
     # the generated evidence look valid while omitting real dependencies.
-    workspace_members = metadata.get("workspace_members", [])
+    workspace_members = metadata.get("workspace_members")
+    if not isinstance(workspace_members, list) or any(not isinstance(item, str) for item in workspace_members):
+        raise ValueError("malformed workspace members")
+    if len(workspace_members) != len(set(workspace_members)):
+        raise ValueError("duplicate workspace members")
     unknown_members = set(workspace_members) - references.keys()
     if unknown_members:
         raise ValueError("unknown workspace member IDs: " + ", ".join(sorted(unknown_members)))
