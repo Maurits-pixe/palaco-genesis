@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,10 +13,12 @@ MAX_METADATA_BYTES = 20 * 1024 * 1024
 
 
 def read_bounded_metadata(path):
-    """Reject oversized Cargo input before allocating or parsing it."""
-    if path.stat().st_size > MAX_METADATA_BYTES:
-        raise ValueError("oversized Cargo metadata")
+    """Bound Cargo input using the size of the opened file descriptor."""
     with path.open("rb") as source:
+        # The path can be replaced between stat() and open(); bind the
+        # pre-read check to the descriptor that will actually be read.
+        if os.fstat(source.fileno()).st_size > MAX_METADATA_BYTES:
+            raise ValueError("oversized Cargo metadata")
         content = source.read(MAX_METADATA_BYTES + 1)
     if len(content) > MAX_METADATA_BYTES:
         raise ValueError("oversized Cargo metadata")
