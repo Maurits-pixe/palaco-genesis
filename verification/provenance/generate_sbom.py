@@ -18,12 +18,21 @@ def read_bounded_metadata(path):
     # O_NONBLOCK avoids waiting at open() on POSIX FIFOs; O_NOFOLLOW rejects
     # a final-component symlink where the platform supports it.
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
-    flags |= getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    flags |= getattr(os, "O_NONBLOCK", 0) | nofollow
     fd = os.open(path, flags)
     try:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode):
             raise ValueError("Cargo metadata must be a regular file")
+        if not nofollow:
+            # When O_NOFOLLOW is unavailable, reject a final symlink and
+            # pathname replacement by comparing the opened descriptor with
+            # a non-following pathname stat. Fail closed if either differs.
+            path_info = os.stat(path, follow_symlinks=False)
+            if (not stat.S_ISREG(path_info.st_mode)
+                    or (path_info.st_dev, path_info.st_ino) != (info.st_dev, info.st_ino)):
+                raise ValueError("Cargo metadata path does not match opened regular file")
         if info.st_size > MAX_METADATA_BYTES:
             raise ValueError("oversized Cargo metadata")
         with os.fdopen(fd, "rb", closefd=False) as source:
