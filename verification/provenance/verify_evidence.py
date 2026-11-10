@@ -10,12 +10,12 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from generate_sbom import canonical, generate
+from generate_sbom import canonical, generate, strict_json_loads
 
 
 def verify(sbom_bytes, evidence_bytes, expected_commit, metadata_bytes):
-    document = json.loads(sbom_bytes)
-    evidence = json.loads(evidence_bytes)
+    document = strict_json_loads(sbom_bytes)
+    evidence = strict_json_loads(evidence_bytes)
     if evidence.get("schema") != "palaco-unsigned-sbom-evidence-v0.1":
         raise ValueError("unknown evidence schema")
     if evidence.get("commit") != expected_commit:
@@ -43,7 +43,7 @@ def verify(sbom_bytes, evidence_bytes, expected_commit, metadata_bytes):
     try:
         created = document["creationInfo"]["created"]
         parsed = datetime.strptime(created, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-        reconstructed = generate(json.loads(metadata_bytes), expected_commit, int(parsed.timestamp()))
+        reconstructed = generate(strict_json_loads(metadata_bytes), expected_commit, int(parsed.timestamp()))
     except (KeyError, TypeError, ValueError, OverflowError) as error:
         raise ValueError("invalid source metadata or SPDX creation timestamp") from error
     if canonical(reconstructed) != canonical(document):
@@ -67,3 +67,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
