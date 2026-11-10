@@ -19,6 +19,17 @@ MAX_FILE_BYTES = 20 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
 
 
+def read_bounded_archive(path):
+    """Bound file size before allocating bytes for offline verification."""
+    if path.stat().st_size > MAX_ARCHIVE_BYTES:
+        raise ValueError("invalid or oversized archive")
+    with path.open("rb") as source:
+        data = source.read(MAX_ARCHIVE_BYTES + 1)
+    if len(data) > MAX_ARCHIVE_BYTES:
+        raise ValueError("invalid or oversized archive")
+    return data
+
+
 def verify_artifact(archive_bytes, expected_archive_sha256, expected_commit):
     if not isinstance(expected_archive_sha256, str) or re.fullmatch(r"[0-9a-fA-F]{64}", expected_archive_sha256) is None:
         raise ValueError("expected archive SHA-256 required")
@@ -53,7 +64,7 @@ def main():
     parser.add_argument("--archive-sha256", required=True)
     parser.add_argument("--commit", required=True)
     args = parser.parse_args()
-    verify_artifact(args.artifact.read_bytes(), args.archive_sha256, args.commit)
+    verify_artifact(read_bounded_archive(args.artifact), args.archive_sha256, args.commit)
     print("Unsigned SBOM artifact: integrity and reconstruction checks PASS (not an attestation)")
 
 
