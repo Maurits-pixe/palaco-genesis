@@ -1,8 +1,11 @@
 """Regression tests for deterministic SBOM generation."""
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
-from generate_sbom import canonical, generate, license_expression, strict_json_loads
+from generate_sbom import canonical, generate, license_expression, read_bounded_metadata, strict_json_loads
 
 
 COMMIT = "a" * 40
@@ -17,6 +20,16 @@ METADATA = {
 
 
 class SbomTests(unittest.TestCase):
+    def test_cargo_metadata_disk_read_is_bounded(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "metadata.json"
+            path.write_bytes(b"12345678")
+            with patch("generate_sbom.MAX_METADATA_BYTES", 8):
+                self.assertEqual(read_bounded_metadata(path), b"12345678")
+            with patch("generate_sbom.MAX_METADATA_BYTES", 7):
+                with self.assertRaisesRegex(ValueError, "oversized Cargo metadata"):
+                    read_bounded_metadata(path)
+
     def test_non_finite_json_values_rejected(self):
         for literal in (b"NaN", b"Infinity", b"-Infinity"):
             with self.subTest(value=literal):
