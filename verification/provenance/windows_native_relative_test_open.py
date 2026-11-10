@@ -136,11 +136,15 @@ def read_fixture_metadata_relative(fixture, name):
         if fd == -1:
             raise OSError("could not transfer test child handle")
         child_handle = None
+        # open_osfhandle transfers the native HANDLE to the CRT descriptor.
+        # If fdopen fails before taking ownership, explicitly close that fd.
         try:
-            with os.fdopen(fd, "rb") as reader:
-                data = reader.read(_MAX_BYTES + 1)
+            reader = os.fdopen(fd, "rb")
         except BaseException:
+            os.close(fd)
             raise
+        with reader:
+            data = reader.read(_MAX_BYTES + 1)
         if len(data) > _MAX_BYTES:
             raise ValueError("oversized test metadata")
         return data
