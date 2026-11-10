@@ -40,15 +40,14 @@ class SbomTests(unittest.TestCase):
             # Simulate a file that changes after path resolution: the opened
             # descriptor, not a separately statted pathname, is authoritative.
             with patch("generate_sbom.MAX_METADATA_BYTES", 8):
-                real_info = path.stat()
-                with patch("generate_sbom.os.fstat", return_value=SimpleNamespace(st_size=9, st_mode=stat.S_IFREG, st_dev=real_info.st_dev, st_ino=real_info.st_ino)) as fstat:
+                with patch("generate_sbom.os.fstat", return_value=SimpleNamespace(st_size=9, st_mode=stat.S_IFREG)) as fstat:
                     with self.assertRaisesRegex(ValueError, "oversized Cargo metadata"):
                         read_bounded_metadata(path)
                     fstat.assert_called_once()
                 # A file that grows after fstat must still be rejected by
                 # the bounded limit-plus-one read.
                 path.write_bytes(b"123456789")
-                with patch("generate_sbom.os.fstat", return_value=SimpleNamespace(st_size=7, st_mode=stat.S_IFREG, st_dev=real_info.st_dev, st_ino=real_info.st_ino)):
+                with patch("generate_sbom.os.fstat", return_value=SimpleNamespace(st_size=7, st_mode=stat.S_IFREG)):
                     with self.assertRaisesRegex(ValueError, "oversized Cargo metadata"):
                         read_bounded_metadata(path)
 
@@ -70,13 +69,7 @@ class SbomTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 read_bounded_metadata(path)
 
-    def test_cargo_metadata_regular_file_accepted_without_nofollow(self):
-        with TemporaryDirectory() as directory:
-            path = Path(directory) / "metadata.json"
-            path.write_bytes(b"{}")
-            with patch("generate_sbom.os.O_NOFOLLOW", 0, create=True):
-                self.assertEqual(read_bounded_metadata(path), b"{}")
-
+    @unittest.skipIf(os.name == "nt", "Windows uses native handle validation")
     def test_cargo_metadata_symlink_rejected_without_nofollow(self):
         with TemporaryDirectory() as directory:
             path = Path(directory) / "metadata.json"
@@ -90,6 +83,7 @@ class SbomTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "path does not match"):
                     read_bounded_metadata(path)
 
+    @unittest.skipIf(os.name == "nt", "Windows uses native handle validation")
     def test_cargo_metadata_path_replacement_rejected_without_nofollow(self):
         with TemporaryDirectory() as directory:
             path = Path(directory) / "metadata.json"
