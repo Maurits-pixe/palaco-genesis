@@ -4,7 +4,9 @@ on:
   pull_request:
     paths:
       - "verification/provenance/generate_sbom.py"
+      - "verification/provenance/windows_metadata.py"
       - "verification/provenance/test_generate_sbom.py"
+      - "verification/provenance/test_windows_metadata.py"
       - ".github/workflows/orcheastra-windows-metadata.yml"
   workflow_dispatch:
 
@@ -13,7 +15,7 @@ permissions:
 
 jobs:
   windows-metadata:
-    name: Windows metadata path and descriptor checks
+    name: Windows native handle and descriptor checks
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
@@ -25,4 +27,8 @@ jobs:
           python-version: "3.12"
       - name: Run metadata regression suite on native Windows
         shell: pwsh
-        run: python -m unittest discover -s verification/provenance -p test_generate_sbom.py -v
+        run: |
+          python -m unittest discover -s verification/provenance -p test_generate_sbom.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s verification/provenance -p test_windows_metadata.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
