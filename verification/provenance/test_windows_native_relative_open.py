@@ -49,6 +49,39 @@ class WindowsNativeRelativeFixtureTests(unittest.TestCase):
                     self.assertEqual(observed, [(expected_bytes,
                                                  expected_bytes + 2)])
 
+    def test_fdopen_failure_closes_transferred_descriptor_once(self):
+        # A successful open_osfhandle has transferred the NT HANDLE to CRT fd.
+        # fdopen must either own that fd or the caller must close it.
+        with BuildRootTestAdapter() as fixture:
+            import windows_native_relative_test_open as native
+
+            (fixture.root / "meta.json").write_bytes(b"ORIGINAL")
+            original_os_close = os.close
+            with mock.patch.object(native.os, "fdopen",
+                                   side_effect=OSError("injected fdopen failure")):
+                with mock.patch.object(native.os, "close",
+                                       wraps=original_os_close) as close_spy:
+                    with self.assertRaisesRegex(OSError, "injected fdopen failure"):
+                        read_fixture_metadata_relative(fixture, "meta.json")
+                    self.assertEqual(close_spy.call_count, 1)
+            # Root/child native HANDLE lifetime was also released on failure.
+            self.assertEqual(read_fixture_metadata_relative(fixture, "meta.json"),
+                             b"ORIGINAL")
+
+    def test_oversized_read_closes_owned_descriptor(self):
+        with BuildRootTestAdapter() as fixture:
+            import windows_native_relative_test_open as native
+
+            path = fixture.root / "meta.json"
+            path.write_bytes(b"FOUR")
+            with mock.patch.object(native, "_MAX_BYTES", 3):
+                with self.assertRaisesRegex(ValueError, "oversized"):
+                    read_fixture_metadata_relative(fixture, "meta.json")
+            # Context manager closed the CRT descriptor before propagating.
+            path.write_bytes(b"NEXT")
+            self.assertEqual(read_fixture_metadata_relative(fixture, "meta.json"),
+                             b"NEXT")
+
     def test_reject_parent_and_absolute_path_before_open(self):
         with BuildRootTestAdapter() as fixture:
             for name in (r"..\\outside.json", "../outside.json", r"C:\\outside.json",
