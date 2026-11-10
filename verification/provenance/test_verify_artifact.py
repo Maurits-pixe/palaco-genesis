@@ -5,9 +5,11 @@ import io
 import unittest
 import warnings
 import zipfile
+import tempfile
+from pathlib import Path
 
 from generate_sbom import canonical, generate
-from verify_artifact import MAX_ARCHIVE_BYTES, verify_artifact
+from verify_artifact import MAX_ARCHIVE_BYTES, read_bounded_archive, verify_artifact
 
 
 COMMIT = "d" * 40
@@ -80,6 +82,18 @@ class ArtifactTests(unittest.TestCase):
         data = b"x" * (MAX_ARCHIVE_BYTES + 1)
         with self.assertRaisesRegex(ValueError, "invalid or oversized archive"):
             verify_artifact(data, hashlib.sha256(data).hexdigest(), COMMIT)
+
+    def test_oversized_disk_artifact_rejected_before_full_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "large.zip"
+            with path.open("wb") as output:
+                output.seek(MAX_ARCHIVE_BYTES)
+                output.write(b"x")
+            with self.assertRaisesRegex(ValueError, "invalid or oversized archive"):
+                read_bounded_archive(path)
+            valid = archive_bytes()
+            path.write_bytes(valid)
+            self.assertEqual(read_bounded_archive(path), valid)
 
 
 if __name__ == "__main__":
