@@ -25,6 +25,22 @@ class SbomTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Out of range"):
             canonical({"value": float("nan")})
 
+    def test_malformed_package_and_identity_inputs_fail_closed(self):
+        cases = (
+            ("null commit", METADATA, None, 0, "commit"),
+            ("boolean epoch", METADATA, COMMIT, True, "source epoch"),
+            ("negative epoch", METADATA, COMMIT, -1, "source epoch"),
+            ("null package", {**METADATA, "packages": [None]}, COMMIT, 0, "malformed cargo package"),
+            ("missing version", {**METADATA, "packages": [{"id": "pkg-a", "name": "a"}]}, COMMIT, 0, "malformed cargo package"),
+            ("invalid license", {**METADATA, "packages": [{"id": "pkg-a", "name": "a", "version": "1", "license": []}]}, COMMIT, 0, "malformed cargo package"),
+            ("missing members", {key: value for key, value in METADATA.items() if key != "workspace_members"}, COMMIT, 0, "workspace members"),
+            ("duplicate members", {**METADATA, "workspace_members": ["pkg-a", "pkg-a"]}, COMMIT, 0, "duplicate workspace members"),
+        )
+        for label, metadata, commit, epoch, error in cases:
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(ValueError, error):
+                    generate(metadata, commit, epoch)
+
     def test_legacy_cargo_license_choice_is_spdx_expression(self):
         self.assertEqual(license_expression("MIT/Apache-2.0"), "MIT OR Apache-2.0")
         self.assertEqual(license_expression("Apache-2.0"), "Apache-2.0")
