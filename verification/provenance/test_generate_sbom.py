@@ -116,6 +116,10 @@ class SbomTests(unittest.TestCase):
             ("null detail", [{**detailed[0], "deps": None}, detailed[1]], "malformed detailed"),
             ("bad package id", [{**detailed[0], "deps": [{"name": "b", "pkg": None, "dep_kinds": []}]}, detailed[1]], "malformed detailed"),
             ("bad dep kinds", [{**detailed[0], "deps": [{"name": "b", "pkg": "pkg-b", "dep_kinds": None}]}, detailed[1]], "malformed detailed"),
+            ("bad dep kind element", [{**detailed[0], "deps": [{"name": "b", "pkg": "pkg-b", "dep_kinds": ["dev"]}]}, detailed[1]], "malformed detailed"),
+            ("missing dep kind target", [{**detailed[0], "deps": [{"name": "b", "pkg": "pkg-b", "dep_kinds": [{"kind": "dev"}]}]}, detailed[1]], "malformed detailed"),
+            ("bad dep kind value", [{**detailed[0], "deps": [{"name": "b", "pkg": "pkg-b", "dep_kinds": [{"kind": "unknown", "target": None}]}]}, detailed[1]], "malformed detailed"),
+            ("bad target type", [{**detailed[0], "deps": [{"name": "b", "pkg": "pkg-b", "dep_kinds": [{"kind": None, "target": 1}]}]}, detailed[1]], "malformed detailed"),
             ("duplicate flat edge", [{**detailed[0], "dependencies": ["pkg-b", "pkg-b"]}, detailed[1]], "duplicate dependencies"),
         )
         for label, invalid_nodes, error in cases:

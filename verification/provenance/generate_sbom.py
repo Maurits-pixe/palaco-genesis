@@ -122,6 +122,13 @@ def generate(metadata, commit, epoch):
                 not isinstance(item, dict) or not isinstance(item.get("pkg"), str)
                 or not isinstance(item.get("name"), str) or not item["name"]
                 or not isinstance(item.get("dep_kinds"), list)
+                or any(
+                    not isinstance(kind, dict)
+                    or "kind" not in kind or "target" not in kind
+                    or kind.get("kind") not in (None, "dev", "build", "normal")
+                    or (kind.get("target") is not None and not isinstance(kind["target"], str))
+                    for kind in item["dep_kinds"]
+                )
                 for item in details
             ):
                 raise ValueError("malformed detailed dependencies for resolve node: " + node_id)
