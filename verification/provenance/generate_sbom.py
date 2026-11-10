@@ -15,12 +15,21 @@ MAX_METADATA_BYTES = 20 * 1024 * 1024
 
 def read_bounded_metadata(path):
     """Read only a regular Cargo metadata file within the byte limit."""
+    if os.name == "nt":
+        from windows_metadata import open_regular_file
+        fd = open_regular_file(path)
+        return _read_bounded_fd(fd)
     # O_NONBLOCK avoids waiting at open() on POSIX FIFOs; O_NOFOLLOW rejects
     # a final-component symlink where the platform supports it.
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
     nofollow = getattr(os, "O_NOFOLLOW", 0)
     flags |= getattr(os, "O_NONBLOCK", 0) | nofollow
     fd = os.open(path, flags)
+    return _read_bounded_fd(fd, path=path, nofollow=nofollow)
+
+
+def _read_bounded_fd(fd, path=None, nofollow=0):
+    """Read and close a single checked descriptor, with a strict byte cap."""
     try:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode):
