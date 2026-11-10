@@ -34,7 +34,7 @@ def _read_bounded_fd(fd, path=None, nofollow=0):
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode):
             raise ValueError("Cargo metadata must be a regular file")
-        if not nofollow:
+        if path is not None and not nofollow:
             # When O_NOFOLLOW is unavailable, reject a final symlink and
             # pathname replacement by comparing the opened descriptor with
             # a non-following pathname stat. Fail closed if either differs.
