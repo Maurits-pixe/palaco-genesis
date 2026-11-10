@@ -8,6 +8,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+MAX_METADATA_BYTES = 20 * 1024 * 1024
+
+
+def read_bounded_metadata(path):
+    """Reject oversized Cargo input before allocating or parsing it."""
+    if path.stat().st_size > MAX_METADATA_BYTES:
+        raise ValueError("oversized Cargo metadata")
+    with path.open("rb") as source:
+        content = source.read(MAX_METADATA_BYTES + 1)
+    if len(content) > MAX_METADATA_BYTES:
+        raise ValueError("oversized Cargo metadata")
+    return content
+
+
 def canonical(value):
     return (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False) + "\n").encode()
 
@@ -159,7 +173,7 @@ def main():
     parser.add_argument("--source-epoch", type=int, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
-    metadata_bytes = args.metadata.read_bytes()
+    metadata_bytes = read_bounded_metadata(args.metadata)
     document = generate(strict_json_loads(metadata_bytes), args.commit, args.source_epoch)
     output = canonical(document)
     args.output_dir.mkdir(parents=True, exist_ok=True)
