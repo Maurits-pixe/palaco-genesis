@@ -109,9 +109,15 @@ def read_fixture_metadata_relative(fixture, name):
     child_handle = None
     try:
         _check_regular_not_reparse(root_handle, directory=True)
+        # UNICODE_STRING lengths are UTF-16 byte counts, not Python code points.
+        # Keep the mutable buffer alive until NtCreateFile has returned.
+        encoded_name = basename.encode("utf-16-le")
+        name_bytes = len(encoded_name)
+        buffer_bytes = name_bytes + 2  # terminating UTF-16 NUL
+        if buffer_bytes > 0xffff:
+            raise ValueError("metadata basename exceeds native UNICODE_STRING limit")
         buffer = ctypes.create_unicode_buffer(basename)
-        u_name = _UnicodeString(len(basename.encode("utf-16-le")),
-                                (len(basename) + 1) * 2,
+        u_name = _UnicodeString(name_bytes, buffer_bytes,
                                 ctypes.cast(buffer, wintypes.LPWSTR))
         attrs = _ObjectAttributes(ctypes.sizeof(_ObjectAttributes), root_handle,
                                   ctypes.pointer(u_name), 0, None, None)
