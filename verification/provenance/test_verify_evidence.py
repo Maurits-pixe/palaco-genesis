@@ -65,6 +65,25 @@ class VerifyEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "reconstruction"):
             verify(altered_sbom, canonical(altered_evidence), COMMIT, metadata)
 
+    def test_duplicate_json_keys_fail_closed_even_with_matching_digests(self):
+        sbom, evidence, metadata = sample()
+        duplicate_evidence = evidence.rstrip()[:-1] + b',"signed":false}'
+        with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
+            verify(sbom, duplicate_evidence, COMMIT, metadata)
+
+        duplicate_sbom = sbom.rstrip()[:-1] + b',"SPDXID":"SPDXRef-DOCUMENT"}'
+        modified_evidence = json.loads(evidence)
+        modified_evidence["sbom_sha256"] = hashlib.sha256(duplicate_sbom).hexdigest()
+        with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
+            verify(duplicate_sbom, canonical(modified_evidence), COMMIT, metadata)
+
+        duplicate_metadata = metadata.rstrip()[:-1] + b',"workspace_members":["root"]}'
+        modified_evidence = json.loads(evidence)
+        modified_evidence["metadata_sha256"] = hashlib.sha256(duplicate_metadata).hexdigest()
+        with self.assertRaisesRegex(ValueError, "invalid source metadata"):
+            verify(sbom, canonical(modified_evidence), COMMIT, duplicate_metadata)
+
 
 if __name__ == "__main__":
     unittest.main()
+
