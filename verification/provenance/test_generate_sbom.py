@@ -40,14 +40,15 @@ class SbomTests(unittest.TestCase):
             # Simulate a file that changes after path resolution: the opened
             # descriptor, not a separately statted pathname, is authoritative.
             with patch("generate_sbom.MAX_METADATA_BYTES", 8):
-                with patch("generate_sbom.os.fstat", return_value=SimpleNamespace(st_size=9, st_mode=stat.S_IFREG)) as fstat:
+                real_info = path.stat()
+                with patch("generate_sbom.os.fstat", return_value=SimpleNamespace(st_size=9, st_mode=stat.S_IFREG, st_dev=real_info.st_dev, st_ino=real_info.st_ino)) as fstat:
                     with self.assertRaisesRegex(ValueError, "oversized Cargo metadata"):
                         read_bounded_metadata(path)
                     fstat.assert_called_once()
                 # A file that grows after fstat must still be rejected by
                 # the bounded limit-plus-one read.
                 path.write_bytes(b"123456789")
-                with patch("generate_sbom.os.fstat", return_value=SimpleNamespace(st_size=7, st_mode=stat.S_IFREG)):
+                with patch("generate_sbom.os.fstat", return_value=SimpleNamespace(st_size=7, st_mode=stat.S_IFREG, st_dev=real_info.st_dev, st_ino=real_info.st_ino)):
                     with self.assertRaisesRegex(ValueError, "oversized Cargo metadata"):
                         read_bounded_metadata(path)
 
