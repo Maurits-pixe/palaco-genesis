@@ -16,6 +16,12 @@ from generate_sbom import canonical, generate, strict_json_loads
 def verify(sbom_bytes, evidence_bytes, expected_commit, metadata_bytes):
     document = strict_json_loads(sbom_bytes)
     evidence = strict_json_loads(evidence_bytes)
+    if not isinstance(document, dict) or not isinstance(evidence, dict):
+        raise ValueError("SBOM and evidence must be JSON objects")
+    if not isinstance(expected_commit, str) or len(expected_commit) != 40 or any(
+        character not in "0123456789abcdef" for character in expected_commit
+    ):
+        raise ValueError("expected commit must be a lowercase 40-character Git SHA")
     if evidence.get("schema") != "palaco-unsigned-sbom-evidence-v0.1":
         raise ValueError("unknown evidence schema")
     if evidence.get("commit") != expected_commit:
@@ -33,11 +39,22 @@ def verify(sbom_bytes, evidence_bytes, expected_commit, metadata_bytes):
     packages = document.get("packages")
     if not isinstance(packages, list) or not packages:
         raise ValueError("missing package inventory")
+    if any(not isinstance(package, dict) or not isinstance(package.get("SPDXID"), str) for package in packages):
+        raise ValueError("malformed SPDX package record")
     references = [package["SPDXID"] for package in packages]
     if len(references) != len(set(references)):
         raise ValueError("duplicate package SPDX identifiers")
     valid_references = set(references) | {"SPDXRef-DOCUMENT"}
-    for relationship in document.get("relationships", []):
+    relationships = document.get("relationships")
+    if not isinstance(relationships, list) or any(
+        not isinstance(item, dict)
+        or not isinstance(item.get("spdxElementId"), str)
+        or not isinstance(item.get("relatedSpdxElement"), str)
+        or item.get("relationshipType") not in ("DESCRIBES", "DEPENDS_ON")
+        for item in relationships
+    ):
+        raise ValueError("malformed SPDX relationships")
+    for relationship in relationships:
         if relationship["spdxElementId"] not in valid_references or relationship["relatedSpdxElement"] not in valid_references:
             raise ValueError("dangling SPDX relationship")
     try:
