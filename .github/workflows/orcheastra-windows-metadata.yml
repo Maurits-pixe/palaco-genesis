@@ -14,6 +14,7 @@ on:
       - "verification/provenance/windows_native_relative_test_open.py"
       - "verification/provenance/test_windows_native_relative_open.py"
       - "verification/provenance/test_windows_native_relative_races.py"
+      - "verification/provenance/test_windows_native_content_origin.py"
       - ".github/workflows/orcheastra-windows-metadata.yml"
   workflow_dispatch:
 
@@ -46,4 +47,6 @@ jobs:
           python -m unittest discover -s verification/provenance -p test_windows_native_relative_open.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s verification/provenance -p test_windows_native_relative_races.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s verification/provenance -p test_windows_native_content_origin.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
