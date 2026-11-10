@@ -2,7 +2,7 @@
 
 import unittest
 
-from generate_sbom import canonical, generate, license_expression
+from generate_sbom import canonical, generate, license_expression, strict_json_loads
 
 
 COMMIT = "a" * 40
@@ -17,6 +17,14 @@ METADATA = {
 
 
 class SbomTests(unittest.TestCase):
+    def test_non_finite_json_values_rejected(self):
+        for literal in (b"NaN", b"Infinity", b"-Infinity"):
+            with self.subTest(value=literal):
+                with self.assertRaisesRegex(ValueError, "non-finite JSON"):
+                    strict_json_loads(b'{"nested":{"value":' + literal + b'}}')
+        with self.assertRaisesRegex(ValueError, "Out of range"):
+            canonical({"value": float("nan")})
+
     def test_legacy_cargo_license_choice_is_spdx_expression(self):
         self.assertEqual(license_expression("MIT/Apache-2.0"), "MIT OR Apache-2.0")
         self.assertEqual(license_expression("Apache-2.0"), "Apache-2.0")
