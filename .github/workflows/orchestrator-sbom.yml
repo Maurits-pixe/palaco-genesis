@@ -32,9 +32,15 @@ jobs:
             --metadata "$RUNNER_TEMP/cargo-metadata.json"
           pyspdxtools -i "$RUNNER_TEMP/palaco-sbom/sbom.spdx.json"
           cp "$RUNNER_TEMP/cargo-metadata.json" "$RUNNER_TEMP/palaco-sbom/cargo-metadata.json"
+      - name: Verify pre-upload ZIP round-trip
+        run: |
+          python3 verification/provenance/verify_local_archive.py \
+            --output-dir "$RUNNER_TEMP/palaco-sbom" \
+            --commit "$GITHUB_SHA"
       - name: Upload unsigned evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: palaco-spdx-unsigned
           path: ${{ runner.temp }}/palaco-sbom/
           if-no-files-found: error
+
