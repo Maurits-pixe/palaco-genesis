@@ -3,6 +3,7 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from generate_sbom import canonical, generate, license_expression, read_bounded_metadata, strict_json_loads
@@ -29,6 +30,24 @@ class SbomTests(unittest.TestCase):
             with patch("generate_sbom.MAX_METADATA_BYTES", 7):
                 with self.assertRaisesRegex(ValueError, "oversized Cargo metadata"):
                     read_bounded_metadata(path)
+
+    def test_cargo_metadata_checks_open_descriptor_before_read(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "metadata.json"
+            path.write_bytes(b"12345678")
+            # Simulate a file that changes after path resolution: the opened
+            # descriptor, not a separately statted pathname, is authoritative.
+            with patch("generate_sbom.MAX_METADATA_BYTES", 8):
+                with patch("generate_sbom.os.fstat", return_value=SimpleNamespace(st_size=9)) as fstat:
+                    with self.assertRaisesRegex(ValueError, "oversized Cargo metadata"):
+                        read_bounded_metadata(path)
+                    fstat.assert_called_once()
+                # A file that grows after fstat must still be rejected by
+                # the bounded limit-plus-one read.
+                path.write_bytes(b"123456789")
+                with patch("generate_sbom.os.fstat", return_value=SimpleNamespace(st_size=7)):
+                    with self.assertRaisesRegex(ValueError, "oversized Cargo metadata"):
+                        read_bounded_metadata(path)
 
     def test_non_finite_json_values_rejected(self):
         for literal in (b"NaN", b"Infinity", b"-Infinity"):
