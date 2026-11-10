@@ -12,6 +12,7 @@ from pathlib import Path
 
 from generate_sbom import canonical
 from verify_artifact import verify_artifact
+from verify_local_archive import verify_local_archive
 
 
 COMMIT = "f" * 40
@@ -64,6 +65,8 @@ class EndToEndTests(unittest.TestCase):
                 "sbom.spdx.json": (output / "sbom.spdx.json").read_bytes(),
                 "evidence.json": (output / "evidence.json").read_bytes(),
             }
+            (output / "cargo-metadata.json").write_bytes(files["cargo-metadata.json"])
+            self.assertTrue(verify_local_archive(output, COMMIT))
             archive = archive_of(files)
             self.assertTrue(verify_artifact(archive, hashlib.sha256(archive).hexdigest(), COMMIT))
 
