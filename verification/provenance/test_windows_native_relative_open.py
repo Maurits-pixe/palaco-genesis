@@ -4,6 +4,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from windows_build_root_test_adapter import BuildRootTestAdapter
@@ -19,6 +20,34 @@ class WindowsNativeRelativeFixtureTests(unittest.TestCase):
             (fixture.root / "meta.json").write_bytes(b'{"safe":true}')
             self.assertEqual(read_fixture_metadata_relative(fixture, "meta.json"),
                              b'{"safe":true}')
+
+    def test_utf16_supplementary_names_have_correct_native_lengths(self):
+        # A Python Unicode scalar outside BMP needs two UTF-16 code units.
+        with BuildRootTestAdapter() as fixture:
+            import windows_native_relative_test_open as native
+
+            for basename in ("😀.json", "🪐😀.json"):
+                with self.subTest(basename=basename):
+                    expected_bytes = len(basename.encode("utf-16-le"))
+                    (fixture.root / basename).write_bytes(b"UTF16_OK")
+                    real_nt_create = native._NT_CREATE
+                    observed = []
+
+                    def inspect_then_open(*args):
+                        attrs = args[2]._obj
+                        unicode_name = attrs.ObjectName.contents
+                        observed.append((unicode_name.Length,
+                                         unicode_name.MaximumLength))
+                        return real_nt_create(*args)
+
+                    with mock.patch.object(native, "_NT_CREATE",
+                                           side_effect=inspect_then_open):
+                        self.assertEqual(
+                            read_fixture_metadata_relative(fixture, basename),
+                            b"UTF16_OK"
+                        )
+                    self.assertEqual(observed, [(expected_bytes,
+                                                 expected_bytes + 2)])
 
     def test_reject_parent_and_absolute_path_before_open(self):
         with BuildRootTestAdapter() as fixture:
