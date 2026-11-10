@@ -83,6 +83,12 @@ class VerifyEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid source metadata"):
             verify(sbom, canonical(modified_evidence), COMMIT, duplicate_metadata)
 
+    def test_non_finite_evidence_value_rejected(self):
+        sbom, evidence, metadata = sample()
+        invalid_evidence = evidence.rstrip()[:-1] + b',"untrusted":NaN}'
+        with self.assertRaisesRegex(ValueError, "non-finite JSON"):
+            verify(sbom, invalid_evidence, COMMIT, metadata)
+
 
 if __name__ == "__main__":
     unittest.main()

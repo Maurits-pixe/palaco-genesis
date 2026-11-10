@@ -9,11 +9,14 @@ from pathlib import Path
 
 
 def canonical(value):
-    return (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n").encode()
+    return (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False) + "\n").encode()
 
 
 def strict_json_loads(data):
     """Reject ambiguous JSON keys at every nesting level."""
+    def reject_constant(value):
+        raise ValueError("non-finite JSON value: " + value)
+
     def unique_pairs(pairs):
         result = {}
         for key, value in pairs:
@@ -22,7 +25,7 @@ def strict_json_loads(data):
             result[key] = value
         return result
 
-    return json.loads(data, object_pairs_hook=unique_pairs)
+    return json.loads(data, object_pairs_hook=unique_pairs, parse_constant=reject_constant)
 
 
 def license_expression(value):
