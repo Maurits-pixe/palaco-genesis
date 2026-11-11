@@ -56,6 +56,29 @@ class PinnedSnapshotFixtureTests(unittest.TestCase):
                 with self.assertRaises(LeaseDenied):
                     verify_pinned_fixture_snapshot(self.ledger, invalid)
 
+    def test_uncommitted_caller_transaction_is_denied_without_rollback(self):
+        self.ledger.connection.execute("BEGIN IMMEDIATE")
+        try:
+            with self.assertRaises(LeaseDenied):
+                fixture_snapshot_digest(self.ledger)
+            # The verifier cannot roll back or commit a transaction it did not own.
+            self.assertTrue(self.ledger.connection.in_transaction)
+        finally:
+            self.ledger.connection.execute("ROLLBACK")
+        self.assertTrue(verify_pinned_fixture_snapshot(self.ledger, self.pinned))
+
+    def test_failed_structural_read_releases_owned_transaction(self):
+        self.ledger.connection.execute(
+            "UPDATE fixture_lease SET revision=8 WHERE lease_id='lease-A'"
+        )
+        with self.assertRaises(LeaseDenied):
+            fixture_snapshot_digest(self.ledger)
+        self.assertFalse(self.ledger.connection.in_transaction)
+        self.ledger.connection.execute(
+            "UPDATE fixture_lease SET revision=0 WHERE lease_id='lease-A'"
+        )
+        self.assertTrue(verify_pinned_fixture_snapshot(self.ledger, self.pinned))
+
     def test_reopen_preserves_snapshot_digest(self):
         self.ledger.close()
         self.ledger = TestSqliteLeaseLedger(self.path)
