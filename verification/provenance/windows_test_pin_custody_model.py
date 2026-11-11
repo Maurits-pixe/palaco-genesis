@@ -9,8 +9,8 @@ import re
 
 SCHEMA = "WNRA-04N-PIN-v0.1"
 DOMAIN = "PALACO-WNRA-04L-TEST-SNAPSHOT-v1"
-_HEX64 = re.compile(r"[0-9a-f]{64}\\Z")
-_COMMIT = re.compile(r"[0-9a-f]{40}\\Z")
+_HEX64 = re.compile(r"[0-9a-f]{64}")
+_COMMIT = re.compile(r"[0-9a-f]{40}")
 
 
 class CustodyDenied(ValueError):
