@@ -37,6 +37,8 @@ on:
       - "verification/provenance/test_windows_test_pin_custody_inread_race.py"
       - "verification/provenance/windows_test_custody_file_identity.py"
       - "verification/provenance/test_windows_test_custody_file_identity.py"
+      - "verification/provenance/windows_test_anchor_adapter.py"
+      - "verification/provenance/test_windows_test_anchor_adapter.py"
       - ".github/workflows/orcheastra-windows-metadata.yml"
   workflow_dispatch:
 
@@ -99,4 +101,6 @@ jobs:
           python -m unittest discover -s verification/provenance -p test_windows_test_pin_custody_inread_race.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s verification/provenance -p test_windows_test_custody_file_identity.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s verification/provenance -p test_windows_test_anchor_adapter.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
