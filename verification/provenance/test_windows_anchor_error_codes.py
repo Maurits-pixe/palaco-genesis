@@ -24,7 +24,7 @@ EXPECTED = {
     "unicode-literal": ("NONCANONICAL_TEST_BYTES", "NONCANONICAL_TEST_BYTES"),
     "leading-space": ("NONCANONICAL_TEST_BYTES", "INVALID_JSON_SCOPE"),
     "trailing-newline": ("NONCANONICAL_TEST_BYTES", "NONCANONICAL_TEST_BYTES"),
-    "utf8-bom": ("UTF8_BOM", "NONCANONICAL_TEST_BYTES"),
+    "utf8-bom": ("UTF8_BOM", "UTF8_BOM"),
     "invalid-utf8": ("INVALID_UTF8", "INVALID_UTF8"),
     "array-scope": ("SCHEMA_MISMATCH", "INVALID_JSON_SCOPE"),
 }
