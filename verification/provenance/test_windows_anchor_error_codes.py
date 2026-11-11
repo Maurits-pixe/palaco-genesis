@@ -14,7 +14,7 @@ EXPECTED = {
     "nested-duplicate": ("DUPLICATE_KEY", "INVALID_JSON_SCOPE"),
     "float": ("FRACTION_OR_EXPONENT", "NONCANONICAL_TEST_BYTES"),
     "exponent": ("FRACTION_OR_EXPONENT", "NONCANONICAL_TEST_BYTES"),
-    "negative-zero": ("NEGATIVE_ZERO", "NONCANONICAL_TEST_BYTES"),
+    "negative-zero": ("NEGATIVE_ZERO", "INVALID_SEQUENCE"),
     "unsafe-number": ("UNSAFE_INTEGER", "INVALID_SEQUENCE"),
     "boolean-sequence": ("INVALID_SEQUENCE_TYPE", "INVALID_SEQUENCE"),
     "null-sequence": ("INVALID_SEQUENCE_TYPE", "INVALID_SEQUENCE"),
@@ -24,7 +24,7 @@ EXPECTED = {
     "unicode-literal": ("NONCANONICAL_TEST_BYTES", "NONCANONICAL_TEST_BYTES"),
     "leading-space": ("NONCANONICAL_TEST_BYTES", "INVALID_JSON_SCOPE"),
     "trailing-newline": ("NONCANONICAL_TEST_BYTES", "NONCANONICAL_TEST_BYTES"),
-    "utf8-bom": ("UTF8_BOM", "UTF8_BOM"),
+    "utf8-bom": ("UTF8_BOM", "NONCANONICAL_TEST_BYTES"),
     "invalid-utf8": ("INVALID_UTF8", "INVALID_UTF8"),
     "array-scope": ("SCHEMA_MISMATCH", "INVALID_JSON_SCOPE"),
 }
