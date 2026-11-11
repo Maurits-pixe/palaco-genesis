@@ -181,3 +181,6 @@ test('not a general JSON decoder and no authorization', () => {
   rejected(Buffer.from('{'));
   rejected('text');
 });
+
+// WNRA-05H: test-only entry point for external exact-code comparison.
+module.exports = { parseTestRequest };
