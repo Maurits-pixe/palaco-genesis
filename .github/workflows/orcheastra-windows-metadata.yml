@@ -45,7 +45,8 @@ on:
       - "verification/provenance/windows_test_anchor_raw_bytes.py"
       - "verification/provenance/test_windows_anchor_raw_bytes.py"
 
-      - "verification/provenance/WNRA_05F_SHARED_DENY_CORPUS.json"      - "verification/provenance/test_windows_anchor_raw_bytes_node.cjs"
+      - "verification/provenance/test_windows_anchor_raw_bytes_node.cjs"
+      - "verification/provenance/WNRA_05F_SHARED_DENY_CORPUS.json"
       - ".github/workflows/orcheastra-windows-metadata.yml"
   workflow_dispatch:
 
