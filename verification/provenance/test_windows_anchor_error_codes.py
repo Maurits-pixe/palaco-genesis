@@ -40,7 +40,7 @@ const results = hexList.map(hex => {
     return error.message;
   }
 });
-process.stdout.write('WNRA05H_CODES=' + JSON.stringify(results) + '\\n');
+process.stdout.write('WNRA05H_CODES=' + JSON.stringify(results) + '\n');
 """
 
 
