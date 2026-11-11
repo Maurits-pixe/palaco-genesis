@@ -31,6 +31,7 @@ on:
       - "verification/provenance/test_windows_test_pin_custody_model.py"
       - "verification/provenance/windows_test_sqlite_pin_custody.py"
       - "verification/provenance/test_windows_test_sqlite_pin_custody.py"
+      - "verification/provenance/test_windows_test_pin_custody_process_crash.py"
       - ".github/workflows/orcheastra-windows-metadata.yml"
   workflow_dispatch:
 
@@ -83,4 +84,6 @@ jobs:
           python -m unittest discover -s verification/provenance -p test_windows_test_pin_custody_model.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s verification/provenance -p test_windows_test_sqlite_pin_custody.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s verification/provenance -p test_windows_test_pin_custody_process_crash.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
