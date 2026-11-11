@@ -27,6 +27,12 @@ class SqlitePinCustodyTests(unittest.TestCase):
     def append(self, item):
         self.custody.append(item, simulated_reviewer_acceptance=True)
 
+    def test_initializer_releases_file_handle_for_windows_cleanup(self):
+        self.custody.initialize()
+        Path(self.path).unlink()
+        self.assertFalse(Path(self.path).exists())
+        self.custody.initialize()
+
     def test_reopen_preserves_accepted_pin(self):
         self.append(record())
         reopened = DisposableSqliteCustody(self.path, "fixture-one")

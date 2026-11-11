@@ -27,7 +27,8 @@ class DisposableSqliteCustody:
         return conn
 
     def initialize(self):
-        with self._connect() as conn:
+        conn = self._connect()
+        try:
             conn.execute("""CREATE TABLE IF NOT EXISTS test_pin_history (
                 fixture_id TEXT NOT NULL,
                 snapshot_digest TEXT NOT NULL,
@@ -44,6 +45,8 @@ class DisposableSqliteCustody:
                 BEFORE UPDATE ON test_pin_history BEGIN SELECT RAISE(ABORT, 'immutable'); END""")
             conn.execute("""CREATE TRIGGER IF NOT EXISTS test_pin_no_delete
                 BEFORE DELETE ON test_pin_history BEGIN SELECT RAISE(ABORT, 'immutable'); END""")
+        finally:
+            conn.close()
 
     def _load(self, conn):
         model = DisposableCustody(self.fixture_id)
