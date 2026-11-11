@@ -31,8 +31,9 @@ class DamagedCustodyFixtures(unittest.TestCase):
     def test_missing_database_is_not_a_valid_pin(self):
         self.assertFalse(self.path.exists())
         self.assert_denied()
-        # SQLite may create an empty file on open; that is not accepted custody.
+        self.assertFalse(self.path.exists(), "comparison must not materialize a missing file")
         self.assert_denied()
+        self.assertFalse(self.path.exists(), "repeated read must remain side-effect free")
 
     def test_invalid_database_header_fails_closed(self):
         self.path.write_bytes(b"NOT-A-SQLITE-DATABASE\x00")
