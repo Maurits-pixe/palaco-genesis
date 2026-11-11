@@ -1,5 +1,6 @@
 """WNRA-04K negative integrity fixtures. Disposable databases only."""
 
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -58,7 +59,7 @@ class IntegrityFixtureTests(unittest.TestCase):
     def test_non_database_header_is_rejected(self):
         self.ledger.close()
         self.path.write_bytes(b"NOT A SQLITE DATABASE" + bytes(4096))
-        with self.assertRaises((LeaseDenied, Exception)) as caught:
+        with self.assertRaises((LeaseDenied, sqlite3.DatabaseError)) as caught:
             # The unmodified test-only constructor may raise sqlite3.DatabaseError.
             broken = TestSqliteLeaseLedger(self.path)
             try:
