@@ -4,6 +4,7 @@ Caller supplies a dedicated temporary database path. It must NOT point to the
 lease ledger. Filesystem ownership, custodian identity and signing are NOT proven.
 """
 from dataclasses import fields
+from pathlib import Path
 import sqlite3
 
 from windows_test_pin_custody_model import (
@@ -21,8 +22,15 @@ class DisposableSqliteCustody:
         self.path = path
         self.fixture_id = fixture_id
 
-    def _connect(self):
-        conn = sqlite3.connect(self.path, timeout=0.25, isolation_level=None)
+    def _connect(self, *, read_only: bool = False):
+        # SQLite URI mode=ro refuses a missing file rather than silently creating it.
+        target = Path(self.path).resolve().as_uri() + "?mode=ro" if read_only else self.path
+        try:
+            conn = sqlite3.connect(target, timeout=0.25, isolation_level=None, uri=read_only)
+        except sqlite3.Error as exc:
+            if read_only:
+                raise CustodyDenied("disposable custody read unavailable") from exc
+            raise
         conn.execute("PRAGMA busy_timeout = 250")
         return conn
 
@@ -74,7 +82,7 @@ class DisposableSqliteCustody:
             conn.close()
 
     def compare(self, fixture_id: str, digest: str, *, simulated_custodian_available: bool):
-        conn = self._connect()
+        conn = self._connect(read_only=True)
         try:
             conn.execute("BEGIN")
             result = self._load(conn).compare(
