@@ -39,6 +39,9 @@ function validUnicode(value) {
 
 function parseTestRequest(raw) {
   if (!Buffer.isBuffer(raw)) deny('NOT_BYTES');
+  // WNRA-05J: inspect the original bytes before TextDecoder strips a BOM.
+  if (raw.length >= 3 && raw[0] === 0xef &&
+      raw[1] === 0xbb && raw[2] === 0xbf) deny('UTF8_BOM');
   let input;
   try {
     input = new TextDecoder('utf-8', { fatal: true }).decode(raw);
@@ -138,6 +141,15 @@ test('WNRA-05F shared corpus denies the same negative byte inputs', () => {
 
 const original = fixture.vectors[0].canonical_json;
 const raw = Buffer.from(original, 'utf8');
+test('WNRA-05J explicit raw-byte BOM diagnostic and canonical DENY', () => {
+  assert.throws(
+    () => parseTestRequest(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), raw])),
+    { message: 'UTF8_BOM' }
+  );
+  const result = parseTestRequest(raw);
+  assert.equal(result.authorization, 'DENY');
+  assert.equal(result.independent_verification, 'NOT_EXECUTED');
+});
 test('duplicate request key rejected before JavaScript last-wins', () => {
   rejected(Buffer.from(original.replace(
     '"request_id":"REQ-001"',
