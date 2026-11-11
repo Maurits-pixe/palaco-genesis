@@ -39,6 +39,8 @@ on:
       - "verification/provenance/test_windows_test_custody_file_identity.py"
       - "verification/provenance/windows_test_anchor_adapter.py"
       - "verification/provenance/test_windows_test_anchor_adapter.py"
+      - "verification/provenance/WNRA_05A_ANCHOR_VECTORS.json"
+      - "verification/provenance/test_windows_anchor_canonical_vectors.py"
       - ".github/workflows/orcheastra-windows-metadata.yml"
   workflow_dispatch:
 
@@ -103,4 +105,6 @@ jobs:
           python -m unittest discover -s verification/provenance -p test_windows_test_custody_file_identity.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s verification/provenance -p test_windows_test_anchor_adapter.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s verification/provenance -p test_windows_anchor_canonical_vectors.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
