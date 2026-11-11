@@ -115,6 +115,31 @@ class RawAnchorByteTests(unittest.TestCase):
         self.assert_reject(b"[]", "SCHEMA_MISMATCH")
         self.assert_reject("string not bytes", "NOT_BYTES")
 
+    def test_shared_wnra05f_negative_corpus_denies_every_case(self) -> None:
+        corpus = json.loads(
+            Path(__file__).with_name("WNRA_05F_SHARED_DENY_CORPUS.json")
+            .read_text(encoding="utf-8")
+        )
+        self.assertEqual(corpus["profile"], "WNRA-05F-SHARED-NEGATIVE-v0.1")
+        self.assertEqual(corpus["expected_authorization"], "DENY")
+        for case in corpus["cases"]:
+            with self.subTest(case=case["id"]):
+                if "literal" in case:
+                    raw = case["literal"].encode("utf-8")
+                else:
+                    source = self.vectors[case["vector"]]["canonical_json"]
+                    if "replace" in case:
+                        old, new = case["replace"]
+                        self.assertIn(old, source)
+                        source = source.replace(old, new, 1)
+                    raw = source.encode("utf-8")
+                    raw = bytes.fromhex(case.get("prefix_hex", "")) + (
+                        case.get("prefix", "").encode("utf-8") + raw
+                        + case.get("suffix", "").encode("utf-8")
+                    ) + bytes.fromhex(case.get("suffix_hex", ""))
+                with self.assertRaises(FixtureByteRejected):
+                    parse_simulated_request_bytes(raw)
+
 
 if __name__ == "__main__":
     unittest.main()

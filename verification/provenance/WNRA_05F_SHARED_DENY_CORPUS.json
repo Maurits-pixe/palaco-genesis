@@ -1,0 +1,127 @@
+{
+  "profile": "WNRA-05F-SHARED-NEGATIVE-v0.1",
+  "scope": "local-test-only",
+  "expected_authorization": "DENY",
+  "cases": [
+    {
+      "id": "duplicate-key",
+      "vector": 0,
+      "replace": [
+        "\"request_id\":\"REQ-001\"",
+        "\"request_id\":\"REQ-001\",\"request_id\":\"CONFLICT\""
+      ]
+    },
+    {
+      "id": "nested-duplicate",
+      "vector": 0,
+      "replace": [
+        "\"sequence\":1",
+        "\"sequence\":1,\"extra\":{\"a\":1,\"a\":2}"
+      ]
+    },
+    {
+      "id": "float",
+      "vector": 0,
+      "replace": [
+        "\"sequence\":1",
+        "\"sequence\":1.0"
+      ]
+    },
+    {
+      "id": "exponent",
+      "vector": 0,
+      "replace": [
+        "\"sequence\":1",
+        "\"sequence\":1e0"
+      ]
+    },
+    {
+      "id": "negative-zero",
+      "vector": 0,
+      "replace": [
+        "\"sequence\":1",
+        "\"sequence\":-0"
+      ]
+    },
+    {
+      "id": "unsafe-number",
+      "vector": 0,
+      "replace": [
+        "\"sequence\":1",
+        "\"sequence\":9007199254740993"
+      ]
+    },
+    {
+      "id": "boolean-sequence",
+      "vector": 0,
+      "replace": [
+        "\"sequence\":1",
+        "\"sequence\":true"
+      ]
+    },
+    {
+      "id": "null-sequence",
+      "vector": 0,
+      "replace": [
+        "\"sequence\":1",
+        "\"sequence\":null"
+      ]
+    },
+    {
+      "id": "unknown-field",
+      "vector": 0,
+      "replace": [
+        "\"sequence\":1",
+        "\"unknown\":1,\"sequence\":1"
+      ]
+    },
+    {
+      "id": "missing-field",
+      "vector": 0,
+      "replace": [
+        "\"sequence\":1,",
+        ""
+      ]
+    },
+    {
+      "id": "surrogate",
+      "vector": 0,
+      "replace": [
+        "local-test-actor",
+        "\\ud800"
+      ]
+    },
+    {
+      "id": "unicode-literal",
+      "vector": 1,
+      "replace": [
+        "\\u00e9\\u00e9",
+        "éé"
+      ]
+    },
+    {
+      "id": "leading-space",
+      "vector": 0,
+      "prefix": " "
+    },
+    {
+      "id": "trailing-newline",
+      "vector": 0,
+      "suffix": "\n"
+    },
+    {
+      "id": "utf8-bom",
+      "vector": 0,
+      "prefix_hex": "efbbbf"
+    },
+    {
+      "id": "invalid-utf8",
+      "vector": 0,
+      "suffix_hex": "ff"
+    },
+    {
+      "id": "array-scope",
+      "literal": "[]"
+    }
+  ]
+}
