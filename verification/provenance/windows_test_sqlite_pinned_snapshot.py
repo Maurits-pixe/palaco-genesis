@@ -15,8 +15,15 @@ from windows_test_sqlite_integrity import verify_fixture_integrity
 
 def fixture_snapshot_digest(ledger):
     """Compute a deterministic snapshot digest; return no capability or token."""
-    verify_fixture_integrity(ledger)
+    # Never nest inside a caller's uncommitted transaction, whose snapshot
+    # could include state that is not durable or visible to other processes.
+    if ledger.connection.in_transaction:
+        raise LeaseDenied("fixture snapshot requires a standalone read transaction")
+    started = False
     try:
+        ledger.connection.execute("BEGIN DEFERRED")
+        started = True
+        verify_fixture_integrity(ledger)
         leases = ledger.connection.execute(
             "SELECT lease_id, statement_id, consumer_id, not_before, expires_at, "
             "state, revision, last_time FROM fixture_lease ORDER BY lease_id"
@@ -25,8 +32,15 @@ def fixture_snapshot_digest(ledger):
             "SELECT transition_id, lease_id, previous_state, new_state, revision "
             "FROM fixture_audit ORDER BY transition_id"
         ).fetchall()
-    except sqlite3.Error as exc:
-        raise LeaseDenied("fixture snapshot unavailable") from exc
+        ledger.connection.execute("COMMIT")
+        started = False
+    except (sqlite3.Error, LeaseDenied) as exc:
+        if started:
+            try:
+                ledger.connection.execute("ROLLBACK")
+            except sqlite3.Error:
+                pass
+        raise LeaseDenied("fixture atomic snapshot denied or unavailable") from exc
     document = {
         "domain": "PALACO-WNRA-04L-TEST-SNAPSHOT-v1",
         "leases": leases,
