@@ -15,16 +15,22 @@ from windows_test_sqlite_lease_ledger import TestSqliteLeaseLedger
 
 
 _WORKER = """
+import sqlite3
 import sys
 from windows_test_sqlite_lease_ledger import TestSqliteLeaseLedger
 from windows_test_lease_model import LeaseDenied
-ledger = TestSqliteLeaseLedger(sys.argv[1])
+ledger = None
 try:
+    ledger = TestSqliteLeaseLedger(sys.argv[1])
     ledger.transition("lease-A", sys.argv[2], 0, 11, "reader-A", "ISSUED", "REDEEMING")
-except LeaseDenied:
+except (LeaseDenied, sqlite3.OperationalError):
+    # Even an initialization lock is a controlled denial, never a redemption.
     sys.exit(3)
 else:
     sys.exit(0)
+finally:
+    if ledger is not None:
+        ledger.close()
 """
 
 _CRASH_AFTER_COMMIT = """
@@ -91,6 +97,16 @@ class ProcessCrashFixtureTests(unittest.TestCase):
             self.assertEqual(ledger.inspect("lease-A")[0:2], ("REDEEMING", 1))
             self.assertEqual(len(ledger.audit("lease-A")), 1)
         finally:
+            ledger.close()
+
+    def test_database_lock_is_a_controlled_process_denial(self):
+        ledger = TestSqliteLeaseLedger(self.db_path)
+        try:
+            ledger.connection.execute("BEGIN IMMEDIATE")
+            result = self._run(_WORKER, "blocked-worker")
+            self.assertEqual(result.returncode, 3, result.stderr)
+        finally:
+            ledger.connection.execute("ROLLBACK")
             ledger.close()
 
     def test_process_crash_after_commit_requires_recovery(self):
