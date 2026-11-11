@@ -110,6 +110,32 @@ test('all three frozen vectors decode with DENY in Node', () => {
   }
 });
 
+test('WNRA-05F shared corpus denies the same negative byte inputs', () => {
+  const corpus = JSON.parse(fs.readFileSync(
+    path.join(__dirname, 'WNRA_05F_SHARED_DENY_CORPUS.json'), 'utf8'
+  ));
+  assert.equal(corpus.profile, 'WNRA-05F-SHARED-NEGATIVE-v0.1');
+  assert.equal(corpus.expected_authorization, 'DENY');
+  for (const item of corpus.cases) {
+    let raw;
+    if (Object.hasOwn(item, 'literal')) {
+      raw = Buffer.from(item.literal, 'utf8');
+    } else {
+      let source = fixture.vectors[item.vector].canonical_json;
+      if (item.replace) {
+        assert.ok(source.includes(item.replace[0]), item.id);
+        source = source.replace(item.replace[0], item.replace[1]);
+      }
+      raw = Buffer.concat([
+        Buffer.from(item.prefix_hex || '', 'hex'),
+        Buffer.from((item.prefix || '') + source + (item.suffix || ''), 'utf8'),
+        Buffer.from(item.suffix_hex || '', 'hex'),
+      ]);
+    }
+    assert.throws(() => parseTestRequest(raw), undefined, item.id);
+  }
+});
+
 const original = fixture.vectors[0].canonical_json;
 const raw = Buffer.from(original, 'utf8');
 test('duplicate request key rejected before JavaScript last-wins', () => {
