@@ -1,5 +1,5 @@
 """WNRA-04P: temporary-file persistence and fail-closed recovery regressions."""
-from dataclasses import replace
+from contextlib import closing
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import sqlite3
@@ -56,7 +56,7 @@ class SqlitePinCustodyTests(unittest.TestCase):
 
     def test_direct_update_or_delete_is_rejected(self):
         self.append(record())
-        with sqlite3.connect(self.path) as conn:
+        with closing(sqlite3.connect(self.path)) as conn, conn:
             with self.assertRaises(sqlite3.DatabaseError):
                 conn.execute("UPDATE test_pin_history SET snapshot_digest = ?", (B,))
             with self.assertRaises(sqlite3.DatabaseError):
@@ -73,7 +73,7 @@ class SqlitePinCustodyTests(unittest.TestCase):
 
     def test_recovery_rejects_corrupt_history(self):
         self.append(record())
-        with sqlite3.connect(self.path) as conn:
+        with closing(sqlite3.connect(self.path)) as conn, conn:
             conn.execute("DROP TRIGGER test_pin_no_update")
             conn.execute("UPDATE test_pin_history SET source_commit = ?", ("invalid",))
         with self.assertRaises(CustodyDenied):
