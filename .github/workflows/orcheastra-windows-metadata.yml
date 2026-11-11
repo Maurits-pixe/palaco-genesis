@@ -44,6 +44,7 @@ on:
       - "verification/provenance/test_windows_anchor_vectors_node.cjs"
       - "verification/provenance/windows_test_anchor_raw_bytes.py"
       - "verification/provenance/test_windows_anchor_raw_bytes.py"
+      - "verification/provenance/test_windows_anchor_raw_bytes_node.cjs"
       - ".github/workflows/orcheastra-windows-metadata.yml"
   workflow_dispatch:
 
@@ -114,4 +115,6 @@ jobs:
           node --test verification/provenance/test_windows_anchor_vectors_node.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s verification/provenance -p test_windows_anchor_raw_bytes.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test verification/provenance/test_windows_anchor_raw_bytes_node.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
