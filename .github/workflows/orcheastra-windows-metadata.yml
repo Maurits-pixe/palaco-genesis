@@ -19,6 +19,8 @@ on:
       - "verification/provenance/test_windows_test_pinned_digest.py"
       - "verification/provenance/windows_test_lease_model.py"
       - "verification/provenance/test_windows_test_lease_model.py"
+      - "verification/provenance/windows_test_sqlite_lease_ledger.py"
+      - "verification/provenance/test_windows_test_sqlite_lease_ledger.py"
       - ".github/workflows/orcheastra-windows-metadata.yml"
   workflow_dispatch:
 
@@ -57,4 +59,6 @@ jobs:
           python -m unittest discover -s verification/provenance -p test_windows_test_pinned_digest.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s verification/provenance -p test_windows_test_lease_model.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s verification/provenance -p test_windows_test_sqlite_lease_ledger.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
