@@ -68,6 +68,13 @@ def parse_simulated_request_bytes(raw: bytes) -> AnchorRequest:
     if type(obj.get("sequence")) is not int:
         raise FixtureByteRejected("INVALID_SEQUENCE_TYPE")
     try:
+        for key, value in obj.items():
+            key.encode("utf-8", errors="strict")
+            if isinstance(value, str):
+                value.encode("utf-8", errors="strict")
+    except UnicodeEncodeError as exc:
+        raise FixtureByteRejected("INVALID_UNICODE_SCALAR") from exc
+    try:
         canonical = json.dumps(
             obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True
         ).encode("utf-8")
