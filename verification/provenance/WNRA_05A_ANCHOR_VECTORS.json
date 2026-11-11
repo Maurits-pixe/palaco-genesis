@@ -1,0 +1,54 @@
+{
+  "classification": "DERIVED_TEST_VECTOR_NOT_PROTOCOL_CANON",
+  "serialization": "Python json.dumps(sort_keys=True,separators=(',',':'),ensure_ascii=True) then UTF-8",
+  "vectors": [
+    {
+      "name": "genesis",
+      "request": {
+        "protocol": "WNRA-04Y-ANCHOR-PROPOSAL-v0.1",
+        "request_id": "REQ-001",
+        "fixture_domain": "TEST-WINDOWS",
+        "source_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "record_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "predecessor_anchor_id": "GENESIS",
+        "sequence": 1,
+        "evidence_ref": "fixture:001",
+        "actor_id": "local-test-actor"
+      },
+      "canonical_json": "{\"actor_id\":\"local-test-actor\",\"evidence_ref\":\"fixture:001\",\"fixture_domain\":\"TEST-WINDOWS\",\"predecessor_anchor_id\":\"GENESIS\",\"protocol\":\"WNRA-04Y-ANCHOR-PROPOSAL-v0.1\",\"record_digest\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"request_id\":\"REQ-001\",\"sequence\":1,\"source_commit\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+      "sha256": "dbafbfb539d1face2ed61734e91010e13d61e814fbc5afe1145e6ba564d763b8"
+    },
+    {
+      "name": "unicode_actor",
+      "request": {
+        "protocol": "WNRA-04Y-ANCHOR-PROPOSAL-v0.1",
+        "request_id": "REQ-002",
+        "fixture_domain": "TEST-WINDOWS",
+        "source_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "record_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "predecessor_anchor_id": "GENESIS",
+        "sequence": 2,
+        "evidence_ref": "fixture:001",
+        "actor_id": "één-agent"
+      },
+      "canonical_json": "{\"actor_id\":\"\\u00e9\\u00e9n-agent\",\"evidence_ref\":\"fixture:001\",\"fixture_domain\":\"TEST-WINDOWS\",\"predecessor_anchor_id\":\"GENESIS\",\"protocol\":\"WNRA-04Y-ANCHOR-PROPOSAL-v0.1\",\"record_digest\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"request_id\":\"REQ-002\",\"sequence\":2,\"source_commit\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+      "sha256": "0518462e2b025ff9e4b3a0c81d16cfc6c1cf1d8706ddd78f2fb3aa927f9b3128"
+    },
+    {
+      "name": "different_record",
+      "request": {
+        "protocol": "WNRA-04Y-ANCHOR-PROPOSAL-v0.1",
+        "request_id": "REQ-001",
+        "fixture_domain": "TEST-WINDOWS",
+        "source_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "record_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "predecessor_anchor_id": "GENESIS",
+        "sequence": 1,
+        "evidence_ref": "fixture:001",
+        "actor_id": "local-test-actor"
+      },
+      "canonical_json": "{\"actor_id\":\"local-test-actor\",\"evidence_ref\":\"fixture:001\",\"fixture_domain\":\"TEST-WINDOWS\",\"predecessor_anchor_id\":\"GENESIS\",\"protocol\":\"WNRA-04Y-ANCHOR-PROPOSAL-v0.1\",\"record_digest\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"request_id\":\"REQ-001\",\"sequence\":1,\"source_commit\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+      "sha256": "decd86033167988024fe5ff343a818def26be94ae7620b646c2fb2efa7d162c9"
+    }
+  ]
+}
