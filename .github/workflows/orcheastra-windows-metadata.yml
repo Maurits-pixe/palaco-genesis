@@ -53,6 +53,7 @@ on:
       - "verification/provenance/test_windows_anchor_suspended_job_launch.py"
       - "verification/provenance/test_windows_anchor_token_audit.py"
       - "verification/provenance/test_windows_anchor_restricted_token.py"
+      - "verification/provenance/test_windows_anchor_low_token_job_launch.py"
       - ".github/workflows/orcheastra-windows-metadata.yml"
   workflow_dispatch:
 
@@ -137,4 +138,6 @@ jobs:
           python -m unittest discover -s verification/provenance -p test_windows_anchor_token_audit.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s verification/provenance -p test_windows_anchor_restricted_token.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s verification/provenance -p test_windows_anchor_low_token_job_launch.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
