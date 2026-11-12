@@ -154,15 +154,20 @@ class SuspendedJobLaunchTests(unittest.TestCase):
                     self.k.ResumeThread(info.hThread), RESUME_FAILED,
                 )
                 deadline = time.monotonic() + 12
-                while not (root / "descendant_pid").exists():
+                pid_file = root / "descendant_pid"
+                pid_text = ""
+                while not pid_text.isdecimal():
+                    if pid_file.exists():
+                        # write_text creates a file before the PID bytes are flushed.
+                        pid_text = pid_file.read_text(encoding="ascii").strip()
+                    if pid_text.isdecimal():
+                        break
                     if self.k.WaitForSingleObject(info.hProcess, 0) == WAIT_OBJECT_0:
-                        self.fail("worker exited before descendant marker")
+                        self.fail("worker exited before complete descendant PID")
                     if time.monotonic() >= deadline:
-                        self.fail("descendant marker timed out")
+                        self.fail("complete descendant PID timed out")
                     time.sleep(0.025)
                 self.assertTrue((root / "started").exists())
-                pid_text = (root / "descendant_pid").read_text(encoding="ascii")
-                self.assertTrue(pid_text.isdecimal(), pid_text)
                 descendant = self.k.OpenProcess(
                     PROCESS_SYNCHRONIZE, False, int(pid_text),
                 )
