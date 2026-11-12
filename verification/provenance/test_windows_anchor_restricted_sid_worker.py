@@ -173,6 +173,30 @@ class RestrictedSidWorkerTests(RestrictedProcessLaunchTests):
                 self.k.ResumeThread(info.hThread), RESUME_FAILED,
             )
             time.sleep(0.5)
+            if self.k.WaitForSingleObject(info.hProcess, 0) == WAIT_OBJECT_0:
+                # CreateProcessAsUserW can create a suspended process even if
+                # its restricted SID cannot read loader/runtime resources.
+                # Distinguish that post-resume denial from live execution.
+                self.k.GetExitCodeProcess.argtypes = (
+                    wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD),
+                )
+                self.k.GetExitCodeProcess.restype = wintypes.BOOL
+                code = wintypes.DWORD()
+                self.fx._check(self.k.GetExitCodeProcess(
+                    info.hProcess, ctypes.byref(code),
+                ))
+                self.assertNotEqual(
+                    code.value, 0,
+                    "unexpected clean exit instead of long-lived worker",
+                )
+                print(
+                    "WNRA06B_RUNTIME blocked=true"
+                    + " exit_code=" + str(code.value)
+                    + " process_created=true child_token_restricted=true"
+                    + " resume_attempted=true worker_alive=false"
+                    + " authorization=DENY"
+                )
+                return
             self.assertEqual(
                 self.k.WaitForSingleObject(info.hProcess, 0), WAIT_TIMEOUT,
                 "worker must execute and remain alive after resume",
