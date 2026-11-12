@@ -113,5 +113,88 @@ class ExactCodeComparison(unittest.TestCase):
                 )
 
 
+
+
+# WNRA-05M — numeric boundary probes. Local DENY-only fixtures, not protocol canon.
+NUMERIC_BOUNDARIES = (
+    ("negative-zero", "-0", "NEGATIVE_ZERO", "INVALID_SEQUENCE"),
+    ("zero", "0", "INVALID_REQUEST", "INVALID_SEQUENCE"),
+    ("negative-one", "-1", "INVALID_REQUEST", "INVALID_SEQUENCE"),
+    ("one", "1", "DENY_ONLY", "DENY_ONLY"),
+    ("two", "2", "DENY_ONLY", "DENY_ONLY"),
+    ("near-max-safe", "9007199254740990", "DENY_ONLY", "DENY_ONLY"),
+    ("max-safe", "9007199254740991", "DENY_ONLY", "DENY_ONLY"),
+    ("over-max-safe", "9007199254740992", "UNSAFE_INTEGER", "INVALID_SEQUENCE"),
+    ("precision-loss", "9007199254740993", "UNSAFE_INTEGER", "INVALID_SEQUENCE"),
+    ("negative-unsafe", "-9007199254740992", "UNSAFE_INTEGER", "INVALID_SEQUENCE"),
+    ("fraction", "1.0", "FRACTION_OR_EXPONENT", "NONCANONICAL_TEST_BYTES"),
+    ("exponent", "1e0", "FRACTION_OR_EXPONENT", "NONCANONICAL_TEST_BYTES"),
+    ("boolean", "true", "INVALID_SEQUENCE_TYPE", "INVALID_SEQUENCE"),
+    ("null", "null", "INVALID_SEQUENCE_TYPE", "INVALID_SEQUENCE"),
+)
+
+NODE_BOUNDARY_SCRIPT = r"""
+const fs = require('node:fs');
+const {parseTestRequest} = require(process.argv[1]);
+const hexList = JSON.parse(fs.readFileSync(0, 'utf8'));
+const results = hexList.map(hex => {
+  try {
+    const result = parseTestRequest(Buffer.from(hex, 'hex'));
+    return result.authorization === 'DENY' &&
+      result.independent_verification === 'NOT_EXECUTED'
+      ? 'DENY_ONLY' : 'UNEXPECTED_AUTHORITY';
+  } catch (error) {
+    return error.message;
+  }
+});
+process.stdout.write('WNRA05M_BOUNDARIES=' + JSON.stringify(results) + '\n');
+"""
+
+class NumericBoundaryComparison(unittest.TestCase):
+    def test_cross_language_numeric_boundaries_never_authorize(self):
+        original = json.loads(
+            (HERE / "WNRA_05A_ANCHOR_VECTORS.json").read_text(encoding="utf-8")
+        )["vectors"][0]["canonical_json"]
+        self.assertIn('"sequence":1,', original)
+        raw_cases = [
+            original.replace('"sequence":1,', '"sequence":' + token + ',', 1)
+            .encode("utf-8")
+            for _, token, _, _ in NUMERIC_BOUNDARIES
+        ]
+        completed = subprocess.run(
+            ["node", "-e", NODE_BOUNDARY_SCRIPT,
+             str(HERE / "test_windows_anchor_raw_bytes_node.cjs")],
+            input=json.dumps([raw.hex() for raw in raw_cases]),
+            text=True, capture_output=True, check=False, timeout=45,
+        )
+        self.assertEqual(completed.returncode, 0, msg=completed.stderr[-1000:])
+        lines = [
+            line.split("WNRA05M_BOUNDARIES=", 1)[1]
+            for line in completed.stdout.splitlines()
+            if line.startswith("WNRA05M_BOUNDARIES=")
+        ]
+        self.assertEqual(len(lines), 1, msg=completed.stdout[-1000:])
+        node_codes = json.loads(lines[0])
+        self.assertEqual(len(node_codes), len(NUMERIC_BOUNDARIES))
+        for (name, token, expected_python, expected_node), raw, node_code in zip(
+            NUMERIC_BOUNDARIES, raw_cases, node_codes
+        ):
+            with self.subTest(boundary=name):
+                try:
+                    parsed = parse_simulated_request_bytes(raw)
+                except FixtureByteRejected as exc:
+                    python_code = str(exc)
+                else:
+                    self.assertGreater(parsed.sequence, 0)
+                    python_code = "DENY_ONLY"  # Successful parse is NOT authorization.
+                self.assertEqual(python_code, expected_python)
+                self.assertEqual(node_code, expected_node)
+                self.assertNotEqual(node_code, "UNEXPECTED_AUTHORITY")
+                print(
+                    "WNRA05M_CASE " + name + " token=" + token
+                    + " python=" + python_code + " node=" + node_code
+                    + " authorization=DENY"
+                )
+
 if __name__ == "__main__":
     unittest.main()
