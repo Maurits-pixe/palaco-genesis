@@ -24,6 +24,10 @@ RESUME_FAILED = 0xFFFFFFFF
 PROCESS_SYNCHRONIZE = 0x00100000
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 HANDLE_FLAG_INHERIT = 0x00000001
+EXTENDED_STARTUPINFO_PRESENT = 0x00080000
+PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
+JOB_OBJECT_LIMIT_BREAKAWAY_OK = 0x00000800
+JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK = 0x00001000
 
 class STARTUPINFOW(ctypes.Structure):
     _fields_ = [
@@ -45,6 +49,12 @@ class STARTUPINFOW(ctypes.Structure):
         ("hStdInput", wintypes.HANDLE),
         ("hStdOutput", wintypes.HANDLE),
         ("hStdError", wintypes.HANDLE),
+    ]
+
+class STARTUPINFOEXW(ctypes.Structure):
+    _fields_ = [
+        ("StartupInfo", STARTUPINFOW),
+        ("lpAttributeList", ctypes.c_void_p),
     ]
 
 class PROCESS_INFORMATION(ctypes.Structure):
@@ -99,6 +109,23 @@ class SuspendedJobLaunchTests(unittest.TestCase):
             wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD),
         )
         k.GetHandleInformation.restype = wintypes.BOOL
+        k.InitializeProcThreadAttributeList.argtypes = (
+            ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
+            ctypes.POINTER(ctypes.c_size_t),
+        )
+        k.InitializeProcThreadAttributeList.restype = wintypes.BOOL
+        k.UpdateProcThreadAttribute.argtypes = (
+            ctypes.c_void_p, wintypes.DWORD, ctypes.c_size_t,
+            ctypes.c_void_p, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_void_p,
+        )
+        k.UpdateProcThreadAttribute.restype = wintypes.BOOL
+        k.DeleteProcThreadAttributeList.argtypes = (ctypes.c_void_p,)
+        k.DeleteProcThreadAttributeList.restype = None
+        k.QueryInformationJobObject.argtypes = (
+            wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p,
+            wintypes.DWORD, ctypes.POINTER(wintypes.DWORD),
+        )
+        k.QueryInformationJobObject.restype = wintypes.BOOL
         k.CloseHandle.argtypes = (wintypes.HANDLE,)
         k.CloseHandle.restype = wintypes.BOOL
 
@@ -135,6 +162,55 @@ class SuspendedJobLaunchTests(unittest.TestCase):
             None, None, ctypes.byref(startup), ctypes.byref(info),
         ))
         return info
+
+    def _suspended_python_allowlist(self, script, directory, handles):
+        # STARTUPINFOEXW allowlists only these explicitly inheritable handles.
+        # The attribute list must remain allocated through CreateProcessW.
+        required = ctypes.c_size_t()
+        self.k.InitializeProcThreadAttributeList(None, 1, 0, ctypes.byref(required))
+        self.assertGreater(required.value, 0)
+        storage = ctypes.create_string_buffer(required.value)
+        attribute_list = ctypes.cast(storage, ctypes.c_void_p)
+        self._check(self.k.InitializeProcThreadAttributeList(
+            attribute_list, 1, 0, ctypes.byref(required),
+        ))
+        try:
+            allowed = (wintypes.HANDLE * len(handles))(*handles)
+            self._check(self.k.UpdateProcThreadAttribute(
+                attribute_list, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+                ctypes.cast(allowed, ctypes.c_void_p),
+                ctypes.sizeof(allowed), None, None,
+            ))
+            extended = STARTUPINFOEXW()
+            extended.StartupInfo.cb = ctypes.sizeof(extended)
+            extended.lpAttributeList = attribute_list
+            info = PROCESS_INFORMATION()
+            command = subprocess.list2cmdline(
+                [sys.executable, "-u", "-c", script, str(directory)]
+            )
+            command_buffer = ctypes.create_unicode_buffer(command)
+            self._check(self.k.CreateProcessW(
+                sys.executable, command_buffer, None, None, True,
+                CREATE_SUSPENDED | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT,
+                None, None, ctypes.byref(extended.StartupInfo), ctypes.byref(info),
+            ))
+            return info
+        finally:
+            self.k.DeleteProcThreadAttributeList(attribute_list)
+
+    def _wait_for_marker(self, root, name, info):
+        marker = root / name
+        deadline = time.monotonic() + 12
+        while True:
+            if marker.exists():
+                value = marker.read_text(encoding="ascii").strip()
+                if value.endswith(";DONE"):
+                    return value
+            if self.k.WaitForSingleObject(info.hProcess, 0) == WAIT_OBJECT_0:
+                self.fail(name + " worker exited before complete marker")
+            if time.monotonic() >= deadline:
+                self.fail(name + " marker deadline expired")
+            time.sleep(0.025)
 
     def _close(self, handle):
         if handle:
@@ -307,6 +383,130 @@ class SuspendedJobLaunchTests(unittest.TestCase):
                 self._close(info.hThread)
                 self._close(info.hProcess)
             self._close(event)
+
+    def test_allowlisted_handle_inherits_but_unlisted_handle_does_not(self):
+        allowed = self.k.CreateEventW(None, False, False, None)
+        self._check(allowed)
+        forbidden = self.k.CreateEventW(None, False, False, None)
+        self._check(forbidden)
+        job = None
+        info = None
+        try:
+            for handle in (allowed, forbidden):
+                self._check(self.k.SetHandleInformation(
+                    handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT,
+                ))
+            script = (
+                "import ctypes,sys,time\n"
+                "from ctypes import wintypes\n"
+                "from pathlib import Path\n"
+                f"allowed={int(allowed)}\n"
+                f"forbidden={int(forbidden)}\n"
+                "k=ctypes.WinDLL('kernel32',use_last_error=True)\n"
+                "k.GetHandleInformation.argtypes=(ctypes.c_void_p,ctypes.POINTER(wintypes.DWORD))\n"
+                "k.GetHandleInformation.restype=wintypes.BOOL\n"
+                "def present(handle):\n"
+                " flags=wintypes.DWORD()\n"
+                " return bool(k.GetHandleInformation(handle,ctypes.byref(flags)))\n"
+                "a=int(present(allowed));b=int(present(forbidden))\n"
+                "Path(sys.argv[1]).joinpath('allowlist_probe').write_text("
+                "f'allowed={a};unlisted={b};DONE',encoding='ascii')\n"
+                "time.sleep(30)\n"
+            )
+            with tempfile.TemporaryDirectory() as temporary:
+                root = pathlib.Path(temporary)
+                job = self._job()
+                info = self._suspended_python_allowlist(
+                    script, root, [allowed],
+                )
+                self._assert_unstarted(root / "allowlist_probe", info)
+                self._check(self.k.AssignProcessToJobObject(job, info.hProcess))
+                self._assert_unstarted(root / "allowlist_probe", info)
+                self.assertNotEqual(
+                    self.k.ResumeThread(info.hThread), RESUME_FAILED,
+                )
+                value = self._wait_for_marker(root, "allowlist_probe", info)
+                self.assertEqual(value, "allowed=1;unlisted=0;DONE")
+                self._close(job)
+                job = None
+                self.assertEqual(
+                    self.k.WaitForSingleObject(info.hProcess, 5000),
+                    WAIT_OBJECT_0,
+                )
+                print(
+                    "WNRA05V_ALLOWLIST allowed_inherited=true "
+                    "unlisted_inherited=false authorization=DENY"
+                )
+        finally:
+            if job:
+                self._close(job)
+            if info:
+                if self.k.WaitForSingleObject(info.hProcess, 0) == WAIT_TIMEOUT:
+                    self.k.TerminateProcess(info.hProcess, 1)
+                    self.k.WaitForSingleObject(info.hProcess, 5000)
+                self._close(info.hThread)
+                self._close(info.hProcess)
+            self._close(forbidden)
+            self._close(allowed)
+
+    def test_explicit_job_breakaway_creation_is_denied(self):
+        script = (
+            "import subprocess,sys,time\n"
+            "from pathlib import Path\n"
+            "try:\n"
+            " p=subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)'],"
+            "creationflags=0x01000000,stdin=subprocess.DEVNULL,"
+            "stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)\n"
+            " p.kill();p.wait(timeout=5)\n"
+            " outcome='UNEXPECTED_BREAKAWAY'\n"
+            "except OSError as error:\n"
+            " outcome=f'DENIED:{error.winerror}'\n"
+            "Path(sys.argv[1]).joinpath('breakaway_probe').write_text("
+            "outcome+';DONE',encoding='ascii')\n"
+            "time.sleep(30)\n"
+        )
+        job = self._job()
+        info = None
+        try:
+            observed = JobLimitStructure()
+            length = wintypes.DWORD()
+            self._check(self.k.QueryInformationJobObject(
+                job, 9, ctypes.byref(observed), ctypes.sizeof(observed),
+                ctypes.byref(length),
+            ))
+            flags = observed.BasicLimitInformation.LimitFlags
+            self.assertFalse(flags & JOB_OBJECT_LIMIT_BREAKAWAY_OK)
+            self.assertFalse(flags & JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK)
+            with tempfile.TemporaryDirectory() as temporary:
+                root = pathlib.Path(temporary)
+                info = self._suspended_python(script, root)
+                self._assert_unstarted(root / "breakaway_probe", info)
+                self._check(self.k.AssignProcessToJobObject(job, info.hProcess))
+                self._assert_unstarted(root / "breakaway_probe", info)
+                self.assertNotEqual(
+                    self.k.ResumeThread(info.hThread), RESUME_FAILED,
+                )
+                outcome = self._wait_for_marker(root, "breakaway_probe", info)
+                self.assertEqual(outcome, "DENIED:5;DONE")
+                self._close(job)
+                job = None
+                self.assertEqual(
+                    self.k.WaitForSingleObject(info.hProcess, 5000),
+                    WAIT_OBJECT_0,
+                )
+                print(
+                    "WNRA05V_BREAKAWAY flags_disabled=true "
+                    "explicit_breakaway_denied=true authorization=DENY"
+                )
+        finally:
+            if job:
+                self._close(job)
+            if info:
+                if self.k.WaitForSingleObject(info.hProcess, 0) == WAIT_TIMEOUT:
+                    self.k.TerminateProcess(info.hProcess, 1)
+                    self.k.WaitForSingleObject(info.hProcess, 5000)
+                self._close(info.hThread)
+                self._close(info.hProcess)
 
     def test_abort_before_resume_never_runs_worker(self):
         script = (
