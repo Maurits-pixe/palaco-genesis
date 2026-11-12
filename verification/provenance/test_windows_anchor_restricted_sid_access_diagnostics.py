@@ -4,6 +4,7 @@ No ACL modification, no production token broker, no authorization.
 A live worker is verified separately from successful process creation.
 """
 import ctypes
+import os
 from ctypes import wintypes
 import subprocess
 import sys
@@ -38,7 +39,7 @@ class RestrictedSidAccessDiagnostics(unittest.TestCase):
         self.k = self.fx.k
         self.a = self.fx.a
 
-    def _run_variant(self, variant):
+    def _run_variant(self, variant, image_kind="python"):
         source = self.fx._source()
         restricted = None
         sid_allocated = ctypes.c_void_p()
@@ -83,15 +84,30 @@ class RestrictedSidAccessDiagnostics(unittest.TestCase):
                 self.fx.token_fixture._enabled_count(source),
             )
             job = self.fx.fx._job()
-            command = subprocess.list2cmdline([
-                sys.executable, "-u", "-c", "import time;time.sleep(30)",
-            ])
+            if image_kind == "python":
+                executable = sys.executable
+                arguments = [
+                    executable, "-u", "-c", "import time;time.sleep(30)",
+                ]
+            elif image_kind == "windows_cmd":
+                system_root = os.environ.get("SystemRoot", r"C:\Windows")
+                executable = os.path.join(system_root, "System32", "cmd.exe")
+                self.assertTrue(os.path.isfile(executable))
+                # The cmd process remains alive while ping is running;
+                # no output or on-disk worker marker is required.
+                arguments = [
+                    executable, "/d", "/c",
+                    "ping -n 30 127.0.0.1 >NUL",
+                ]
+            else:
+                self.fail("unsupported image_kind")
+            command = subprocess.list2cmdline(arguments)
             command_buf = ctypes.create_unicode_buffer(command)
             startup = STARTUPINFOW()
             startup.cb = ctypes.sizeof(startup)
             ctypes.set_last_error(0)
             created = bool(self.a.CreateProcessAsUserW(
-                restricted, sys.executable, command_buf, None, None, False,
+                restricted, executable, command_buf, None, None, False,
                 CREATE_SUSPENDED | CREATE_NO_WINDOW, None, None,
                 ctypes.byref(startup), ctypes.byref(info),
             ))
@@ -165,7 +181,7 @@ class RestrictedSidAccessDiagnostics(unittest.TestCase):
                     code = 0
             print(
                 "WNRA06C_DIAGNOSTIC variant=" + variant
-                + " result=" + result + " code=" + str(code)
+                + " image_kind=" + image_kind + " result=" + result + " code=" + str(code)
                 + " restricted_sid_count=1 integrity_rid="
                 + str(LOW_INTEGRITY_RID)
                 + " authorization=DENY"
