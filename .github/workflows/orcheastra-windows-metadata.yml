@@ -55,6 +55,7 @@ on:
       - "verification/provenance/test_windows_anchor_restricted_token.py"
       - "verification/provenance/test_windows_anchor_low_token_job_launch.py"
       - "verification/provenance/test_windows_anchor_restricted_sid_worker.py"
+      - "verification/provenance/test_windows_anchor_restricted_sid_access_diagnostics.py"
       - ".github/workflows/orcheastra-windows-metadata.yml"
   workflow_dispatch:
 
@@ -143,4 +144,6 @@ jobs:
           python -m unittest discover -s verification/provenance -p test_windows_anchor_low_token_job_launch.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s verification/provenance -p test_windows_anchor_restricted_sid_worker.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s verification/provenance -p test_windows_anchor_restricted_sid_access_diagnostics.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
