@@ -138,6 +138,9 @@ class WindowsJobObjectFixtureTests(unittest.TestCase):
             self.assertEqual(
                 self.kernel.WaitForSingleObject(descendant_handle, 0), WAIT_TIMEOUT
             )
+            self.assertEqual(
+                self.kernel.WaitForSingleObject(process._handle, 0), WAIT_TIMEOUT
+            )
             self._check(self.kernel.CloseHandle(job))
             job = None
             self.assertEqual(
@@ -149,7 +152,8 @@ class WindowsJobObjectFixtureTests(unittest.TestCase):
                 WAIT_OBJECT_0
             )
             process.wait(timeout=5)
-            self.assertNotEqual(process.returncode, 0)
+            # Job-object close can report process exit code 0 on Windows.
+            # Signaled handles and pre-close WAIT_TIMEOUT establish termination.
             print("WNRA05S_JOB_TREE descendant_terminated=true parent_terminated=true authorization=DENY")
         finally:
             if job:
