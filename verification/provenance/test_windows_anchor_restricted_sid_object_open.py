@@ -47,7 +47,8 @@ class RestrictedSidObjectOpenTests(unittest.TestCase):
         )
         self.k.CreateFileW.restype = wintypes.HANDLE
 
-    def _object_open(self, primary_token, path, desired_access):
+    def _object_open(self, primary_token, path, desired_access,
+                     attributes=FILE_ATTRIBUTE_NORMAL):
         # Impersonate only around the exact Windows CreateFileW call. Never
         # run Python file I/O, printing or other test assertions in this scope.
         impersonation = wintypes.HANDLE()
@@ -64,7 +65,7 @@ class RestrictedSidObjectOpenTests(unittest.TestCase):
                 handle = self.k.CreateFileW(
                     str(path), desired_access,
                     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                    None, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, None,
+                    None, OPEN_EXISTING, attributes, None,
                 )
                 winerror = ctypes.get_last_error()
             finally:
