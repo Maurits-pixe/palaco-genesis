@@ -604,6 +604,89 @@ class SuspendedJobLaunchTests(unittest.TestCase):
                 self._close(restricted)
             self._close(original)
 
+    def test_sync_only_event_handle_cannot_signal(self):
+        # Negative rights matrix complement to WNRA-05W EVENT_MODIFY_STATE only:
+        # the child may synchronize but cannot mutate the event state.
+        original = self.k.CreateEventW(None, False, False, None)
+        self._check(original)
+        restricted = wintypes.HANDLE()
+        job = None
+        info = None
+        try:
+            current = self.k.GetCurrentProcess()
+            self._check(self.k.DuplicateHandle(
+                current, original, current, ctypes.byref(restricted),
+                PROCESS_SYNCHRONIZE, True, 0,
+            ))
+            flags = wintypes.DWORD()
+            self._check(self.k.GetHandleInformation(
+                restricted, ctypes.byref(flags),
+            ))
+            self.assertTrue(flags.value & HANDLE_FLAG_INHERIT)
+            script = (
+                "import ctypes,sys,time\n"
+                "from ctypes import wintypes\n"
+                "from pathlib import Path\n"
+                f"restricted={int(restricted.value)}\n"
+                f"original={int(original)}\n"
+                "k=ctypes.WinDLL('kernel32',use_last_error=True)\n"
+                "k.WaitForSingleObject.argtypes=(ctypes.c_void_p,wintypes.DWORD)\n"
+                "k.WaitForSingleObject.restype=wintypes.DWORD\n"
+                "k.SetEvent.argtypes=(ctypes.c_void_p,)\n"
+                "k.SetEvent.restype=wintypes.BOOL\n"
+                "k.GetHandleInformation.argtypes=(ctypes.c_void_p,ctypes.POINTER(wintypes.DWORD))\n"
+                "k.GetHandleInformation.restype=wintypes.BOOL\n"
+                "wait_code=k.WaitForSingleObject(restricted,0)\n"
+                "ctypes.set_last_error(0)\n"
+                "set_ok=int(bool(k.SetEvent(restricted)))\n"
+                "set_error=ctypes.get_last_error()\n"
+                "original_flags=wintypes.DWORD()\n"
+                "original_found=int(bool(k.GetHandleInformation(original,ctypes.byref(original_flags))))\n"
+                "Path(sys.argv[1]).joinpath('sync_only_probe').write_text("
+                "f'wait={wait_code};set={set_ok};error={set_error};original={original_found};DONE',"
+                "encoding='ascii')\n"
+                "time.sleep(30)\n"
+            )
+            with tempfile.TemporaryDirectory() as temporary:
+                root = pathlib.Path(temporary)
+                job = self._job()
+                info = self._suspended_python_allowlist(
+                    script, root, [restricted.value],
+                )
+                self._assert_unstarted(root / "sync_only_probe", info)
+                self._check(self.k.AssignProcessToJobObject(job, info.hProcess))
+                self._assert_unstarted(root / "sync_only_probe", info)
+                self.assertNotEqual(
+                    self.k.ResumeThread(info.hThread), RESUME_FAILED,
+                )
+                observation = self._wait_for_marker(root, "sync_only_probe", info)
+                self.assertEqual(
+                    observation,
+                    f"wait={WAIT_TIMEOUT};set=0;error={ERROR_ACCESS_DENIED};original=0;DONE",
+                )
+                self._close(job)
+                job = None
+                self.assertEqual(
+                    self.k.WaitForSingleObject(info.hProcess, 5000),
+                    WAIT_OBJECT_0,
+                )
+                print(
+                    "WNRA05X_EVENT synchronize_allowed=true "
+                    "modify_denied=true unlisted_original=false authorization=DENY"
+                )
+        finally:
+            if job:
+                self._close(job)
+            if info:
+                if self.k.WaitForSingleObject(info.hProcess, 0) == WAIT_TIMEOUT:
+                    self.k.TerminateProcess(info.hProcess, 1)
+                    self.k.WaitForSingleObject(info.hProcess, 5000)
+                self._close(info.hThread)
+                self._close(info.hProcess)
+            if restricted.value:
+                self._close(restricted)
+            self._close(original)
+
     def test_query_only_process_handle_cannot_terminate_job_worker(self):
         script = (
             "from pathlib import Path\n"
@@ -637,6 +720,11 @@ class SuspendedJobLaunchTests(unittest.TestCase):
                 ctypes.set_last_error(0)
                 self.assertFalse(self.k.TerminateProcess(query_handle, 1))
                 self.assertEqual(ctypes.get_last_error(), ERROR_ACCESS_DENIED)
+                ctypes.set_last_error(0)
+                self.assertEqual(
+                    self.k.WaitForSingleObject(query_handle, 0), WAIT_FAILED,
+                )
+                self.assertEqual(ctypes.get_last_error(), ERROR_ACCESS_DENIED)
                 self.assertEqual(
                     self.k.WaitForSingleObject(info.hProcess, 0), WAIT_TIMEOUT,
                 )
@@ -648,7 +736,8 @@ class SuspendedJobLaunchTests(unittest.TestCase):
                 )
                 print(
                     "WNRA05W_PROCESS query_only=true "
-                    "terminate_access_denied=true job_close_terminated=true "
+                    "terminate_access_denied=true wait_access_denied=true "
+                    "job_close_terminated=true "
                     "authorization=DENY"
                 )
         finally:
