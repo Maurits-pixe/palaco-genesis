@@ -11,6 +11,7 @@ import json
 from windows_test_anchor_adapter import AnchorRequest, make_simulated_response
 
 MAX_SAFE_INTEGER = 2**53 - 1
+MAX_TEST_REQUEST_BYTES = 64 * 1024
 REQUEST_FIELDS = frozenset(field.name for field in fields(AnchorRequest))
 
 
@@ -30,6 +31,9 @@ def _unique_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
 def _integer(token: str) -> int:
     if token == "-0":
         raise FixtureByteRejected("NEGATIVE_ZERO")
+    # Fail before constructing an unbounded Python int from attacker-controlled digits.
+    if len(token.lstrip("-")) > len(str(MAX_SAFE_INTEGER)):
+        raise FixtureByteRejected("UNSAFE_INTEGER")
     value = int(token)
     if abs(value) > MAX_SAFE_INTEGER:
         raise FixtureByteRejected("UNSAFE_INTEGER")
@@ -47,6 +51,8 @@ def _constant(token: str) -> object:
 def parse_simulated_request_bytes(raw: bytes) -> AnchorRequest:
     if not isinstance(raw, bytes):
         raise FixtureByteRejected("NOT_BYTES")
+    if len(raw) > MAX_TEST_REQUEST_BYTES:
+        raise FixtureByteRejected("REQUEST_TOO_LARGE")
     try:
         decoded = raw.decode("utf-8", errors="strict")
     except UnicodeDecodeError as exc:
