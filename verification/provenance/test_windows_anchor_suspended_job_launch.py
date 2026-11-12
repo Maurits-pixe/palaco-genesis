@@ -28,6 +28,9 @@ EXTENDED_STARTUPINFO_PRESENT = 0x00080000
 PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
 JOB_OBJECT_LIMIT_BREAKAWAY_OK = 0x00000800
 JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK = 0x00001000
+EVENT_MODIFY_STATE = 0x0002
+WAIT_FAILED = 0xFFFFFFFF
+ERROR_ACCESS_DENIED = 5
 
 class STARTUPINFOW(ctypes.Structure):
     _fields_ = [
@@ -126,6 +129,16 @@ class SuspendedJobLaunchTests(unittest.TestCase):
             wintypes.DWORD, ctypes.POINTER(wintypes.DWORD),
         )
         k.QueryInformationJobObject.restype = wintypes.BOOL
+        k.GetCurrentProcess.argtypes = ()
+        k.GetCurrentProcess.restype = wintypes.HANDLE
+        k.DuplicateHandle.argtypes = (
+            wintypes.HANDLE, wintypes.HANDLE, wintypes.HANDLE,
+            ctypes.POINTER(wintypes.HANDLE), wintypes.DWORD, wintypes.BOOL,
+            wintypes.DWORD,
+        )
+        k.DuplicateHandle.restype = wintypes.BOOL
+        k.SetEvent.argtypes = (wintypes.HANDLE,)
+        k.SetEvent.restype = wintypes.BOOL
         k.CloseHandle.argtypes = (wintypes.HANDLE,)
         k.CloseHandle.restype = wintypes.BOOL
 
@@ -507,6 +520,148 @@ class SuspendedJobLaunchTests(unittest.TestCase):
                     self.k.WaitForSingleObject(info.hProcess, 5000)
                 self._close(info.hThread)
                 self._close(info.hProcess)
+
+    def test_minimal_event_rights_survive_explicit_transfer(self):
+        original = self.k.CreateEventW(None, False, False, None)
+        self._check(original)
+        restricted = wintypes.HANDLE()
+        job = None
+        info = None
+        try:
+            current = self.k.GetCurrentProcess()
+            self._check(self.k.DuplicateHandle(
+                current, original, current, ctypes.byref(restricted),
+                EVENT_MODIFY_STATE, True, 0,
+            ))
+            self.assertTrue(restricted.value)
+            flags = wintypes.DWORD()
+            self._check(self.k.GetHandleInformation(
+                restricted, ctypes.byref(flags),
+            ))
+            self.assertTrue(flags.value & HANDLE_FLAG_INHERIT)
+            script = (
+                "import ctypes,sys,time\n"
+                "from ctypes import wintypes\n"
+                "from pathlib import Path\n"
+                f"restricted={int(restricted.value)}\n"
+                f"original={int(original)}\n"
+                "k=ctypes.WinDLL('kernel32',use_last_error=True)\n"
+                "k.SetEvent.argtypes=(ctypes.c_void_p,)\n"
+                "k.SetEvent.restype=wintypes.BOOL\n"
+                "k.WaitForSingleObject.argtypes=(ctypes.c_void_p,wintypes.DWORD)\n"
+                "k.WaitForSingleObject.restype=wintypes.DWORD\n"
+                "k.GetHandleInformation.argtypes=(ctypes.c_void_p,ctypes.POINTER(wintypes.DWORD))\n"
+                "k.GetHandleInformation.restype=wintypes.BOOL\n"
+                "set_ok=int(bool(k.SetEvent(restricted)))\n"
+                "wait_code=k.WaitForSingleObject(restricted,0)\n"
+                "original_flags=wintypes.DWORD()\n"
+                "original_found=int(bool(k.GetHandleInformation(original,ctypes.byref(original_flags))))\n"
+                "Path(sys.argv[1]).joinpath('rights_probe').write_text("
+                "f'set={set_ok};wait={wait_code};original={original_found};DONE',"
+                "encoding='ascii')\n"
+                "time.sleep(30)\n"
+            )
+            with tempfile.TemporaryDirectory() as temporary:
+                root = pathlib.Path(temporary)
+                job = self._job()
+                info = self._suspended_python_allowlist(
+                    script, root, [restricted.value],
+                )
+                self._assert_unstarted(root / "rights_probe", info)
+                self._check(self.k.AssignProcessToJobObject(
+                    job, info.hProcess,
+                ))
+                self._assert_unstarted(root / "rights_probe", info)
+                self.assertNotEqual(
+                    self.k.ResumeThread(info.hThread), RESUME_FAILED,
+                )
+                observation = self._wait_for_marker(root, "rights_probe", info)
+                self.assertEqual(
+                    observation,
+                    f"set=1;wait={WAIT_FAILED};original=0;DONE",
+                )
+                self._close(job)
+                job = None
+                self.assertEqual(
+                    self.k.WaitForSingleObject(info.hProcess, 5000),
+                    WAIT_OBJECT_0,
+                )
+                print(
+                    "WNRA05W_RIGHTS event_modify=true "
+                    "synchronize_denied=true unlisted_original=false "
+                    "authorization=DENY"
+                )
+        finally:
+            if job:
+                self._close(job)
+            if info:
+                if self.k.WaitForSingleObject(info.hProcess, 0) == WAIT_TIMEOUT:
+                    self.k.TerminateProcess(info.hProcess, 1)
+                    self.k.WaitForSingleObject(info.hProcess, 5000)
+                self._close(info.hThread)
+                self._close(info.hProcess)
+            if restricted.value:
+                self._close(restricted)
+            self._close(original)
+
+    def test_query_only_process_handle_cannot_terminate_job_worker(self):
+        script = (
+            "from pathlib import Path\n"
+            "import sys,time\n"
+            "Path(sys.argv[1]).joinpath('worker_ready').write_text('READY;DONE')\n"
+            "time.sleep(30)\n"
+        )
+        job = self._job()
+        info = None
+        query_handle = None
+        try:
+            with tempfile.TemporaryDirectory() as temporary:
+                root = pathlib.Path(temporary)
+                info = self._suspended_python(script, root)
+                self._check(self.k.AssignProcessToJobObject(
+                    job, info.hProcess,
+                ))
+                self._assert_unstarted(root / "worker_ready", info)
+                query_handle = self.k.OpenProcess(
+                    PROCESS_QUERY_LIMITED_INFORMATION,
+                    False, info.dwProcessId,
+                )
+                self._check(query_handle)
+                self.assertNotEqual(
+                    self.k.ResumeThread(info.hThread), RESUME_FAILED,
+                )
+                self.assertEqual(
+                    self._wait_for_marker(root, "worker_ready", info),
+                    "READY;DONE",
+                )
+                ctypes.set_last_error(0)
+                self.assertFalse(self.k.TerminateProcess(query_handle, 1))
+                self.assertEqual(ctypes.get_last_error(), ERROR_ACCESS_DENIED)
+                self.assertEqual(
+                    self.k.WaitForSingleObject(info.hProcess, 0), WAIT_TIMEOUT,
+                )
+                self._close(job)
+                job = None
+                self.assertEqual(
+                    self.k.WaitForSingleObject(info.hProcess, 5000),
+                    WAIT_OBJECT_0,
+                )
+                print(
+                    "WNRA05W_PROCESS query_only=true "
+                    "terminate_access_denied=true job_close_terminated=true "
+                    "authorization=DENY"
+                )
+        finally:
+            if job:
+                self._close(job)
+            if info:
+                if self.k.WaitForSingleObject(info.hProcess, 0) == WAIT_TIMEOUT:
+                    self.k.TerminateProcess(info.hProcess, 1)
+                    self.k.WaitForSingleObject(info.hProcess, 5000)
+                self._close(info.hThread)
+                self._close(info.hProcess)
+            if query_handle:
+                self._close(query_handle)
 
     def test_abort_before_resume_never_runs_worker(self):
         script = (
