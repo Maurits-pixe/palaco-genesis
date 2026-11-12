@@ -60,6 +60,7 @@ on:
       - "verification/provenance/test_windows_anchor_readonly_access_check.py"
       - "verification/provenance/test_windows_anchor_restricted_sid_object_open.py"
       - "verification/provenance/test_windows_anchor_restricted_sid_loader_path.py"
+      - "verification/provenance/test_windows_anchor_process_bound_failure.py"
       - ".github/workflows/orcheastra-windows-metadata.yml"
   workflow_dispatch:
 
@@ -158,4 +159,6 @@ jobs:
           python -m unittest discover -s verification/provenance -p test_windows_anchor_restricted_sid_object_open.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s verification/provenance -p test_windows_anchor_restricted_sid_loader_path.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s verification/provenance -p test_windows_anchor_process_bound_failure.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
