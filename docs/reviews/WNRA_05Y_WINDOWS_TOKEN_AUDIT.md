@@ -26,3 +26,7 @@ The native Windows workflow must emit both `WNRA05Y_TOKEN` and `WNRA05Y_POLICY`,
 **TRIAS:** GO-13 HOLD / AUTHORIZATION DENY. **ORACLE:** evidence-bound to exact-head Windows CI. **MENTOR:** a restricted-token launcher requires separate architecture, code review, threat model and explicit authorization before production use.
 
 **No merge, release, activation, issuance or enrollment.**
+
+## Exact-head Windows counterexample and corrected legacy oracle
+
+The first WNRA-05Y head `137cba911ba0794fa305acf49597716847f47499` triggered Windows run `43162755431` (job `130997530942`). Both new WNRA-05Y tests **PASSED**, including token parity and DENY-before-resume. The overall Windows job **FAILED** because an earlier WNRA-05U test observed `UNEXPECTED_INHERIT` using only `GetHandleInformation` with a parent process's numeric event-handle value. Windows handle values are **process-local**; a reused numeric value can denote an unrelated object. The legacy assertion therefore did not prove event inheritance. The correction makes the test worker attempt `SetEvent` with that numeric value, publishes a complete marker, and requires the **original parent event to remain unsignaled** after the attempt. It preserves the security invariant without equating numeric validity with object identity. A new exact-head Windows run is mandatory; the red run remains preserved.
