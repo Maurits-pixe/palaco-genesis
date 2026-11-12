@@ -15,3 +15,7 @@ This is a local Windows Job Object feasibility test, **not** a general productio
 **Evidence required:** exact-head native Windows CI showing `WNRA05T_SUSPENDED` and `WNRA05T_ABORT`, both tests `ok`, and preceding WNRA-05S regression still PASS. Any CI failure remains a recorded counterexample; correct on a new commit and rerun, never relabel failed evidence as PASS.
 
 **TRIAS:** GO-13 HOLD / AUTHORIZATION DENY. **ORACLE:** exact-head native evidence only. **MENTOR:** propose production launcher architecture only after dedicated threat modeling; no silent deployment or release.
+
+## First-run counterexample (preserved)
+
+The first WNRA-05T commit `f5bc8705c8623ebddb8ca833e81397a339a076f6` triggered native Windows run `43156328335` (job `130977006426`), which **FAILED** both new tests before starting any child: the local test used `JOBOBJECT_EXTENDED_LIMIT_INFORMATION` instead of the correctly imported `JOB_OBJECT_EXTENDED_LIMIT_INFORMATION`, raising `NameError`. The three other workflows were successful. This is an implementation typo, not evidence about Job Object termination. The next commit corrects this spelling; it must receive fresh native Windows evidence and may not inherit a PASS from the older head.
