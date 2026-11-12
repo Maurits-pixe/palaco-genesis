@@ -344,12 +344,11 @@ class SuspendedJobLaunchTests(unittest.TestCase):
                 "from pathlib import Path\n"
                 f"handle={int(event)}\n"
                 "k=ctypes.WinDLL('kernel32',use_last_error=True)\n"
-                "k.GetHandleInformation.argtypes=(ctypes.c_void_p,ctypes.POINTER(wintypes.DWORD))\n"
-                "k.GetHandleInformation.restype=wintypes.BOOL\n"
-                "flags=wintypes.DWORD()\n"
-                "inherited=k.GetHandleInformation(handle,ctypes.byref(flags))\n"
-                "value='UNEXPECTED_INHERIT' if inherited else 'NOT_INHERITED'\n"
-                "Path(sys.argv[1]).joinpath('handle_probe').write_text(value,encoding='ascii')\n"
+                "k.SetEvent.argtypes=(ctypes.c_void_p,)\n"
+                "k.SetEvent.restype=wintypes.BOOL\n"
+                "# Numeric handles are process-local; another object can reuse the same value.\n"
+                "k.SetEvent(handle)\n"
+                "Path(sys.argv[1]).joinpath('handle_probe').write_text('PROBE_COMPLETE',encoding='ascii')\n"
                 "time.sleep(30)\n"
             )
             with tempfile.TemporaryDirectory() as temporary:
@@ -365,17 +364,22 @@ class SuspendedJobLaunchTests(unittest.TestCase):
                 marker = root / "handle_probe"
                 deadline = time.monotonic() + 12
                 observed = ""
-                while observed not in ("NOT_INHERITED", "UNEXPECTED_INHERIT"):
+                while observed != "PROBE_COMPLETE":
                     if marker.exists():
                         observed = marker.read_text(encoding="ascii").strip()
-                    if observed in ("NOT_INHERITED", "UNEXPECTED_INHERIT"):
+                    if observed == "PROBE_COMPLETE":
                         break
                     if self.k.WaitForSingleObject(info.hProcess, 0) == WAIT_OBJECT_0:
                         self.fail("worker exited before handle probe")
                     if time.monotonic() >= deadline:
                         self.fail("handle probe timed out")
                     time.sleep(0.025)
-                self.assertEqual(observed, "NOT_INHERITED")
+                self.assertEqual(observed, "PROBE_COMPLETE")
+                # The parent's ORIGINAL event must remain unsignaled even after
+                # the worker tried SetEvent with the same numeric handle value.
+                self.assertEqual(
+                    self.k.WaitForSingleObject(event, 0), WAIT_TIMEOUT,
+                )
                 self._close(job)
                 job = None
                 self.assertEqual(
