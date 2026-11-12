@@ -22,6 +22,8 @@ WAIT_OBJECT_0 = 0
 WAIT_TIMEOUT = 0x102
 RESUME_FAILED = 0xFFFFFFFF
 PROCESS_SYNCHRONIZE = 0x00100000
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+HANDLE_FLAG_INHERIT = 0x00000001
 
 class STARTUPINFOW(ctypes.Structure):
     _fields_ = [
@@ -81,6 +83,22 @@ class SuspendedJobLaunchTests(unittest.TestCase):
         k.OpenProcess.restype = wintypes.HANDLE
         k.TerminateProcess.argtypes = (wintypes.HANDLE, wintypes.UINT)
         k.TerminateProcess.restype = wintypes.BOOL
+        k.IsProcessInJob.argtypes = (
+            wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL),
+        )
+        k.IsProcessInJob.restype = wintypes.BOOL
+        k.CreateEventW.argtypes = (
+            ctypes.c_void_p, wintypes.BOOL, wintypes.BOOL, wintypes.LPCWSTR,
+        )
+        k.CreateEventW.restype = wintypes.HANDLE
+        k.SetHandleInformation.argtypes = (
+            wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD,
+        )
+        k.SetHandleInformation.restype = wintypes.BOOL
+        k.GetHandleInformation.argtypes = (
+            wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD),
+        )
+        k.GetHandleInformation.restype = wintypes.BOOL
         k.CloseHandle.argtypes = (wintypes.HANDLE,)
         k.CloseHandle.restype = wintypes.BOOL
 
@@ -169,9 +187,20 @@ class SuspendedJobLaunchTests(unittest.TestCase):
                     time.sleep(0.025)
                 self.assertTrue((root / "started").exists())
                 descendant = self.k.OpenProcess(
-                    PROCESS_SYNCHRONIZE, False, int(pid_text),
+                    PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
+                    False, int(pid_text),
                 )
                 self._check(descendant)
+                parent_in_job = wintypes.BOOL()
+                child_in_job = wintypes.BOOL()
+                self._check(self.k.IsProcessInJob(
+                    info.hProcess, job, ctypes.byref(parent_in_job),
+                ))
+                self._check(self.k.IsProcessInJob(
+                    descendant, job, ctypes.byref(child_in_job),
+                ))
+                self.assertTrue(parent_in_job.value)
+                self.assertTrue(child_in_job.value)
                 self.assertEqual(
                     self.k.WaitForSingleObject(descendant, 0), WAIT_TIMEOUT,
                 )
@@ -201,6 +230,79 @@ class SuspendedJobLaunchTests(unittest.TestCase):
                     self._close(info.hProcess)
                 if descendant:
                     self._close(descendant)
+
+    def test_inheritable_parent_handle_not_leaked_to_suspended_worker(self):
+        # The event is intentionally inheritable in the test parent. The fixture
+        # launcher passes bInheritHandles=False to CreateProcessW.
+        event = self.k.CreateEventW(None, False, False, None)
+        self._check(event)
+        job = None
+        info = None
+        try:
+            self._check(self.k.SetHandleInformation(
+                event, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT,
+            ))
+            flags = wintypes.DWORD()
+            self._check(self.k.GetHandleInformation(event, ctypes.byref(flags)))
+            self.assertTrue(flags.value & HANDLE_FLAG_INHERIT)
+            script = (
+                "import ctypes,sys,time\n"
+                "from ctypes import wintypes\n"
+                "from pathlib import Path\n"
+                f"handle={int(event)}\n"
+                "k=ctypes.WinDLL('kernel32',use_last_error=True)\n"
+                "k.GetHandleInformation.argtypes=(ctypes.c_void_p,ctypes.POINTER(wintypes.DWORD))\n"
+                "k.GetHandleInformation.restype=wintypes.BOOL\n"
+                "flags=wintypes.DWORD()\n"
+                "inherited=k.GetHandleInformation(handle,ctypes.byref(flags))\n"
+                "value='UNEXPECTED_INHERIT' if inherited else 'NOT_INHERITED'\n"
+                "Path(sys.argv[1]).joinpath('handle_probe').write_text(value,encoding='ascii')\n"
+                "time.sleep(30)\n"
+            )
+            with tempfile.TemporaryDirectory() as temporary:
+                root = pathlib.Path(temporary)
+                job = self._job()
+                info = self._suspended_python(script, root)
+                self._assert_unstarted(root / "handle_probe", info)
+                self._check(self.k.AssignProcessToJobObject(job, info.hProcess))
+                self._assert_unstarted(root / "handle_probe", info)
+                self.assertNotEqual(
+                    self.k.ResumeThread(info.hThread), RESUME_FAILED,
+                )
+                marker = root / "handle_probe"
+                deadline = time.monotonic() + 12
+                observed = ""
+                while observed not in ("NOT_INHERITED", "UNEXPECTED_INHERIT"):
+                    if marker.exists():
+                        observed = marker.read_text(encoding="ascii").strip()
+                    if observed in ("NOT_INHERITED", "UNEXPECTED_INHERIT"):
+                        break
+                    if self.k.WaitForSingleObject(info.hProcess, 0) == WAIT_OBJECT_0:
+                        self.fail("worker exited before handle probe")
+                    if time.monotonic() >= deadline:
+                        self.fail("handle probe timed out")
+                    time.sleep(0.025)
+                self.assertEqual(observed, "NOT_INHERITED")
+                self._close(job)
+                job = None
+                self.assertEqual(
+                    self.k.WaitForSingleObject(info.hProcess, 5000),
+                    WAIT_OBJECT_0,
+                )
+                print(
+                    "WNRA05U_HANDLE inheritable_parent_handle=true "
+                    "child_inherited=false authorization=DENY"
+                )
+        finally:
+            if job:
+                self._close(job)
+            if info:
+                if self.k.WaitForSingleObject(info.hProcess, 0) == WAIT_TIMEOUT:
+                    self.k.TerminateProcess(info.hProcess, 1)
+                    self.k.WaitForSingleObject(info.hProcess, 5000)
+                self._close(info.hThread)
+                self._close(info.hProcess)
+            self._close(event)
 
     def test_abort_before_resume_never_runs_worker(self):
         script = (
