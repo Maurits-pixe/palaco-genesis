@@ -49,6 +49,7 @@ on:
       - "verification/provenance/WNRA_05F_SHARED_DENY_CORPUS.json"
       - "verification/provenance/test_windows_anchor_error_codes.py"
       - "verification/provenance/test_windows_anchor_process_isolation.py"
+      - "verification/provenance/test_windows_anchor_job_objects.py"
       - ".github/workflows/orcheastra-windows-metadata.yml"
   workflow_dispatch:
 
@@ -125,4 +126,6 @@ jobs:
           python -m unittest discover -s verification/provenance -p test_windows_anchor_error_codes.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s verification/provenance -p test_windows_anchor_process_isolation.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s verification/provenance -p test_windows_anchor_job_objects.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
