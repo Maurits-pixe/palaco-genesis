@@ -61,6 +61,19 @@ function parseTestRequest(raw) {
     let value;
     try {
       key = JSON.parse(match[1]);
+    } catch {
+      deny('INVALID_JSON');
+    }
+    // WNRA-05N: inspect the exact decimal lexeme BEFORE Number conversion.
+    // This is local fixture diagnostics; it does not establish a wire protocol.
+    if (key === 'sequence' && /^-?(?:0|[1-9]\d*)$/.test(match[2])) {
+      if (match[2] === '-0') deny('NEGATIVE_ZERO');
+      const integer = BigInt(match[2]);
+      if (integer > 9007199254740991n || integer < -9007199254740991n) {
+        deny('UNSAFE_INTEGER');
+      }
+    }
+    try {
       value = JSON.parse(match[2]);
     } catch {
       deny('INVALID_JSON');
@@ -192,6 +205,24 @@ test('not a general JSON decoder and no authorization', () => {
   rejected(Buffer.from('[]'));
   rejected(Buffer.from('{'));
   rejected('text');
+});
+
+test('WNRA-05N numeric lexemes classify before Number precision loss', () => {
+  for (const [token, code] of [
+    ['-0', 'NEGATIVE_ZERO'],
+    ['9007199254740992', 'UNSAFE_INTEGER'],
+    ['9007199254740993', 'UNSAFE_INTEGER'],
+    ['-9007199254740992', 'UNSAFE_INTEGER'],
+  ]) {
+    const altered = Buffer.from(original.replace('"sequence":1', '"sequence":' + token));
+    assert.throws(() => parseTestRequest(altered), { message: code }, token);
+  }
+  for (const token of ['1', '2', '9007199254740990', '9007199254740991']) {
+    const candidate = Buffer.from(original.replace('"sequence":1', '"sequence":' + token));
+    const observation = parseTestRequest(candidate);
+    assert.equal(observation.authorization, 'DENY');
+    assert.equal(observation.independent_verification, 'NOT_EXECUTED');
+  }
 });
 
 // WNRA-05H: test-only entry point for external exact-code comparison.
