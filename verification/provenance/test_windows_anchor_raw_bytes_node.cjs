@@ -61,6 +61,19 @@ function parseTestRequest(raw) {
     let value;
     try {
       key = JSON.parse(match[1]);
+    } catch {
+      deny('INVALID_JSON');
+    }
+    // WNRA-05N: inspect the exact decimal lexeme BEFORE Number conversion.
+    // This is local fixture diagnostics; it does not establish a wire protocol.
+    if (key === 'sequence' && /^-?(?:0|[1-9]\\d*)$/.test(match[2])) {
+      if (match[2] === '-0') deny('NEGATIVE_ZERO');
+      const integer = BigInt(match[2]);
+      if (integer > 9007199254740991n || integer < -9007199254740991n) {
+        deny('UNSAFE_INTEGER');
+      }
+    }
+    try {
       value = JSON.parse(match[2]);
     } catch {
       deny('INVALID_JSON');
