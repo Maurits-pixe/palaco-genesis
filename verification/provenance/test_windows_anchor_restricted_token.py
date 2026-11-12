@@ -107,7 +107,9 @@ class RestrictedTokenFixtureTests(unittest.TestCase):
             self.assertFalse(self.k.LocalFree(sid))
 
     def test_reduced_token_has_lower_integrity_and_no_privilege_gain(self):
-        original = self._parent(TOKEN_QUERY | TOKEN_DUPLICATE)
+        original = self._parent(
+            TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ADJUST_DEFAULT
+        )
         reduced = None
         try:
             parent = self.audit._observed(original)
