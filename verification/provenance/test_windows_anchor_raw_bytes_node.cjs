@@ -207,5 +207,23 @@ test('not a general JSON decoder and no authorization', () => {
   rejected('text');
 });
 
+test('WNRA-05N numeric lexemes classify before Number precision loss', () => {
+  for (const [token, code] of [
+    ['-0', 'NEGATIVE_ZERO'],
+    ['9007199254740992', 'UNSAFE_INTEGER'],
+    ['9007199254740993', 'UNSAFE_INTEGER'],
+    ['-9007199254740992', 'UNSAFE_INTEGER'],
+  ]) {
+    const altered = Buffer.from(original.replace('"sequence":1', '"sequence":' + token));
+    assert.throws(() => parseTestRequest(altered), { message: code }, token);
+  }
+  for (const token of ['1', '2', '9007199254740990', '9007199254740991']) {
+    const candidate = Buffer.from(original.replace('"sequence":1', '"sequence":' + token));
+    const observation = parseTestRequest(candidate);
+    assert.equal(observation.authorization, 'DENY');
+    assert.equal(observation.independent_verification, 'NOT_EXECUTED');
+  }
+});
+
 // WNRA-05H: test-only entry point for external exact-code comparison.
 module.exports = { parseTestRequest };
