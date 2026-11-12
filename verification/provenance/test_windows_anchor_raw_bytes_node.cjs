@@ -10,6 +10,7 @@ const test = require('node:test');
 const fixture = JSON.parse(fs.readFileSync(
   path.join(__dirname, 'WNRA_05A_ANCHOR_VECTORS.json'), 'utf8'
 ));
+const MAX_TEST_REQUEST_BYTES = 64 * 1024;
 const required = [
   'actor_id', 'evidence_ref', 'fixture_domain', 'predecessor_anchor_id',
   'protocol', 'record_digest', 'request_id', 'sequence', 'source_commit',
@@ -39,6 +40,7 @@ function validUnicode(value) {
 
 function parseTestRequest(raw) {
   if (!Buffer.isBuffer(raw)) deny('NOT_BYTES');
+  if (raw.length > MAX_TEST_REQUEST_BYTES) deny('REQUEST_TOO_LARGE');
   // WNRA-05J: inspect the original bytes before TextDecoder strips a BOM.
   if (raw.length >= 3 && raw[0] === 0xef &&
       raw[1] === 0xbb && raw[2] === 0xbf) deny('UTF8_BOM');
@@ -68,6 +70,8 @@ function parseTestRequest(raw) {
     // This is local fixture diagnostics; it does not establish a wire protocol.
     if (key === 'sequence' && /^-?(?:0|[1-9]\d*)$/.test(match[2])) {
       if (match[2] === '-0') deny('NEGATIVE_ZERO');
+      // Reject oversized decimal strings before BigInt allocates an enormous integer.
+      if (match[2].replace(/^-/, '').length > 16) deny('UNSAFE_INTEGER');
       const integer = BigInt(match[2]);
       if (integer > 9007199254740991n || integer < -9007199254740991n) {
         deny('UNSAFE_INTEGER');

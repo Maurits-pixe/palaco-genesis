@@ -289,5 +289,102 @@ class AdversarialNumericComparison(unittest.TestCase):
         # The existing Node test checks all three positive fixture vectors
         # with authorization=DENY and independent_verification=NOT_EXECUTED.
 
+
+# WNRA-05P — bounded input and combined-negative fixtures.
+# 64 KiB is a LOCAL TEST PROFILE, not a published wire protocol limit.
+MAX_05P_BYTES = 64 * 1024
+NODE_05P_SCRIPT = r"""
+const fs = require('node:fs');
+const {parseTestRequest} = require(process.argv[1]);
+const hexList = JSON.parse(fs.readFileSync(0, 'utf8'));
+const results = hexList.map(hex => {
+  try {
+    const result = parseTestRequest(Buffer.from(hex, 'hex'));
+    return result.authorization === 'DENY' &&
+      result.independent_verification === 'NOT_EXECUTED'
+      ? 'DENY_ONLY' : 'UNEXPECTED_AUTHORITY';
+  } catch (error) {
+    return error.message;
+  }
+});
+process.stdout.write('WNRA05P_CODES=' + JSON.stringify(results) + '\n');
+"""
+
+class BoundedInputAndCombinedFailures(unittest.TestCase):
+    def test_exact_size_limit_and_compound_malformed_inputs(self):
+        original = json.loads(
+            (HERE / "WNRA_05A_ANCHOR_VECTORS.json").read_text(encoding="utf-8")
+        )["vectors"][0]["canonical_json"]
+        self.assertIn("local-test-actor", original)
+        stripped = original.replace("local-test-actor", "", 1)
+        exact = stripped.replace(
+            '"actor_id":""',
+            '"actor_id":"' + ("x" * (MAX_05P_BYTES - len(stripped.encode("utf-8")))) + '"',
+            1,
+        ).encode("utf-8")
+        # Replacing the empty actor adds exactly MAX_05P_BYTES - baseline bytes.
+        self.assertEqual(len(exact), MAX_05P_BYTES)
+        one_over = exact.replace(b'"actor_id":"', b'"actor_id":"x', 1)
+        self.assertEqual(len(one_over), MAX_05P_BYTES + 1)
+        negative_zero = original.replace('"sequence":1,', '"sequence":-0,', 1)
+        oversized_digits = original.replace(
+            '"sequence":1,', '"sequence":' + "9" * 5000 + ',', 1
+        )
+        negative_oversized = original.replace(
+            '"sequence":1,', '"sequence":-' + "9" * 5000 + ',', 1
+        )
+        cases = [
+            ("exact-limit-valid-fixture", exact, "DENY_ONLY", "DENY_ONLY"),
+            ("one-byte-over", one_over, "REQUEST_TOO_LARGE", "REQUEST_TOO_LARGE"),
+            ("oversized-bom", b"\xef\xbb\xbf" + one_over, "REQUEST_TOO_LARGE", "REQUEST_TOO_LARGE"),
+            ("oversized-bad-utf8", one_over + b"\xff", "REQUEST_TOO_LARGE", "REQUEST_TOO_LARGE"),
+            ("five-thousand-digits", oversized_digits.encode("utf-8"), "UNSAFE_INTEGER", "UNSAFE_INTEGER"),
+            ("negative-five-thousand-digits", negative_oversized.encode("utf-8"), "UNSAFE_INTEGER", "UNSAFE_INTEGER"),
+            ("bom-and-negative-zero", b"\xef\xbb\xbf" + negative_zero.encode("utf-8"), "UTF8_BOM", "UTF8_BOM"),
+            ("bad-utf8-and-negative-zero", negative_zero.encode("utf-8") + b"\xff", "INVALID_UTF8", "INVALID_UTF8"),
+            ("duplicate-and-unsafe", original.replace(
+                '"sequence":1,', '"sequence":9007199254740993,"sequence":1,', 1
+            ).encode("utf-8"), None, None),
+            ("nested-and-long-digit", original.replace(
+                '"sequence":1,', '"sequence":' + "9" * 5000 + ',"extra":{"a":1,"a":1},', 1
+            ).encode("utf-8"), None, None),
+        ]
+        process = subprocess.run(
+            ["node", "-e", NODE_05P_SCRIPT,
+             str(HERE / "test_windows_anchor_raw_bytes_node.cjs")],
+            input=json.dumps([raw.hex() for _, raw, _, _ in cases]),
+            text=True, capture_output=True, check=False, timeout=45,
+        )
+        self.assertEqual(process.returncode, 0, msg=process.stderr[-1000:])
+        lines = [
+            line.split("WNRA05P_CODES=", 1)[1]
+            for line in process.stdout.splitlines()
+            if line.startswith("WNRA05P_CODES=")
+        ]
+        self.assertEqual(len(lines), 1, msg=process.stdout[-1000:])
+        node_results = json.loads(lines[0])
+        self.assertEqual(len(node_results), len(cases))
+        for (case_id, raw, python_expected, node_expected), node_code in zip(cases, node_results):
+            with self.subTest(case_id=case_id):
+                if case_id == "exact-limit-valid-fixture":
+                    parsed = parse_simulated_request_bytes(raw)
+                    self.assertTrue(parsed.actor_id.startswith("x"))
+                    python_code = "DENY_ONLY"  # a parse is never authorization
+                else:
+                    with self.assertRaises(FixtureByteRejected) as exc:
+                        parse_simulated_request_bytes(raw)
+                    python_code = str(exc.exception)
+                    self.assertNotEqual(node_code, "DENY_ONLY")
+                self.assertNotEqual(node_code, "UNEXPECTED_AUTHORITY")
+                if python_expected is not None:
+                    self.assertEqual(python_code, python_expected)
+                if node_expected is not None:
+                    self.assertEqual(node_code, node_expected)
+                print(
+                    "WNRA05P_CASE " + case_id
+                    + " python=" + python_code
+                    + " node=" + node_code + " authorization=DENY"
+                )
+
 if __name__ == "__main__":
     unittest.main()
