@@ -11,3 +11,7 @@ These are **Windows-only test fixtures**. The subprocess is created before assig
 The native Windows regression workflow now watches and runs the Job Object test. Exact-head CI must verify `WNRA05S_JOB_TREE` and `WNRA05S_JOB_MEMORY` test logs, both tests `ok`, and existing WNRA-05Q/05R regressions. No `PASS` claim without that evidence. Tests and notes cannot grant authorization, anchor signing, issuance, production admission, release or merge.
 
 **TRIAS:** GO-13 HOLD and AUTHORIZATION DENY. **ORACLE:** exact-head Windows evidence required. **MENTOR:** treat the result as a narrow feasibility test; any hardened process containment requires an independent architecture and threat-model review.
+
+## Initial Windows CI counterexample and correction
+
+The first head `9c2c4c5c779914786c22e5be82f6e68e5f9b83c2` failed the Job Object tree test on Windows run `43152430378`, job `130964539709`: both process handles were signaled, but the test incorrectly asserted a nonzero process exit code (observed 0). The separate 96 MiB memory-limit test passed. This is a test-oracle error, not evidence of a live descendant after job closure. The follow-up adds pre-close `WAIT_TIMEOUT` for the parent and retains post-close `WAIT_OBJECT_0` for parent and descendant; it removes the ungrounded exit-code requirement. The revised head requires a fresh native Windows run, and the first failure remains part of the evidence history.
