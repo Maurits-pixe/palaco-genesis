@@ -91,7 +91,7 @@ class SuspendedJobLaunchTests(unittest.TestCase):
     def _job(self):
         job = self.k.CreateJobObjectW(None, None)
         self._check(job)
-        limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        limits = JOB_OBJECT_EXTENDED_LIMIT_INFORMATION()
         limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
         try:
             self._check(self.k.SetInformationJobObject(
