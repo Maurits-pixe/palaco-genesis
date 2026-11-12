@@ -196,5 +196,98 @@ class NumericBoundaryComparison(unittest.TestCase):
                     + " authorization=DENY"
                 )
 
+
+# WNRA-05O — targeted invalid numeric lexical forms. No public wire canon.
+NUMERIC_ADVERSARIAL = (
+    ("leading-zero", "01"),
+    ("negative-leading-zero", "-01"),
+    ("plus-sign", "+1"),
+    ("trailing-decimal-point", "1."),
+    ("leading-decimal-point", ".1"),
+    ("double-sign", "--1"),
+    ("digit-separator", "1_0"),
+    ("hexadecimal", "0x1"),
+    ("positive-exponent", "1e+0"),
+    ("huge-exponent", "1e309"),
+    ("negative-exponent", "-1e-0"),
+    ("fractional-half", "0.5"),
+    ("negative-fraction-zero", "-0.0"),
+    ("string-number", '"1"'),
+    ("nan-literal", "NaN"),
+    ("infinity-literal", "Infinity"),
+    ("large-integer", "9" * 70),
+    ("unicode-digit", "１"),
+    ("missing-number", ""),
+    ("duplicated-sequence", '1,"sequence":2'),
+)
+NODE_ADVERSARIAL_SCRIPT = r"""
+const fs = require('node:fs');
+const {parseTestRequest} = require(process.argv[1]);
+const hexList = JSON.parse(fs.readFileSync(0, 'utf8'));
+const codes = hexList.map(hex => {
+  try {
+    const result = parseTestRequest(Buffer.from(hex, 'hex'));
+    return result.authorization === 'DENY' &&
+      result.independent_verification === 'NOT_EXECUTED'
+      ? 'UNEXPECTED_PARSE' : 'UNEXPECTED_AUTHORITY';
+  } catch (error) {
+    return error.message;
+  }
+});
+process.stdout.write('WNRA05O_REJECTIONS=' + JSON.stringify(codes) + '\n');
+"""
+
+class AdversarialNumericComparison(unittest.TestCase):
+    def test_cross_language_noncanonical_numeric_forms_reject(self):
+        vectors = json.loads(
+            (HERE / "WNRA_05A_ANCHOR_VECTORS.json").read_text(encoding="utf-8")
+        )["vectors"]
+        original = vectors[0]["canonical_json"]
+        self.assertIn('"sequence":1,', original)
+        raw_cases = [
+            original.replace('"sequence":1,', '"sequence":' + token + ',', 1)
+            .encode("utf-8") for _, token in NUMERIC_ADVERSARIAL
+        ]
+        process = subprocess.run(
+            ["node", "-e", NODE_ADVERSARIAL_SCRIPT,
+             str(HERE / "test_windows_anchor_raw_bytes_node.cjs")],
+            input=json.dumps([raw.hex() for raw in raw_cases]),
+            text=True, capture_output=True, check=False, timeout=45,
+        )
+        self.assertEqual(process.returncode, 0, msg=process.stderr[-1000:])
+        lines = [
+            line.split("WNRA05O_REJECTIONS=", 1)[1]
+            for line in process.stdout.splitlines()
+            if line.startswith("WNRA05O_REJECTIONS=")
+        ]
+        self.assertEqual(len(lines), 1, msg=process.stdout[-1000:])
+        codes = json.loads(lines[0])
+        self.assertEqual(len(codes), len(NUMERIC_ADVERSARIAL))
+        for (case_id, _), raw, code in zip(NUMERIC_ADVERSARIAL, raw_cases, codes):
+            with self.subTest(case_id=case_id):
+                with self.assertRaises(FixtureByteRejected) as reason:
+                    parse_simulated_request_bytes(raw)
+                self.assertRegex(str(reason.exception), r"^[A-Z][A-Z0-9_]*$")
+                self.assertRegex(code, r"^[A-Z][A-Z0-9_]*$")
+                self.assertNotIn(code, ("UNEXPECTED_PARSE", "UNEXPECTED_AUTHORITY"))
+                print(
+                    "WNRA05O_CASE " + case_id
+                    + " python=" + str(reason.exception)
+                    + " node=" + code + " authorization=DENY"
+                )
+
+    def test_three_frozen_canonical_vectors_stay_test_only(self):
+        vectors = json.loads(
+            (HERE / "WNRA_05A_ANCHOR_VECTORS.json").read_text(encoding="utf-8")
+        )["vectors"]
+        for vector in vectors:
+            with self.subTest(vector=vector["name"]):
+                result = parse_simulated_request_bytes(
+                    vector["canonical_json"].encode("utf-8")
+                )
+                self.assertGreater(result.sequence, 0)
+        # The existing Node test checks all three positive fixture vectors
+        # with authorization=DENY and independent_verification=NOT_EXECUTED.
+
 if __name__ == "__main__":
     unittest.main()
