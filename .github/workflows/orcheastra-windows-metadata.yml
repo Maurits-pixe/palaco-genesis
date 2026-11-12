@@ -50,6 +50,7 @@ on:
       - "verification/provenance/test_windows_anchor_error_codes.py"
       - "verification/provenance/test_windows_anchor_process_isolation.py"
       - "verification/provenance/test_windows_anchor_job_objects.py"
+      - "verification/provenance/test_windows_anchor_suspended_job_launch.py"
       - ".github/workflows/orcheastra-windows-metadata.yml"
   workflow_dispatch:
 
@@ -128,4 +129,6 @@ jobs:
           python -m unittest discover -s verification/provenance -p test_windows_anchor_process_isolation.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s verification/provenance -p test_windows_anchor_job_objects.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s verification/provenance -p test_windows_anchor_suspended_job_launch.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
