@@ -201,6 +201,10 @@ class SuspendedJobLaunchTests(unittest.TestCase):
                 ))
                 self.assertTrue(parent_in_job.value)
                 self.assertTrue(child_in_job.value)
+                print(
+                    "WNRA05U_MEMBERSHIP parent_in_job=true "
+                    "descendant_in_job=true authorization=DENY"
+                )
                 self.assertEqual(
                     self.k.WaitForSingleObject(descendant, 0), WAIT_TIMEOUT,
                 )
