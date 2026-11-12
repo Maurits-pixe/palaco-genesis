@@ -344,12 +344,11 @@ class SuspendedJobLaunchTests(unittest.TestCase):
                 "from pathlib import Path\n"
                 f"handle={int(event)}\n"
                 "k=ctypes.WinDLL('kernel32',use_last_error=True)\n"
-                "k.GetHandleInformation.argtypes=(ctypes.c_void_p,ctypes.POINTER(wintypes.DWORD))\n"
-                "k.GetHandleInformation.restype=wintypes.BOOL\n"
-                "flags=wintypes.DWORD()\n"
-                "inherited=k.GetHandleInformation(handle,ctypes.byref(flags))\n"
-                "value='UNEXPECTED_INHERIT' if inherited else 'NOT_INHERITED'\n"
-                "Path(sys.argv[1]).joinpath('handle_probe').write_text(value,encoding='ascii')\n"
+                "k.SetEvent.argtypes=(ctypes.c_void_p,)\n"
+                "k.SetEvent.restype=wintypes.BOOL\n"
+                "# Numeric handles are process-local; another object can reuse the same value.\n"
+                "k.SetEvent(handle)\n"
+                "Path(sys.argv[1]).joinpath('handle_probe').write_text('PROBE_COMPLETE',encoding='ascii')\n"
                 "time.sleep(30)\n"
             )
             with tempfile.TemporaryDirectory() as temporary:
@@ -365,17 +364,22 @@ class SuspendedJobLaunchTests(unittest.TestCase):
                 marker = root / "handle_probe"
                 deadline = time.monotonic() + 12
                 observed = ""
-                while observed not in ("NOT_INHERITED", "UNEXPECTED_INHERIT"):
+                while observed != "PROBE_COMPLETE":
                     if marker.exists():
                         observed = marker.read_text(encoding="ascii").strip()
-                    if observed in ("NOT_INHERITED", "UNEXPECTED_INHERIT"):
+                    if observed == "PROBE_COMPLETE":
                         break
                     if self.k.WaitForSingleObject(info.hProcess, 0) == WAIT_OBJECT_0:
                         self.fail("worker exited before handle probe")
                     if time.monotonic() >= deadline:
                         self.fail("handle probe timed out")
                     time.sleep(0.025)
-                self.assertEqual(observed, "NOT_INHERITED")
+                self.assertEqual(observed, "PROBE_COMPLETE")
+                # The parent's ORIGINAL event must remain unsignaled even after
+                # the worker tried SetEvent with the same numeric handle value.
+                self.assertEqual(
+                    self.k.WaitForSingleObject(event, 0), WAIT_TIMEOUT,
+                )
                 self._close(job)
                 job = None
                 self.assertEqual(
@@ -416,14 +420,12 @@ class SuspendedJobLaunchTests(unittest.TestCase):
                 f"allowed={int(allowed)}\n"
                 f"forbidden={int(forbidden)}\n"
                 "k=ctypes.WinDLL('kernel32',use_last_error=True)\n"
-                "k.GetHandleInformation.argtypes=(ctypes.c_void_p,ctypes.POINTER(wintypes.DWORD))\n"
-                "k.GetHandleInformation.restype=wintypes.BOOL\n"
-                "def present(handle):\n"
-                " flags=wintypes.DWORD()\n"
-                " return bool(k.GetHandleInformation(handle,ctypes.byref(flags)))\n"
-                "a=int(present(allowed));b=int(present(forbidden))\n"
-                "Path(sys.argv[1]).joinpath('allowlist_probe').write_text("
-                "f'allowed={a};unlisted={b};DONE',encoding='ascii')\n"
+                "k.SetEvent.argtypes=(ctypes.c_void_p,)\n"
+                "k.SetEvent.restype=wintypes.BOOL\n"
+                "# Probe the actual event objects, not process-local numeric handles.\n"
+                "k.SetEvent(allowed)\n"
+                "k.SetEvent(forbidden)\n"
+                "Path(sys.argv[1]).joinpath('allowlist_probe').write_text('PROBED;DONE',encoding='ascii')\n"
                 "time.sleep(30)\n"
             )
             with tempfile.TemporaryDirectory() as temporary:
@@ -439,7 +441,13 @@ class SuspendedJobLaunchTests(unittest.TestCase):
                     self.k.ResumeThread(info.hThread), RESUME_FAILED,
                 )
                 value = self._wait_for_marker(root, "allowlist_probe", info)
-                self.assertEqual(value, "allowed=1;unlisted=0;DONE")
+                self.assertEqual(value, "PROBED;DONE")
+                self.assertEqual(
+                    self.k.WaitForSingleObject(allowed, 0), WAIT_OBJECT_0,
+                )
+                self.assertEqual(
+                    self.k.WaitForSingleObject(forbidden, 0), WAIT_TIMEOUT,
+                )
                 self._close(job)
                 job = None
                 self.assertEqual(
@@ -554,10 +562,10 @@ class SuspendedJobLaunchTests(unittest.TestCase):
                 "k.GetHandleInformation.restype=wintypes.BOOL\n"
                 "set_ok=int(bool(k.SetEvent(restricted)))\n"
                 "wait_code=k.WaitForSingleObject(restricted,0)\n"
-                "original_flags=wintypes.DWORD()\n"
-                "original_found=int(bool(k.GetHandleInformation(original,ctypes.byref(original_flags))))\n"
+                "# Try to consume the signal using the unlisted full-access handle.\n"
+                "k.WaitForSingleObject(original,0)\n"
                 "Path(sys.argv[1]).joinpath('rights_probe').write_text("
-                "f'set={set_ok};wait={wait_code};original={original_found};DONE',"
+                "f'set={set_ok};wait={wait_code};DONE',"
                 "encoding='ascii')\n"
                 "time.sleep(30)\n"
             )
@@ -578,7 +586,11 @@ class SuspendedJobLaunchTests(unittest.TestCase):
                 observation = self._wait_for_marker(root, "rights_probe", info)
                 self.assertEqual(
                     observation,
-                    f"set=1;wait={WAIT_FAILED};original=0;DONE",
+                    f"set=1;wait={WAIT_FAILED};DONE",
+                )
+                # The signal on the parent's real event must remain unconsumed.
+                self.assertEqual(
+                    self.k.WaitForSingleObject(original, 0), WAIT_OBJECT_0,
                 )
                 self._close(job)
                 job = None
@@ -640,10 +652,10 @@ class SuspendedJobLaunchTests(unittest.TestCase):
                 "ctypes.set_last_error(0)\n"
                 "set_ok=int(bool(k.SetEvent(restricted)))\n"
                 "set_error=ctypes.get_last_error()\n"
-                "original_flags=wintypes.DWORD()\n"
-                "original_found=int(bool(k.GetHandleInformation(original,ctypes.byref(original_flags))))\n"
+                "# The unlisted original must not be able to signal the parent.\n"
+                "k.SetEvent(original)\n"
                 "Path(sys.argv[1]).joinpath('sync_only_probe').write_text("
-                "f'wait={wait_code};set={set_ok};error={set_error};original={original_found};DONE',"
+                "f'wait={wait_code};set={set_ok};error={set_error};DONE',"
                 "encoding='ascii')\n"
                 "time.sleep(30)\n"
             )
@@ -662,7 +674,10 @@ class SuspendedJobLaunchTests(unittest.TestCase):
                 observation = self._wait_for_marker(root, "sync_only_probe", info)
                 self.assertEqual(
                     observation,
-                    f"wait={WAIT_TIMEOUT};set=0;error={ERROR_ACCESS_DENIED};original=0;DONE",
+                    f"wait={WAIT_TIMEOUT};set=0;error={ERROR_ACCESS_DENIED};DONE",
+                )
+                self.assertEqual(
+                    self.k.WaitForSingleObject(original, 0), WAIT_TIMEOUT,
                 )
                 self._close(job)
                 job = None
