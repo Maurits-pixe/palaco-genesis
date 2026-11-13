@@ -124,7 +124,30 @@ class ProcessModuleSnapshotTests(unittest.TestCase):
         finally:
             self.fx.fx._close(snapshot)
 
-    def _run_policy(self, source, policy, image):
+    def _early_samples(self, pid, process_handle):
+        """Bounded post-resume observations; no global tracing or privileges."""
+        begin = time.perf_counter()
+        observations = []
+        for index in range(12):
+            state = self.k.WaitForSingleObject(process_handle, 0)
+            self.assertIn(state, (WAIT_OBJECT_0, WAIT_TIMEOUT))
+            elapsed_ms = round((time.perf_counter() - begin) * 1000, 3)
+            if state == WAIT_OBJECT_0:
+                observations.append(("exited", 0, 0, elapsed_ms))
+                break
+            status, count, error = self._modules(pid)
+            observations.append((status, count, error, elapsed_ms))
+            # Bound both the sampling rate and total attempts. WaitForSingleObject
+            # also permits early exit observation without busy polling.
+            if self.k.WaitForSingleObject(process_handle, 10) == WAIT_OBJECT_0:
+                elapsed_ms = round((time.perf_counter() - begin) * 1000, 3)
+                observations.append(("exited", 0, 0, elapsed_ms))
+                break
+        self.assertTrue(observations)
+        self.assertLessEqual(len(observations), 13)
+        return observations
+
+    def _run_policy(self, source, policy, image, early_capture=False):
         token = None
         job = None
         info = PROCESS_INFORMATION()
@@ -208,6 +231,7 @@ class ProcessModuleSnapshotTests(unittest.TestCase):
             self.assertNotEqual(
                 self.k.ResumeThread(info.hThread), RESUME_FAILED,
             )
+            early = self._early_samples(pid, info.hProcess) if early_capture else []
             time.sleep(0.4)
             after, after_count, after_error = self._modules(pid)
             state = self.k.WaitForSingleObject(info.hProcess, 0)
@@ -227,6 +251,39 @@ class ProcessModuleSnapshotTests(unittest.TestCase):
                 self.assertEqual(outcome, "worker_live")
                 self.assertEqual(after, "observed")
                 self.assertGreater(after_count, 0)
+            if early_capture:
+                first_observed = next(
+                    (entry for entry in early if entry[0] == "observed"), None,
+                )
+                first_exit = next(
+                    (entry for entry in early if entry[0] == "exited"), None,
+                )
+                print(
+                    "WNRA06M_EARLY policy=" + policy
+                    + " samples=" + str(len(early))
+                    + " observed_samples=" + str(sum(
+                        1 for entry in early if entry[0] == "observed"
+                    ))
+                    + " first_observed_ms=" + (
+                        str(first_observed[3]) if first_observed else "none"
+                    )
+                    + " first_exit_ms=" + (
+                        str(first_exit[3]) if first_exit else "not_observed"
+                    )
+                    + " max_module_count=" + str(max(
+                        (entry[1] for entry in early), default=0,
+                    ))
+                    + " early_unavailable_codes=" + ",".join(
+                        str(code) for code in sorted(set(
+                            entry[2] for entry in early
+                            if entry[0] == "unavailable"
+                        ))
+                    )
+                    + " final_outcome=" + outcome
+                    + " final_exit_code=" + str(exit_code)
+                    + " loader_denial_traced=false"
+                    + " cause_attributed=false authorization=DENY"
+                )
             self.fx.fx._close(job)
             job = None
             self.assertEqual(
