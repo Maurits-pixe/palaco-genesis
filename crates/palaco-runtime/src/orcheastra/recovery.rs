@@ -179,7 +179,8 @@ mod tests {
         coordinator
             .record("one", AdmissionDecision::Proposed, "proof:one")
             .map_err(|e| format!("{e:?}"))?;
-        let (checkpoint, records) = export_checkpoint(&coordinator).map_err(|e| format!("{e:?}"))?;
+        let (checkpoint, records) =
+            export_checkpoint(&coordinator).map_err(|e| format!("{e:?}"))?;
         assert!(matches!(
             recover_coordinator(tasks.clone(), &[], &checkpoint),
             Err(RecoveryError::SequenceMismatch)
