@@ -125,8 +125,8 @@ mod tests {
     #[test]
     fn authenticated_snapshot_can_be_replayed_without_executing() -> Result<(), String> {
         let snapshot = snapshot()?;
-        let recovered = verify_snapshot(&snapshot, &snapshot.checkpoint)
-            .map_err(|err| format!("{err:?}"))?;
+        let recovered =
+            verify_snapshot(&snapshot, &snapshot.checkpoint).map_err(|err| format!("{err:?}"))?;
         assert!(recovered.entries().is_empty());
         Ok(())
     }
