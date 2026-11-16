@@ -226,8 +226,8 @@ mod tests {
             recover_at_anchor(&snapshot, 6, &anchor),
             Err(StoreError::ConcurrentModification)
         ));
-        let restored = recover_at_anchor(&snapshot, 7, &anchor)
-            .map_err(|err| format!("{err:?}"))?;
+        let restored =
+            recover_at_anchor(&snapshot, 7, &anchor).map_err(|err| format!("{err:?}"))?;
         assert!(restored.entries().is_empty());
         Ok(())
     }
