@@ -6,6 +6,9 @@
 /// SHA-256 decision journal integrity and independent head verification.
 pub mod chain;
 
+/// Offline file staging and integrity-checked reopening of opaque snapshot bytes.
+pub mod file_store;
+
 /// Transactional snapshot persistence contract, with no automatic execution.
 pub mod persistence;
 
