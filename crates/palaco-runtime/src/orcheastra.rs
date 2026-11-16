@@ -3,6 +3,9 @@
 //! This module evaluates an execution *proposal*. It never performs an action,
 //! grants credentials, or overrides the Citadel runtime boundary.
 
+/// SHA-256 decision journal integrity and independent head verification.
+pub mod chain;
+
 /// Offline-only task dependency planner and immutable decision journal.
 pub mod tasks;
 
