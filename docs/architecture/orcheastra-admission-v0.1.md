@@ -62,3 +62,27 @@ Citadel commit gate, issue tokens, perform IO or authorize real operations.
 New regression coverage includes: valid proposal, active HOLD,
 non-executable governance scope, mismatched state snapshot and expired
 validity window. CI execution and independent review are still required.
+
+## Task coordinator (v0.3 draft)
+
+`orcheastra::tasks::TaskPlan` validates unique task IDs, all dependency
+references, self-dependencies, and cycles, then returns a stable topological
+ordering. Task IDs and module names are logical references, not permission
+grants or executable commands.
+
+`TaskCoordinator` records at most one admission outcome per task in an
+in-memory, append-only, sequence-numbered journal. A task with unresolved
+predecessors cannot be marked `Proposed`. Blocked dependencies cannot satisfy
+predecessor requirements. Evidence locators must match the immutable plan.
+
+This journal is **not** durable, tamper evident, or a substitute for the
+PALACO Audit service. Recovery, persistence, hash chaining, signed references,
+revalidation between proposal and execution, and distributed concurrency
+control must be designed and reviewed before any real operation.
+
+Regression tests cover stable ordering, unknown dependencies, cycles,
+duplicate tasks, premature proposals, denied predecessors, incorrect
+evidence references and duplicate decision attempts.
+
+Production execution, scheduling, role creation, authorization, and merging
+remain out of scope. GO-13 HOLD continues to apply.
