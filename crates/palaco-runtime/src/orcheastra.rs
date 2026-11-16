@@ -245,7 +245,8 @@ mod tests {
 
     #[test]
     fn every_required_mutation_gate_blocks() {
-        let cases: &[(fn(&mut AdmissionEvidence), AdmissionReason)] = &[
+        type GateCase = (fn(&mut AdmissionEvidence), AdmissionReason);
+        let cases: &[GateCase] = &[
             (
                 |e| e.identity_verified = false,
                 AdmissionReason::IdentityMissing,
