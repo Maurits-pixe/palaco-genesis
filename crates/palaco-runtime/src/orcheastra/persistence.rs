@@ -104,6 +104,71 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct SimulatedStore {
+        generation: u64,
+        committed: Option<JournalSnapshot>,
+        interrupt_next: bool,
+    }
+
+    impl SnapshotStore for SimulatedStore {
+        fn compare_and_swap(
+            &mut self,
+            expected: CommittedVersion,
+            snapshot: &JournalSnapshot,
+        ) -> Result<CommittedVersion, StoreError> {
+            let head = self
+                .committed
+                .as_ref()
+                .map_or([0u8; 32], |current| current.checkpoint.head);
+            if expected.generation != self.generation || expected.head != head {
+                return Err(StoreError::ConcurrentModification);
+            }
+            if self.interrupt_next {
+                self.interrupt_next = false;
+                return Err(StoreError::TransactionFailed);
+            }
+            let next = self
+                .generation
+                .checked_add(1)
+                .ok_or(StoreError::TransactionFailed)?;
+            self.committed = Some(snapshot.clone());
+            self.generation = next;
+            Ok(CommittedVersion {
+                generation: next,
+                head: snapshot.checkpoint.head,
+            })
+        }
+    }
+
+    #[test]
+    fn interrupted_write_does_not_publish_partial_snapshot() -> Result<(), String> {
+        let snapshot = snapshot()?;
+        let mut store = SimulatedStore {
+            interrupt_next: true,
+            ..SimulatedStore::default()
+        };
+        let before = CommittedVersion {
+            generation: 0,
+            head: [0u8; 32],
+        };
+        assert_eq!(
+            commit_verified(&mut store, &snapshot, &snapshot.checkpoint, before),
+            Err(StoreError::TransactionFailed)
+        );
+        assert!(store.committed.is_none());
+        assert_eq!(store.generation, 0);
+        let after = commit_verified(&mut store, &snapshot, &snapshot.checkpoint, before)
+            .map_err(|err| format!("{err:?}"))?;
+        assert_eq!(after.generation, 1);
+        assert_eq!(after.head, snapshot.checkpoint.head);
+        assert_eq!(
+            commit_verified(&mut store, &snapshot, &snapshot.checkpoint, before),
+            Err(StoreError::ConcurrentModification)
+        );
+        Ok(())
+    }
+
     fn snapshot() -> Result<JournalSnapshot, String> {
         let plan = TaskPlan::build([TaskSpec {
             id: "one".to_owned(),
