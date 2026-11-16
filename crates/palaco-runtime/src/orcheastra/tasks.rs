@@ -196,9 +196,11 @@ impl TaskCoordinator {
                 AdmissionDecision::ObserveOnly => TaskReadiness::ReadyForProposal,
             });
         }
-        if task.dependencies.iter().any(|dep| {
-            self.decisions.get(dep) != Some(&AdmissionDecision::Proposed)
-        }) {
+        if task
+            .dependencies
+            .iter()
+            .any(|dep| self.decisions.get(dep) != Some(&AdmissionDecision::Proposed))
+        {
             return Some(TaskReadiness::Waiting);
         }
         Some(TaskReadiness::ReadyForProposal)
