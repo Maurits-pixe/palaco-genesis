@@ -198,3 +198,28 @@ validate that caller-supplied anchors are authentic.
 PALACO CI/CD #414 and PALACO CI #719 previously failed at Clippy due
 to a complex local test-case type. A named test type alias addresses that
 error; fresh CI checks are required before review or merge.
+
+## v0.9 offline file-staging prototype
+
+`orcheastra::file_store` stages opaque snapshot bytes to an immutable
+generation-named file. It uses a unique temporary file, length bounds,
+domain-specific magic, SHA-256 integrity, `sync_all` on the file, rename
+to the generation filename, and directory sync where supported. Reading
+verifies the header, independently supplied expected generation, payload
+length, absence of trailing bytes, and SHA-256 digest.
+
+Regression tests cover reopening after close, detecting a changed payload,
+rejecting trailing data and rejecting reuse of a staged generation.
+
+**This is intentionally NOT the `SnapshotStore` implementation.** The
+bytes are not yet a canonical encoded `JournalSnapshot`; the local hash
+does not prove authenticity. The staging function is not a multi-process
+compare-and-swap and race-free exclusive publication is not guaranteed by
+the pre-rename exists check. Independent checkpoint signing, transaction
+integration and crash/restart across platforms remain required before this
+can be used for authority-bearing records. No automatic execution.
+
+The earlier v0.8 run (#632) confirmed Citadel interoperability, but
+CI/CD #417 and CI #722 stopped on a rustfmt change in a new test; that
+formatting was fixed before this staging prototype was added. Run the
+current full CI jobs before treating v0.9 as validated.
