@@ -192,8 +192,7 @@ mod tests {
     #[test]
     fn orcheastra_runtime_adapter_revalidates_actual_boundary() -> Result<(), &'static str> {
         use crate::orcheastra::{
-            evaluate_runtime_proposal, AdmissionDecision, AdmissionEvidence,
-            AdmissionReason,
+            evaluate_runtime_proposal, AdmissionDecision, AdmissionEvidence, AdmissionReason,
         };
 
         let executable = plan(AuthorizationScope::Execute)?;
@@ -249,5 +248,4 @@ mod tests {
         );
         Ok(())
     }
-
 }
