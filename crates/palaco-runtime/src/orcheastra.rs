@@ -6,6 +6,9 @@
 /// SHA-256 decision journal integrity and independent head verification.
 pub mod chain;
 
+/// Independently anchored recovery checkpoint and fail-closed journal replay.
+pub mod recovery;
+
 /// Offline-only task dependency planner and immutable decision journal.
 pub mod tasks;
 
