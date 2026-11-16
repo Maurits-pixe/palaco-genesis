@@ -6,6 +6,9 @@
 /// SHA-256 decision journal integrity and independent head verification.
 pub mod chain;
 
+/// Transactional snapshot persistence contract, with no automatic execution.
+pub mod persistence;
+
 /// Independently anchored recovery checkpoint and fail-closed journal replay.
 pub mod recovery;
 
