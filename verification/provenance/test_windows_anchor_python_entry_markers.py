@@ -10,6 +10,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import time
 import unittest
 
 from test_windows_anchor_process_bound_failure import (
@@ -43,7 +44,29 @@ class PythonEntryMarkerTests(unittest.TestCase):
         self.k = self.controller.k
         self.a = self.controller.a
 
-    def _run_marker(self, source, policy, executable, marker, image_kind="python", thread_probe=False):
+    def _early_thread_process_samples(self, process, thread):
+        """Observe both handles immediately after resume, without intervening."""
+        start = time.perf_counter()
+        samples = []
+        for _ in range(12):
+            process_state = self.k.WaitForSingleObject(process, 0)
+            thread_state = self.k.WaitForSingleObject(thread, 0)
+            self.assertIn(process_state, (WAIT_OBJECT_0, WAIT_TIMEOUT))
+            self.assertIn(thread_state, (WAIT_OBJECT_0, WAIT_TIMEOUT))
+            elapsed_ms = round((time.perf_counter() - start) * 1000, 3)
+            samples.append((
+                elapsed_ms,
+                process_state == WAIT_OBJECT_0,
+                thread_state == WAIT_OBJECT_0,
+            ))
+            if process_state == WAIT_OBJECT_0 and thread_state == WAIT_OBJECT_0:
+                break
+            self.k.WaitForSingleObject(process, 5)
+        self.assertTrue(samples)
+        self.assertLessEqual(len(samples), 12)
+        return samples
+
+    def _run_marker(self, source, policy, executable, marker, image_kind="python", thread_probe=False, timeline_probe=False):
         self.assertIn(marker, MARKERS)
         token = None
         job = None
@@ -142,6 +165,10 @@ class PythonEntryMarkerTests(unittest.TestCase):
             self.assertNotEqual(
                 self.k.ResumeThread(info.hThread), RESUME_FAILED,
             )
+            timeline = (
+                self._early_thread_process_samples(info.hProcess, info.hThread)
+                if timeline_probe else []
+            )
             status = self.k.WaitForSingleObject(info.hProcess, MAX_WAIT_MS)
             if status == WAIT_OBJECT_0:
                 exit_status = wintypes.DWORD()
@@ -159,6 +186,34 @@ class PythonEntryMarkerTests(unittest.TestCase):
             if policy == "low_only":
                 self.assertEqual(outcome, "user_code_marker",
                                  "positive control must reach Python code")
+            if timeline_probe:
+                first_process = next(
+                    (entry[0] for entry in timeline if entry[1]), None,
+                )
+                first_thread = next(
+                    (entry[0] for entry in timeline if entry[2]), None,
+                )
+                # Sequential polling is not a causal or exact event ordering;
+                # even a first-observed signal can occur after both exits.
+                print(
+                    "WNRA06R_TIMELINE policy=" + policy
+                    + " image=" + image_kind
+                    + " marker=" + str(marker)
+                    + " samples=" + str(len(timeline))
+                    + " first_process_signaled_ms=" + (
+                        str(first_process) if first_process is not None
+                        else "not_observed"
+                    )
+                    + " first_thread_signaled_ms=" + (
+                        str(first_thread) if first_thread is not None
+                        else "not_observed"
+                    )
+                    + " process_outcome=" + outcome
+                    + " process_exit=" + str(code)
+                    + " event_order_proven=false"
+                    + " loader_denial_traced=false"
+                    + " root_cause=UNKNOWN authorization=DENY"
+                )
             if thread_probe:
                 # Inspect the main thread created in PROCESS_INFORMATION,
                 # not an inferred loader event. A thread exit code can differ
