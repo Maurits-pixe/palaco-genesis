@@ -47,3 +47,18 @@ cargo test --workspace
 
 The PR remains draft until these commands pass in CI and human review
 approves the trust-boundary integration.
+
+## Runtime-bound proposal adapter (v0.2 candidate)
+
+The `evaluate_runtime_proposal(plan, context, claims)` adapter consumes the
+existing `RuntimePlan` instead of trusting caller-supplied Citadel/context
+flags alone. It verifies the original policy and state identifiers, rejects
+backdated observations, checks current validity, and calls `revalidate`.
+
+Both externally verified claims and runtime-derived checks must succeed.
+The adapter still returns only `Proposed`; it does not invoke the in-memory
+Citadel commit gate, issue tokens, perform IO or authorize real operations.
+
+New regression coverage includes: valid proposal, active HOLD,
+non-executable governance scope, mismatched state snapshot and expired
+validity window. CI execution and independent review are still required.
