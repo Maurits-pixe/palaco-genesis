@@ -6,8 +6,8 @@
 
 use sha2::{Digest, Sha256};
 
-use super::{AdmissionDecision, AdmissionReason};
 use super::tasks::DecisionEntry;
+use super::{AdmissionDecision, AdmissionReason};
 
 /// One SHA-256 digest represented as 32 bytes.
 pub type Digest256 = [u8; 32];
@@ -173,10 +173,16 @@ mod tests {
         let anchor = chain_head(&original);
         let mut tampered = original.clone();
         tampered[0].entry.evidence_ref = "counterfeit".to_owned();
-        assert_eq!(verify_chain(&tampered, &anchor), Err(ChainError::DigestMismatch));
+        assert_eq!(
+            verify_chain(&tampered, &anchor),
+            Err(ChainError::DigestMismatch)
+        );
         tampered = original.clone();
         tampered[1].previous_hash = [9u8; 32];
-        assert_eq!(verify_chain(&tampered, &anchor), Err(ChainError::BrokenLink));
+        assert_eq!(
+            verify_chain(&tampered, &anchor),
+            Err(ChainError::BrokenLink)
+        );
         Ok(())
     }
 
@@ -188,10 +194,7 @@ mod tests {
             chain_entries(&[second.clone(), first]),
             Err(ChainError::InvalidSequence)
         );
-        let chain = chain_entries(&[
-            entry(1, "a", AdmissionDecision::ObserveOnly),
-            second,
-        ])?;
+        let chain = chain_entries(&[entry(1, "a", AdmissionDecision::ObserveOnly), second])?;
         assert_eq!(
             verify_chain(&chain[..1], &chain_head(&chain)),
             Err(ChainError::HeadMismatch)
