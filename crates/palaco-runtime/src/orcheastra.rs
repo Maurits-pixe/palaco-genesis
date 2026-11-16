@@ -243,12 +243,24 @@ mod tests {
     #[test]
     fn every_required_mutation_gate_blocks() {
         let cases: &[(fn(&mut AdmissionEvidence), AdmissionReason)] = &[
-            (|e| e.identity_verified = false, AdmissionReason::IdentityMissing),
-            (|e| e.authority_verified = false, AdmissionReason::AuthorityMissing),
-            (|e| e.evidence_verified = false, AdmissionReason::EvidenceMissing),
+            (
+                |e| e.identity_verified = false,
+                AdmissionReason::IdentityMissing,
+            ),
+            (
+                |e| e.authority_verified = false,
+                AdmissionReason::AuthorityMissing,
+            ),
+            (
+                |e| e.evidence_verified = false,
+                AdmissionReason::EvidenceMissing,
+            ),
             (|e| e.scope_matches = false, AdmissionReason::ScopeMismatch),
             (|e| e.context_current = false, AdmissionReason::StaleContext),
-            (|e| e.citadel_execute = false, AdmissionReason::CitadelDenied),
+            (
+                |e| e.citadel_execute = false,
+                AdmissionReason::CitadelDenied,
+            ),
         ];
         for (invalidate, reason) in cases {
             let mut evidence = valid_evidence();
