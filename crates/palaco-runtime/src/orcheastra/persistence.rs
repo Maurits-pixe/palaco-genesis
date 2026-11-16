@@ -86,6 +86,34 @@ pub fn commit_verified<S: SnapshotStore>(
     store.compare_and_swap(expected, snapshot)
 }
 
+/// Verified recovery anchor with an externally trusted monotonic generation.
+///
+/// The generation MUST be obtained from a separate, authenticated and
+/// rollback-resistant source. This record is not a signature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TrustedRecoveryAnchor {
+    /// Generation known to have been committed.
+    pub generation: u64,
+    /// Checkpoint bound to that generation.
+    pub checkpoint: RecoveryCheckpoint,
+}
+
+/// Recover a journal only when its generation equals the independent anchor.
+///
+/// A snapshot with a correct hash but from an older generation cannot silently
+/// replace the latest trusted state. The function is read-only and never
+/// resumes execution, renews authority, or bypasses revocation.
+pub fn recover_at_anchor(
+    snapshot: &JournalSnapshot,
+    observed_generation: u64,
+    trusted: &TrustedRecoveryAnchor,
+) -> Result<TaskCoordinator, StoreError> {
+    if observed_generation != trusted.generation {
+        return Err(StoreError::ConcurrentModification);
+    }
+    verify_snapshot(snapshot, &trusted.checkpoint)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,6 +213,23 @@ mod tests {
             records,
             checkpoint,
         })
+    }
+
+    #[test]
+    fn old_generation_is_rejected_even_with_valid_chain() -> Result<(), String> {
+        let snapshot = snapshot()?;
+        let anchor = TrustedRecoveryAnchor {
+            generation: 7,
+            checkpoint: snapshot.checkpoint,
+        };
+        assert!(matches!(
+            recover_at_anchor(&snapshot, 6, &anchor),
+            Err(StoreError::ConcurrentModification)
+        ));
+        let restored = recover_at_anchor(&snapshot, 7, &anchor)
+            .map_err(|err| format!("{err:?}"))?;
+        assert!(restored.entries().is_empty());
+        Ok(())
     }
 
     #[test]
