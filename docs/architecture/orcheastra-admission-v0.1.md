@@ -143,3 +143,26 @@ It remains offline and non-executing.
 The current `TaskCoordinator` is still process-local. These APIs do not
 claim durable crash recovery, cross-process transactionality, signing or
 authority verification. Rust CI and independent human review remain required.
+
+## Persistence contract (v0.6 draft)
+
+`orcheastra::persistence` defines `JournalSnapshot`,
+`CommittedVersion`, `SnapshotStore`, `verify_snapshot` and
+`commit_verified`. A snapshot binds the validated plan, the entire
+hash-chained journal and its checkpoint. Verification checks an independently
+trusted checkpoint, then performs fail-closed journal replay before invoking
+a backend. The backend is required to atomically commit the complete snapshot
+using compare-and-swap against an independently anchored generation. Conflicts
+or missing trust fail closed. The proposal log does **not** convey execution
+authorization.
+
+This is a **storage boundary contract only**. No production durable backend
+exists in this PR; there are no filesystem writes, database transactions or
+operational secrets. Production storage must implement durable atomic
+transactions, independently authenticated monotonic checkpoint and generation
+storage, crash/restart recovery, archival, and a separate current revocation
+check. Tests exercise checkpoint rejection and concurrent-modification errors
+with a deliberately rejecting mock backend.
+
+CI formatting failures from the previous run were addressed on the draft
+branch; all new changes require a fresh Rust fmt/Clippy/test run.
