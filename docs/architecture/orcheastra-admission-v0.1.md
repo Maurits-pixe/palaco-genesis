@@ -86,3 +86,28 @@ evidence references and duplicate decision attempts.
 
 Production execution, scheduling, role creation, authorization, and merging
 remain out of scope. GO-13 HOLD continues to apply.
+
+## SHA-256 integrity chain (v0.4 candidate)
+
+`orcheastra::chain` computes a deterministic, domain-separated SHA-256
+digest of each decision. Canonical encoding uses an explicit version prefix,
+the previous digest, the 64-bit big-endian sequence and length-prefixed UTF-8
+task/evidence identifiers, and a fixed decision/reason tag. The genesis
+previous hash is 32 zero bytes.
+
+`chain_entries` rejects noncontiguous sequence numbers;
+`verify_chain(records, trusted_head)` verifies each preceding hash, recomputes
+record digests and compares the final hash to a **separately trusted** anchor.
+A truncated journal only becomes detectable when an authoritative previously
+recorded head is provided. No anchors are currently stored.
+
+**Threat boundaries:** SHA-256 by itself provides integrity relative to a
+trusted anchor, not signer identity, durable storage, authorization, replay
+protection across independent sessions or prevention of log replacement.
+A local attacker who can replace both the records and the expected head
+can forge an internally consistent history. A future PALACO Audit integration
+must persist records transactionally, sign or otherwise authenticate canonical
+heads, anchor sequence/head pairs externally, and verify them before recovery.
+
+No automated write, scheduling, approval, token issuance, or execution is
+performed by these functions. GO-13 HOLD remains unchanged.
