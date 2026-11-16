@@ -180,3 +180,21 @@ transaction interruption before publishing a snapshot; a retry can commit,
 but a stale generation is rejected. This is not a durability proof, disk
 adapter, crash-consistent filesystem test or trusted checkpoint authority.
 No actual snapshot storage implementation is enabled for production.
+
+## v0.8 monotonic recovery fence
+
+`TrustedRecoveryAnchor` binds a monotonic storage generation to an
+independently trusted `RecoveryCheckpoint`. The read-only
+`recover_at_anchor` operation denies replay when the observed storage
+generation differs from the authenticated generation, even if the older
+hash chain is internally correct. It then verifies the full journal and
+plan against the trusted checkpoint.
+
+This is an API-level rollback defense, NOT a source of trust or a physical
+disk implementation. The independent, authenticated monotonic generation
+service and actual durable storage remain absent. This helper cannot
+validate that caller-supplied anchors are authentic.
+
+PALACO CI/CD #414 and PALACO CI #719 previously failed at Clippy due
+to a complex local test-case type. A named test type alias addresses that
+error; fresh CI checks are required before review or merge.
