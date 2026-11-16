@@ -111,3 +111,35 @@ heads, anchor sequence/head pairs externally, and verify them before recovery.
 
 No automated write, scheduling, approval, token issuance, or execution is
 performed by these functions. GO-13 HOLD remains unchanged.
+
+## Recovery checkpoints (v0.5 draft)
+
+The `orcheastra::recovery` module exports `RecoveryCheckpoint` with a
+canonical, domain-separated task-plan SHA-256 digest, committed sequence
+count and journal head. `export_checkpoint` produces a matching snapshot
+for a storage adapter. It performs **no durable writes** and does not sign
+or authenticate the checkpoint.
+
+`recover_coordinator` accepts a separately trusted checkpoint, validates
+the entire plan and the exact record count, verifies every chained record
+against the independently trusted head, and replays decisions through the
+same task dependency and evidence-reference rules as normal admission.
+Any mismatch results in an error without returning a partial coordinator.
+It remains offline and non-executing.
+
+### Required storage integration (not implemented)
+
+1. Store the immutable plan and all records in transactional durable storage.
+2. Authenticate the checkpoint using PALACO Audit signing and trusted
+   identity/authority services; never trust a checkpoint loaded from the
+   same mutable journal without an external anchor.
+3. Atomically persist checkpoint sequence and head with recorded decisions.
+4. On restart, fetch a trusted latest checkpoint through an authenticated,
+   rollback-resistant channel, and only then call `recover_coordinator`.
+5. Fail closed on unavailable or conflicting checkpoints; never auto-resume
+   mutation proposals. Revalidate current revocations/HOLD and policy before
+   any new proposal, independently of recovered historical entries.
+
+The current `TaskCoordinator` is still process-local. These APIs do not
+claim durable crash recovery, cross-process transactionality, signing or
+authority verification. Rust CI and independent human review remain required.
