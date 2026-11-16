@@ -3,6 +3,9 @@
 //! This module evaluates an execution *proposal*. It never performs an action,
 //! grants credentials, or overrides the Citadel runtime boundary.
 
+/// Offline-only task dependency planner and immutable decision journal.
+pub mod tasks;
+
 /// Requested operation in the PALACO ecosystem.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OrcheastraOperation {
