@@ -43,7 +43,7 @@ class PythonEntryMarkerTests(unittest.TestCase):
         self.k = self.controller.k
         self.a = self.controller.a
 
-    def _run_marker(self, source, policy, executable, marker):
+    def _run_marker(self, source, policy, executable, marker, image_kind="python"):
         self.assertIn(marker, MARKERS)
         token = None
         job = None
@@ -62,10 +62,17 @@ class PythonEntryMarkerTests(unittest.TestCase):
             job = self.fx.fx._job()
             # A successful user-code path ends with marker 37 or 53.
             # No output stream, file, network, environment mutation or IPC.
-            args = [
-                str(executable), "-u", "-c",
-                "import os; os._exit(" + str(marker) + ")",
-            ]
+            if image_kind == "python":
+                args = [
+                    str(executable), "-u", "-c",
+                    "import os; os._exit(" + str(marker) + ")",
+                ]
+            elif image_kind == "windows_cmd":
+                # cmd.exe built-in EXIT emits the marker without Python code,
+                # file writes, shell redirection or an external child command.
+                args = [str(executable), "/d", "/c", "exit /b " + str(marker)]
+            else:
+                self.fail("unsupported marker image kind")
             command = ctypes.create_unicode_buffer(
                 subprocess.list2cmdline(args),
             )

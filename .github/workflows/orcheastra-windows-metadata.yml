@@ -67,6 +67,7 @@ on:
       - "verification/provenance/test_windows_anchor_process_module_snapshot.py"
       - "verification/provenance/test_windows_anchor_early_loader_observation.py"
       - "verification/provenance/test_windows_anchor_python_entry_markers.py"
+      - "verification/provenance/test_windows_anchor_cmd_entry_markers.py"
       - ".github/workflows/orcheastra-windows-metadata.yml"
   workflow_dispatch:
 
@@ -179,4 +180,6 @@ jobs:
           python -m unittest discover -s verification/provenance -p test_windows_anchor_early_loader_observation.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s verification/provenance -p test_windows_anchor_python_entry_markers.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s verification/provenance -p test_windows_anchor_cmd_entry_markers.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
