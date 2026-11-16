@@ -166,3 +166,17 @@ with a deliberately rejecting mock backend.
 
 CI formatting failures from the previous run were addressed on the draft
 branch; all new changes require a fresh Rust fmt/Clippy/test run.
+
+## v0.7 validation and fault-injection follow-up
+
+CI/CD run #410 and workspace CI #715 reported formatting failures in the
+v0.6 candidate. The formatting differences shown in the job logs were fixed.
+The independent Citadel interoperability job also reported a stale Cargo.lock
+when using `--locked`; the workspace lock entry for `palaco-runtime` now
+lists its `sha2` dependency. A new CI run must confirm all corrections.
+
+The `SimulatedStore` adapter exists **only under cfg(test)**. It models a
+transaction interruption before publishing a snapshot; a retry can commit,
+but a stale generation is rejected. This is not a durability proof, disk
+adapter, crash-consistent filesystem test or trusted checkpoint authority.
+No actual snapshot storage implementation is enabled for production.
