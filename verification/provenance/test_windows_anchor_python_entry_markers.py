@@ -43,7 +43,7 @@ class PythonEntryMarkerTests(unittest.TestCase):
         self.k = self.controller.k
         self.a = self.controller.a
 
-    def _run_marker(self, source, policy, executable, marker, image_kind="python"):
+    def _run_marker(self, source, policy, executable, marker, image_kind="python", thread_probe=False):
         self.assertIn(marker, MARKERS)
         token = None
         job = None
@@ -159,6 +159,37 @@ class PythonEntryMarkerTests(unittest.TestCase):
             if policy == "low_only":
                 self.assertEqual(outcome, "user_code_marker",
                                  "positive control must reach Python code")
+            if thread_probe:
+                # Inspect the main thread created in PROCESS_INFORMATION,
+                # not an inferred loader event. A thread exit code can differ
+                # from the process exit code and is never assumed causal.
+                self.k.GetExitCodeThread.argtypes = (
+                    wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD),
+                )
+                self.k.GetExitCodeThread.restype = wintypes.BOOL
+                thread_wait = self.k.WaitForSingleObject(info.hThread, 0)
+                self.assertIn(thread_wait, (WAIT_OBJECT_0, WAIT_TIMEOUT))
+                thread_code = wintypes.DWORD()
+                self.fx.fx._check(self.k.GetExitCodeThread(
+                    info.hThread, ctypes.byref(thread_code),
+                ))
+                print(
+                    "WNRA06Q_EXIT policy=" + policy
+                    + " image=" + image_kind
+                    + " marker=" + str(marker)
+                    + " outcome=" + outcome
+                    + " process_exit=" + str(code)
+                    + " thread_wait=" + (
+                        "signaled" if thread_wait == WAIT_OBJECT_0
+                        else "running"
+                    )
+                    + " primary_thread_exit=" + str(thread_code.value)
+                    + " pid_verified=true image_verified=true"
+                    + " child_token_verified=true"
+                    + " process_bound=true"
+                    + " loader_denial_traced=false"
+                    + " root_cause=UNKNOWN authorization=DENY"
+                )
             self.fx.fx._close(job)
             job = None
             self.assertEqual(
