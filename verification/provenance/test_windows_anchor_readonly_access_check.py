@@ -77,9 +77,16 @@ class ReadOnlyAccessCheckTests(unittest.TestCase):
                 user, ctypes.POINTER(SID_AND_ATTRIBUTES),
             ).contents.Sid
             self.assertTrue(sid)
-        elif variant == "builtin_users":
+        elif variant in ("builtin_users", "authenticated_users", "everyone"):
+            # These test-only identities vary *only* the restricting SID;
+            # DISABLE_MAX_PRIVILEGE and Low Integrity are unchanged.
+            sid_strings = {
+                "builtin_users": USERS_SID,
+                "authenticated_users": "S-1-5-11",
+                "everyone": "S-1-1-0",
+            }
             self.fx.fx._check(self.a.ConvertStringSidToSidW(
-                USERS_SID, ctypes.byref(sid_allocation),
+                sid_strings[variant], ctypes.byref(sid_allocation),
             ))
             sid = sid_allocation.value
         else:
