@@ -114,6 +114,67 @@ pub fn evaluate_admission(
     AdmissionDecision::Proposed
 }
 
+/// Evaluate a mutation proposal against an actual PALACO runtime plan.
+///
+/// The caller-provided flags are untrusted until verified by their respective
+/// authority services. Citadel disposition, policy/state context and runtime
+/// revalidation are derived independently here; callers cannot force those
+/// checks to `true` by setting the matching booleans.
+///
+/// This is an assessment only: it never commits or executes an action.
+#[must_use]
+pub fn evaluate_runtime_proposal(
+    plan: &crate::RuntimePlan,
+    context: &palaco_foundation::types::DecisionContext,
+    claims: &AdmissionEvidence,
+) -> AdmissionDecision {
+    use palaco_foundation::{
+        traits::{CurrentlyAssessable, Revalidatable},
+        types::{CurrentValidity, RevalidationOutcome},
+    };
+
+    // A negative authority signal cannot be overridden by runtime success.
+    if claims.revoked {
+        return AdmissionDecision::Blocked(AdmissionReason::Revoked);
+    }
+    if claims.hold_active {
+        return AdmissionDecision::Blocked(AdmissionReason::Hold);
+    }
+    if !claims.identity_verified {
+        return AdmissionDecision::Blocked(AdmissionReason::IdentityMissing);
+    }
+    if !claims.authority_verified {
+        return AdmissionDecision::Blocked(AdmissionReason::AuthorityMissing);
+    }
+    if !claims.evidence_verified {
+        return AdmissionDecision::Blocked(AdmissionReason::EvidenceMissing);
+    }
+    if !claims.scope_matches {
+        return AdmissionDecision::Blocked(AdmissionReason::ScopeMismatch);
+    }
+
+    let original = &plan.boundary.decision.context;
+    let same_snapshot = context.state == original.state
+        && context.policy_version == original.policy_version
+        && context.observed_at >= original.observed_at;
+    if !same_snapshot
+        || !claims.context_current
+        || plan.current_validity(context.observed_at) != CurrentValidity::Valid
+        || plan.revalidate(context) != Ok(RevalidationOutcome::Confirmed)
+    {
+        return AdmissionDecision::Blocked(AdmissionReason::StaleContext);
+    }
+
+    if !claims.citadel_execute
+        || plan.disposition != crate::RuntimeDisposition::Execute
+        || plan.boundary.disposition != palaco_citadel::BoundaryDisposition::Execute
+    {
+        return AdmissionDecision::Blocked(AdmissionReason::CitadelDenied);
+    }
+
+    AdmissionDecision::Proposed
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
