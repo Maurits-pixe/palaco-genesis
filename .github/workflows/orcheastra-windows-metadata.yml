@@ -71,6 +71,8 @@ on:
       - "verification/provenance/test_windows_anchor_restricting_sid_policy_matrix.py"
       - "verification/provenance/test_windows_anchor_thread_process_exit.py"
       - "verification/provenance/test_windows_anchor_early_thread_process_timeline.py"
+      - "verification/provenance/windows_anchor_failure_evidence_gate.py"
+      - "verification/provenance/test_windows_anchor_failure_evidence_gate.py"
       - ".github/workflows/orcheastra-windows-metadata.yml"
   workflow_dispatch:
 
@@ -191,4 +193,6 @@ jobs:
           python -m unittest discover -s verification/provenance -p test_windows_anchor_thread_process_exit.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s verification/provenance -p test_windows_anchor_early_thread_process_timeline.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s verification/provenance -p test_windows_anchor_failure_evidence_gate.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
