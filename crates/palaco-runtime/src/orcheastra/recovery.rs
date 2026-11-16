@@ -126,8 +126,8 @@ pub fn recover_coordinator(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::orcheastra::tasks::{TaskReadiness, TaskSpec};
     use crate::orcheastra::{AdmissionDecision, AdmissionReason};
-    use crate::orcheastra::tasks::{TaskSpec, TaskReadiness};
 
     fn plan() -> Result<TaskPlan, super::super::tasks::PlanError> {
         TaskPlan::build([
@@ -150,15 +150,25 @@ mod tests {
     fn authentic_checkpoint_restores_decisions() -> Result<(), String> {
         let tasks = plan().map_err(|e| format!("{e:?}"))?;
         let mut coordinator = TaskCoordinator::new(tasks.clone());
-        coordinator.record("one", AdmissionDecision::Proposed, "proof:one")
+        coordinator
+            .record("one", AdmissionDecision::Proposed, "proof:one")
             .map_err(|e| format!("{e:?}"))?;
-        coordinator.record("rio", AdmissionDecision::Blocked(AdmissionReason::Hold), "proof:rio")
+        coordinator
+            .record(
+                "rio",
+                AdmissionDecision::Blocked(AdmissionReason::Hold),
+                "proof:rio",
+            )
             .map_err(|e| format!("{e:?}"))?;
-        let (checkpoint, records) = export_checkpoint(&coordinator).map_err(|e| format!("{e:?}"))?;
-        let restored = recover_coordinator(tasks, &records, &checkpoint)
-            .map_err(|e| format!("{e:?}"))?;
+        let (checkpoint, records) =
+            export_checkpoint(&coordinator).map_err(|e| format!("{e:?}"))?;
+        let restored =
+            recover_coordinator(tasks, &records, &checkpoint).map_err(|e| format!("{e:?}"))?;
         assert_eq!(restored.entries(), coordinator.entries());
-        assert_eq!(restored.readiness("rio"), Some(TaskReadiness::Blocked(AdmissionReason::Hold)));
+        assert_eq!(
+            restored.readiness("rio"),
+            Some(TaskReadiness::Blocked(AdmissionReason::Hold))
+        );
         Ok(())
     }
 
@@ -166,7 +176,8 @@ mod tests {
     fn truncation_and_plan_substitution_are_rejected() -> Result<(), String> {
         let tasks = plan().map_err(|e| format!("{e:?}"))?;
         let mut coordinator = TaskCoordinator::new(tasks.clone());
-        coordinator.record("one", AdmissionDecision::Proposed, "proof:one")
+        coordinator
+            .record("one", AdmissionDecision::Proposed, "proof:one")
             .map_err(|e| format!("{e:?}"))?;
         let (checkpoint, records) = export_checkpoint(&coordinator).map_err(|e| format!("{e:?}"))?;
         assert!(matches!(
@@ -186,7 +197,8 @@ mod tests {
                 dependencies: vec!["one".to_owned()],
                 evidence_ref: "proof:rio".to_owned(),
             },
-        ]).map_err(|e| format!("{e:?}"))?;
+        ])
+        .map_err(|e| format!("{e:?}"))?;
         assert_eq!(
             recover_coordinator(altered, &records, &checkpoint).err(),
             Some(RecoveryError::PlanMismatch)
@@ -211,7 +223,9 @@ mod tests {
         };
         assert_eq!(
             recover_coordinator(tasks, &records, &checkpoint).err(),
-            Some(RecoveryError::InvalidJournal(JournalError::DependencyNotProposed))
+            Some(RecoveryError::InvalidJournal(
+                JournalError::DependencyNotProposed
+            ))
         );
         Ok(())
     }
@@ -220,10 +234,11 @@ mod tests {
     fn altered_record_is_rejected_even_with_correct_checkpoint() -> Result<(), String> {
         let tasks = plan().map_err(|e| format!("{e:?}"))?;
         let mut coordinator = TaskCoordinator::new(tasks.clone());
-        coordinator.record("one", AdmissionDecision::Proposed, "proof:one")
+        coordinator
+            .record("one", AdmissionDecision::Proposed, "proof:one")
             .map_err(|e| format!("{e:?}"))?;
-        let (checkpoint, mut records) = export_checkpoint(&coordinator)
-            .map_err(|e| format!("{e:?}"))?;
+        let (checkpoint, mut records) =
+            export_checkpoint(&coordinator).map_err(|e| format!("{e:?}"))?;
         records[0].entry.decision = AdmissionDecision::ObserveOnly;
         assert_eq!(
             recover_coordinator(tasks, &records, &checkpoint).err(),
