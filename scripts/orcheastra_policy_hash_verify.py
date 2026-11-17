@@ -99,16 +99,19 @@ def main() -> None:
     changed[0] = (*entry[:5], entry[5] + b"altered", *entry[6:])
     fails(changed, "altered payload")
 
-    if len(data) < 2:
-        raise AssertionError("need more than one event to check truncation")
-    missing = list(data)
-    missing.pop(0)
-    fails(missing, "removed first chain event")
-
-    if len(data) < 2:
-        raise AssertionError("insufficient linked events")
-    if len([x for x in data if x[0] == data[0][0] and x[1] == data[0][1]]) < 2:
+    linked = next(
+        (event for event in data if event[3] > 0),
+        None,
+    )
+    if linked is None:
         raise AssertionError("need a multi-link chain for deletion test")
+    missing = [
+        event for event in data
+        if not (event[0] == linked[0]
+                and event[1] == linked[1]
+                and event[2] == linked[3])
+    ]
+    fails(missing, "removed predecessor of a linked event")
 
     if len(sys.argv) == 2 and sys.argv[1] == "--pin":
         MANIFEST.write_text(json.dumps(heads, sort_keys=True) + "\n", encoding="utf-8")
