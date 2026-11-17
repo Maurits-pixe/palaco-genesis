@@ -52,3 +52,18 @@ jobs:
 
       - name: Validate CAS concurrency revocation rollback and privileges
         run: python3 scripts/orcheastra_postgres_integration.py
+
+      - name: Restart only the ephemeral PostgreSQL CI service
+        run: |
+          docker restart "${{ job.services.postgres.id }}"
+          for attempt in $(seq 1 40); do
+            if pg_isready -d "$PALACO_TEST_PG_URI" -q; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Ephemeral PostgreSQL service failed to restart" >&2
+          exit 1
+
+      - name: Verify committed history and revocation after restart
+        run: python3 scripts/orcheastra_postgres_integration.py --verify-restart
