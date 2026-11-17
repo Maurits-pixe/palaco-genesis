@@ -13,7 +13,7 @@ use super::{AdmissionDecision, AdmissionReason};
 pub type Digest256 = [u8; 32];
 
 /// Chain record bound to its predecessor and a decision.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ChainedDecision {
     /// Decision record being committed to the chain.
     pub entry: DecisionEntry,
