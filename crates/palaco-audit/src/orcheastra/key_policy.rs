@@ -88,7 +88,25 @@ impl<S: MacCheckpointSource, G: GenerationAuthority, K: KeyPolicyAuthority> Audi
             key_id: &pinned.0.key_id,
             key: &policy.secret,
         };
-        verifier.latest_anchor(journal_id)
+        let verified = verifier.latest_anchor(journal_id)?;
+        // Recheck authoritative policy and high-water generation after MAC
+        // verification. Mid-verification revocation, rotation or another
+        // committed generation must fail closed; these repeated reads are
+        // NOT an atomic snapshot of two independent authorities.
+        let confirmed = self
+            .key_policies
+            .current_policy(journal_id, &pinned.0.key_id)?;
+        if confirmed.revoked
+            || confirmed.first_generation != policy.first_generation
+            || confirmed.last_generation != policy.last_generation
+            || confirmed.secret != policy.secret
+        {
+            return Err(AnchorError::Unauthenticated);
+        }
+        if self.generations.latest_generation(journal_id)? != verified.generation {
+            return Err(AnchorError::Stale);
+        }
+        Ok(verified)
     }
 }
 
@@ -217,6 +235,92 @@ mod tests {
             verifier.latest_anchor("orcheastra:test"),
             Err(AnchorError::Unauthenticated)
         );
+    }
+
+    #[test]
+    fn revoked_between_checks_is_rejected() {
+        use std::cell::Cell;
+
+        struct Revoking {
+            reads: Cell<u32>,
+        }
+        impl KeyPolicyAuthority for Revoking {
+            fn current_policy(
+                &self,
+                journal_id: &str,
+                key_id: &str,
+            ) -> Result<VerificationKeyPolicy, AnchorError> {
+                if journal_id != "orcheastra:test" || key_id != "new" {
+                    return Err(AnchorError::UnauthorizedJournal);
+                }
+                let reads = self.reads.get() + 1;
+                self.reads.set(reads);
+                Ok(VerificationKeyPolicy {
+                    secret: NEW,
+                    first_generation: 5,
+                    last_generation: u64::MAX,
+                    revoked: reads > 1,
+                })
+            }
+        }
+        let source = Source(authenticate_checkpoint(
+            "orcheastra:test",
+            "new",
+            anchor(5),
+            &NEW,
+        ));
+        let keys = Revoking {
+            reads: Cell::new(0),
+        };
+        let verifier = RotatingAnchorVerifier {
+            source: &source,
+            generations: &Latest(5),
+            key_policies: &keys,
+        };
+        assert_eq!(
+            verifier.latest_anchor("orcheastra:test"),
+            Err(AnchorError::Unauthenticated)
+        );
+        assert_eq!(keys.reads.get(), 2);
+    }
+
+    #[test]
+    fn high_water_change_during_verification_is_rejected() {
+        use std::cell::Cell;
+
+        struct Advancing {
+            reads: Cell<u32>,
+        }
+        impl GenerationAuthority for Advancing {
+            fn latest_generation(&self, _: &str) -> Result<u64, AnchorError> {
+                let reads = self.reads.get() + 1;
+                self.reads.set(reads);
+                Ok(if reads == 1 { 5 } else { 6 })
+            }
+        }
+        let source = Source(authenticate_checkpoint(
+            "orcheastra:test",
+            "new",
+            anchor(5),
+            &NEW,
+        ));
+        let generations = Advancing {
+            reads: Cell::new(0),
+        };
+        let policies = Keys {
+            revoked: false,
+            known: true,
+        };
+        let verifier = RotatingAnchorVerifier {
+            source: &source,
+            generations: &generations,
+            key_policies: &policies,
+        };
+        assert_eq!(
+            verifier.latest_anchor("orcheastra:test"),
+            Err(AnchorError::Stale)
+        );
+        assert_eq!(generations.reads.get(), 2);
     }
 
     #[test]
