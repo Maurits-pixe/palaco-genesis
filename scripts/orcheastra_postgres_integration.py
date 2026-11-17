@@ -32,6 +32,21 @@ def sql(statement: str) -> str:
     return result.stdout.strip()
 
 
+def expect_permission_denied(statement: str, why: str) -> None:
+    result = subprocess.run(
+        ["psql", "-X", "-A", "-t", "-v", "ON_ERROR_STOP=1", URI, "-c", statement],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=35,
+    )
+    if result.returncode == 0 or "permission denied" not in result.stderr.lower():
+        raise AssertionError(
+            f"{why}: expected permission denied, got "
+            f"exit={result.returncode}, stderr={result.stderr.strip()!r}"
+        )
+
+
 def assert_equal(actual: str, expected: str, why: str) -> None:
     if actual != expected:
         raise AssertionError(f"{why}: expected {expected!r}, found {actual!r}")
@@ -136,7 +151,47 @@ def main() -> int:
         "1", "racing writers produce one history record"
     )
 
-    print("ORCHEASTRA PostgreSQL v0.21: CAS, duplicate, revoke, rollback, concurrency PASS")
+    # Both roles are CI-only NOLOGIN fixtures. SET ROLE switches privilege
+    # identity without exposing a database password to the test harness.
+    assert_equal(
+        sql("SET ROLE palaco_audit_ci_reader;"
+            "SELECT count(*) FROM palaco_orcheastra_audit.anchor_history;"
+            "RESET ROLE;").splitlines()[1],
+        "2",
+        "read-only auditor sees committed audit history"
+    )
+    expect_permission_denied(
+        "SET ROLE palaco_audit_ci_reader;"
+        "UPDATE palaco_orcheastra_audit.journal_state SET generation=99;",
+        "reader cannot mutate trusted state"
+    )
+    expect_permission_denied(
+        "SET ROLE palaco_audit_ci_reader;"
+        f"SELECT {FUNC}('test-success',1,1,{ONE},1,2,2,{TWO},{PLAN},'key1');",
+        "reader cannot execute publication"
+    )
+    expect_permission_denied(
+        "SET ROLE palaco_audit_ci_reader;"
+        "SELECT * FROM palaco_orcheastra_audit.key_policy;",
+        "reader cannot inspect key policy"
+    )
+    expect_permission_denied(
+        "SET ROLE palaco_audit_ci_denied;"
+        "SELECT count(*) FROM palaco_orcheastra_audit.anchor_history;",
+        "unprivileged role cannot read history"
+    )
+    expect_permission_denied(
+        "SET ROLE palaco_audit_ci_denied;"
+        f"SELECT {FUNC}('test-success',1,1,{ONE},1,2,2,{TWO},{PLAN},'key1');",
+        "unprivileged role cannot publish"
+    )
+    assert_equal(
+        sql("SELECT generation FROM palaco_orcheastra_audit.journal_state "
+            "WHERE journal_id='test-success'"),
+        "1", "unauthorized role attempts did not mutate generation"
+    )
+
+    print("ORCHEASTRA PostgreSQL v0.22: CAS, rollback, concurrency, RBAC PASS")
     return 0
 
 
