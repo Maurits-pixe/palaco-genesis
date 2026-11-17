@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::{AdmissionDecision, AdmissionReason};
 
 /// A proposed PALACO task with explicit predecessor identifiers.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TaskSpec {
     /// Unique, nonempty task identifier.
     pub id: String,
@@ -134,7 +134,7 @@ pub enum TaskReadiness {
 }
 
 /// One append-only, process-local decision record.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DecisionEntry {
     /// One-based, monotonic journal sequence.
     pub sequence: u64,
