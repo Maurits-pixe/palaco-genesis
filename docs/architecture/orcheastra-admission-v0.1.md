@@ -829,3 +829,33 @@ recovery authority. A compromised CI runner can alter locally pinned
 trust records. An authenticated trusted root must be established
 independently before deployment. Neither signature validation nor
 historical recovery grants execution permissions. GO-13 HOLD.
+
+## v0.33 signed trust-state registry and non-executing recovery gate (DRAFT / HOLD)
+
+`scripts/orcheastra_trust_registry_v033.py` adds a **separate,
+disposable CI trust-registry fixture**. A newly generated, independent
+Ed25519 test root signs a complete policy registry containing exact
+key IDs, status (`active`, `revoked`, `expired`), validity
+timestamps and minimum checkpoint versions. A runner-local high-water
+record pins registry version 3, checkpoint version 2, and the
+SHA-256 digest of the signed v0.32 checkpoint. The registry signature,
+pinned public root and high-water record are held outside PostgreSQL.
+
+The reader verifies the already pinned v0.32 trust rotation, the
+complete registry signature, canonical bytes, checkpoint digest,
+highest registered version and policy scope. It then denies unknown
+keys, revoked keys, expired keys, out-of-window timestamps, stale
+checkpoint versions, registry downgrade and mismatched snapshots.
+Additional negative tests attempt to forge a revoked key into active
+status and reduce the signed registry version. The test signer
+private key is deleted before subsequent verification; the entire
+admission check is repeated after database restart.
+
+**Important:** the test clock is a pinned UTC fixture value, not a
+trusted production clock. This is a separate CI root, *not* a
+retrospective signature from the destroyed v0.31 key, and not a
+managed off-host root or production identity authority. The fixture
+does not preserve trust data across CI runners, support disaster
+recovery, distribute keys, or verify a real PALACO One principal.
+Recovering a valid historical audit checkpoint remains read-only and
+NEVER authorizes task execution. GO-13 HOLD and DRAFT remain.
