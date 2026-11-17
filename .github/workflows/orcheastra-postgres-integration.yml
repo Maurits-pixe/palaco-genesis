@@ -107,6 +107,9 @@ jobs:
       - name: Seal policy heads with isolated ephemeral Ed25519 key
         run: python3 scripts/orcheastra_policy_signed_checkpoint.py --seal
 
+      - name: Exercise root-authorized rotation and pinned trust version
+        run: python3 scripts/orcheastra_policy_trust_rotation.py --seal
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -127,3 +130,6 @@ jobs:
 
       - name: Verify signed policy heads after PostgreSQL restart
         run: python3 scripts/orcheastra_policy_signed_checkpoint.py --verify
+
+      - name: Verify rotated trust and anti-rollback after PostgreSQL restart
+        run: python3 scripts/orcheastra_policy_trust_rotation.py --verify
