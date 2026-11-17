@@ -116,6 +116,9 @@ jobs:
       - name: Test fail-closed recovery dispositions without execution
         run: python3 scripts/orcheastra_recovery_disposition_v034.py --test
 
+      - name: Generate and adversarially verify read-only recovery report
+        run: python3 scripts/orcheastra_recovery_report_v035.py --create
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -145,3 +148,6 @@ jobs:
 
       - name: Verify non-executing recovery disposition after restart
         run: python3 scripts/orcheastra_recovery_disposition_v034.py --verify
+
+      - name: Reproduce and verify recovery report after database restart
+        run: python3 scripts/orcheastra_recovery_report_v035.py --verify
