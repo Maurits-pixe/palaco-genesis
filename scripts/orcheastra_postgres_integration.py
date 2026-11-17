@@ -76,12 +76,71 @@ def publish(journal: str, epoch: int, next_head: str = ONE) -> str:
     )
 
 
+def verify_restart() -> None:
+    """Verify committed and rejected states after the PostgreSQL process restart."""
+    assert_equal(
+        sql("SELECT generation || ':' || sequence || ':' || encode(chain_head,'hex') "
+            "FROM palaco_orcheastra_audit.journal_state "
+            "WHERE journal_id='test-success'"),
+        "1:1:" + "11" * 32, "committed checkpoint survived database restart"
+    )
+    assert_equal(
+        sql("SELECT generation || ':' || sequence || ':' || encode(chain_head,'hex') "
+            "FROM palaco_orcheastra_audit.anchor_history "
+            "WHERE journal_id='test-success'"),
+        "1:1:" + "11" * 32, "checkpoint history survived restart"
+    )
+    assert_equal(
+        sql("SELECT generation || ':' || sequence FROM "
+            "palaco_orcheastra_audit.journal_state "
+            "WHERE journal_id='test-rollback'"),
+        "0:0", "rolled-back transaction did not reappear"
+    )
+    assert_equal(
+        sql("SELECT count(*) FROM palaco_orcheastra_audit.anchor_history "
+            "WHERE journal_id='test-rollback'"),
+        "0", "rolled-back history remains absent"
+    )
+    assert_equal(
+        sql("SELECT revoked::text || ':' || policy_epoch FROM "
+            "palaco_orcheastra_audit.key_policy JOIN "
+            "palaco_orcheastra_audit.journal_state USING (journal_id) "
+            "WHERE journal_id='test-revoked'"),
+        "true:2", "revoked key and policy epoch survived restart"
+    )
+    assert_equal(publish("test-success", 1), "f", "stale CAS rejected after restart")
+    assert_equal(publish("test-revoked", 2), "f", "revoked key rejected after restart")
+    assert_equal(
+        sql("SELECT count(*) FROM palaco_orcheastra_audit.anchor_history "
+            "WHERE journal_id='test-success'"),
+        "1", "stale retry after restart did not duplicate history"
+    )
+    assert_equal(
+        sql("SELECT generation FROM palaco_orcheastra_audit.journal_state "
+            "WHERE journal_id='test-concurrent'"),
+        "1", "single winning concurrent commit persisted"
+    )
+    expect_permission_denied(
+        "SET ROLE palaco_audit_ci_reader;"
+        f"SELECT {FUNC}('test-success',1,1,{ONE},1,2,2,{TWO},{PLAN},'key1');",
+        "reader still cannot publish after restart"
+    )
+    print("ORCHEASTRA PostgreSQL v0.23: restart persistence and negative recovery PASS")
+
+
 def main() -> int:
     if not URI or not URI.startswith("postgresql://") or "@127.0.0.1:" not in URI:
         print("PALACO_TEST_PG_URI must identify a loopback PostgreSQL instance", file=sys.stderr)
         return 2
     if os.environ.get("PALACO_TEST_EPHEMERAL") != "YES":
         print("Refusing to run without explicit ephemeral-database guard", file=sys.stderr)
+        return 2
+
+    if len(sys.argv) == 2 and sys.argv[1] == "--verify-restart":
+        verify_restart()
+        return 0
+    if len(sys.argv) != 1:
+        print("Unsupported integration test argument", file=sys.stderr)
         return 2
 
     # Run only against the disposable container provisioned by the CI service.
