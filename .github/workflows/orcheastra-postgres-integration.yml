@@ -66,6 +66,11 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 "$PALACO_TEST_PG_URI" \
             -f docs/architecture/orcheastra-authority-session-v0.26.sql
 
+      - name: Install ordered revocation route in disposable database
+        run: |
+          psql -X -v ON_ERROR_STOP=1 "$PALACO_TEST_PG_URI" \
+            -f docs/architecture/orcheastra-authority-ordering-v0.27.sql
+
       - name: Validate authenticated PostgreSQL session identity and restrictions
         env:
           PALACO_TEST_PUBLISHER_URI: postgresql://palaco_audit_ci_publisher:local_only_ci_publisher@127.0.0.1:5432/palaco_orcheastra_test
