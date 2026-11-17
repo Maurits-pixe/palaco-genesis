@@ -650,3 +650,33 @@ connection-pool identity safety, independent HMAC verification,
 audited key custody, and adversarial role/search_path review.
 Do not directly expose the old lower-level functions to any
 application role. GO-13 remains HOLD.
+
+## v0.27 journal-first authorization revocation serialization (DRAFT / HOLD)
+
+The PostgreSQL candidate
+`docs/architecture/orcheastra-authority-ordering-v0.27.sql`
+adds a restricted `set_caller_publication` policy-mutation primitive.
+It explicitly acquires the `journal_state` row lock *before*
+updating `caller_policy`; the existing authorization-epoch trigger
+increments the epoch in the same transaction. The v0.25 publisher
+already acquires the same journal lock first, so cooperating policy
+mutations and checkpoint publications serialize without lock-order
+inversion. The migration deliberately grants no publisher role access
+to policy mutation.
+
+The isolated database test concurrently submits a session-bound
+publication and an administrator revocation, accepts only outcomes
+that correspond to a valid serialization order, and verifies that
+the revoked caller cannot publish afterward. It also checks the
+authorization epoch and that no spurious audit history was written.
+A success **before** revocation linearizes is possible and correct;
+publication **after** committed revocation must be refused.
+
+This contract requires all privileged policy writers to follow the
+journal-first locking discipline. Legacy direct table UPDATE/DELETE
+by a database owner can still create an inverted lock order or bypass
+expected epoch semantics; production must constrain all mutation
+paths, including key policy deletion, and separately review lock
+timeouts, superuser bypass, service identity, key custody and HMAC
+verification. This code is only applied to a disposable CI database.
+PR remains DRAFT; GO-13 HOLD remains.
