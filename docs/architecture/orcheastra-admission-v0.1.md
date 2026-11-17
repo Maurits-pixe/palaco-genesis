@@ -283,3 +283,29 @@ this is an integration contract, not authenticated production recovery.
 
 Regression cases cover missing checkpoint, incorrect journal scope,
 successful inert historical replay, and disagreement about generation.
+
+## v0.12 authenticated audit checkpoint candidate
+
+`palaco_audit::orcheastra::mac` provides a scoped HMAC-SHA-256
+checkpoint authenticity contract. The MAC covers a domain-separated
+version, exact journal ID, pinned key ID, monotonic generation, plan hash,
+decision sequence and hash-chain head. A verified tag is necessary but
+insufficient: an independent `GenerationAuthority` must attest the latest
+generation for the same journal. The verifier rejects changed fields,
+wrong journal scope, unknown key identifiers and historical generations.
+Tag comparison is performed without early exit.
+
+The implementation uses an externally provisioned 256-bit symmetric key
+and the existing workspace `sha2` dependency. Test fixtures use a
+nonproduction deterministic key. No production key manager, secure secret
+storage, remote attestation, key rotation, independently durable
+generation authority or asymmetric digital-signature infrastructure
+has been implemented. HMAC provides *shared-secret authentication*, not
+publicly verifiable digital signatures or proof of a unique human signer.
+Production integrations must isolate key material in a trusted service,
+define revocation/rotation policy and publish monotonic generation anchors
+independently of the untrusted snapshot transport.
+
+`HmacAnchorVerifier` implements the existing PALACO Audit
+`AuditAnchorVerifier` interface, so recovered records remain inspectable
+but cannot execute, authorize or resume tasks. GO-13 remains HOLD.
