@@ -4,9 +4,11 @@
 This tests database-role authentication only, not network authentication,
 HMAC signing, or a trusted production authority. Never use production data.
 """
+import concurrent.futures
 import os
 import subprocess
 import sys
+import threading
 
 ADMIN_URI = os.environ.get("PALACO_TEST_PG_URI", "")
 PUBLISHER_URI = os.environ.get("PALACO_TEST_PUBLISHER_URI", "")
@@ -121,7 +123,61 @@ def main() -> None:
             "WHERE journal_id IN ('session-revoked','session-wrong-scope')"),
         "0", "denied role requests cannot append history",
     )
-    print("ORCHEASTRA v0.26 session principal: scoped publish and revocation PASS")
+    # v0.27: race the authenticated publisher against the authorized
+    # administrator revocation route. Both take journal_state before
+    # caller_policy: either serialization order is allowed; deadlock is not.
+    seed("session-race")
+    barrier = threading.Barrier(2)
+
+    def concurrent_publish() -> str:
+        barrier.wait(timeout=10)
+        return attempt("session-race")
+
+    def concurrent_revoke() -> str:
+        barrier.wait(timeout=10)
+        return run(
+            ADMIN_URI,
+            "SELECT palaco_orcheastra_audit.set_caller_publication("
+            "'session-race','palaco_audit_ci_publisher',false,true)",
+        )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        pub_future = pool.submit(concurrent_publish)
+        revoke_future = pool.submit(concurrent_revoke)
+        publication = pub_future.result(timeout=30)
+        equal(revoke_future.result(timeout=30), "t", "revocation committed")
+
+    if publication not in ("t", "f"):
+        raise AssertionError(f"unexpected concurrent publish result: {publication!r}")
+    # The write may win if it linearizes BEFORE revocation. In all cases
+    # the revoked principal must never be able to publish again.
+    equal(
+        run(ADMIN_URI,
+            "SELECT revoked::text || ':' || may_publish::text || ':' || "
+            "authorization_epoch FROM palaco_orcheastra_audit.caller_policy "
+            "JOIN palaco_orcheastra_audit.journal_state USING (journal_id) "
+            "WHERE journal_id='session-race'"),
+        "true:false:2",
+        "revocation and authorization epoch durable",
+    )
+    equal(attempt("session-race", 2), "f",
+          "revoked publisher denied even with current epoch")
+    equal(
+        run(ADMIN_URI,
+            "SELECT count(*) FROM palaco_orcheastra_audit.anchor_history "
+            "WHERE journal_id='session-race'"),
+        "1" if publication == "t" else "0",
+        "serialized publish/revoke creates no phantom record",
+    )
+    # Publisher role must not gain a direct policy-revocation capability.
+    run(
+        PUBLISHER_URI,
+        "SELECT palaco_orcheastra_audit.set_caller_publication("
+        "'session-race','palaco_audit_ci_publisher',true,false)",
+        success=False,
+    )
+
+    print("ORCHEASTRA v0.27 session principal: serialized revoke/publish PASS")
 
 
 if __name__ == "__main__":
