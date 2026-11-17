@@ -572,3 +572,24 @@ do NOT prove recovery from hardware failure, disk rollback, disaster
 restore, permanent data-loss scenarios, encrypted key vault durability,
 independent MAC signing, cross-host consensus or end-to-end authorization.
 The audit history remains non-executable. GO-13 HOLD remains.
+
+## v0.24 operation-scoped audit service boundary (DRAFT / HOLD)
+
+`palaco_audit::orcheastra::service_boundary` separates the
+`Verify` and `Publish` audit operations. `AuthenticatedAuditCaller`
+is a **trusted host integration** that MUST authenticate caller identity,
+expiry, audience, revocation and exact journal scope independently of
+client-supplied data. The read-only `verify_for_caller` API returns only
+the trusted checkpoint; `publish_for_caller` forwards a strictly
+validated candidate to the epoch-guarded transactional CAS contract.
+Unit tests deny cross-journal requests and verify-only attempts to
+publish, ensure blocked requests never call the backend, and exercise
+a distinct authorized publication request.
+
+This Rust layer is not an actual network authentication service or
+a credential issuing endpoint. Production callers MUST recheck the
+operation-scoped authorization *inside* the backend's atomic database
+transaction; otherwise a permission revocation after the initial check
+may race the publish operation. No user session, bearer token, signing
+key, real database role or external principal is provisioned by this
+change. Historical decisions remain inert. GO-13 HOLD is unchanged.
