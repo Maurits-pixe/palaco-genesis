@@ -804,3 +804,28 @@ trusted if the runner's public-key and signature snapshot is also
 compromised. Checkpoint validation grants no task-execution authority.
 No production migration, merge or release is authorized. GO-13 HOLD
 remains unchanged.
+
+## v0.32 root-authorized trust key rotation fixture (DRAFT / HOLD)
+
+A separate ephemeral CI trust lineage models signed Ed25519 key
+rotation with explicit, monotonic versioning. A newly generated
+temporary root signs the successor's *exact* public key and transition
+from version 1 to 2. The successor signs a version-2 policy-head
+checkpoint. The trusted root public key, successor public key,
+rotation signature, checkpoint signature and high-water version
+reside on the CI runner **outside PostgreSQL**. Both private keys
+are deleted after signing; subsequent verification requires only
+the pinned public keys and signed records. Tests reject altered
+rotation metadata, altered checkpoint versions, key substitution
+and high-water downgrades and repeat verification after restart.
+
+This intentionally starts a **new test trust lineage**: the v0.31
+private key was already destroyed, so it cannot authorize a real
+rotation to v0.32. Do not silently reinterpret the v0.32 root
+as a successor to v0.31 or claim an actual production rotation.
+The fixture does not advance a live policy head or operate an
+off-host trust store, KMS/HSM, timestamp/witness service or backup
+recovery authority. A compromised CI runner can alter locally pinned
+trust records. An authenticated trusted root must be established
+independently before deployment. Neither signature validation nor
+historical recovery grants execution permissions. GO-13 HOLD.
