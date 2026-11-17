@@ -45,5 +45,10 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 "$PALACO_TEST_PG_URI" \
             -f docs/architecture/orcheastra-authority-postgres-v0.20.sql
 
-      - name: Validate CAS concurrency revocation and rollback
+      - name: Create isolated no-login privilege fixtures
+        run: |
+          psql -X -v ON_ERROR_STOP=1 "$PALACO_TEST_PG_URI" \
+            -f scripts/orcheastra_postgres_test_roles.sql
+
+      - name: Validate CAS concurrency revocation rollback and privileges
         run: python3 scripts/orcheastra_postgres_integration.py
