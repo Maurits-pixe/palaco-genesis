@@ -309,3 +309,29 @@ independently of the untrusted snapshot transport.
 `HmacAnchorVerifier` implements the existing PALACO Audit
 `AuditAnchorVerifier` interface, so recovered records remain inspectable
 but cannot execute, authorize or resume tasks. GO-13 remains HOLD.
+
+## v0.13 monotonic publication proposal (DRAFT / HOLD)
+
+`palaco_audit::orcheastra::publish` introduces a separate
+`CheckpointPublisher` contract and `publish_checkpoint` function.
+Before proposing the next checkpoint, it fetches an independently
+verified previous anchor for the exact journal ID, validates the whole
+candidate snapshot, requires a strictly larger decision sequence, confirms
+the same immutable task-plan digest and verifies the previously committed
+chain head at the exact prior sequence. The candidate generation must be
+exactly the previous generation plus one.
+
+The publisher must perform an **authenticated, atomic compare-and-swap**
+against the independent authoritative anchor. A stale writer, missing
+anchor, altered historical prefix, changed task plan or exhausted
+generation is rejected. A successful result is only evidence that the
+audit publisher accepted a checkpoint, not task admission or execution.
+
+This is a protocol and test-double boundary, not a deployed persistent
+generation service or a distributed transaction. The publisher contract
+has no implementation backed by production storage. For production,
+bind the journal ID, authenticated writer identity, signing key,
+checkpoint and monotonic generation in one auditable durable transaction,
+with explicit crash recovery and revocation checks. Never infer current
+authority from any historical `Proposed` journal entry. GO-13 HOLD remains
+in force.
