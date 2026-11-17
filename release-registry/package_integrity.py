@@ -8,6 +8,7 @@ import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
+import stat
 
 SCHEMA = "palaco-package-integrity/v1"
 HEX = re.compile(r"^[0-9a-f]{64}$")
@@ -68,6 +69,22 @@ def verify_package(root, manifest_name="package-integrity.json"):
         if digest.hexdigest() != expected:
             raise IntegrityError("HASH_MISMATCH:" + name)
         verified.append(name)
+    # A verified subset is not a complete package. Reject any unlisted payload,
+    # including hidden files, symlinks, and non-regular filesystem objects.
+    discovered = set()
+    for candidate in root.rglob("*"):
+        relative = candidate.relative_to(root).as_posix()
+        mode = candidate.lstat().st_mode
+        if stat.S_ISLNK(mode):
+            raise IntegrityError("SYMLINK_FORBIDDEN")
+        if stat.S_ISDIR(mode):
+            continue
+        if not stat.S_ISREG(mode):
+            raise IntegrityError("UNSUPPORTED_FILE_TYPE")
+        if relative != manifest_name:
+            discovered.add(relative)
+    if discovered != seen:
+        raise IntegrityError("INCOMPLETE_MANIFEST")
     return tuple(verified)
 
 
