@@ -53,6 +53,14 @@ jobs:
       - name: Validate CAS concurrency revocation rollback and privileges
         run: python3 scripts/orcheastra_postgres_integration.py
 
+      - name: Install authorization epoch candidate in ephemeral database
+        run: |
+          psql -X -v ON_ERROR_STOP=1 "$PALACO_TEST_PG_URI" \
+            -f docs/architecture/orcheastra-authority-authz-v0.25.sql
+
+      - name: Verify authorization revoke scope and rollback
+        run: python3 scripts/orcheastra_postgres_authz_integration.py
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
