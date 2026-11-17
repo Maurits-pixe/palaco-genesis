@@ -552,3 +552,23 @@ production authentication, cryptographic key custody or proof that a
 service role is correctly provisioned. Production role provisioning,
 RLS and tenant isolation, migration review and end-to-end security
 service remain unimplemented. GO-13 HOLD is unchanged.
+
+## v0.23 isolated PostgreSQL process-restart recovery (DRAFT / HOLD)
+
+The disposable PostgreSQL 16 GitHub Actions service is now restarted
+**after** the CAS, revocation, rollback, concurrency and least-privilege
+tests have run. A second test invocation,
+`scripts/orcheastra_postgres_integration.py --verify-restart`, opens
+fresh client connections and checks that the committed generation,
+sequence, chain head and history row survived the PostgreSQL service
+restart; the rolled-back journal and history remain absent; revoked
+key policy and its updated epoch persist; duplicate and revoked
+publications are still denied; and the read-only role cannot publish.
+
+The database is the same ephemeral container, never a connected
+PALACO production instance. These tests exercise PostgreSQL
+process restart, WAL recovery and read-side consistency only; they
+do NOT prove recovery from hardware failure, disk rollback, disaster
+restore, permanent data-loss scenarios, encrypted key vault durability,
+independent MAC signing, cross-host consensus or end-to-end authorization.
+The audit history remains non-executable. GO-13 HOLD remains.
