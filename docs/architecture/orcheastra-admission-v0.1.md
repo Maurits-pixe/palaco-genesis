@@ -388,3 +388,28 @@ keys, and journal-specific snapshot directories supplied by the host.
 The repeated reads are not a substitute for an atomic cross-system
 transaction or a linearizable production audit service; such a
 service is still unimplemented in this PR. GO-13 HOLD remains.
+
+## v0.16 local immutable checkpoint archive (draft / HOLD)
+
+`palaco_audit::orcheastra::archive` adds a separate on-disk archive
+transport for `MacCheckpoint` records. Journal identifiers are mapped
+to SHA-256 namespace directories, and each generation is written only
+once with a synced temporary file, exclusive hard-link publication and
+directory sync. The bounded, versioned binary envelope includes exact
+journal scope, key ID, generation, plan hash, sequence, chain head and
+the existing HMAC tag. On restart, the archive can re-open a single
+specified generation and reject malformed/truncated/extra bytes.
+
+The `LocalArchiveSource` adapter feeds the existing
+`HmacAnchorVerifier`, which still requires a **separately provisioned
+key and an independent `GenerationAuthority`**. This is an actual
+filesystem transport with restart/reopen regression tests, not a
+standalone trusted checkpoint authority. Its generation hint must not
+come from a self-claimed local archive "latest" filename. A local
+attacker could replace the archive and its snapshot together or roll
+the disk back. Physical disk durability and race semantics depend on
+the underlying filesystem; no distributed consensus, remote timestamp,
+rotation/revocation key vault, hardened service boundary or cross-host
+atomic transaction has been implemented.
+
+No archive API issues execution permission. GO-13 remains HOLD.
