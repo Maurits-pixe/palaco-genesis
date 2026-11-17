@@ -152,6 +152,11 @@ class PolicyLedgerTests(unittest.TestCase):
         self.after["keys"][0]["status"] = "active"
         self.assertEqual(event["after"]["keys"][0]["status"], "revoked")
 
+    def test_empty_ledger_cannot_be_trusted(self):
+        with self.assertRaisesRegex(LedgerError, "EMPTY_LEDGER_NOT_TRUSTED"):
+            verify_anchored_ledger((), get_trusted_anchor=lambda: (0, GENESIS),
+                                   verify_policy=lambda *_: True)
+
     def test_boolean_sequence_rejected(self):
         events, _ = self.first()
         altered = dict(events[0], sequence=True)
