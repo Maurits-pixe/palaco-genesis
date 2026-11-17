@@ -4,6 +4,9 @@
 //! before reading a local journal. The audit crate does not sign checkpoints
 //! and cannot grant authority to execute a recovered proposal.
 
+/// Scoped HMAC-SHA-256 checkpoint verifier and monotonic-generation boundary.
+pub mod mac;
+
 use std::path::Path;
 
 use palaco_runtime::orcheastra::{
