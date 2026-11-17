@@ -991,3 +991,36 @@ it through an independent trusted channel. An attacker controlling
 both the bundle and its high-water file may forge currency claims.
 No durable off-host archival system or production transfer has been
 implemented; no release/merge is authorized. GO-13 HOLD.
+
+## v0.38 separately signed high-water witness (DRAFT / HOLD)
+
+The isolated `scripts/orcheastra_signed_high_water_v038.py`
+generates a new CI-only Ed25519 witness identity and signs a
+canonical statement containing the entire v0.37 high-water record,
+an explicit witness version, and `authorization: NONE` /
+`execution: HOLD`. The witness signer public-key fingerprint and
+minimum accepted witness version are pinned separately on the
+CI runner, *outside* the transferable evidence bundle. The private
+signing key is deleted immediately after signing.
+
+An offline receiver first checks that the separately supplied witness
+public key matches its trusted fingerprint, authenticates the
+detached signature, rejects versions below the independently held
+floor, and only then passes the authenticated high-water policy to
+the v0.37 transfer verification logic. A valid historical bundle
+therefore cannot be represented as `CURRENT` merely by editing
+the high-water JSON. Tests reject changed witness versions and
+bundle hashes, an incorrect signature or witness public key,
+missing statement bytes, and versions beneath the trusted floor.
+CI explicitly clears database environment variables for the
+portable verification and repeats the check after PostgreSQL restarts.
+
+**Trust boundary:** both trusted fingerprint and minimum accepted
+witness version must be distributed and maintained securely through
+an independent channel. This example signs only a disposable CI
+fixture; it has no independent off-host operator, durable clock,
+public transparency service, or rollback-resistant production
+counter. An old valid signature remains replayable if the receiver
+loses its independently pinned version floor. This does NOT grant
+task execution or production authority. PR #348 remains DRAFT,
+GO-13 HOLD, with no merge or deployment.
