@@ -17,7 +17,7 @@ import tempfile
 from orcheastra_policy_signed_checkpoint import canonical
 from orcheastra_recovery_bundle_v036 import signature_valid
 from orcheastra_evidence_handoff_v037 import (
-    BUNDLE_COPY, PIN_COPY, HANDOFF, HIGH_WATER, STORE as HANDOFF_STORE,
+    BUNDLE_COPY, PIN_COPY, HANDOFF, HIGH_WATER,
     evaluate, parse,
 )
 
@@ -59,6 +59,9 @@ def verify_witness(bundle: bytes, signer_pin: str, manifest: bytes,
         or type(signed.get("witness_version")) is not int
         or signed["witness_version"] < minimum_version):
         raise AssertionError("signed high-water rollback")
+    if (signed.get("authorization") != "NONE"
+        or signed.get("execution") != "HOLD"):
+        raise AssertionError("witness cannot authorize execution")
     high = signed.get("high_water")
     if not isinstance(high, dict):
         raise AssertionError("incomplete signed high-water")
@@ -152,14 +155,14 @@ def seal() -> None:
 
 
 def main() -> None:
-    if len(sys.argv) == 9 and sys.argv[1] == "--verify-portable":
+    if len(sys.argv) == 10 and sys.argv[1] == "--verify-portable":
         result = verify_witness(
             Path(sys.argv[2]).read_bytes(),
             Path(sys.argv[3]).read_text(encoding="ascii").strip(),
             Path(sys.argv[4]).read_bytes(), Path(sys.argv[5]).read_bytes(),
             Path(sys.argv[6]).read_bytes(), Path(sys.argv[7]).read_bytes(),
             Path(sys.argv[8]).read_text(encoding="ascii").strip(),
-            1,
+            int(Path(sys.argv[9]).read_text(encoding="ascii").strip()),
         )
         print(json.dumps(result, sort_keys=True))
         return
