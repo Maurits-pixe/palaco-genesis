@@ -55,6 +55,11 @@ def verify_quorum(record: dict, pins: dict, bundle: bytes,
         or not isinstance(pins.get("identities"), dict)
         or set(pins["identities"]) != set(IDS)):
         raise AssertionError("missing independently trusted quorum policy")
+    # Distinct identities must have DISTINCT independently pinned keys.
+    fingerprints = list(pins["identities"].values())
+    if (len(set(fingerprints)) != len(IDS)
+        or any(not isinstance(fp, str) or len(fp) != 64 for fp in fingerprints)):
+        raise AssertionError("witness identities do not have distinct trusted keys")
     if (not isinstance(record, dict) or record.get("format") != DOMAIN
         or not isinstance(record.get("statements"), list)
         or not isinstance(record.get("endorsements"), list)):
@@ -145,8 +150,8 @@ def create() -> None:
     signer_pin = PIN_COPY.read_text(encoding="ascii").strip()
     handoff = HANDOFF.read_bytes()
 
-    # Test an independently signed contradictory statement from witness C
-    # while its test signing key still exists; a conflict fails closed.
+    # Any contradictory statement fails closed; it must not be voted
+    # through merely because two other identities agree.
     contradicted = {**claim, "high_water": {
         **original, "minimum_sequence": 2}}
     conflicting = dict(record)
