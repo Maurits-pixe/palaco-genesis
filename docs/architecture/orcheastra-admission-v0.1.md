@@ -223,3 +223,29 @@ The earlier v0.8 run (#632) confirmed Citadel interoperability, but
 CI/CD #417 and CI #722 stopped on a rustfmt change in a new test; that
 formatting was fixed before this staging prototype was added. Run the
 current full CI jobs before treating v0.9 as validated.
+
+## v0.10 structured offline snapshot transfer
+
+The `orcheastra::snapshot_file` adapter now transfers a structured
+`JournalSnapshot` through bounded, generation-named local files. The
+versioned JSON wire document includes task specifications, chained decision
+records and a checkpoint. Import rebuilds the task graph using
+`TaskPlan::build` rather than trusting cached graph indexes and replays the
+journal against an externally supplied `TrustedRecoveryAnchor`.
+
+Unknown wire versions, malformed task graphs, mismatched checkpoints,
+stale generations, corrupted file bytes and invalid decision histories fail
+closed. Tests cover reopening a structured file, rejecting substituted
+checkpoints and unknown format versions. The integrity boundary is local
+and explicitly non-executing.
+
+**Remaining limitations:** the serialized JSON is not signed or encrypted;
+local file staging is not a multi-writer atomic compare-and-swap; no durable
+authenticated checkpoint service exists, and no production PALACO Audit
+adapter has been connected. These APIs cannot authorize execution or verify
+the authentic origin of an independently supplied anchor. Do not infer that
+a recovered historic proposal is currently admissible.
+
+CI note: v0.9 CI/CD #421 and PALACO CI #726 failed on file-store rustfmt,
+while Citadel #636 succeeded. The formatting diff has been corrected in this
+branch; v0.10 requires fresh formatting, Clippy and test validation.
