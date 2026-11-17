@@ -211,6 +211,18 @@ def verify() -> None:
 
 
 def main() -> None:
+    # Portable verification requires only the evidence ZIP, independently
+    # supplied signer public-key fingerprint and locally available OpenSSL.
+    # It never contacts PostgreSQL or asks for credentials.
+    if len(sys.argv) == 4 and sys.argv[1] == "--verify-portable":
+        archive = Path(sys.argv[2]).read_bytes()
+        pin = Path(sys.argv[3]).read_text(encoding="ascii").strip()
+        if len(pin) != 64:
+            raise AssertionError("independent signer fingerprint is invalid")
+        verified = verify_bundle(archive, pin)
+        print("ORCHEASTRA v0.36 portable verification PASS: "
+              + verified["decision"]["status"] + " / execution HOLD")
+        return
     uri = os.environ.get("PALACO_TEST_PG_URI", "")
     if (os.environ.get("PALACO_TEST_EPHEMERAL") != "YES"
         or not uri.startswith("postgresql://")
