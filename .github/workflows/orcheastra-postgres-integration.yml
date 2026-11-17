@@ -145,6 +145,24 @@ jobs:
             "$RUNNER_TEMP/orcheastra-v037/handoff.json" \
             "$RUNNER_TEMP/orcheastra-v037/independent-high-water.json"
 
+      - name: Sign independent high-water witness and reject replay
+        run: python3 scripts/orcheastra_signed_high_water_v038.py --seal
+
+      - name: Verify signed witness entirely offline against externally supplied pins
+        env:
+          PALACO_TEST_PG_URI: ""
+          PALACO_TEST_EPHEMERAL: ""
+        run: |
+          python3 scripts/orcheastra_signed_high_water_v038.py --verify-portable \
+            "$RUNNER_TEMP/orcheastra-v037/historical-evidence.zip" \
+            "$RUNNER_TEMP/orcheastra-v037/trusted-report-signer.sha256" \
+            "$RUNNER_TEMP/orcheastra-v037/handoff.json" \
+            "$RUNNER_TEMP/orcheastra-v038/signed-high-water.json" \
+            "$RUNNER_TEMP/orcheastra-v038/signed-high-water.sig" \
+            "$RUNNER_TEMP/orcheastra-v038/witness-public.pem" \
+            "$RUNNER_TEMP/orcheastra-v038/witness-public.sha256" \
+            "$RUNNER_TEMP/orcheastra-v038/trusted-minimum-version.txt"
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -183,3 +201,6 @@ jobs:
 
       - name: Reverify evidence handoff and retention after database restart
         run: python3 scripts/orcheastra_evidence_handoff_v037.py --verify
+
+      - name: Reverify independent signed witness after database restart
+        run: python3 scripts/orcheastra_signed_high_water_v038.py --verify
