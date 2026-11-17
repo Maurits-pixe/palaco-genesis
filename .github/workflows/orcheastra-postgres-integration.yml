@@ -131,6 +131,20 @@ jobs:
             "$RUNNER_TEMP/orcheastra-v036/recovery-evidence-v036.zip" \
             "$RUNNER_TEMP/orcheastra-v036/trusted-public-key.sha256"
 
+      - name: Create controlled handoff manifest and test historical freshness
+        run: python3 scripts/orcheastra_evidence_handoff_v037.py --create
+
+      - name: Independently evaluate handoff with database access disabled
+        env:
+          PALACO_TEST_PG_URI: ""
+          PALACO_TEST_EPHEMERAL: ""
+        run: |
+          python3 scripts/orcheastra_evidence_handoff_v037.py --verify-portable \
+            "$RUNNER_TEMP/orcheastra-v037/historical-evidence.zip" \
+            "$RUNNER_TEMP/orcheastra-v037/trusted-report-signer.sha256" \
+            "$RUNNER_TEMP/orcheastra-v037/handoff.json" \
+            "$RUNNER_TEMP/orcheastra-v037/independent-high-water.json"
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -166,3 +180,6 @@ jobs:
 
       - name: Verify portable Ed25519 report and original evidence after restart
         run: python3 scripts/orcheastra_recovery_bundle_v036.py --verify
+
+      - name: Reverify evidence handoff and retention after database restart
+        run: python3 scripts/orcheastra_evidence_handoff_v037.py --verify
