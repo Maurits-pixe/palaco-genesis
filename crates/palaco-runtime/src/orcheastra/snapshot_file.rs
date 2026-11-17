@@ -183,8 +183,8 @@ mod tests {
             generation: 9,
             checkpoint: snapshot.checkpoint,
         };
-        let restored = load_verified_snapshot(&path, &anchor)
-            .map_err(|error| format!("{error:?}"))?;
+        let restored =
+            load_verified_snapshot(&path, &anchor).map_err(|error| format!("{error:?}"))?;
         assert_eq!(restored.entries().len(), 2);
         assert_eq!(
             restored.entries()[1].decision,
@@ -197,8 +197,8 @@ mod tests {
     #[test]
     fn manipulated_checkpoint_is_rejected() -> Result<(), String> {
         let snapshot = sample()?;
-        let bytes =
-            encode_snapshot(&snapshot, &snapshot.checkpoint).map_err(|error| format!("{error:?}"))?;
+        let bytes = encode_snapshot(&snapshot, &snapshot.checkpoint)
+            .map_err(|error| format!("{error:?}"))?;
         let mut trusted = snapshot.checkpoint;
         trusted.head = [42u8; 32];
         assert!(matches!(
@@ -211,13 +211,12 @@ mod tests {
     #[test]
     fn unsupported_wire_version_is_rejected() -> Result<(), String> {
         let snapshot = sample()?;
-        let bytes =
-            encode_snapshot(&snapshot, &snapshot.checkpoint).map_err(|error| format!("{error:?}"))?;
+        let bytes = encode_snapshot(&snapshot, &snapshot.checkpoint)
+            .map_err(|error| format!("{error:?}"))?;
         let mut decoded: serde_json::Value =
             serde_json::from_slice(&bytes).map_err(|error| format!("{error:?}"))?;
         decoded["format_version"] = serde_json::json!(99);
-        let future_bytes =
-            serde_json::to_vec(&decoded).map_err(|error| format!("{error:?}"))?;
+        let future_bytes = serde_json::to_vec(&decoded).map_err(|error| format!("{error:?}"))?;
         assert!(matches!(
             decode_snapshot(&future_bytes, &snapshot.checkpoint),
             Err(SnapshotFileError::WrongVersion)
