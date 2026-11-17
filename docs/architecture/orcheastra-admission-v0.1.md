@@ -359,3 +359,32 @@ multi-host durability, authority authentication, key custody and independent
 generation storage are not yet implemented. Production callers MUST NOT
 interpret the return value as permission to execute historic proposals.
 GO-13 HOLD continues to apply.
+
+## v0.15 read-only reconciliation after ambiguous publication (DRAFT / HOLD)
+
+`palaco_audit::orcheastra::reconcile` introduces
+`reconcile_publication` for cases where an audit CAS result is unknown,
+such as a lost acknowledgment or an interrupted process. It asks the
+independent trusted verifier for the latest journal-scoped anchor and
+compares it with the expected previous and proposed next anchors:
+
+- `Unanchored`: the authoritative anchor is still the previous value.
+  The local staged file must remain untrusted, regardless of its content.
+- `Conflict`: a different anchor is authoritative, or an authority
+  change was detected during verification. No automatic retry/rollback.
+- `Committed`: the independently trusted anchor equals the proposal,
+  the generation-addressed snapshot file was re-opened and replayed
+  through PALACO Audit, and a final anchor read still agrees.
+
+Missing files, invalid journal identifiers and failed verifier reads
+produce errors instead of presumed commit success. Tests model a lost
+ACK after successful publication, orphaned files after rejected CAS,
+competing checkpoints, missing files and an authority advancing mid-read.
+
+This protocol **never** performs CAS, deletes snapshots, executes
+historical proposed tasks or grants authority. It assumes an
+authenticated and rollback-resistant verifier, separately provisioned
+keys, and journal-specific snapshot directories supplied by the host.
+The repeated reads are not a substitute for an atomic cross-system
+transaction or a linearizable production audit service; such a
+service is still unimplemented in this PR. GO-13 HOLD remains.
