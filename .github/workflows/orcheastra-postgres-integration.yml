@@ -1,0 +1,49 @@
+name: ORCHEASTRA PostgreSQL isolated integration
+
+on:
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-integration:
+    name: PostgreSQL CAS and rollback tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: palaco_test
+          POSTGRES_PASSWORD: local_only_ci_test
+          POSTGRES_DB: palaco_orcheastra_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U palaco_test -d palaco_orcheastra_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      PALACO_TEST_EPHEMERAL: "YES"
+      PALACO_TEST_PG_URI: postgresql://palaco_test:local_only_ci_test@127.0.0.1:5432/palaco_orcheastra_test
+      PGCONNECT_TIMEOUT: "5"
+
+    steps:
+      - name: Checkout untrusted draft branch
+        uses: actions/checkout@v4
+
+      - name: Install isolated PostgreSQL test client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Apply draft migration only to disposable CI database
+        run: |
+          psql -X -v ON_ERROR_STOP=1 "$PALACO_TEST_PG_URI" \
+            -f docs/architecture/orcheastra-authority-postgres-v0.20.sql
+
+      - name: Validate CAS concurrency revocation and rollback
+        run: python3 scripts/orcheastra_postgres_integration.py
