@@ -6,7 +6,6 @@
 
 use palaco_runtime::orcheastra::{
     persistence::TrustedRecoveryAnchor,
-    recovery::RecoveryCheckpoint,
 };
 use sha2::{Digest, Sha256};
 
@@ -169,6 +168,7 @@ impl<S: MacCheckpointSource, G: GenerationAuthority> AuditAnchorVerifier
 mod tests {
     use super::*;
     use crate::orcheastra::AuditAnchorVerifier;
+    use palaco_runtime::orcheastra::recovery::RecoveryCheckpoint;
 
     const TEST_KEY: [u8; 32] = [0x71; 32];
 
