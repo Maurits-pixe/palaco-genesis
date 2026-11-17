@@ -4,6 +4,9 @@
 //! before reading a local journal. The audit crate does not sign checkpoints
 //! and cannot grant authority to execute a recovered proposal.
 
+/// Journal-scoped service authorization for read-only audit and CAS publication.
+pub mod service_boundary;
+
 /// Epoch-guarded atomic checkpoint publication adapter.
 pub mod authority_transaction;
 
