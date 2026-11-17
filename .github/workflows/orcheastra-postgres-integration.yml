@@ -104,6 +104,9 @@ jobs:
       - name: Independently verify and pin policy hash heads
         run: python3 scripts/orcheastra_policy_hash_verify.py --pin
 
+      - name: Seal policy heads with isolated ephemeral Ed25519 key
+        run: python3 scripts/orcheastra_policy_signed_checkpoint.py --seal
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -121,3 +124,6 @@ jobs:
 
       - name: Verify policy hash heads after restart
         run: python3 scripts/orcheastra_policy_hash_verify.py --verify
+
+      - name: Verify signed policy heads after PostgreSQL restart
+        run: python3 scripts/orcheastra_policy_signed_checkpoint.py --verify
