@@ -713,3 +713,33 @@ cryptographic key custody, production service authentication or
 a remote HMAC authority. SQL executes only in disposable CI;
 no PALACO production migration, merge or deployment is authorized.
 GO-13 HOLD remains unchanged.
+
+## v0.29 transactional policy-event evidence (DRAFT / HOLD)
+
+The isolated PostgreSQL migration
+`docs/architecture/orcheastra-policy-evidence-v0.29.sql` adds a
+`policy_change_history` table and an `AFTER UPDATE` journal-state
+trigger. Each monotonic key-policy or authorization-epoch change is
+recorded in the **same PostgreSQL transaction** as the policy mutation.
+The entry includes the journal scope, category, old and new epoch,
+previous/current active key IDs, observed generation, database
+`session_user` and timestamp; it stores no secret key material.
+
+The trigger fails closed if an epoch decreases or the active key changes
+without advancing the key-policy epoch. Unique
+`(journal_id,category,epoch)` ordering prevents duplicate epoch
+records. UPDATE, DELETE and TRUNCATE triggers reject modifications
+to the policy-event table, and restricted publisher roles receive no
+access. The isolated integration tests check key and caller revocations,
+rotation attribution, denied raw key swaps, rollback, mutation denial
+and privilege isolation.
+
+**Important limits:** this is a same-database event history, not a
+cryptographically signed, remotely anchored, append-only archive.
+Database owners can disable triggers, modify schema or rewrite data.
+The recorded `session_user` is the DB session identity, not an
+independently verified human principal. Production requires reviewed
+owner separation, immutable off-database replication/anchoring, audit
+verification of policy history versus checkpoint history, key custody,
+and staging permissions review. No production database migration or
+merge has been performed. GO-13 remains HOLD.
