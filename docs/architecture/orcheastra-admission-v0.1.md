@@ -455,3 +455,26 @@ by authenticated, consistent authority APIs with revocation epochs
 and strong race semantics. A policy change immediately after the
 final check is not prevented by repeated reads alone. Historical
 journal inspection remains non-executing; GO-13 HOLD remains in force.
+
+## v0.19 consistent authoritative verification boundary (DRAFT / HOLD)
+
+`palaco_audit::orcheastra::consistent_authority` introduces
+`ConsistentAuditAuthority` and a read-only
+`ConsistentAnchorVerifier`. The adapter pins the untrusted checkpoint
+exactly once, verifies journal scope, and delegates combined generation,
+key policy, revocation and MAC verification to one authority contract.
+That service must provide a linearizable, authenticated view of these
+security-critical values; a series of unrelated API reads is not sufficient.
+
+A test-only `RefCell` state holder demonstrates the required decision
+semantics, including valid MAC acceptance, revoked-key rejection,
+generation rollback rejection, key rotation, corrupted MAC and unavailable
+authority. It is **not** a durable, multi-process or remotely
+authenticated authority, and must not be promoted into production.
+
+Future production wiring requires: authenticated journal-scoped callers,
+hardened key custody, consistent transaction/snapshot isolation,
+revocation epoch enforcement, independent monotonic generation
+persistence, and explicit crash/partition behavior. The public
+`AuditAnchorVerifier` remains read-only, so verified history never
+authorizes task execution or releases GO-13 HOLD.
