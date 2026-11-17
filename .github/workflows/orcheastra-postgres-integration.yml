@@ -113,6 +113,9 @@ jobs:
       - name: Seal scoped key statuses and trusted checkpoint registry
         run: python3 scripts/orcheastra_trust_registry_v033.py --seal
 
+      - name: Test fail-closed recovery dispositions without execution
+        run: python3 scripts/orcheastra_recovery_disposition_v034.py --test
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -139,3 +142,6 @@ jobs:
 
       - name: Verify signed key statuses and recovery gate after restart
         run: python3 scripts/orcheastra_trust_registry_v033.py --verify
+
+      - name: Verify non-executing recovery disposition after restart
+        run: python3 scripts/orcheastra_recovery_disposition_v034.py --verify
