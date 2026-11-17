@@ -593,3 +593,30 @@ transaction; otherwise a permission revocation after the initial check
 may race the publish operation. No user session, bearer token, signing
 key, real database role or external principal is provisioned by this
 change. Historical decisions remain inert. GO-13 HOLD is unchanged.
+
+## v0.25 authorization-epoch guarded database publication (DRAFT / HOLD)
+
+The new candidate `docs/architecture/orcheastra-authority-authz-v0.25.sql`
+adds per-journal principal policy and a monotonic authorization epoch.
+A policy-change trigger advances that epoch under the same journal row
+lock used for checkpoint CAS. `publish_authorized_checkpoint` locks the
+journal and caller-policy row in a consistent order, checks the expected
+authorization epoch, explicit publish permission, nonrevocation, then
+invokes the existing epoch-protected checkpoint publication in the
+**same PostgreSQL transaction**. Denials do not append audit records.
+
+The isolated CI suite `scripts/orcheastra_postgres_authz_integration.py`
+tests a permitted publication, replay rejection, stale authorization
+epoch, revoked principal, removed publish permission, unknown journal,
+wrong principal and transaction rollback. No SQL is applied to any
+connected PALACO system; CI uses a disposable PostgreSQL 16 instance.
+
+**Security gate:** `p_principal_id` is a fixture identifier passed as
+SQL data, **not** an authenticated identity. This SQL function MUST NOT
+be exposed to clients. A future independent service must bind principal
+identity cryptographically to its transport, prevent impersonation,
+enforce exact journal and operation scopes, deny direct access to the
+legacy unguarded publisher, and integrate authentication/HMAC/key
+custody with the database transaction. This candidate demonstrates
+revocation serialization only, not a finished trusted authority.
+GO-13 HOLD and non-execution requirements remain unchanged.
