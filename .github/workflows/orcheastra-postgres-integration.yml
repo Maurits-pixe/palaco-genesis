@@ -163,6 +163,21 @@ jobs:
             "$RUNNER_TEMP/orcheastra-v038/witness-public.sha256" \
             "$RUNNER_TEMP/orcheastra-v038/trusted-minimum-version.txt"
 
+      - name: Create three independently signed witnesses and test quorum failures
+        run: python3 scripts/orcheastra_witness_quorum_v039.py --create
+
+      - name: Check witness quorum entirely offline
+        env:
+          PALACO_TEST_PG_URI: ""
+          PALACO_TEST_EPHEMERAL: ""
+        run: |
+          python3 scripts/orcheastra_witness_quorum_v039.py --verify-portable \
+            "$RUNNER_TEMP/orcheastra-v039/quorum-record.json" \
+            "$RUNNER_TEMP/orcheastra-v039/independent-trust-pins.json" \
+            "$RUNNER_TEMP/orcheastra-v037/historical-evidence.zip" \
+            "$RUNNER_TEMP/orcheastra-v037/trusted-report-signer.sha256" \
+            "$RUNNER_TEMP/orcheastra-v037/handoff.json"
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -204,3 +219,6 @@ jobs:
 
       - name: Reverify independent signed witness after database restart
         run: python3 scripts/orcheastra_signed_high_water_v038.py --verify
+
+      - name: Verify witness quorum after isolated PostgreSQL restart
+        run: python3 scripts/orcheastra_witness_quorum_v039.py --verify
