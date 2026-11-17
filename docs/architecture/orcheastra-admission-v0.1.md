@@ -887,3 +887,33 @@ service identity or independent key custody is connected.
 `VERIFIED` means read-only historical audit verification only.
 It never grants execution of a task, decision, account operation or
 network action. PR #348 remains DRAFT and GO-13 HOLD.
+
+## v0.35 reproducible, read-only recovery evidence report (DRAFT / HOLD)
+
+The isolated CI tool `scripts/orcheastra_recovery_report_v035.py`
+reconstructs the current `VERIFIED` recovery disposition through
+the authenticated v0.34 verification path and creates a canonical
+JSON report. It captures the fixed test-clock observation, explicit
+disposition and `execution: HOLD`, version numbers of the v0.30–35
+controls, and a closed allowlist of SHA-256 digests and byte lengths
+for 15 pinned proof artifacts (public keys, signed checkpoints,
+rotation evidence, registry and high-water records). No private
+signing keys, database credentials or bearer tokens are exported.
+
+A SHA-256 digest covers the complete canonical report. CI rejects
+modified report contents, attempts to self-hash an unauthorized
+`execution: ALLOW` report, missing evidence references, stale
+control versions and incomplete JSON. After a PostgreSQL service
+restart, it recalculates **all** evidence hashes and verifies the
+entire recovered disposition and report against the runner-pinned
+copy. Any missing, mismatched or unverifiable input fails closed.
+
+**Boundaries:** report hash integrity is not an Ed25519 report
+signature, secure trusted timestamp, remote audit witness, or durable
+off-runner archival evidence. The test clock is fixed; results are
+meaningful only within the isolated CI run, whose local trust
+artifacts are separately protected only by runner isolation.
+`VERIFIED` is strictly historical, read-only audit status;
+`authorization: NONE` and `execution: HOLD` remain mandatory.
+No production deployment, merge or external execution occurs.
+GO-13 HOLD and DRAFT are unchanged.
