@@ -124,7 +124,7 @@ function inspect(value) {
 }
 // The Python reference protocol accepts ASCII-only event fields.
 const genesisInput = "PALACO-OFFLINE-STAGE-v1:GENESIS";
-const eventDomain = "PALACO-OFFLINE-STAGE-v1:EVENT\\x00";
+const eventDomain = "PALACO-OFFLINE-STAGE-v1:EVENT" + String.fromCharCode(0);
 function sortJson(value) {
   const ordered = Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]]));
   return JSON.stringify(ordered);
@@ -146,7 +146,7 @@ async function verifyChain(document) {
     // Event fields were restricted to ASCII by inspect(). This matches
     // Python json.dumps(sort_keys=True,separators=(',',':'),ensure_ascii=True).
     const canonical = sortJson(event);
-    current = await hashBytes(encoder.encode(eventDomain.replace("\\\\x00","\\x00") + canonical));
+    current = await hashBytes(encoder.encode(eventDomain + canonical));
   }
   if(current !== document.head) throw Error("Back-up head wijkt af van herberekende SHA-256-keten");
   return "CHAIN_VALID_UNTRUSTED";
