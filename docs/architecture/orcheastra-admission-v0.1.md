@@ -1024,3 +1024,40 @@ counter. An old valid signature remains replayable if the receiver
 loses its independently pinned version floor. This does NOT grant
 task execution or production authority. PR #348 remains DRAFT,
 GO-13 HOLD, with no merge or deployment.
+
+## v0.39 2-of-3 independently keyed witness quorum (DRAFT / HOLD)
+
+The isolated CI module `scripts/orcheastra_witness_quorum_v039.py`
+creates three distinct ephemeral Ed25519 witness identities, each
+signing an identical canonical high-water claim for the v0.37
+read-only evidence handoff. Separate public-key SHA-256 fingerprints,
+an exact roster, a minimum witness version and a quorum threshold
+of two are pinned outside the PostgreSQL container. All three
+private signing keys are destroyed once the fixture is produced.
+
+The verifier requires at least **two unique and independently keyed**
+valid witness signatures. It rejects an unknown identity, repeated
+vote, reused public key, missing or invalid signature, incomplete
+trust roster, downgraded witness version, attempted authority
+elevation and ANY conflicting high-water statement. Two available
+witnesses can authenticate the same historical claim even if a
+third witness is unavailable; one alone cannot. The resulting
+current/historical decision is still evaluated against the signed
+evidence bundle and remains `read_only: true`,
+`authorization: NONE`, `execution: HOLD`.
+
+The quorum verifier has a portable, database-free mode. Isolated CI
+tests the negative matrix, validates the portable path with database
+environment variables cleared, and rechecks all three signatures
+after PostgreSQL restarts.
+
+**Explicit boundary:** the three different CI keys are **not**
+three operationally independent witnesses. All are generated on
+the same ephemeral CI runner and share its failure domain. The
+quorum and key fingerprints are also runner-local, not durably
+anchored or held by separate organizations/HSMs. An attacker who
+controls the runner or the out-of-band trust roster can subvert
+the fixture. Real quorum independence, reliable distribution,
+durable high-water persistence, and operational key revocation
+remain unimplemented. No execution authorization, merge, or
+deployment. GO-13 HOLD.
