@@ -4,9 +4,7 @@
 //! key identity, revocation epoch and journal scope while appending its
 //! audit history. This protocol never signs, authenticates or executes tasks.
 
-use palaco_runtime::orcheastra::{
-    persistence::{JournalSnapshot, TrustedRecoveryAnchor},
-};
+use palaco_runtime::orcheastra::persistence::{JournalSnapshot, TrustedRecoveryAnchor};
 
 use super::{
     publish::{prepare_publication, PublishError},
@@ -74,9 +72,7 @@ pub fn publish_with_epoch<A: EpochGuardedAuthority>(
         .current_view(journal_id)
         .map_err(TransactionError::Authority)?;
     if view.active_key_id.trim().is_empty() || view.revoked {
-        return Err(TransactionError::Authority(
-            AnchorError::Unauthenticated,
-        ));
+        return Err(TransactionError::Authority(AnchorError::Unauthenticated));
     }
     let proposal =
         prepare_publication(&view.anchor, candidate).map_err(TransactionError::Proposal)?;
@@ -222,7 +218,9 @@ mod tests {
         ));
         assert!(matches!(
             publish_with_epoch(&mut backend, "", &snapshot),
-            Err(TransactionError::Authority(AnchorError::UnauthorizedJournal))
+            Err(TransactionError::Authority(
+                AnchorError::UnauthorizedJournal
+            ))
         ));
         assert!(backend.published.is_empty());
         Ok(())
