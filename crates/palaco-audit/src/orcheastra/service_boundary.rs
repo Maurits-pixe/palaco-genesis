@@ -29,8 +29,7 @@ pub trait AuthenticatedAuditCaller {
     ///
     /// The implementation must check identity, audience, expiry, revocation,
     /// operation and exact journal scope against a trusted policy authority.
-    fn authorize(&self, journal_id: &str, operation: AuditOperation)
-        -> Result<(), AnchorError>;
+    fn authorize(&self, journal_id: &str, operation: AuditOperation) -> Result<(), AnchorError>;
 }
 
 /// Read-only verification errors.
@@ -60,9 +59,7 @@ pub fn verify_for_caller<C: AuthenticatedAuditCaller, V: AuditAnchorVerifier>(
     journal_id: &str,
 ) -> Result<TrustedRecoveryAnchor, VerifyServiceError> {
     if journal_id.trim().is_empty() {
-        return Err(VerifyServiceError::Access(
-            AnchorError::UnauthorizedJournal,
-        ));
+        return Err(VerifyServiceError::Access(AnchorError::UnauthorizedJournal));
     }
     caller
         .authorize(journal_id, AuditOperation::Verify)
@@ -92,8 +89,7 @@ pub fn publish_for_caller<C: AuthenticatedAuditCaller, A: EpochGuardedAuthority>
     caller
         .authorize(journal_id, AuditOperation::Publish)
         .map_err(PublishServiceError::Access)?;
-    publish_with_epoch(authority, journal_id, snapshot)
-        .map_err(PublishServiceError::Transaction)
+    publish_with_epoch(authority, journal_id, snapshot).map_err(PublishServiceError::Transaction)
 }
 
 #[cfg(test)]
@@ -261,7 +257,9 @@ mod tests {
         ));
         assert!(matches!(
             publish_for_caller(&wrong, &mut store, "audit:one", &snapshot),
-            Err(PublishServiceError::Access(AnchorError::UnauthorizedJournal))
+            Err(PublishServiceError::Access(
+                AnchorError::UnauthorizedJournal
+            ))
         ));
         assert_eq!(verifier.reads.get(), 0);
         assert_eq!(store.commits, 0);
