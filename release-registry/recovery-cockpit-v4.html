@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>PALACO — Recovery Cockpit v4 (offline kandidaat)</title>
+<style>
+:root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#081710;color:#eaf2e7}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 15% 0%,#244633 0%,#081710 65%);line-height:1.5}
+main{max-width:1060px;margin:auto;padding:24px 18px 65px}
+header{border-bottom:1px solid #345043;padding-bottom:22px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px}
+.brand{letter-spacing:.17em;text-transform:uppercase;font-size:.76rem;color:#d9bd78}
+h1{font-size:clamp(1.8rem,5vw,3rem);font-weight:580;margin:8px 0}
+h2{font-size:1.13rem;margin:0 0 12px}
+p{color:#c5d5cb;margin:8px 0}
+.status{border:1px solid #927744;color:#f3d78e;border-radius:50px;padding:9px 16px;font-weight:700}
+.notice{border-left:3px solid #bd9c56;padding:12px 16px;background:#172d23;margin:22px 0}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.panel{background:#10271d;border:1px solid #345343;border-radius:15px;padding:20px;min-width:0}
+.big{font-size:1.7rem;font-weight:650;color:#f2d494}
+small,.muted{color:#a7c2b2}
+.stack{display:grid;gap:13px;margin-top:16px}
+input[type=file]{width:100%;padding:12px;border:1px dashed #7f9d88;border-radius:9px;background:#07170f;color:#f4f7ef}
+button{border:1px solid #b49b60;border-radius:9px;background:#e2cb8f;color:#102016;padding:10px 16px;font:inherit;font-weight:650;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:3px solid #fff;outline-offset:3px}
+button.secondary{background:transparent;color:#e8d19a}
+button:disabled{opacity:.5;cursor:not-allowed}
+dl{display:grid;grid-template-columns:minmax(125px,220px) minmax(0,1fr);gap:9px;margin:0}
+dt{color:#a5c1b0}dd{margin:0;overflow-wrap:anywhere}
+code{font:inherit;overflow-wrap:anywhere;color:#f0d797}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.error{color:#ffc0a6;white-space:pre-wrap}
+footer{font-size:.85rem;color:#a1bda9;margin-top:25px}
+@media(max-width:700px){.grid{grid-template-columns:1fr}dl{grid-template-columns:1fr;gap:4px}dd{margin-bottom:9px}}
+</style>
+</head>
+<body>
+<main>
+<header><div><div class="brand">PALACO INDUSTRIE · VORM9EVIN9</div><h1>Recovery Cockpit <span style="color:#d9bd78">v4</span></h1><p>Offline inspectie · lokale kandidaat · geen netwerkverkeer</p></div><div class="status">HOLD · GEEN AUTORISATIE</div></header>
+<div class="notice"><strong>Veiligheidsgrens.</strong> Deze pagina controleert uitsluitend de structuur van ingelezen metadata. Zij verifieert geen handtekeningen, identiteit, vertrouwde checkpoints of bestandsinhoud en kan geen herstel uitvoeren of goedkeuren.</div>
+<div class="grid" aria-label="Overzicht">
+<section class="panel"><div class="muted">Ingeladen bewijs</div><div class="big" id="evidenceCount">0</div><small>lokale metadatarecords</small></section>
+<section class="panel"><div class="muted">Onafhankelijk geverifieerd</div><div class="big">0</div><small>geen vertrouwensadapter</small></section>
+<section class="panel"><div class="muted">Releasebesluit</div><div class="big">HOLD</div><small>GO-13 blijft gesloten</small></section>
+</div>
+<div class="stack">
+<section class="panel">
+<h2>1 · Hersteldossier inspecteren</h2>
+<p>Kies een lokaal JSON-bestand dat een v2-checkpoint of een v2-back-up bevat. Er worden geen bestanden geüpload, opgeslagen of gewijzigd.</p>
+<label for="file">Lokaal JSON-bewijs (max. 8 MiB)</label>
+<input id="file" type="file" accept=".json,application/json">
+<p id="message" role="status" aria-live="polite">Nog geen bestand geselecteerd.</p>
+</section>
+<section class="panel">
+<h2>2 · Analyse van het dossier</h2>
+<dl>
+<dt>Documenttype</dt><dd id="type">—</dd>
+<dt>Scope</dt><dd id="scope">—</dd>
+<dt>Volgnummer</dt><dd id="sequence">—</dd>
+<dt>Head SHA-256</dt><dd id="head">—</dd>
+<dt>Metadatarecords</dt><dd id="records">—</dd>
+<dt>Structuurinspectie</dt><dd id="structure">NIET UITGEVOERD</dd>
+<dt>Externe verificatie</dt><dd>ONBEKEND — niet aangesloten</dd>
+<dt>Hersteltoestemming</dt><dd>NIET VERLEEND</dd>
+</dl>
+</section>
+<section class="panel">
+<h2>3 · Lokale inspectierapportage</h2>
+<p>Exporteren maakt uitsluitend een nieuw lokaal JSON-inspectierapport. Het rapport is <strong>geen bewijs van authenticiteit</strong> en bevat geen back-upinhoud of geheime ontvangstgegevens.</p>
+<div class="row"><button id="export" disabled>Exporteer inspectierapport</button><button class="secondary" id="reset">Wis huidige inspectie</button></div>
+<p class="muted" id="reportStatus" role="status" aria-live="polite"></p>
+</section>
+</div>
+<footer>PALACO Recovery Cockpit v4 · read-only · geen backend, cookies, externe scripts of productiebediening. Bij twijfel: HOLD.</footer>
+</main>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const allowedCheckpoint = ["head","receipt","schema","scope","sequence"];
+const allowedBackup = ["events","head","schema","scope","sequence"];
+const sha = /^[a-f0-9]{64}$/;
+const safeScope = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+const schema = "palaco-trusted-recovery/v2";
+let report = null;
+function reset() {
+  report = null;
+  for(const key of ["type","scope","sequence","head","records"]) $(key).textContent = "—";
+  $("structure").textContent = "NIET UITGEVOERD";
+  $("evidenceCount").textContent = "0";
+  $("export").disabled = true;
+  $("reportStatus").textContent = "";
+}
+function exactKeys(value, keys) {
+  return value !== null && typeof value === "object" && !Array.isArray(value) &&
+    Object.keys(value).sort().join("|") === keys.slice().sort().join("|");
+}
+function inspect(value) {
+  const checkpoint = exactKeys(value, allowedCheckpoint);
+  const backup = exactKeys(value, allowedBackup);
+  if(!checkpoint && !backup) throw Error("Onbekend of uitgebreid documentschema");
+  if(value.schema !== schema || typeof value.scope !== "string" || !safeScope.test(value.scope))
+    throw Error("Ongeldige schema-versie of scope");
+  if(!Number.isSafeInteger(value.sequence) || value.sequence < 0 || value.sequence > 10000 ||
+     typeof value.head !== "string" || !sha.test(value.head))
+    throw Error("Ongeldige sequence of head");
+  if(checkpoint && (typeof value.receipt !== "string" || value.receipt.length < 1 || value.receipt.length > 4096))
+    throw Error("Ontbrekende of ongeldige ontvangstmetadata");
+  if(backup && (!Array.isArray(value.events) || value.events.length !== value.sequence ||
+     value.events.length > 10000)) throw Error("Ongeldige eventlijst");
+  if(backup) for(let i=0;i<value.events.length;i++) {
+    const e=value.events[i];
+    if(!exactKeys(e,["schema","module","event_id","sequence","previous","payload_sha256"]) ||
+       e.schema !== "palaco-offline-stage/v1" ||
+       !["palaco-one","rio","mundo","citadel","neo-os"].includes(e.module) ||
+       typeof e.event_id !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(e.event_id) ||
+       e.sequence !== i+1 || typeof e.previous !== "string" || !sha.test(e.previous) ||
+       typeof e.payload_sha256 !== "string" || !sha.test(e.payload_sha256))
+       throw Error("Ongeldige eventmetadata op positie "+(i+1));
+  }
+  return {type:checkpoint?"checkpoint":"back-up",scope:value.scope,
+    sequence:value.sequence,head:value.head,records:backup?value.events.length:0,
+    assessment:"STRUCTURE_ONLY",externalVerification:"UNKNOWN",release:"HOLD"};
+}
+$("file").addEventListener("change", async event => {
+  reset();
+  const file=event.target.files?.[0];
+  if(!file) { $("message").textContent="Nog geen bestand geselecteerd."; return; }
+  if(file.size > 8388608) { $("message").textContent="Geweigerd: bestand groter dan 8 MiB."; return; }
+  try {
+    const value=JSON.parse(await file.text());
+    report=inspect(value);
+    $("type").textContent=report.type;
+    $("scope").textContent=report.scope;
+    $("sequence").textContent=String(report.sequence);
+    $("head").textContent=report.head;
+    $("records").textContent=String(report.records);
+    $("evidenceCount").textContent=String(report.records);
+    $("structure").textContent="STRUCTUUR PLAUSIBEL · NIET GEVERIFIEERD";
+    $("message").textContent="Lokale inspectie afgerond. Geen authenticiteits- of herstelbewijs.";
+    $("export").disabled=false;
+  } catch(error) {
+    $("message").textContent="Geweigerd: "+(error instanceof Error?error.message:"ongeldig bestand");
+  }
+});
+$("reset").addEventListener("click",()=>{
+  reset();$("file").value="";$("message").textContent="Huidige inspectie gewist.";
+});
+$("export").addEventListener("click",()=>{
+  if(!report)return;
+  const data=JSON.stringify({schema:"palaco-cockpit-report/v4",...report,
+    authorization:"DENY",productionReleaseEnabled:false},null,2);
+  const url=URL.createObjectURL(new Blob([data],{type:"application/json"}));
+  const anchor=document.createElement("a");anchor.href=url;anchor.download="palaco-recovery-inspection-v4.json";
+  document.body.append(anchor);anchor.click();anchor.remove();
+  URL.revokeObjectURL(url);
+  $("reportStatus").textContent="Inspectierapport lokaal aangeboden; autorisatie blijft DENY.";
+});
+</script>
+</body>
+</html>
