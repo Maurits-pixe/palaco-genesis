@@ -4,6 +4,9 @@
 //! before reading a local journal. The audit crate does not sign checkpoints
 //! and cannot grant authority to execute a recovered proposal.
 
+/// Independent verification-key policy, rotation windows, and revocation.
+pub mod key_policy;
+
 /// Local immutable audit checkpoint archive (untrusted without external generation).
 pub mod archive;
 
