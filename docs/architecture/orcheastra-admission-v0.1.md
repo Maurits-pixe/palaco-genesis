@@ -437,3 +437,21 @@ Production implementations must authenticate the policy authority,
 bind key identity to the journal, isolate key material, enforce revocation
 and securely publish the latest high-water generation. Historic audit
 decisions are not current authorization. GO-13 HOLD remains unchanged.
+
+## v0.18 revocation and high-water consistency hardening (DRAFT / HOLD)
+
+The rotating HMAC verifier now rereads separately authenticated key
+policy and monotonic generation *after* verifying the checkpoint MAC.
+It denies recovery when the key was revoked or rotated between reads,
+the verification key material or allowed generation window changed,
+or a new generation became authoritative during verification. Tests
+inject revocation and generation advance between checks; neither
+may produce a trusted recovery anchor.
+
+This is a read-side consistency defense, not an independently deployed
+key vault or atomic read transaction. For production, key-policy,
+journal-scope authorization and high-water generation must be served
+by authenticated, consistent authority APIs with revocation epochs
+and strong race semantics. A policy change immediately after the
+final check is not prevented by repeated reads alone. Historical
+journal inspection remains non-executing; GO-13 HOLD remains in force.
