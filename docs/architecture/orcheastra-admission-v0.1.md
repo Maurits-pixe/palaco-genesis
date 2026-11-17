@@ -413,3 +413,27 @@ rotation/revocation key vault, hardened service boundary or cross-host
 atomic transaction has been implemented.
 
 No archive API issues execution permission. GO-13 remains HOLD.
+
+## v0.17 key rotation and emergency revocation (DRAFT / HOLD)
+
+`palaco_audit::orcheastra::key_policy` introduces
+`KeyPolicyAuthority` for independently authenticated, journal-scoped
+verification key metadata. `RotatingAnchorVerifier` fetches exactly
+one untrusted MAC checkpoint, resolves the key policy for its exact
+journal/key identifier, rejects revoked keys and generations outside
+the policy's inclusive validity window, and then delegates MAC and
+independent monotonic generation verification to the existing HMAC
+verifier. A pinned, single-record transport prevents a second fetch
+from switching the candidate between key resolution and MAC checking.
+
+The regression matrix covers accepting a rotated key, refusing an old
+key beyond its generation window, emergency revocation of an otherwise
+valid historic MAC, missing policies and stale generations.
+
+**Limitations:** this is a verifier integration contract, not a
+production key vault, signing service, secret-rotation ceremony, HSM,
+revocation feed, or proof that policy data is independently trustworthy.
+Production implementations must authenticate the policy authority,
+bind key identity to the journal, isolate key material, enforce revocation
+and securely publish the latest high-water generation. Historic audit
+decisions are not current authorization. GO-13 HOLD remains unchanged.
