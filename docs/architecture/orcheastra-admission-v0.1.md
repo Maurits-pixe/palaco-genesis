@@ -262,3 +262,24 @@ This remains an untrusted local **file transport**. It does not replace
 the independent monotonic checkpoint, confirm journal provenance, or
 provide a complete durable multi-file transaction. Temporary files can
 remain after power loss; consumers must ignore all unanchored files.
+
+## v0.11 PALACO Audit checkpoint-verifier integration
+
+The `palaco-audit::orcheastra` module provides an independent
+`AuditAnchorVerifier` boundary and a read-only `recover_from_audit`
+entrypoint. The audit verifier, not the untrusted snapshot caller, must
+supply the latest authenticated `TrustedRecoveryAnchor` scoped to the
+exact nonempty journal ID. Refused, unavailable or stale verifiers fail
+closed; inconsistent file generations, corrupt snapshots and invalid
+journal histories are also rejected. The recovery return type does not
+contain any execution interface.
+
+An actual production verifier implementation is **not** included. No
+cryptographic signatures are generated or checked here; a fixture verifier
+is only used in the tests. A production verifier must validate signer
+identity, signatures, journal scope, policy, revocation and monotonic
+generation from an authoritative independent service. Until that exists,
+this is an integration contract, not authenticated production recovery.
+
+Regression cases cover missing checkpoint, incorrect journal scope,
+successful inert historical replay, and disagreement about generation.
