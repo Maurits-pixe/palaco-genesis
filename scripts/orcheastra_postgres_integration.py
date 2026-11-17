@@ -102,7 +102,7 @@ def main() -> int:
         f"SELECT {FUNC}('test-rollback',0,0,{ZERO},1,1,1,{ONE},{PLAN},'key1');"
         "ROLLBACK;"
     )
-    assert_equal(result, "t", "CAS inside rollback transaction")
+    assert_equal(result.splitlines(), ["BEGIN", "t", "ROLLBACK"], "CAS inside rollback transaction")
     assert_equal(
         sql("SELECT generation FROM palaco_orcheastra_audit.journal_state "
             "WHERE journal_id='test-rollback'"),
