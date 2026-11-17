@@ -116,6 +116,8 @@ def verify_anchored_ledger(events, *, get_trusted_anchor, verify_policy):
     """
     if not callable(get_trusted_anchor) or not callable(verify_policy):
         raise LedgerError("EXTERNAL_TRUST_REQUIRED")
+    if type(events) not in (list, tuple) or not events:
+        raise LedgerError("EMPTY_LEDGER_NOT_TRUSTED")
     head, snapshot = replay_ledger(events)
     try:
         anchor = get_trusted_anchor()
