@@ -680,3 +680,36 @@ paths, including key policy deletion, and separately review lock
 timeouts, superuser bypass, service identity, key custody and HMAC
 verification. This code is only applied to a disposable CI database.
 PR remains DRAFT; GO-13 HOLD remains.
+
+## v0.28 key-policy mutation and deletion guards (DRAFT / HOLD)
+
+The candidate migration
+`docs/architecture/orcheastra-authority-key-policy-v0.28.sql`
+adds `set_key_revocation` and `rotate_active_key`, both of which
+lock `journal_state` before the journal's key-policy row.
+`set_key_revocation` advances the key-policy epoch via the v0.20
+trigger. `rotate_active_key` accepts only a pre-existing,
+nonrevoked key permitted for the next generation, and increments
+the epoch when the active key changes. Both return false for
+missing journals, unknown keys or invalid requests.
+
+Physical DELETE of `key_policy` and `caller_policy` rows is
+rejected by triggers, preserving revocation/policy tombstones
+in the audited data model. The migration grants NO privileges to
+application publisher or reader roles. A new isolated PostgreSQL
+test races a session-bound checkpoint publication with journal-first
+key revocation, verifies the key remains revoked, checks that
+old keys cannot publish after rotation, enforces deletion denial,
+and tests unprivileged callers cannot invoke the mutation functions.
+The tests permit only a publication that linearizes before revocation.
+
+**Remaining limits:** a database owner/superuser can modify or
+disable triggers and may perform raw table updates; the guards
+are not an external immutable trust anchor. Every trusted policy
+writer must follow the journal-first locking contract. Physical
+key deletion and caller-policy deletion are intentionally blocked,
+not silently interpreted as revocation. This does not integrate
+cryptographic key custody, production service authentication or
+a remote HMAC authority. SQL executes only in disposable CI;
+no PALACO production migration, merge or deployment is authorized.
+GO-13 HOLD remains unchanged.
