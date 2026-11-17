@@ -4,6 +4,9 @@
 //! before reading a local journal. The audit crate does not sign checkpoints
 //! and cannot grant authority to execute a recovered proposal.
 
+/// Reconciliation of interrupted or ambiguous audit publication results.
+pub mod reconcile;
+
 /// Staged snapshot publication and unanchored-file recovery safeguards.
 pub mod staged_commit;
 
