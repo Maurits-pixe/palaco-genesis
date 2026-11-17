@@ -4,6 +4,9 @@
 //! before reading a local journal. The audit crate does not sign checkpoints
 //! and cannot grant authority to execute a recovered proposal.
 
+/// Fail-closed monotonic checkpoint publication and prefix integrity contract.
+pub mod publish;
+
 /// Scoped HMAC-SHA-256 checkpoint verifier and monotonic-generation boundary.
 pub mod mac;
 
