@@ -917,3 +917,38 @@ artifacts are separately protected only by runner isolation.
 `authorization: NONE` and `execution: HOLD` remain mandatory.
 No production deployment, merge or external execution occurs.
 GO-13 HOLD and DRAFT are unchanged.
+
+## v0.36 portable, signed recovery evidence bundle (DRAFT / HOLD)
+
+The isolated `scripts/orcheastra_recovery_bundle_v036.py` creates a
+deterministic ZIP containing the canonical v0.35 recovery report,
+its detached **Ed25519 signature**, the report signer public key,
+a canonical evidence manifest, and **exact bytes** of the 15
+allowlisted v0.35 evidence artifacts. The signer private key is
+generated on the CI runner, never included in the ZIP, and deleted
+after signing. The verifier accepts the signer only if its public
+key SHA-256 fingerprint matches a separately supplied trusted pin.
+
+The portable command requires no database connection:
+`python3 scripts/orcheastra_recovery_bundle_v036.py --verify-portable
+/path/to/recovery-evidence-v036.zip /trusted/report-signer.sha256`.
+It validates archive member allowlisting, duplicate entries, size
+limits, detached signature, canonical report and manifest, individual
+evidence hashes and lengths, and mandatory
+`authorization: NONE` / `execution: HOLD`. CI explicitly clears
+database environment variables for this verification. It also tests
+for a forged execution decision, altered/missing evidence, a forged
+manifest and the wrong pinned public-key fingerprint.
+
+An in-run database-aware verification additionally recomputes the
+trusted current recovery report and checks equivalence, including
+after a PostgreSQL service restart. The portable check proves package
+integrity **relative to the separately trusted public-key pin**; it
+does NOT independently query live revocation status or know if an
+entire valid package is obsolete. The archive is not uploaded,
+published or issued as a live trust certificate, and its ephemeral
+signer is NOT a production PALACO authority. Public-key pins need
+secure out-of-band distribution; retention beyond the CI job,
+timestamping, off-host storage and independent witnessing remain
+unimplemented. `VERIFIED` means read-only historic evidence only.
+PR remains DRAFT; no merge, deploy or execution. GO-13 HOLD.
