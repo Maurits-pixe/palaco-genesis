@@ -1,0 +1,47 @@
+name: RIO native staging
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - verification/rio-native-staging/**
+      - .github/workflows/rio-native-staging.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-transactions:
+    name: Synthetic PostgreSQL transaction checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: verification/rio-native-staging
+    env:
+      RIO_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Check out exact source head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Install locked dependencies without install scripts
+        run: |
+          npm ci --prefix staging --ignore-scripts --no-audit --no-fund
+          npm ci --prefix native-staging --ignore-scripts --no-audit --no-fund
+      - name: Run regression, native schema and parallel checks
+        run: npm run test:ci
+      - name: Retain synthetic evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rio-native-staging-${{ github.run_id }}-${{ github.run_attempt }}
+          path: verification/rio-native-staging/evidence/
+          if-no-files-found: error
+          retention-days: 14
