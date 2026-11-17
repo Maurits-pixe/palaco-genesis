@@ -952,3 +952,42 @@ secure out-of-band distribution; retention beyond the CI job,
 timestamping, off-host storage and independent witnessing remain
 unimplemented. `VERIFIED` means read-only historic evidence only.
 PR remains DRAFT; no merge, deploy or execution. GO-13 HOLD.
+
+## v0.37 controlled evidence handoff, retention and freshness (DRAFT / HOLD)
+
+The isolated `scripts/orcheastra_evidence_handoff_v037.py`
+uses the portable v0.36 signed evidence bundle as input and writes
+a canonical handoff manifest with exact SHA-256 of that bundle,
+pinned signer-public-key digest, explicit scope and a monotonic
+`sequence`. A separately supplied high-water policy records the
+minimum trusted sequence and newest bundle digest. The receiver
+first verifies the Ed25519 signature, then assesses the bundle's
+freshness relative to this independently pinned high-water state.
+
+**Critical distinction:** a bundle can remain cryptographically
+`VERIFIED` but be classified `HISTORICAL` rather than
+`CURRENT` when its sequence is lower than the independently
+trusted minimum, or its digest differs from the latest trusted
+digest. Future unanchored sequences and absent/malformed high-water
+data are rejected. The receiver refuses to grant authority under
+either classification: all outcomes include
+`authorization: NONE`, `execution: HOLD` and `read_only: true`.
+
+The handoff carries explicit retention metadata:
+`CI_FIXTURE_NO_ARCHIVE`, `preserve_original=true`,
+`automatic_purge=false`, `deletion_allowed=false`, and
+`review_required_for_disposal=true`. This is an explicit policy
+statement, **not** a deployed storage/retention enforcement system.
+CI exercises valid current evidence, a historical still-signed
+bundle, mismatched latest digest, bad sequence, unavailable high
+water, forged execution permission, silent purge request and wrong
+signer pin. The portable verifier is exercised with DB variables
+cleared and checked again after PostgreSQL restart.
+
+**Trust boundary:** the high-water manifest is supplied separately;
+the fixture itself does not sign, timestamp or publish that manifest
+via an independent service. A receiver MUST obtain and authenticate
+it through an independent trusted channel. An attacker controlling
+both the bundle and its high-water file may forge currency claims.
+No durable off-host archival system or production transfer has been
+implemented; no release/merge is authorized. GO-13 HOLD.
