@@ -743,3 +743,33 @@ owner separation, immutable off-database replication/anchoring, audit
 verification of policy history versus checkpoint history, key custody,
 and staging permissions review. No production database migration or
 merge has been performed. GO-13 remains HOLD.
+
+## v0.30 independently recalculated policy SHA-256 chain (DRAFT / HOLD)
+
+The candidate PostgreSQL migration
+`docs/architecture/orcheastra-policy-hash-v0.30.sql` adds a
+`policy_hash_chain` indexed by journal, policy category and epoch.
+It backfills existing v0.29 evidence and appends a domain-separated
+SHA-256 digest for subsequent events within the same transaction.
+Each link stores the previous digest, exact canonical payload bytes
+and its own digest. The linked policy epochs are checked before insert.
+UPDATE, DELETE and TRUNCATE are rejected; publisher roles have no
+direct table grants.
+
+A standalone Python verifier recomputes SHA-256 from the exported
+payload bytes, checks predecessor links, contiguous epochs and the
+canonical representation of each corresponding event. CI deliberately
+mutates a copied payload and removes a predecessor to prove those
+changes are detected. The verifier pins the chain heads to a
+runner-local JSON manifest **outside the database container**, then
+rechecks them after PostgreSQL restarts.
+
+**Limits:** SHA-256 is not a signature or remote authority. The
+canonical payload is still produced by PostgreSQL, and the CI
+manifest exists only during one ephemeral job; it is neither
+independent archival storage nor a durable production root of
+trust. Database owners could rewrite both data and chain or remove
+a whole scope without an independently retained external manifest.
+Hardware failure, restored-old-backup detection and off-host
+anchoring are still unimplemented. No production migration or merge
+is performed. GO-13 HOLD remains unchanged.
