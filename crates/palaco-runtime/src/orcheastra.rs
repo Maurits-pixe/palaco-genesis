@@ -15,6 +15,9 @@ pub mod persistence;
 /// Independently anchored recovery checkpoint and fail-closed journal replay.
 pub mod recovery;
 
+/// Versioned, verified transfer of structured snapshots to offline files.
+pub mod snapshot_file;
+
 /// Offline-only task dependency planner and immutable decision journal.
 pub mod tasks;
 
