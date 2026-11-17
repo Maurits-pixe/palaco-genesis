@@ -511,3 +511,24 @@ service. Before migration, validate PostgreSQL syntax, ownership,
 RLS/grants, trigger behavior, lock contention, policy changes
 and crash/restore semantics in staging, and independently review
 authorization and secret management. GO-13 stays HOLD.
+
+## v0.21 PostgreSQL integration verification (DRAFT / HOLD)
+
+The draft PR now includes
+`.github/workflows/orcheastra-postgres-integration.yml`,
+which boots a disposable PostgreSQL 16 GitHub Actions service and
+applies the v0.20 schema *only to that CI database*. It then runs
+`scripts/orcheastra_postgres_integration.py` using a loopback-only
+connection and an explicit `PALACO_TEST_EPHEMERAL=YES` guard.
+The integration matrix exercises initial CAS and ledger write,
+duplicate-writer denial, policy-epoch invalidation and revocation,
+transaction rollback of both journal and history, and a two-client
+race in which exactly one writer may commit.
+
+This CI job uses synthetic fixture credentials on an isolated ephemeral
+container; it does **not** access PALACO Supabase or production databases.
+It verifies PostgreSQL storage semantics only, not HMAC or a deployed
+trusted authentication service. Production rollout remains blocked
+pending service-role review, RLS/grants, key custody, authenticated policy
+reads, migration rehearsal, recovery and threat-model evaluation.
+GO-13 stays HOLD.
