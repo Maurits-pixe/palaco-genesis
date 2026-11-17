@@ -14,7 +14,7 @@ use super::tasks::{JournalError, TaskCoordinator, TaskPlan};
 ///
 /// The pair of plan digest and record count prevents silently substituting
 /// a different task graph or a shorter history when the checkpoint is trusted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RecoveryCheckpoint {
     /// Domain-separated digest of the exact task plan.
     pub plan_hash: Digest256,
