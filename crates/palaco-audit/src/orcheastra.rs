@@ -4,6 +4,9 @@
 //! before reading a local journal. The audit crate does not sign checkpoints
 //! and cannot grant authority to execute a recovered proposal.
 
+/// Local immutable audit checkpoint archive (untrusted without external generation).
+pub mod archive;
+
 /// Reconciliation of interrupted or ambiguous audit publication results.
 pub mod reconcile;
 
