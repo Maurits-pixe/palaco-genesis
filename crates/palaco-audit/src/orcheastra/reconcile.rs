@@ -65,12 +65,9 @@ pub fn reconcile_publication<V: AuditAnchorVerifier>(
         return Ok(ReconcileOutcome::Conflict);
     }
 
-    let path = directory.join(format!(
-        "snapshot-{:020}.bin",
-        proposal.next.generation
-    ));
-    let recovery = recover_from_audit(verifier, journal_id, &path)
-        .map_err(ReconcileError::Recovery)?;
+    let path = directory.join(format!("snapshot-{:020}.bin", proposal.next.generation));
+    let recovery =
+        recover_from_audit(verifier, journal_id, &path).map_err(ReconcileError::Recovery)?;
 
     // A monotonic authority may have advanced while we read the local file.
     let confirmed = verifier
