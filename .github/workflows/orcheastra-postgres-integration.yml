@@ -96,6 +96,14 @@ jobs:
           PALACO_TEST_PUBLISHER_URI: postgresql://palaco_audit_ci_publisher:local_only_ci_publisher@127.0.0.1:5432/palaco_orcheastra_test
         run: python3 scripts/orcheastra_postgres_policy_evidence.py
 
+      - name: Install SHA-256 policy evidence hash chain
+        run: |
+          psql -X -v ON_ERROR_STOP=1 "$PALACO_TEST_PG_URI" \
+            -f docs/architecture/orcheastra-policy-hash-v0.30.sql
+
+      - name: Independently verify and pin policy hash heads
+        run: python3 scripts/orcheastra_policy_hash_verify.py --pin
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -110,3 +118,6 @@ jobs:
 
       - name: Verify committed history and revocation after restart
         run: python3 scripts/orcheastra_postgres_integration.py --verify-restart
+
+      - name: Verify policy hash heads after restart
+        run: python3 scripts/orcheastra_policy_hash_verify.py --verify
