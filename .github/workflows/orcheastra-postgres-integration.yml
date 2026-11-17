@@ -110,6 +110,9 @@ jobs:
       - name: Exercise root-authorized rotation and pinned trust version
         run: python3 scripts/orcheastra_policy_trust_rotation.py --seal
 
+      - name: Seal scoped key statuses and trusted checkpoint registry
+        run: python3 scripts/orcheastra_trust_registry_v033.py --seal
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -133,3 +136,6 @@ jobs:
 
       - name: Verify rotated trust and anti-rollback after PostgreSQL restart
         run: python3 scripts/orcheastra_policy_trust_rotation.py --verify
+
+      - name: Verify signed key statuses and recovery gate after restart
+        run: python3 scripts/orcheastra_trust_registry_v033.py --verify
