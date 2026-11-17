@@ -4,9 +4,7 @@
 //! 256-bit key and a separate monotonic generation authority. It does not
 //! manage keys, attest the key owner, publish anchors or execute any task.
 
-use palaco_runtime::orcheastra::{
-    persistence::TrustedRecoveryAnchor,
-};
+use palaco_runtime::orcheastra::persistence::TrustedRecoveryAnchor;
 use sha2::{Digest, Sha256};
 
 use super::{AnchorError, AuditAnchorVerifier};
@@ -66,11 +64,7 @@ fn write_field(out: &mut Vec<u8>, bytes: &[u8]) {
     out.extend_from_slice(bytes);
 }
 
-fn authenticated_bytes(
-    journal_id: &str,
-    key_id: &str,
-    anchor: &TrustedRecoveryAnchor,
-) -> Vec<u8> {
+fn authenticated_bytes(journal_id: &str, key_id: &str, anchor: &TrustedRecoveryAnchor) -> Vec<u8> {
     let mut bytes = b"PALACO-ORCHEASTRA-AUDIT-HMAC-V1".to_vec();
     bytes.push(MAC_FORMAT_VERSION);
     write_field(&mut bytes, journal_id.as_bytes());
@@ -227,7 +221,10 @@ mod tests {
             key_id: "audit-key-v1",
             key: &TEST_KEY,
         };
-        assert_eq!(verifier.latest_anchor("one"), Err(AnchorError::Unauthenticated));
+        assert_eq!(
+            verifier.latest_anchor("one"),
+            Err(AnchorError::Unauthenticated)
+        );
         let mut changed = source.record.clone();
         changed.anchor.checkpoint.head = [8u8; 32];
         let tampered_source = Source { record: changed };
@@ -237,7 +234,10 @@ mod tests {
             key_id: "audit-key-v1",
             key: &TEST_KEY,
         };
-        assert_eq!(tampered.latest_anchor("rio"), Err(AnchorError::Unauthenticated));
+        assert_eq!(
+            tampered.latest_anchor("rio"),
+            Err(AnchorError::Unauthenticated)
+        );
     }
 
     #[test]
@@ -260,7 +260,10 @@ mod tests {
             key_id: "audit-key-v1",
             key: &wrong_key,
         };
-        assert_eq!(verifier.latest_anchor("rio"), Err(AnchorError::Unauthenticated));
+        assert_eq!(
+            verifier.latest_anchor("rio"),
+            Err(AnchorError::Unauthenticated)
+        );
     }
 
     #[test]
@@ -276,6 +279,9 @@ mod tests {
             key_id: "audit-key-v1",
             key: &zero_key,
         };
-        assert_eq!(verifier.latest_anchor("rio"), Err(AnchorError::Unauthenticated));
+        assert_eq!(
+            verifier.latest_anchor("rio"),
+            Err(AnchorError::Unauthenticated)
+        );
     }
 }
