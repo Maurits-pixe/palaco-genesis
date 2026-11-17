@@ -76,6 +76,16 @@ jobs:
           PALACO_TEST_PUBLISHER_URI: postgresql://palaco_audit_ci_publisher:local_only_ci_publisher@127.0.0.1:5432/palaco_orcheastra_test
         run: python3 scripts/orcheastra_postgres_session_integration.py
 
+      - name: Install key-policy lock ordering and deletion guards
+        run: |
+          psql -X -v ON_ERROR_STOP=1 "$PALACO_TEST_PG_URI" \
+            -f docs/architecture/orcheastra-authority-key-policy-v0.28.sql
+
+      - name: Verify key rotation revocation races and deletion protection
+        env:
+          PALACO_TEST_PUBLISHER_URI: postgresql://palaco_audit_ci_publisher:local_only_ci_publisher@127.0.0.1:5432/palaco_orcheastra_test
+        run: python3 scripts/orcheastra_postgres_key_policy_integration.py
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
