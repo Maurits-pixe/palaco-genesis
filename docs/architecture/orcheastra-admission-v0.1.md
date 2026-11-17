@@ -478,3 +478,36 @@ revocation epoch enforcement, independent monotonic generation
 persistence, and explicit crash/partition behavior. The public
 `AuditAnchorVerifier` remains read-only, so verified history never
 authorizes task execution or releases GO-13 HOLD.
+
+## v0.20 PostgreSQL transaction candidate — not deployed (DRAFT / HOLD)
+
+The reviewed-in-source migration candidate
+`docs/architecture/orcheastra-authority-postgres-v0.20.sql`
+defines a restricted `palaco_orcheastra_audit` schema with a
+journal-scoped high-water state, revocable generation-window key
+policy and checkpoint publication history. The
+`publish_checkpoint` function locks current journal and key-policy
+rows, checks the complete expected generation/sequence/head/policy
+epoch and active key, rejects revoked keys, then updates the anchor
+and appends a unique history row in the *same PostgreSQL transaction*.
+A key-policy trigger bumps the policy epoch after policy updates.
+Public schema/table/function privileges are explicitly revoked;
+no production role is granted access by this candidate.
+
+The Rust `authority_transaction` module adds an
+`EpochGuardedAuthority` adapter and fail-closed publication
+function that checks candidate history, key revocation and a
+policy-epoch CAS. Fixture tests cover initial commit, duplicate
+writer, mid-publication revocation and invalid scope.
+
+**Important limitations:** Neither migration nor Rust adapter
+is connected to a running PostgreSQL instance. SQL has not been
+applied or database-integration-tested. No service principal is
+provisioned; no credential issuance, signing-key custody or verified
+HMAC transaction is implemented. The SQL function is a storage
+primitive only: it must *never* be exposed to untrusted callers or
+used as an authentication decision independently of the secure
+service. Before migration, validate PostgreSQL syntax, ownership,
+RLS/grants, trigger behavior, lock contention, policy changes
+and crash/restore semantics in staging, and independently review
+authorization and secret management. GO-13 stays HOLD.
