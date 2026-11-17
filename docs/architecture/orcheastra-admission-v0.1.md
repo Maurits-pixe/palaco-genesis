@@ -249,3 +249,16 @@ a recovered historic proposal is currently admissible.
 CI note: v0.9 CI/CD #421 and PALACO CI #726 failed on file-store rustfmt,
 while Citadel #636 succeeded. The formatting diff has been corrected in this
 branch; v0.10 requires fresh formatting, Clippy and test validation.
+
+## v0.10.1 exclusive publication hardening
+
+The local staging adapter has been hardened to publish the fully synced
+temporary file using an **exclusive hard link** rather than an overwriting
+rename. An already existing generation filename is rejected atomically,
+including when another local writer wins a race. The temporary link is then
+removed and the directory is synced. Unsupported filesystems fail closed.
+
+This remains an untrusted local **file transport**. It does not replace
+the independent monotonic checkpoint, confirm journal provenance, or
+provide a complete durable multi-file transaction. Temporary files can
+remain after power loss; consumers must ignore all unanchored files.
