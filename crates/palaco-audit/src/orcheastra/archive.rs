@@ -10,8 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use palaco_runtime::orcheastra::{
-    persistence::TrustedRecoveryAnchor,
-    recovery::RecoveryCheckpoint,
+    persistence::TrustedRecoveryAnchor, recovery::RecoveryCheckpoint,
 };
 use sha2::{Digest, Sha256};
 
@@ -148,7 +147,7 @@ pub fn read_archived(
         return Err(ArchiveError::InvalidFormat);
     }
     let path = archive_path(root, journal_id, generation);
-    let mut file = File::open(path).map_err(ArchiveError::Io)?;
+    let file = File::open(path).map_err(ArchiveError::Io)?;
     // The compact binary format is bounded, including its maximum two IDs.
     let mut bytes = Vec::new();
     file.take(2300)
@@ -232,10 +231,7 @@ mod tests {
 
     fn folder() -> PathBuf {
         let id = STAGE_ID.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!(
-            "palaco-audit-archive-{}-{id}",
-            std::process::id()
-        ))
+        std::env::temp_dir().join(format!("palaco-audit-archive-{}-{id}", std::process::id()))
     }
 
     #[test]
@@ -255,8 +251,8 @@ mod tests {
             archive_record(&root, &record),
             Err(ArchiveError::AlreadyExists)
         ));
-        let opened = read_archived(&root, "orcheastra:test", 4)
-            .map_err(|error| format!("{error:?}"))?;
+        let opened =
+            read_archived(&root, "orcheastra:test", 4).map_err(|error| format!("{error:?}"))?;
         assert_eq!(opened, record);
         let source = LocalArchiveSource {
             root: &root,
