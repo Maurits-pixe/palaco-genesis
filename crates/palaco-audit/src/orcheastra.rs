@@ -4,6 +4,9 @@
 //! before reading a local journal. The audit crate does not sign checkpoints
 //! and cannot grant authority to execute a recovered proposal.
 
+/// Consistent security-state authority for audit recovery verification.
+pub mod consistent_authority;
+
 /// Independent verification-key policy, rotation windows, and revocation.
 pub mod key_policy;
 
