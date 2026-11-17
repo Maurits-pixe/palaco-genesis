@@ -62,8 +62,8 @@ def publish(journal: str, epoch: int, next_head: str = ONE) -> str:
 
 
 def main() -> int:
-    if not URI or not URI.startswith("postgresql://"):
-        print("PALACO_TEST_PG_URI must identify a disposable PostgreSQL instance", file=sys.stderr)
+    if not URI or not URI.startswith("postgresql://") or "@127.0.0.1:" not in URI:
+        print("PALACO_TEST_PG_URI must identify a loopback PostgreSQL instance", file=sys.stderr)
         return 2
     if os.environ.get("PALACO_TEST_EPHEMERAL") != "YES":
         print("Refusing to run without explicit ephemeral-database guard", file=sys.stderr)
@@ -102,7 +102,7 @@ def main() -> int:
         f"SELECT {FUNC}('test-rollback',0,0,{ZERO},1,1,1,{ONE},{PLAN},'key1');"
         "ROLLBACK;"
     )
-    assert_equal(result.splitlines()[1], "t", "CAS inside rollback transaction")
+    assert_equal(result, "t", "CAS inside rollback transaction")
     assert_equal(
         sql("SELECT generation FROM palaco_orcheastra_audit.journal_state "
             "WHERE journal_id='test-rollback'"),
