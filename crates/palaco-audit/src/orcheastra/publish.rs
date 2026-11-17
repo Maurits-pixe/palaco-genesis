@@ -64,8 +64,7 @@ pub fn prepare_publication(
     previous: &TrustedRecoveryAnchor,
     candidate: &JournalSnapshot,
 ) -> Result<PublicationProposal, PublishError> {
-    verify_snapshot(candidate, &candidate.checkpoint)
-        .map_err(PublishError::InvalidSnapshot)?;
+    verify_snapshot(candidate, &candidate.checkpoint).map_err(PublishError::InvalidSnapshot)?;
     if candidate.checkpoint.plan_hash != previous.checkpoint.plan_hash {
         return Err(PublishError::PlanChanged);
     }
@@ -218,23 +217,13 @@ mod tests {
             current: genesis,
             rejected: false,
         };
-        let committed = publish_checkpoint(
-            &verifier,
-            &mut publisher,
-            "orcheastra:test",
-            &snapshot,
-        )
-        .map_err(|error| format!("{error:?}"))?;
+        let committed = publish_checkpoint(&verifier, &mut publisher, "orcheastra:test", &snapshot)
+            .map_err(|error| format!("{error:?}"))?;
         assert_eq!(committed.generation, 1);
         assert_eq!(committed.checkpoint.sequence, 1);
         assert_eq!(publisher.current, committed);
         assert!(matches!(
-            publish_checkpoint(
-                &verifier,
-                &mut publisher,
-                "orcheastra:test",
-                &snapshot,
-            ),
+            publish_checkpoint(&verifier, &mut publisher, "orcheastra:test", &snapshot,),
             Err(PublishError::Commit(AnchorError::Stale))
         ));
         Ok(())
@@ -290,12 +279,7 @@ mod tests {
             Err(PublishError::PriorAnchor(AnchorError::UnauthorizedJournal))
         ));
         assert!(matches!(
-            publish_checkpoint(
-                &verifier,
-                &mut publisher,
-                "orcheastra:test",
-                &snapshot,
-            ),
+            publish_checkpoint(&verifier, &mut publisher, "orcheastra:test", &snapshot,),
             Err(PublishError::Commit(AnchorError::Stale))
         ));
         assert_eq!(publisher.current, genesis);
