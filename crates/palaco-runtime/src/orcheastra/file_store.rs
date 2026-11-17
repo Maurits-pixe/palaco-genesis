@@ -50,7 +50,7 @@ fn payload_hash(bytes: &[u8]) -> Digest256 {
 
 /// Write a self-checking payload to a new file in a local directory.
 ///
-/// Creates a unique temporary file, calls `sync_all`, then renames into
+/// Creates a unique temporary file, calls `sync_all`, then publishes using an exclusive hard link at
 /// `snapshot-{generation:020}.bin` and attempts to sync the directory.
 /// Never reuse a generation in a directory. The local filesystem rename is
 /// not a trusted multi-process compare-and-swap, and a crash before a trusted
@@ -95,16 +95,20 @@ pub fn stage_blob(
         let _ = fs::remove_file(&staged);
         return Err(error);
     }
-    if target.exists() {
+    // An exclusive hard-link publishes the completed inode only if no file
+    // already owns this generation. Unlike rename, it never replaces a
+    // concurrent writer's file. Filesystems without hard links fail closed.
+    if let Err(error) = fs::hard_link(&staged, &target) {
         let _ = fs::remove_file(&staged);
-        return Err(FileStoreError::AlreadyExists);
+        return if error.kind() == std::io::ErrorKind::AlreadyExists {
+            Err(FileStoreError::AlreadyExists)
+        } else {
+            Err(FileStoreError::Io(error))
+        };
     }
-    if let Err(error) = fs::rename(&staged, &target) {
-        let _ = fs::remove_file(&staged);
-        return Err(FileStoreError::Io(error));
-    }
-    // POSIX directory syncing can make the rename durable; platforms differ.
-    // If unsupported, fail closed rather than claim a durable checkpoint.
+    fs::remove_file(&staged).map_err(FileStoreError::Io)?;
+    // Directory durability varies by platform: error rather than claiming a
+    // committed trusted checkpoint when sync cannot be completed.
     File::open(directory)
         .and_then(|handle| handle.sync_all())
         .map_err(FileStoreError::Io)?;
