@@ -3,6 +3,9 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+/// ORCHEASTRA audit checkpoint verifier and fail-closed recovery adapter.
+pub mod orcheastra;
+
 use palaco_foundation::{
     traits::{CurrentlyAssessable, Validatable},
     types::{CurrentValidity, Timestamp},
