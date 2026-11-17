@@ -170,10 +170,7 @@ mod tests {
             generations: &Latest(5),
             key_policies: &keys,
         };
-        assert_eq!(
-            verifier.latest_anchor("orcheastra:test"),
-            Ok(anchor(5))
-        );
+        assert_eq!(verifier.latest_anchor("orcheastra:test"), Ok(anchor(5)));
     }
 
     #[test]
