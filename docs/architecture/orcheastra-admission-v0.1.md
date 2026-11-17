@@ -532,3 +532,23 @@ trusted authentication service. Production rollout remains blocked
 pending service-role review, RLS/grants, key custody, authenticated policy
 reads, migration rehearsal, recovery and threat-model evaluation.
 GO-13 stays HOLD.
+
+## v0.22 PostgreSQL least-privilege integration verification (DRAFT / HOLD)
+
+The isolated PostgreSQL integration harness now provisions two disposable
+`NOLOGIN` test roles: a read-only audit-history reviewer and a fully
+unprivileged role. The reviewer receives narrowly scoped schema usage
+and SELECT on `anchor_history` only; neither role can execute
+`publish_checkpoint`, mutate journal state or read key-policy rows.
+Tests switch database roles with `SET ROLE`, expect explicit
+permission-denied responses and confirm that blocked attempts do not
+alter the trusted generation. The existing duplicate CAS, concurrent
+writers, revocation and full transaction rollback cases remain enabled.
+
+No roles or grants are created outside the ephemeral GitHub Actions
+PostgreSQL 16 container. The draft migration deliberately grants no
+trusted publisher role. These are *negative authorization tests*, not
+production authentication, cryptographic key custody or proof that a
+service role is correctly provisioned. Production role provisioning,
+RLS and tenant isolation, migration review and end-to-end security
+service remain unimplemented. GO-13 HOLD is unchanged.
