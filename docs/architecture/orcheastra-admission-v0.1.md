@@ -773,3 +773,34 @@ a whole scope without an independently retained external manifest.
 Hardware failure, restored-old-backup detection and off-host
 anchoring are still unimplemented. No production migration or merge
 is performed. GO-13 HOLD remains unchanged.
+
+## v0.31 independently signed policy-head checkpoint (DRAFT / HOLD)
+
+A standalone Python verifier now generates and checks an **Ed25519**
+signature for the complete set of v0.30 journal/category policy-head
+digests. `scripts/orcheastra_policy_signed_checkpoint.py` first
+recomputes the PostgreSQL policy hash chain independently, serializes
+the *complete* head map using deterministic JSON and signs those exact
+bytes with a fresh OpenSSL-generated ephemeral private key outside the
+PostgreSQL container. It pins the trusted public key and detached
+signature on the CI runner, then destroys the signing private key.
+Subsequent verification uses only the pinned public key, signed
+manifest, and independently recalculated database heads.
+
+The CI matrix deliberately tests altered signed bytes, a different
+public verification key, and a database-rollback simulation which
+removes the newest event from one otherwise internally consistent
+policy chain. This last case demonstrates why a correctly recomputed
+hash chain is insufficient: its *old* head must disagree with the
+independently signed expected head. After PostgreSQL process restart,
+CI repeats signature verification and the complete DB-head comparison.
+
+**Boundaries:** these files exist only for one disposable CI runner.
+There is no durable off-host transparency log, trusted timestamp,
+external HSM/KMS, independently operated witness, or secure production
+recovery service. A private key is generated for this test only and
+deleted immediately after signing. A modified database cannot be
+trusted if the runner's public-key and signature snapshot is also
+compromised. Checkpoint validation grants no task-execution authority.
+No production migration, merge or release is authorized. GO-13 HOLD
+remains unchanged.
