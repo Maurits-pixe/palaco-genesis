@@ -62,8 +62,7 @@ pub fn stage_then_publish<V: AuditAnchorVerifier, P: CheckpointPublisher>(
     let previous = verifier
         .latest_anchor(journal_id)
         .map_err(StagePublishError::Anchor)?;
-    let proposal =
-        prepare_publication(&previous, snapshot).map_err(StagePublishError::Proposal)?;
+    let proposal = prepare_publication(&previous, snapshot).map_err(StagePublishError::Proposal)?;
     let path = stage_snapshot(
         directory,
         proposal.next.generation,
