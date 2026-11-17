@@ -859,3 +859,31 @@ does not preserve trust data across CI runners, support disaster
 recovery, distribute keys, or verify a real PALACO One principal.
 Recovering a valid historical audit checkpoint remains read-only and
 NEVER authorizes task execution. GO-13 HOLD and DRAFT remain.
+
+## v0.34 fail-closed read-only recovery dispositions (DRAFT / HOLD)
+
+The isolated `scripts/orcheastra_recovery_disposition_v034.py`
+provides explicit classifications `VERIFIED`, `STALE`,
+`REVOKED` and `UNAVAILABLE`. **Every** disposition carries a
+mandatory `execution: HOLD`. The classification distinguishes
+expired/revoked keys, unknown or malformed trust state, older
+checkpoint or registry versions, wrong checkpoint digests, invalid
+validity windows and absent high-water data.
+
+The production-facing entrypoint concept, `trusted_recovery`, first
+validates the v0.32 rotation and independently calculated database
+heads, the v0.33 registry's Ed25519 signature, the signed checkpoint,
+and the pinned digest. Any absent, corrupt, ambiguous or otherwise
+unverifiable trust material yields `UNAVAILABLE`, not authorization.
+The separate pure `decision` function assumes those proofs were
+already authenticated; it MUST NOT be exposed directly to
+untrusted callers as a security boundary.
+
+Ephemeral CI tests exercise 12 positive/negative classifications,
+assert `execution = HOLD` in every case, and re-verify the authentic
+checkpoint after PostgreSQL restart. Tests use a fixed UTC fixture
+clock; no secure network time source, durable external witness, real
+service identity or independent key custody is connected.
+`VERIFIED` means read-only historical audit verification only.
+It never grants execution of a task, decision, account operation or
+network action. PR #348 remains DRAFT and GO-13 HOLD.
