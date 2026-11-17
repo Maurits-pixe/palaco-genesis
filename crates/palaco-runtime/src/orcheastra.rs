@@ -53,7 +53,7 @@ pub struct AdmissionEvidence {
 }
 
 /// An auditable refusal or escalation reason.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AdmissionReason {
     /// Admission is permitted, but no action has been executed.
     Admitted,
@@ -78,7 +78,7 @@ pub enum AdmissionReason {
 }
 
 /// Fail-closed result returned to a caller.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AdmissionDecision {
     /// Inspection may proceed without mutation.
     ObserveOnly,
