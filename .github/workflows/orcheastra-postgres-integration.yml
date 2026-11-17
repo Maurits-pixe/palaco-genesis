@@ -119,6 +119,9 @@ jobs:
       - name: Generate and adversarially verify read-only recovery report
         run: python3 scripts/orcheastra_recovery_report_v035.py --create
 
+      - name: Sign portable recovery bundle and run offline tamper tests
+        run: python3 scripts/orcheastra_recovery_bundle_v036.py --create
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -151,3 +154,6 @@ jobs:
 
       - name: Reproduce and verify recovery report after database restart
         run: python3 scripts/orcheastra_recovery_report_v035.py --verify
+
+      - name: Verify portable Ed25519 report and original evidence after restart
+        run: python3 scripts/orcheastra_recovery_bundle_v036.py --verify
