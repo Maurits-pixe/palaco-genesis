@@ -620,3 +620,33 @@ legacy unguarded publisher, and integrate authentication/HMAC/key
 custody with the database transaction. This candidate demonstrates
 revocation serialization only, not a finished trusted authority.
 GO-13 HOLD and non-execution requirements remain unchanged.
+
+## v0.26 database-session-bound principal facade (DRAFT / HOLD)
+
+`docs/architecture/orcheastra-authority-session-v0.26.sql`
+adds a narrowly granted PostgreSQL `SECURITY DEFINER` facade that
+derives principal identity from **`session_user`**, rather than from
+an untrusted `principal_id` argument. It routes into the v0.25
+authorization-epoch CAS with journal scope, key revocation, and
+policy-epoch checks. Its `search_path` is pinned to `pg_catalog`,
+and the facade is revoked from PUBLIC in the same transaction in
+which it is created.
+
+The isolated GitHub Actions database provisions a disposable
+password-authenticated LOGIN role and grants it only schema usage
+and execution of the session-bound facade, never the lower-level
+publisher, caller-policy table or journal-state tables. Negative
+tests attempt direct legacy/parameterized publishing, revoked
+publication, unknown journal, missing per-journal permission and
+duplicate publication. An authenticated PostgreSQL session identity
+cannot be substituted by passing a different `principal_id` value.
+
+**Production security limitations:** this is a CI-only database role
+integration, NOT a deployed identity provider, end-user login, managed
+secret or mTLS service. The fixture uses a local test password and
+loopback transport. Production would require reviewed non-superuser
+function ownership, hardened GRANTs, transport authentication,
+connection-pool identity safety, independent HMAC verification,
+audited key custody, and adversarial role/search_path review.
+Do not directly expose the old lower-level functions to any
+application role. GO-13 remains HOLD.
