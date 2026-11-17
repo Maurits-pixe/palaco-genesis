@@ -81,9 +81,12 @@ pub fn stage_blob(
         .map_err(FileStoreError::Io)?;
     let write_result = (|| {
         file.write_all(MAGIC).map_err(FileStoreError::Io)?;
-        file.write_all(&generation.to_be_bytes()).map_err(FileStoreError::Io)?;
-        file.write_all(&payload_len.to_be_bytes()).map_err(FileStoreError::Io)?;
-        file.write_all(&payload_hash(bytes)).map_err(FileStoreError::Io)?;
+        file.write_all(&generation.to_be_bytes())
+            .map_err(FileStoreError::Io)?;
+        file.write_all(&payload_len.to_be_bytes())
+            .map_err(FileStoreError::Io)?;
+        file.write_all(&payload_hash(bytes))
+            .map_err(FileStoreError::Io)?;
         file.write_all(bytes).map_err(FileStoreError::Io)?;
         file.sync_all().map_err(FileStoreError::Io)
     })();
@@ -112,10 +115,7 @@ pub fn stage_blob(
 ///
 /// `trusted_generation` MUST be obtained independently. This function
 /// detects corruption but cannot authenticate a maliciously replaced blob.
-pub fn read_blob(
-    path: &Path,
-    trusted_generation: u64,
-) -> Result<StoredBlob, FileStoreError> {
+pub fn read_blob(path: &Path, trusted_generation: u64) -> Result<StoredBlob, FileStoreError> {
     let mut file = File::open(path).map_err(FileStoreError::Io)?;
     let mut header = [0u8; 64];
     file.read_exact(&mut header).map_err(FileStoreError::Io)?;
@@ -173,8 +173,8 @@ mod tests {
     #[test]
     fn staged_blob_survives_close_and_reopen() -> Result<(), String> {
         let dir = sandbox();
-        let path = stage_blob(&dir, 3, b"offline audit sample")
-            .map_err(|error| format!("{error:?}"))?;
+        let path =
+            stage_blob(&dir, 3, b"offline audit sample").map_err(|error| format!("{error:?}"))?;
         let restored = read_blob(&path, 3).map_err(|error| format!("{error:?}"))?;
         assert_eq!(restored.bytes, b"offline audit sample");
         assert_eq!(restored.generation, 3);
@@ -193,8 +193,7 @@ mod tests {
     #[test]
     fn modified_payload_is_rejected() -> Result<(), String> {
         let dir = sandbox();
-        let path = stage_blob(&dir, 1, b"known")
-            .map_err(|error| format!("{error:?}"))?;
+        let path = stage_blob(&dir, 1, b"known").map_err(|error| format!("{error:?}"))?;
         let mut raw = fs::read(&path).map_err(|error| format!("{error:?}"))?;
         let last = raw.len().checked_sub(1).ok_or("empty file")?;
         raw[last] ^= 1;
@@ -210,13 +209,13 @@ mod tests {
     #[test]
     fn trailing_payload_data_is_rejected() -> Result<(), String> {
         let dir = sandbox();
-        let path = stage_blob(&dir, 1, b"known")
-            .map_err(|error| format!("{error:?}"))?;
+        let path = stage_blob(&dir, 1, b"known").map_err(|error| format!("{error:?}"))?;
         let mut file = OpenOptions::new()
             .append(true)
             .open(&path)
             .map_err(|error| format!("{error:?}"))?;
-        file.write_all(b"extra").map_err(|error| format!("{error:?}"))?;
+        file.write_all(b"extra")
+            .map_err(|error| format!("{error:?}"))?;
         drop(file);
         assert!(matches!(
             read_blob(&path, 1),
