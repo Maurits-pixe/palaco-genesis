@@ -335,3 +335,27 @@ checkpoint and monotonic generation in one auditable durable transaction,
 with explicit crash recovery and revocation checks. Never infer current
 authority from any historical `Proposed` journal entry. GO-13 HOLD remains
 in force.
+
+## v0.14 staged file + audit checkpoint publication (DRAFT / HOLD)
+
+`palaco_audit::orcheastra::staged_commit::stage_then_publish` now
+composes existing interfaces in a fail-closed sequence: fetch the trusted
+previous checkpoint; validate strict plan/sequence/prefix extension;
+stage the versioned snapshot in an immutable local generation file;
+reopen and verify the exact staged bytes; only then ask the independent
+`CheckpointPublisher` for its authenticated CAS publication.
+
+The local file is never itself trusted. An interrupted, rejected or
+ambiguous CAS can leave an *orphaned unanchored snapshot*, which recovery
+must refuse by checking the authoritative generation and checkpoint.
+No automatic deletion/retry of a conflicted generation is attempted.
+Regression tests cover successful file reopen through the read-only
+PALACO Audit recovery API, rejected publisher leaving an untrusted orphan,
+and malformed candidate rejected before staging.
+
+This is a composition and fault-injection test, not an atomic transaction
+across filesystems and a remote audit service. Real crash consistency,
+multi-host durability, authority authentication, key custody and independent
+generation storage are not yet implemented. Production callers MUST NOT
+interpret the return value as permission to execute historic proposals.
+GO-13 HOLD continues to apply.
