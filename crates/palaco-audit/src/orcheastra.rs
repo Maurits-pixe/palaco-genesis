@@ -4,6 +4,9 @@
 //! before reading a local journal. The audit crate does not sign checkpoints
 //! and cannot grant authority to execute a recovered proposal.
 
+/// Staged snapshot publication and unanchored-file recovery safeguards.
+pub mod staged_commit;
+
 /// Fail-closed monotonic checkpoint publication and prefix integrity contract.
 pub mod publish;
 
