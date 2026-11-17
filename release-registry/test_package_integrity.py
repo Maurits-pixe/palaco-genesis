@@ -30,6 +30,44 @@ class PackageIntegrityTests(unittest.TestCase):
     def test_valid(self):
         self.assertEqual(verify_package(self.root), ("asset.txt",))
 
+    def test_unlisted_file(self):
+        (self.root / "surprise.bin").write_bytes(b"unlisted")
+        self.rejects()
+
+    def test_unlisted_hidden_file(self):
+        (self.root / ".secret").write_bytes(b"unlisted")
+        self.rejects()
+
+    def test_unlisted_nested_file(self):
+        nested = self.root / "nested"
+        nested.mkdir()
+        (nested / "payload.txt").write_bytes(b"unlisted")
+        self.rejects()
+
+    def test_complete_nested_manifest(self):
+        nested = self.root / "nested"
+        nested.mkdir()
+        (nested / "payload.txt").write_bytes(b"known")
+        self.entries.append({
+            "path": "nested/payload.txt",
+            "sha256": hashlib.sha256(b"known").hexdigest(),
+        })
+        self.save()
+        self.assertEqual(
+            verify_package(self.root), ("asset.txt", "nested/payload.txt"))
+
+    def test_unlisted_symlink(self):
+        try:
+            (self.root / "hidden-link").symlink_to(self.root / "asset.txt")
+        except (OSError, NotImplementedError):
+            self.skipTest("symlinks unavailable")
+        self.rejects()
+
+    def test_manifest_referencing_itself(self):
+        self.entries[0]["path"] = "package-integrity.json"
+        self.save()
+        self.rejects()
+
     def test_modified_bytes(self):
         (self.root / "asset.txt").write_bytes(b"changed")
         self.rejects()
