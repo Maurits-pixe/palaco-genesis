@@ -131,7 +131,8 @@ def validate_responses(registry: dict, request: dict, replies: list,
             or not isinstance(claim, dict)
             or claim.get("format") != QUORUM_DOMAIN
             or claim.get("version", 0) < request["minimum_version"]
-            or claim.get("high_water", {}).get("scope") != request["scope"]):
+            or not isinstance(claim.get("high_water"), dict)
+            or claim["high_water"].get("scope") != request["scope"]):
             raise AssertionError("invalid witness response scope or key")
         fingerprint = digest(canonical(claim))
         claims[fingerprint] = claim
@@ -239,7 +240,7 @@ def create() -> None:
 def verify() -> None:
     result = validate_responses(
         parse(REGISTRY.read_bytes()), parse(REQUEST.read_bytes()),
-        parse(RESPONSES.read_bytes()) if False else json.loads(RESPONSES.read_bytes()),
+        json.loads(RESPONSES.read_bytes()),
         parse(TRUST.read_bytes()), BUNDLE_COPY.read_bytes(),
         PIN_COPY.read_text(encoding="ascii").strip(), HANDOFF.read_bytes(),
     )
@@ -249,6 +250,18 @@ def verify() -> None:
 
 
 def main() -> None:
+    if len(sys.argv) == 9 and sys.argv[1] == "--verify-portable":
+        result = validate_responses(
+            parse(Path(sys.argv[2]).read_bytes()),
+            parse(Path(sys.argv[3]).read_bytes()),
+            json.loads(Path(sys.argv[4]).read_bytes()),
+            parse(Path(sys.argv[5]).read_bytes()),
+            Path(sys.argv[6]).read_bytes(),
+            Path(sys.argv[7]).read_text(encoding="ascii").strip(),
+            Path(sys.argv[8]).read_bytes(),
+        )
+        print(json.dumps(result, sort_keys=True))
+        return
     uri = os.environ.get("PALACO_TEST_PG_URI", "")
     if (os.environ.get("PALACO_TEST_EPHEMERAL") != "YES"
         or not uri.startswith("postgresql://")
