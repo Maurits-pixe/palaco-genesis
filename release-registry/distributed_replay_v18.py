@@ -133,6 +133,7 @@ def inspect_decisions(claims, receipts, *, verify_authority=None,
     seen_receipts = set()
     outcomes = []
     tuple_digests = {}
+    first_claims = set()
     for claim, receipt in zip(claims, receipts):
         if type(receipt) is not dict or set(receipt) != {
             "schema", "authority_sequence", "decision", "proof"
@@ -156,13 +157,10 @@ def inspect_decisions(claims, receipts, *, verify_authority=None,
         if verified is not True:
             raise CoordinationError("AUTHORITY_UNVERIFIED")
         key = _tuple(claim)
-        if key in tuple_digests and (
-                receipt["decision"] == "first-claim" or
-                tuple_digests[key] != claim["package_sha256"]):
-            # A globally duplicated candidate can be reported, but NEVER
-            # treated as another first claim or silently reconciled as equal.
-            if receipt["decision"] == "first-claim":
+        if receipt["decision"] == "first-claim":
+            if key in first_claims:
                 raise CoordinationError("MULTIPLE_FIRST_CLAIMS")
+            first_claims.add(key)
         tuple_digests.setdefault(key, claim["package_sha256"])
         outcomes.append({"message_id": claim["message_id"],
                          "device_id": claim["device_id"],
