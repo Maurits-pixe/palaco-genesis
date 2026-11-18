@@ -77,7 +77,13 @@ class DistributedReplayTests(unittest.TestCase):
             self.inspect(get_trusted_watermark=None)
 
     def test_rollback_watermark_rejected(self):
+        receipts = self.receipts([self.a])
+        receipts[0]["authority_sequence"] = 2
         with self.assertRaisesRegex(CoordinationError, "UNANCHORED_DECISION"):
+            self.inspect(receipts=receipts, get_trusted_watermark=lambda: 1)
+
+    def test_zero_watermark_rejected(self):
+        with self.assertRaisesRegex(CoordinationError, "INVALID_WATERMARK"):
             self.inspect(get_trusted_watermark=lambda: 0)
 
     def test_boolean_watermark_rejected(self):
