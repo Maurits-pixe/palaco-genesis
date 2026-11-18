@@ -1137,3 +1137,40 @@ unpredictable challenge plus durable replay-state checks. No actual
 network/TLS or independently operated witnesses are connected. This
 is not an execution token or deployed authentication endpoint.
 PR #348 DRAFT; GO-13 HOLD.
+
+## v0.42 one-use challenge replay ledger (DRAFT / HOLD)
+
+`scripts/orcheastra_replay_ledger_v042.py` supplies an isolated,
+runner-local **SQLite replay ledger**. A request is issued once under
+a unique composite `(scope, nonce)` key and a pinned SHA-256 digest of
+its complete canonical v0.40 request. An issued challenge carries an
+explicit test issuance time and expiry bounded to at most 300 seconds.
+A signed v0.41 response is verified, including its underlying v0.39
+witness quorum and signed evidence, before the client may attempt
+challenge consumption.
+
+A separate SQLite connection uses `BEGIN IMMEDIATE` and a
+conditional `UPDATE ... WHERE consumed_at IS NULL AND
+issued_at <= now AND expires_at > now` followed by `COMMIT`.
+Exactly one atomic caller can consume a challenge; a second caller
+does not receive an idempotent authorization. The test creates eight
+concurrent contenders and demands **exactly one success**. Negative
+cases reject replay after acceptance, duplicate issuance, unknown
+challenges, mismatched request digests, unsigned decisions, early
+consumption, expiry at the exact boundary and unbounded expiration.
+On a subsequent verification process after PostgreSQL restart, the
+ledger's consumed record must persist, with any attempted replay
+still refused. The accepted result remains `VERIFIED_HOLD`, never
+execution authorization.
+
+**Security boundary:** this is a single runner-local SQLite
+fixture, not a distributed durable nonce store or independently
+trusted time service. The test uses an explicit fixed time value
+and never claims it is secure wall-clock time. The v0.41 CI
+challenge is predetermined and not cryptographically unpredictable,
+and challenge issuance is not currently bound to a live authenticated
+request origin. Production must use unpredictable nonces generated
+by a trusted issuer, a trusted UTC/monotonic time policy and
+a replicated transactional store, with a fail-closed recovery
+policy for disk loss, errors and multi-node races. No merge,
+deployment or execution; GO-13 HOLD and PR #348 DRAFT.
