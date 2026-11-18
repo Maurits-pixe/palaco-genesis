@@ -1061,3 +1061,41 @@ the fixture. Real quorum independence, reliable distribution,
 durable high-water persistence, and operational key revocation
 remain unimplemented. No execution authorization, merge, or
 deployment. GO-13 HOLD.
+
+## v0.40 witness transport and registration contract (DRAFT / HOLD)
+
+`scripts/orcheastra_witness_transport_v040.py` introduces an
+**offline transport contract fixture**, not a network service:
+a versioned roster binds three exact logical witness endpoints to
+their separately pinned v0.39 Ed25519 public-key fingerprints and
+bounded timeout policies. A read-only request declares exact scope,
+version floor, a challenge identifier and an expected SHA-256 of
+the signed high-water statement.
+
+The response aggregator requires one response per registered
+identity. A responding witness must use the registered endpoint
+and echo the expected challenge identifier; replies are either
+`SIGNED` with the v0.39 verified quorum endorsement or an exact
+`TIMEOUT` envelope carrying no evidence. Two valid distinct
+responders suffice; one does not. Duplicated identities, endpoint
+substitution, mismatched request identifiers, contradictory
+statements, invalid signatures, unexpected statuses, stale
+registry versions, missing pins and forged authority values fail
+closed. The existing v0.39 signature verification and v0.37
+evidence-freshness contract remain mandatory. A portable CLI
+verifies fixtures with PostgreSQL environment variables cleared,
+and CI rechecks after the ephemeral DB restart.
+
+**Security caveat:** this is explicitly an `OFFLINE_SIMULATION`
+of transport; `witness+fixture://` locators are logical and
+must not be treated as actual services. In particular, the
+request challenge is merely echoed in the unsigned reply envelope:
+the v0.39 witness signature covers the high-water statement,
+**not** the challenge or endpoint. This does NOT provide real
+network-origin authentication or cryptographic anti-replay
+of a fresh challenge. A production version needs a new
+domain-separated signed response encoding with request binding,
+independently hosted/TLS-authenticated witnesses, operational
+timeouts and separately administered immutable trust roots.
+All results remain `authorization: NONE`,
+`execution: HOLD`; GO-13 and PR remain HOLD / DRAFT.
