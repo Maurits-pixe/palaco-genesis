@@ -213,6 +213,9 @@ jobs:
             "$RUNNER_TEMP/orcheastra-v037/trusted-report-signer.sha256" \
             "$RUNNER_TEMP/orcheastra-v037/handoff.json"
 
+      - name: Atomically consume verified challenge and reject concurrent replays
+        run: python3 scripts/orcheastra_replay_ledger_v042.py --create
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -263,3 +266,6 @@ jobs:
 
       - name: Recheck signed challenge-bound responses after PostgreSQL restart
         run: python3 scripts/orcheastra_witness_signed_transport_v041.py --verify
+
+      - name: Verify once-only challenge stays consumed after PostgreSQL restart
+        run: python3 scripts/orcheastra_replay_ledger_v042.py --verify
