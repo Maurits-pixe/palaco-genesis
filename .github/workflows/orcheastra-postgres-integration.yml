@@ -216,6 +216,9 @@ jobs:
       - name: Atomically consume verified challenge and reject concurrent replays
         run: python3 scripts/orcheastra_replay_ledger_v042.py --create
 
+      - name: Validate v043 challenge issuance and audit integrity
+        run: python3 scripts/orcheastra_nonce_issuer_v043.py --create
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -269,3 +272,6 @@ jobs:
 
       - name: Verify once-only challenge stays consumed after PostgreSQL restart
         run: python3 scripts/orcheastra_replay_ledger_v042.py --verify
+
+      - name: Verify v043 challenge audit after restart
+        run: python3 scripts/orcheastra_nonce_issuer_v043.py --verify
