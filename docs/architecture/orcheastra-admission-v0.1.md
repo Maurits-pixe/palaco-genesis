@@ -1099,3 +1099,41 @@ independently hosted/TLS-authenticated witnesses, operational
 timeouts and separately administered immutable trust roots.
 All results remain `authorization: NONE`,
 `execution: HOLD`; GO-13 and PR remain HOLD / DRAFT.
+
+## v0.41 Ed25519 challenge-bound transport responses (DRAFT / HOLD)
+
+`scripts/orcheastra_witness_signed_transport_v041.py` introduces
+a separate versioned CI-only **transport signing-key generation**.
+For each of the three v0.39 witness identities, it generates a
+distinct ephemeral transport Ed25519 key and independently pins its
+public-key fingerprint against the v0.40 logical endpoint registry.
+Unlike the earlier unsigned v0.40 reply envelope, the new signature
+covers exact canonical, domain-separated bytes containing witness
+identity, endpoint, challenge, hash of the complete request, requested
+scope, hash of the signed high-water statement, hash of its original
+v0.39 endorsement, and mandatory `authorization: NONE` /
+`execution: HOLD`.
+
+Verification first checks that every received transport signature
+matches the pinned identity key and **entire** current request.
+It then independently checks the existing v0.40 response constraints,
+v0.39 original quorum signatures, and v0.37 signed-evidence freshness
+policy. Separate CI tests deny reused and substituted challenge values,
+endpoint substitution, modified request scope, statement substitution,
+invalid signatures, duplicate identities, missing responses, altered
+transport keys, downgraded trust generation and authority escalation.
+The private signing keys are deleted after test construction, with
+verification repeated in a database-free CI step and again after
+PostgreSQL restart.
+
+**Limits:** old v0.39 private signing keys have been destroyed, so
+v0.41 uses **new fixture-only transport keys** pinned by a new local
+trust registry; this is not a silent real-world key rotation.
+A receiving service must separately authenticate and persist that
+registry, nonce uniqueness/consumption, trusted time and key revocation.
+The test challenge is fixed and is signed only within each generated
+response, so real replay across distinct sessions requires a fresh
+unpredictable challenge plus durable replay-state checks. No actual
+network/TLS or independently operated witnesses are connected. This
+is not an execution token or deployed authentication endpoint.
+PR #348 DRAFT; GO-13 HOLD.
