@@ -1242,3 +1242,41 @@ using new keys, not old destroyed v0.41 signing keys. Production
 must join nonce issuance and consumption to a durable single
 authority and independently authenticate the new trust roster.
 GO-13 HOLD and PR #348 DRAFT remain mandatory.
+
+## v0.45 unified transactional CI challenge authority (DRAFT / GO-13 HOLD)
+
+The isolated module `scripts/orcheastra_unified_authority_v045.py`
+issues a **fresh, cryptographically random 256-bit nonce** with
+an Ed25519-signed, domain-separated issuer certificate. Three
+separately generated ephemeral witness transport signing keys
+then sign the nonce, full request digest, issuer identity, scope,
+registered endpoint and pre-existing high-water endorsement
+reference. The original v0.39 witness quorum and underlying
+signed evidence bundle are independently reverified.
+
+Unlike the v0.43 → v0.44 split-ledger demonstration, v0.45
+holds both the issued challenge and its consumed admission
+in the SAME isolated SQLite table keyed on `(scope,nonce)`.
+Issuance uses `BEGIN IMMEDIATE` and a committed insertion.
+After cryptographic verification, admission uses another
+`BEGIN IMMEDIATE` transaction and a conditional update
+requiring the exact nonce, signer, request hash, unconsumed
+state and nonexpired validity window. The only accepted result
+is `VERIFIED_HOLD`; a transaction interruption before COMMIT
+must roll back cleanly. Eight simultaneous contenders may
+commit once, not eight times. Tests additionally reject forged
+witness signatures, unknown nonces, expiry, post-commit replay
+and silent database reinitialization after simulated file loss.
+A runner-local SHA-256 snapshot detects modifications between
+the initial test and after-restart verification.
+
+**Security and availability boundary:** the issuer and witness
+signing keys in this test are freshly generated fixture keys
+and are not independently managed operational keys. The SQLite
+database remains one runner-local authority, not a replicated
+durable service; its local digest is not an off-host trust anchor.
+The test clock is fixed, not an independent trusted time source.
+The simulated loss scenario intentionally fails closed rather
+than demonstrating disaster recovery. No privileged execution,
+production activation, merge, or deployment is authorized.
+PR #348 DRAFT and GO-13 HOLD remain unchanged.
