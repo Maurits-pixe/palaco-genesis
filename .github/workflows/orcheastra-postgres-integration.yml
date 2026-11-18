@@ -222,6 +222,9 @@ jobs:
       - name: Bind fresh signed nonce to witnesses and atomic admission
         run: python3 scripts/orcheastra_end_to_end_nonce_v044.py --create
 
+      - name: Validate v045 single-authority issuance rollback and replay
+        run: python3 scripts/orcheastra_unified_authority_v045.py --create
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -281,3 +284,6 @@ jobs:
 
       - name: Verify fresh challenge replay denied after database restart
         run: python3 scripts/orcheastra_end_to_end_nonce_v044.py --verify
+
+      - name: Reverify v045 single-authority transaction after restart
+        run: python3 scripts/orcheastra_unified_authority_v045.py --verify
