@@ -219,6 +219,9 @@ jobs:
       - name: Validate v043 challenge issuance and audit integrity
         run: python3 scripts/orcheastra_nonce_issuer_v043.py --create
 
+      - name: Bind fresh signed nonce to witnesses and atomic admission
+        run: python3 scripts/orcheastra_end_to_end_nonce_v044.py --create
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -275,3 +278,6 @@ jobs:
 
       - name: Verify v043 challenge audit after restart
         run: python3 scripts/orcheastra_nonce_issuer_v043.py --verify
+
+      - name: Verify fresh challenge replay denied after database restart
+        run: python3 scripts/orcheastra_end_to_end_nonce_v044.py --verify
