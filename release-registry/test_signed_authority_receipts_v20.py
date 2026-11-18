@@ -10,7 +10,7 @@ import unittest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from atomic_replay_authority_v19 import AtomicReplayAuthority
+from atomic_replay_authority_v19 import AtomicReplayAuthority, AuthorityError
 from distributed_replay_v18 import (
     candidate, receipt_statement, inspect_decisions,
 )
@@ -167,7 +167,7 @@ class SignedReceiptsTests(unittest.TestCase):
             authority = AtomicReplayAuthority(
                 Path(td) / "authority.sqlite",
                 authorize_candidate=lambda _: True, sign_receipt=issuer)
-            with self.assertRaises(SignedReceiptError):
+            with self.assertRaisesRegex(AuthorityError, "SIGNING_UNAVAILABLE"):
                 authority.decide(self.claim)
             self.assertEqual(authority.read_decisions(), ((), ()))
 
