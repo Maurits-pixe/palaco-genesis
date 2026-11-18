@@ -178,6 +178,23 @@ jobs:
             "$RUNNER_TEMP/orcheastra-v037/trusted-report-signer.sha256" \
             "$RUNNER_TEMP/orcheastra-v037/handoff.json"
 
+      - name: Validate registered witness transport and response failures
+        run: python3 scripts/orcheastra_witness_transport_v040.py --create
+
+      - name: Check transport responses offline with no PostgreSQL credentials
+        env:
+          PALACO_TEST_PG_URI: ""
+          PALACO_TEST_EPHEMERAL: ""
+        run: |
+          python3 scripts/orcheastra_witness_transport_v040.py --verify-portable \
+            "$RUNNER_TEMP/orcheastra-v040/trusted-endpoint-registry.json" \
+            "$RUNNER_TEMP/orcheastra-v040/challenge.json" \
+            "$RUNNER_TEMP/orcheastra-v040/responses.json" \
+            "$RUNNER_TEMP/orcheastra-v039/independent-trust-pins.json" \
+            "$RUNNER_TEMP/orcheastra-v037/historical-evidence.zip" \
+            "$RUNNER_TEMP/orcheastra-v037/trusted-report-signer.sha256" \
+            "$RUNNER_TEMP/orcheastra-v037/handoff.json"
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -222,3 +239,6 @@ jobs:
 
       - name: Verify witness quorum after isolated PostgreSQL restart
         run: python3 scripts/orcheastra_witness_quorum_v039.py --verify
+
+      - name: Reverify witness transport registrations after PostgreSQL restart
+        run: python3 scripts/orcheastra_witness_transport_v040.py --verify
