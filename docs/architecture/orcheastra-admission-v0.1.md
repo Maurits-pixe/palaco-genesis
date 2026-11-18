@@ -1174,3 +1174,36 @@ by a trusted issuer, a trusted UTC/monotonic time policy and
 a replicated transactional store, with a fail-closed recovery
 policy for disk loss, errors and multi-node races. No merge,
 deployment or execution; GO-13 HOLD and PR #348 DRAFT.
+
+## v0.43 isolated CSPRNG challenge issuer, signed provenance and loss detection (DRAFT/HOLD)
+
+`scripts/orcheastra_nonce_issuer_v043.py` creates a **separate CI-only
+issuer ledger**. Two unpredictable 256-bit nonces are produced via
+Python `secrets.token_hex(32)`, each scoped to its exact test purpose,
+bounded to a 120-second validity interval and bound to a named
+test issuer. The canonical issuance document carries both challenge
+records, an explicit issuer identity, and mandatory
+`authorization: NONE` / `execution: HOLD`. A new ephemeral
+Ed25519 test key signs this document and is destroyed after use.
+The signer public-key fingerprint is pinned separately in the runner.
+
+The local SQLite ledger uses an exact `(scope,nonce)` primary key
+and conditional one-time consumption. The tool checks that signed
+issuance fields match all ledger rows and a separately pinned
+canonical SHA-256 ledger snapshot, detects issuer-row tampering and
+refuses to silently recreate a missing ledger. The replay state
+remains observable after the PostgreSQL CI service restarts.
+
+**Crucial scope distinction:** v0.41 signs the prior fixed test
+challenge, whereas these are **new unpredictable challenges**.
+The v0.43 fixture does NOT claim that the old v0.41 witness signatures
+authenticate the newly issued nonce. Its controlled one-use example
+is ledger-mechanics testing, *not* an approved witness-response
+admission. Production linkage requires actually requesting a fresh
+v0.41-equivalent signed response to a freshly issued nonce before
+consumption. The pinned snapshot is held on the same ephemeral
+runner and provides neither independent anti-rollback authority
+nor protection against a runner administrator replacing both
+the ledger and snapshot. No trusted live clock, independent HSM,
+distributed transaction authority or production issuer exists.
+PR #348 remains DRAFT and GO-13 HOLD.
