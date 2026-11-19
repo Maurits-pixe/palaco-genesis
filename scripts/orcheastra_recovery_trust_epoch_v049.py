@@ -57,7 +57,7 @@ def vote_payload(identity: str, anchor: dict, epoch: int) -> dict:
             "anchor": anchor, "authorization": "NONE", "execution": "HOLD"}
 
 
-def verify(backup: Path, head_raw: bytes, votes: dict, trusted: dict) -> dict:
+def verify(backup: Path, head_raw: bytes, votes: dict, trusted: dict,\n           prior_trust: dict) -> dict:
     if (not isinstance(trusted, dict)
         or set(trusted) != {"format", "epoch", "minimum_epoch",
                             "threshold", "minimum_sequence", "scope",
@@ -90,7 +90,7 @@ def verify(backup: Path, head_raw: bytes, votes: dict, trusted: dict) -> dict:
         if not isinstance(pin, str) or len(pin) != 64:
             raise AssertionError("invalid key pin")
         pins.append(pin)
-    if len(set(pins)) != 3:
+    if (identity_roster["recovery-c"]["public_key_sha256"] != prior_trust["keys"]["recovery-c"]\n        or any(identity_roster[name]["public_key_sha256"] == prior_trust["keys"][name]\n               for name in IDS[:2])):\n        raise AssertionError("key rotation/revocation history not reconciled")\n    if len(set(pins)) != 3:
         raise AssertionError("reused recovery witness key")
     if (not isinstance(votes, dict)
         or set(votes) != {"format", "votes"}
@@ -154,7 +154,7 @@ def verify(backup: Path, head_raw: bytes, votes: dict, trusted: dict) -> dict:
 
 def rejected(backup, head, votes, trust, name):
     try:
-        verify(backup, head, votes, trust)
+        verify(backup, head, votes, trust, parse(PRIOR_TRUST.read_bytes()))
     except (AssertionError, KeyError, TypeError, ValueError, OSError):
         return
     raise AssertionError("accepted unsafe trust transition: " + name)
@@ -194,7 +194,7 @@ def create() -> None:
              "scope": anchor["scope"], "identities": roster,
              "previous_trust_sha256": sha(canonical(old_trust))}
     record = {"format": DOMAIN, "votes": signed}
-    if verify(BACKUP, head, record, trust)["trust_epoch"] != 2:
+    if verify(BACKUP, head, record, trust, old_trust)["trust_epoch"] != 2:
         raise AssertionError("current two active signers failed")
     rejected(BACKUP, head, record, {**trust, "minimum_epoch": 1},
              "receiver trust epoch downgraded")
@@ -246,7 +246,7 @@ def verify_after_restart() -> None:
     if any(ROOT.glob("*-epoch2-private.pem")):
         raise AssertionError("private witness keys retained")
     result = verify(BACKUP, HEAD.read_bytes(), parse(VOTES.read_bytes()),
-                    parse(TRUST.read_bytes()))
+                    parse(TRUST.read_bytes()), parse(PRIOR_TRUST.read_bytes()))
     if result["trust_epoch"] != 2 or result["execution"] != "HOLD":
         raise AssertionError("trust transition failed after restart")
     print("ORCHEASTRA v0.49: active epoch quorum retained; recovery HOLD")
@@ -258,7 +258,7 @@ def main() -> None:
             raise AssertionError("expected BACKUP HEAD VOTES TRUST")
         result = verify(Path(sys.argv[2]), Path(sys.argv[3]).read_bytes(),
                         parse(Path(sys.argv[4]).read_bytes()),
-                        parse(Path(sys.argv[5]).read_bytes()))
+                        parse(Path(sys.argv[5]).read_bytes()),\n                        parse(Path(sys.argv[6]).read_bytes()))
         print(json.dumps(result, sort_keys=True))
         return
     uri = os.environ.get("PALACO_TEST_PG_URI", "")
