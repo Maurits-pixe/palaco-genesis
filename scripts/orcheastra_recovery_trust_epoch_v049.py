@@ -57,7 +57,8 @@ def vote_payload(identity: str, anchor: dict, epoch: int) -> dict:
             "anchor": anchor, "authorization": "NONE", "execution": "HOLD"}
 
 
-def verify(backup: Path, head_raw: bytes, votes: dict, trusted: dict,\n           prior_trust: dict) -> dict:
+def verify(backup: Path, head_raw: bytes, votes: dict, trusted: dict,
+           prior_trust: dict) -> dict:
     if (not isinstance(trusted, dict)
         or set(trusted) != {"format", "epoch", "minimum_epoch",
                             "threshold", "minimum_sequence", "scope",
@@ -90,7 +91,11 @@ def verify(backup: Path, head_raw: bytes, votes: dict, trusted: dict,\n         
         if not isinstance(pin, str) or len(pin) != 64:
             raise AssertionError("invalid key pin")
         pins.append(pin)
-    if (identity_roster["recovery-c"]["public_key_sha256"] != prior_trust["keys"]["recovery-c"]\n        or any(identity_roster[name]["public_key_sha256"] == prior_trust["keys"][name]\n               for name in IDS[:2])):\n        raise AssertionError("key rotation/revocation history not reconciled")\n    if len(set(pins)) != 3:
+    if (identity_roster["recovery-c"]["public_key_sha256"] != prior_trust["keys"]["recovery-c"]
+        or any(identity_roster[name]["public_key_sha256"] == prior_trust["keys"][name]
+               for name in IDS[:2])):
+        raise AssertionError("key rotation/revocation history not reconciled")
+    if len(set(pins)) != 3:
         raise AssertionError("reused recovery witness key")
     if (not isinstance(votes, dict)
         or set(votes) != {"format", "votes"}
@@ -258,7 +263,8 @@ def main() -> None:
             raise AssertionError("expected BACKUP HEAD VOTES TRUST")
         result = verify(Path(sys.argv[2]), Path(sys.argv[3]).read_bytes(),
                         parse(Path(sys.argv[4]).read_bytes()),
-                        parse(Path(sys.argv[5]).read_bytes()),\n                        parse(Path(sys.argv[6]).read_bytes()))
+                        parse(Path(sys.argv[5]).read_bytes()),
+                        parse(Path(sys.argv[6]).read_bytes()))
         print(json.dumps(result, sort_keys=True))
         return
     uri = os.environ.get("PALACO_TEST_PG_URI", "")
