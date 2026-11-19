@@ -14,7 +14,7 @@ npm ci --prefix native-staging --ignore-scripts --no-audit --no-fund
 npm run test:ci
 ```
 
-`test:ci` executes regression/PGlite tests, native standalone assertions and the native multi-connection suite. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v281.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
+`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v297.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
 
 ## Source continuity and status
 
@@ -54,8 +54,30 @@ The authenticated callback, database pool, receipt policies, original request le
 
 The six new native scenarios use minimal synthetic tables with selected One column names and dedicated tenant RLS policies. They verify the reader's actual SQL, fresh physical connections, committed revocation, registry changes, another tenant's denial and unsafe source configuration. They **do not execute the original One login/session/revocation functions**, verify the full migration chain or prove a real IdP. Contract unit tests separately simulate the trusted session service and adverse database replies. Real One authentication and remote TLS remain NOT EXECUTED.
 
-`test:ci` now also runs `one-session-reader-v295.test.mjs`, requires all six scenario records, and writes `evidence/CI-RESULT-v295.json`. The original v281 runner and evidence format remain in the source history. AI review: TRIAS keeps pending intents outside authentication; ORACLE limits native evidence to the selected SQL contract; MENTOR provides an explicit callback integration point while retaining HOLD until a genuine One session service exists.
+`run-ci-v295.mjs` adds `one-session-reader-v295.test.mjs`, requires all six scenario records, and writes `evidence/CI-RESULT-v295.json`. The earlier runners remain preserved; v297 is the current command entry point. AI review: TRIAS keeps pending intents outside authentication; ORACLE limits native evidence to the selected SQL contract; MENTOR provides an explicit callback integration point while retaining HOLD until a genuine One session service exists.
 
 ## Signed source preparation (v296)
 
-The current `test:ci` command uses the separate v296 runner. It adds real Ed25519 source-message verification and seven native composition scenarios to the existing checks, producing `evidence/CI-RESULT-v296.json`. See [the v296 source contract](ONE-SIGNED-SESSION-CONTRACT-v296.md) for the independent issuer pin, per-call server challenge, exact request/audience/tenant binding, key-state rechecks and integration with the unchanged v295 reader and original RIO route. Earlier runners remain preserved. The current One gateway still supplies no real authenticated issuer; no live sign-in is enabled.
+`run-ci-v296.mjs` adds real Ed25519 source-message verification and seven native composition scenarios, producing `evidence/CI-RESULT-v296.json`. See [the v296 source contract](ONE-SIGNED-SESSION-CONTRACT-v296.md) for the independent issuer pin, per-call server challenge, exact request/audience/tenant binding, key-state rechecks and integration with the unchanged v295 reader and original RIO route. Earlier runners remain preserved. The last reviewed One gateway supplies no real authenticated issuer; no live sign-in is enabled.
+
+## Central inspection entry point (v297)
+
+Use `createRioSignedOneInspectionRouteV297` from `rio-signed-one-inspection-route-v297.mjs` to assemble all three existing layers in one trusted-server entry point. Its exact configuration refuses alternate authentication callbacks or a second tenant/clock hidden in receipt services. Source-message keys and receipt-signing keys must have different independent SPKI pins. This is key separation; it does not add a signed domain to the older v242 receipt format.
+
+```js
+const route = createRioSignedOneInspectionRouteV297({
+  tenantRef, allowedOrigin, issuerKey, requestSignedSession, readIssuerKeyState,
+  acquireOneReadConnection, now, requestTimeoutMs, maxConcurrentInspections,
+  receiptServices: {
+    keyPins, readInspectionPolicy, readOriginalRevocationRequest,
+    confirmCurrentRevocation, queryVerificationKeys,
+  },
+});
+// Trusted server handler: return route.handle(fetchRequest).
+```
+
+Every dependency remains an explicitly configured trusted server service. Construction performs only structural validation and public-key parsing; it does not call providers or prove their readiness. A missing or unsigned source refuses inspection before One SQL or receipt policy. There is no public fixture-cookie fallback, listener, configured real issuer or enabled sign-in.
+
+The current `test:ci` command now uses the v297 runner and additionally requires the two native central-entry scenarios: successful synthetic signed-source/One SQL/original-route composition, and refusal after One revocation during that inspection. Evidence is written to `evidence/CI-RESULT-v297.json`. Earlier verifier modules, native suites and runners remain preserved.
+
+AI review: TRIAS keeps the original read-only route and HOLD/NONE boundary; ORACLE requires native evidence for the central entry point rather than inferring its behavior from separately tested components; MENTOR replaces manual wiring with one explicit constructor and rejects ambiguous overrides. A real authenticated One issuer, original One transaction chain and production transport still require separate integration and evidence.

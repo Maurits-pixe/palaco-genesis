@@ -1,13 +1,14 @@
 {
-  "name": "palaco-rio-one-signed-source-v296",
+  "name": "palaco-rio-signed-one-entry-v297",
   "version": "0.0.0-draft",
   "private": true,
   "scripts": {
     "test": "node --test tests/*.test.mjs staging/isolated-postgres-v276.test.mjs staging/outcome-atomicity-v279.test.mjs",
     "test:native": "npm --prefix native-staging test",
     "test:parallel": "node --test native-staging/native-postgres-v281.test.mjs",
-    "test:ci": "node scripts/run-ci-v296.mjs",
+    "test:ci": "node scripts/run-ci-v297.mjs",
     "test:one-native": "node --test native-staging/one-session-reader-v295.test.mjs",
-    "test:one-signed-native": "node --test native-staging/one-signed-source-v296.test.mjs"
+    "test:one-signed-native": "node --test native-staging/one-signed-source-v296.test.mjs",
+    "test:signed-one-entry-native": "node --test native-staging/signed-one-composition-v297.test.mjs"
   }
 }
