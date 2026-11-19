@@ -244,6 +244,20 @@ jobs:
             "$RUNNER_TEMP/orcheastra-v047/recovery-witness-public.pem" \
             "$RUNNER_TEMP/orcheastra-v047/independent-receiver-trust.json"
 
+      - name: Build recovery 2-of-3 signatures and adversarial quorum checks
+        run: python3 scripts/orcheastra_recovery_quorum_v048.py --create
+
+      - name: Verify recovery quorum without database credentials
+        env:
+          PALACO_TEST_PG_URI: ""
+          PALACO_TEST_EPHEMERAL: ""
+        run: |
+          python3 scripts/orcheastra_recovery_quorum_v048.py --verify-portable \
+            "$RUNNER_TEMP/orcheastra-v046/authority-backup.sqlite3" \
+            "$RUNNER_TEMP/orcheastra-v046/recovery-high-water.json" \
+            "$RUNNER_TEMP/orcheastra-v048/recovery-quorum.json" \
+            "$RUNNER_TEMP/orcheastra-v048/receiver-quorum-trust.json"
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -312,3 +326,6 @@ jobs:
 
       - name: Reverify signed recovery anchor after PostgreSQL restart
         run: python3 scripts/orcheastra_signed_recovery_anchor_v047.py --verify
+
+      - name: Verify recovery quorum survives isolated database restart
+        run: python3 scripts/orcheastra_recovery_quorum_v048.py --verify
