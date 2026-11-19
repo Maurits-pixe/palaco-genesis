@@ -1356,3 +1356,38 @@ Production must independently maintain the pin and monotonic
 floor; loss of that external trust state requires HOLD, never a
 fresh minimum inferred from a candidate backup.
 PR #348 DRAFT; GO-13 HOLD; no merge, deployment, or issuance.
+
+## v0.48 portable 2-of-3 signed recovery quorum (DRAFT / GO-13 HOLD)
+
+`scripts/orcheastra_recovery_quorum_v048.py` provides a CI-only
+three-identity recovery quorum over the canonical v0.47 signed
+recovery anchor. Three distinct ephemeral Ed25519 private keys
+independently sign the **same** exact statement, including the
+v0.46 consistent-backup digest, high-water head, trusted scope,
+monotone sequence, and `authorization: NONE` / `execution: HOLD`.
+Each public-key SHA-256 is separately pinned in the **receiving**
+quorum-trust manifest along with the explicit 2-of-3 threshold
+and minimum trusted recovery sequence.
+
+The offline verifier requires two *unique* trusted signatures
+and verifies **every supplied** signature. It rejects any
+cryptographically authenticated conflicting anchor, even if two
+other votes agree. It refuses a genuinely signed historical
+version below the receiver's trusted floor, reuse of a signer,
+an invalid or unpinned key, substituted scope, signed authority
+escalation, a missing backup and a corrupt backup. It then
+rechecks the v0.46 consumed-nonce and stage-only verification
+and repeats after the isolated PostgreSQL restart. The
+`--verify-portable BACKUP HEAD VOTES TRUST` path needs
+neither the original live database nor PostgreSQL credentials.
+
+**Important:** these three independent cryptographic keypairs
+are generated **on a single ephemeral CI runner**. This is
+not a genuinely independent witness deployment: the signing
+domain, locally pinned trust record and backup share a failure
+domain and have no HSM, immutable off-host high-water, audited
+retention policy or externally protected minimum sequence.
+A malicious party controlling the runner and the receiver's
+trust manifest can counterfeit a quorum. A recovered snapshot
+remains `STAGED_ONLY` and cannot be activated or merged.
+PR #348 remains DRAFT; GO-13 stays HOLD.
