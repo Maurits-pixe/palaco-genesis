@@ -1432,3 +1432,43 @@ a separately authenticated, monotonic root-approved registry.
 This feature cannot reactivate a deployed witness or authorize
 live restoration. `authorization: NONE`, `execution: HOLD`,
 PR #348 DRAFT and GO-13 HOLD.
+
+## v0.50 root-signed recovery trust transition (DRAFT / GO-13 HOLD)
+
+`scripts/orcheastra_root_transition_v050.py` introduces a
+**domain-separated Ed25519 root transition certificate** for the
+v0.48 -> v0.49 recovery trust change. The canonical signed payload
+binds the SHA-256 of BOTH old and new trust registries, exact source
+epoch 1 and target epoch 2, immutable quorum threshold 2, required
+scope and minimum high-water sequence. The allowed transition has
+A and B receiving distinct new keys and C revoked, preserving
+C's historical public key only for comparison. All other key,
+scope, quorum or revocation changes are rejected by policy, even
+if an otherwise valid root key signs their altered certificates.
+
+The verifier requires an **independently supplied** root public-key
+fingerprint, minimum trusted epoch, recovery scope, and minimum
+high-water sequence. The caller must supply the previous/current
+trust records, signed transition certificate, detached signature,
+root public key, witness votes, recovery head, and backup. It checks
+root signature and trust policy first, then delegates to the v0.49
+cryptographic epoch-quorum verification and v0.46 staging-only
+backup checks. Adversarial tests reject forged signatures,
+substituted keys, an authentic but downgraded root-signed epoch,
+signed execution escalation, illicit revocation/rotation,
+weakened quorum, altered history hashes, and mismatched scope.
+The same verifier is run with PostgreSQL environment disabled
+and again after database restart.
+
+**Root-of-trust boundary:** the root keypair and root receiver pin
+are created on the same disposable CI runner. The private CI root
+key is destroyed after test construction, but this does NOT
+constitute root administration, durable independent root custody,
+key recovery, an HSM-backed production authority, or a genuinely
+external monotonic epoch record. A production acceptance service
+must bind root trust and epoch floors to an independently managed
+trust anchor before using these certificates. Signing a transition
+does not authorize restoring a database or executing any work.
+The only accepted recovery outcome is `STAGED_ONLY`,
+`authorization: NONE`, `execution: HOLD`.
+PR #348 stays DRAFT, GO-13 HOLD; no merge or deployment.
