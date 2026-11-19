@@ -292,6 +292,24 @@ jobs:
             "$RUNNER_TEMP/orcheastra-v050/ci-root-public.pem" \
             "$RUNNER_TEMP/orcheastra-v050/independent-root-trust.json"
 
+      - name: Exercise v051 dual-signed root custody and lost-key HOLD
+        run: python3 scripts/orcheastra_root_custody_v051.py --create
+
+      - name: Verify v051 dual-root handoff with no database credentials
+        env:
+          PALACO_TEST_PG_URI: ""
+          PALACO_TEST_EPHEMERAL: ""
+        run: |
+          python3 scripts/orcheastra_root_custody_v051.py --verify-portable \
+            "$RUNNER_TEMP/orcheastra-v051/root-custody-handoff.json" \
+            "$RUNNER_TEMP/orcheastra-v051/prior-root.sig" \
+            "$RUNNER_TEMP/orcheastra-v051/successor-root.sig" \
+            "$RUNNER_TEMP/orcheastra-v051/prior-root-public.pem" \
+            "$RUNNER_TEMP/orcheastra-v051/successor-root-public.pem" \
+            "$RUNNER_TEMP/orcheastra-v051/receiver-root-custody-policy.json" \
+            "$RUNNER_TEMP/orcheastra-v050/ci-root-public.pem" \
+            "$RUNNER_TEMP/orcheastra-v050/root-transition-certificate.json"
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -369,3 +387,6 @@ jobs:
 
       - name: Verify root-signed trust transition after isolated database restart
         run: python3 scripts/orcheastra_root_transition_v050.py --verify
+
+      - name: Reverify v051 root custody evidence after restart
+        run: python3 scripts/orcheastra_root_custody_v051.py --verify
