@@ -130,7 +130,12 @@ class OwnerDecisionTests(unittest.TestCase):
             return original()
         self.supervisor.inspect = switch
         with self.assertRaisesRegex(DecisionCockpitError, "SNAPSHOT_CHANGED"):
-            self.record(expected_snapshot_sha256=first)
+            self.cockpit.record(
+                day=self.day, verdict="JA", owner_id="owner-fixture",
+                evidence_ref="audit-ref-001",
+                expected_snapshot_sha256=first,
+                verify_owner=lambda *_: True,
+                verify_trusted_date=lambda *_: True)
 
     def test_source_unavailable_denied(self):
         def offline():
