@@ -110,7 +110,7 @@ class IdentityLifecycleRegistry:
         verify_external_predecessor(sequence,head) MUST use current external
         authenticated root/policy. Both require literal True.
         """
-        if kind not in KINDS or type(kind) is not str:
+        if type(kind) is not str or kind not in KINDS:
             raise LifecycleError("INVALID_EVENT_KIND")
         _id(target)
         if not callable(verify_publisher) or not callable(
@@ -124,6 +124,8 @@ class IdentityLifecycleRegistry:
                     raise LifecycleError("ALREADY_REVOKED")
                 try:
                     anchored = verify_external_predecessor(sequence, head)
+                    if anchored is not True:
+                        raise LifecycleError("UNTRUSTED_REVOCATION")
                     authorized = verify_publisher(kind, target, sequence + 1, head)
                 except Exception as exc:
                     raise LifecycleError("EXTERNAL_POLICY_UNAVAILABLE") from exc
