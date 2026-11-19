@@ -225,6 +225,9 @@ jobs:
       - name: Validate v045 single-authority issuance rollback and replay
         run: python3 scripts/orcheastra_unified_authority_v045.py --create
 
+      - name: Verify pinned recovery backup and reject rollback or tampering
+        run: python3 scripts/orcheastra_recovery_backup_v046.py --create
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -287,3 +290,6 @@ jobs:
 
       - name: Reverify v045 single-authority transaction after restart
         run: python3 scripts/orcheastra_unified_authority_v045.py --verify
+
+      - name: Verify recovery head and staged backup after PostgreSQL restart
+        run: python3 scripts/orcheastra_recovery_backup_v046.py --verify
