@@ -1472,3 +1472,44 @@ does not authorize restoring a database or executing any work.
 The only accepted recovery outcome is `STAGED_ONLY`,
 `authorization: NONE`, `execution: HOLD`.
 PR #348 stays DRAFT, GO-13 HOLD; no merge or deployment.
+
+## v0.51 dual-signature root custody handoff (DRAFT / GO-13 HOLD)
+
+`scripts/orcheastra_root_custody_v051.py` adds a new, isolated
+**two-generation CI root custody lineage**. It generates two
+distinct ephemeral Ed25519 keypairs and requires BOTH prior-root
+and successor-root signatures on an exact domain-separated
+handoff document. The certificate binds both key fingerprints,
+generation 1 -> 2, recovery scope, NONE/HOLD safety status,
+and SHA-256 references to the v0.50 historical root public key
+and transition certificate. A receiver-supplied trust manifest
+requires both pins and a minimum generation 2 and is mandatory
+for portable verification without PostgreSQL credentials.
+
+The verifier rejects missing or swapped signatures, substituted
+roots, an old generation, modified scope, a dual-signed
+execution escalation, and even a correctly dual-signed
+`lost_key: true` or `compromised: true` condition. In those
+cases automatic rotation is **HOLD** and separately governed
+root recovery is required. The fixture deletes both private
+keys before persisting its signed handoff and repeats
+verification after an isolated PostgreSQL restart. The
+portable command accepts certificate, two signatures, two
+public keys, receiver policy, historical public key and
+historical certificate as independently supplied inputs.
+
+**Critical continuity limitation:** v0.50 intentionally
+destroyed its own root private key. This v0.51 fixture
+therefore **does not** claim to cryptographically rotate the
+historical v0.50 root; it creates a NEW test-only custody
+lineage that references v0.50 as historical *public* provenance.
+No root signing key or trusted receiver policy is independently
+held off-runner and there is no HSM, escrow, root operator
+approval, externally monotonic generation store or production
+trust recovery. Demonstrating a genuine v0.50 -> successor
+rotation requires controlled custody of the already-trusted
+v0.50 root private key, which cannot be inferred from its
+public fingerprint. A compromised or missing root must never
+be automatically replaced based solely on a self-generated
+new trust manifest. `authorization: NONE`,
+`execution: HOLD`; PR #348 DRAFT, GO-13 HOLD.
