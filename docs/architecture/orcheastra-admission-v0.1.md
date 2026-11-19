@@ -1317,3 +1317,42 @@ verification permits neither automatic restore nor live
 execution; actual restoration requires a separately governed
 authorization path and external anti-rollback evidence.
 PR #348 stays DRAFT; GO-13 HOLD, no merge/deployment.
+
+## v0.47 signed, portable recovery anchor and monotonic receiver floor (DRAFT/HOLD)
+
+`scripts/orcheastra_signed_recovery_anchor_v047.py` signs a
+canonical, domain-separated statement that binds the v0.46
+consistent SQLite recovery backup, its high-water-head SHA-256,
+scope, read-only `VERIFIED_HOLD` state, and a monotonically
+numbered witness sequence. The CI fixture generates a *separate*
+ephemeral Ed25519 recovery-witness key, signs the statement, and
+destroys the private key. The receiver has to supply the public-key
+SHA-256 fingerprint, required scope, and minimum accepted sequence
+**separately from the backup and signed statement**.
+
+The portable command `--verify-portable BACKUP HEAD STATEMENT
+SIGNATURE PUBLIC TRUST` requires no original live database or
+PostgreSQL credentials. It verifies the detached signature and
+independent pin/floor before inspecting the v0.46 backup and
+consumed-nonce state. A correctly signed historical sequence 1 is
+rejected against the fixture receiver's recorded minimum sequence 2;
+an altered signature, statement, head, public-key fingerprint,
+scope, backup, missing copy or too-low trusted sequence fails
+closed. A post-restart check repeats the verification. The
+verified result stays `recovery: STAGED_ONLY`,
+`authorization: NONE`, `execution: HOLD`.
+
+**Trust boundary:** the phrase *external recovery anchor* describes
+the interface contract, not a connected independent service.
+The private key, signer, trust file and backup are all created on
+the **same ephemeral CI runner**. No independently operated witness,
+off-host custody, immutable archive, independently stored monotonic
+counter, trusted clock, or production restoration is implemented.
+An attacker able to replace the locally stored trusted key pin
+and floor can counterfeit trust. Sequence 1 and 2 in the regression
+fixture sign the same backup to demonstrate anti-rollback of a
+*valid old signature*, not a real operational checkpoint history.
+Production must independently maintain the pin and monotonic
+floor; loss of that external trust state requires HOLD, never a
+fresh minimum inferred from a candidate backup.
+PR #348 DRAFT; GO-13 HOLD; no merge, deployment, or issuance.
