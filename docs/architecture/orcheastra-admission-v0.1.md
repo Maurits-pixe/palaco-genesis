@@ -1280,3 +1280,40 @@ The simulated loss scenario intentionally fails closed rather
 than demonstrating disaster recovery. No privileged execution,
 production activation, merge, or deployment is authorized.
 PR #348 DRAFT and GO-13 HOLD remain unchanged.
+
+## v0.46 staged SQLite recovery and pinned high-water (DRAFT / HOLD)
+
+`scripts/orcheastra_recovery_backup_v046.py` verifies the existing
+v0.45 Ed25519-signed nonce issuance, all three witness transport
+signatures, v0.39 evidence quorum and consumed single-authority
+SQLite row before creating a backup. It uses SQLite's online
+`Connection.backup()` API, **not a raw copy of a potentially active
+database**, to obtain a consistent test snapshot.
+
+A canonical high-water record binds the exact consumed nonce via
+its SHA-256, the recovery scope, the canonical digest of all ledger
+rows, the exact backup file digest, and `sequence=1`. The
+high-water digest is separately pinned as a runner-local trust
+reference. Verification requires the pinned head, validates the
+backup digest and SQLite integrity, enforces `VERIFIED_HOLD`
+and confirms the nonce is still consumed. Negative tests refuse
+a corrupted backup, a well-formed older database snapshot that
+would resurrect a nonce, a mismatched trusted-head digest,
+a downgraded head and a missing backup.
+
+Recovery is **staging-only**: the verified backup is copied to
+an isolated staging file for inspection. No recovery command
+replaces the live authority or enables authorization. A second
+CI step repeats recovery and anti-replay checks after PostgreSQL
+service restart. `authorization: NONE`, `execution: HOLD`.
+
+**Trust boundary:** both the backup and head pin exist on the
+same ephemeral CI runner. This is a regression fixture,
+NOT independently authenticated off-host storage, a signed
+external high-water, a monotonic hardware counter, or production
+disaster-recovery. An attacker able to replace both snapshot
+and trusted pin could hide a rollback. A successful fixture
+verification permits neither automatic restore nor live
+execution; actual restoration requires a separately governed
+authorization path and external anti-rollback evidence.
+PR #348 stays DRAFT; GO-13 HOLD, no merge/deployment.
