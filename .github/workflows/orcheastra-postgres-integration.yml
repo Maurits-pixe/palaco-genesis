@@ -258,6 +258,21 @@ jobs:
             "$RUNNER_TEMP/orcheastra-v048/recovery-quorum.json" \
             "$RUNNER_TEMP/orcheastra-v048/receiver-quorum-trust.json"
 
+      - name: Rotate recovery witness keys and exercise epoch revocation checks
+        run: python3 scripts/orcheastra_recovery_trust_epoch_v049.py --create
+
+      - name: Verify recovery trust epoch offline using explicit predecessor trust
+        env:
+          PALACO_TEST_PG_URI: ""
+          PALACO_TEST_EPHEMERAL: ""
+        run: |
+          python3 scripts/orcheastra_recovery_trust_epoch_v049.py --verify-portable \
+            "$RUNNER_TEMP/orcheastra-v046/authority-backup.sqlite3" \
+            "$RUNNER_TEMP/orcheastra-v046/recovery-high-water.json" \
+            "$RUNNER_TEMP/orcheastra-v049/epoch2-recovery-votes.json" \
+            "$RUNNER_TEMP/orcheastra-v049/receiver-trust-epoch2.json" \
+            "$RUNNER_TEMP/orcheastra-v048/receiver-quorum-trust.json"
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -329,3 +344,6 @@ jobs:
 
       - name: Verify recovery quorum survives isolated database restart
         run: python3 scripts/orcheastra_recovery_quorum_v048.py --verify
+
+      - name: Reverify revoked witness and current epoch after database restart
+        run: python3 scripts/orcheastra_recovery_trust_epoch_v049.py --verify
