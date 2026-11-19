@@ -140,6 +140,7 @@ class PublicationRecoveryTests(unittest.TestCase):
             self.path.parent / "empty-authority.sqlite",
             authorize_candidate=lambda _: True,
             sign_receipt=lambda _: "fixture")
+        self.queue = self.reopen()
         with self.assertRaisesRegex(PublicationError, "NO_UNPUBLISHED_DECISION"):
             self.stage()
 
