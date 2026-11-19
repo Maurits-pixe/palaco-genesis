@@ -228,6 +228,22 @@ jobs:
       - name: Verify pinned recovery backup and reject rollback or tampering
         run: python3 scripts/orcheastra_recovery_backup_v046.py --create
 
+      - name: Seal independent signed recovery witness and test rollback
+        run: python3 scripts/orcheastra_signed_recovery_anchor_v047.py --create
+
+      - name: Verify recovery witness offline with independently supplied trust
+        env:
+          PALACO_TEST_PG_URI: ""
+          PALACO_TEST_EPHEMERAL: ""
+        run: |
+          python3 scripts/orcheastra_signed_recovery_anchor_v047.py --verify-portable \
+            "$RUNNER_TEMP/orcheastra-v046/authority-backup.sqlite3" \
+            "$RUNNER_TEMP/orcheastra-v046/recovery-high-water.json" \
+            "$RUNNER_TEMP/orcheastra-v047/signed-recovery-anchor.json" \
+            "$RUNNER_TEMP/orcheastra-v047/signed-recovery-anchor.sig" \
+            "$RUNNER_TEMP/orcheastra-v047/recovery-witness-public.pem" \
+            "$RUNNER_TEMP/orcheastra-v047/independent-receiver-trust.json"
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -293,3 +309,6 @@ jobs:
 
       - name: Verify recovery head and staged backup after PostgreSQL restart
         run: python3 scripts/orcheastra_recovery_backup_v046.py --verify
+
+      - name: Reverify signed recovery anchor after PostgreSQL restart
+        run: python3 scripts/orcheastra_signed_recovery_anchor_v047.py --verify
