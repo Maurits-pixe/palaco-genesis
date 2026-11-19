@@ -259,8 +259,8 @@ def verify_after_restart() -> None:
 
 def main() -> None:
     if sys.argv[1:] and sys.argv[1] == "--verify-portable":
-        if len(sys.argv) != 6:
-            raise AssertionError("expected BACKUP HEAD VOTES TRUST")
+        if len(sys.argv) != 7:
+            raise AssertionError("expected BACKUP HEAD VOTES TRUST PREVIOUS_TRUST")
         result = verify(Path(sys.argv[2]), Path(sys.argv[3]).read_bytes(),
                         parse(Path(sys.argv[4]).read_bytes()),
                         parse(Path(sys.argv[5]).read_bytes()),
