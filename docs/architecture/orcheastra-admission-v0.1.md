@@ -1391,3 +1391,44 @@ A malicious party controlling the runner and the receiver's
 trust manifest can counterfeit a quorum. A recovered snapshot
 remains `STAGED_ONLY` and cannot be activated or merged.
 PR #348 remains DRAFT; GO-13 stays HOLD.
+
+## v0.49 recovery witness trust epoch, rotation, and revocation (DRAFT / HOLD)
+
+`scripts/orcheastra_recovery_trust_epoch_v049.py` adds a strict
+**epoch 2** CI verification contract for the v0.48 quorum. The
+receiver's trusted registry explicitly pins current public-key
+fingerprints and an exact status for each witness, a fixed 2-of-3
+threshold, minimum epoch, minimum recovery-anchor sequence,
+required scope and the SHA-256 of its predecessor trust registry.
+A and B receive distinct new test-generation signing keys, and
+C is marked **REVOKED** with its v0.48 public-key fingerprint
+retained only for historical comparison. The prior private keys
+were already destroyed, so B's new test signing generation is
+not incorrectly claimed as uninterrupted operational key
+continuity. No revoked identity or predecessor-epoch key may
+satisfy current quorum. Current votes cryptographically bind
+the recovery anchor, signer identity and exact epoch 2 in
+domain-separated Ed25519 payloads.
+
+The verifier requires two separately pinned **ACTIVE** signers,
+both valid and agreeing on the same canonical recovery anchor.
+Tests reject a single signer, duplicate votes, a forged or old
+public key, reactivated revoked key, insufficient active quorum,
+an authentic contradictory anchor, signed authority escalation,
+a downgraded trust epoch, unexpected predecessor registry, or
+recovery version rollback. After verification, the existing
+v0.46 staging-only backup checks still apply. The portable
+command `--verify-portable BACKUP HEAD VOTES TRUST PREVIOUS_TRUST`
+reads explicit predecessor trust without PostgreSQL credentials;
+CI repeats validation after a PostgreSQL restart.
+
+**Security boundary:** the current and predecessor manifests
+remain locally created CI fixtures. The transition is referenced
+by a hash but not signed by a genuinely separate root authority,
+and neither epoch nor revocation can be trusted against an actor
+capable of replacing all local trust inputs. Operational key
+rotation requires independently controlled key custody and
+a separately authenticated, monotonic root-approved registry.
+This feature cannot reactivate a deployed witness or authorize
+live restoration. `authorization: NONE`, `execution: HOLD`,
+PR #348 DRAFT and GO-13 HOLD.
