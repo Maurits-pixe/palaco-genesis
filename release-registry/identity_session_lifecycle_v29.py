@@ -127,6 +127,8 @@ class IdentityLifecycleRegistry:
                     if anchored is not True:
                         raise LifecycleError("UNTRUSTED_REVOCATION")
                     authorized = verify_publisher(kind, target, sequence + 1, head)
+                except LifecycleError:
+                    raise
                 except Exception as exc:
                     raise LifecycleError("EXTERNAL_POLICY_UNAVAILABLE") from exc
                 if anchored is not True or authorized is not True:
