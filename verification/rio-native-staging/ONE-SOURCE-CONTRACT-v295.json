@@ -1,0 +1,16 @@
+{
+  "format": "rio-one-source-contract-review-v295",
+  "sourceBytes": {
+    "palaco-one-v16.0-lokale-gateway.zip": "6bea42e2354dcfdc2805f809fc4ca337140f8a1d3fcadf076e949c2fe7f81a6f",
+    "palaco-one-v9.9-atomic-session-staging-draft.sql": "abeab486d757efee4e448605569cf9b2c9c9ad13ba833d99f8d54e561a815bf8",
+    "palaco-one-v10.3-revocation-staging-draft.sql": "e38ff381da22ce3c2801b6ff8cf55a446cd431ff663af31a2776f0709abac6f7",
+    "palaco-one-gateway-v15.0.js": "ea57574b2e9f2dbd2c66cf21884a353af8d1ac9e9d295e16f5f0f213fc5ba50b"
+  },
+  "gatewayReview": "SOURCE_REVIEW_ONLY_NO_REAL_LOGIN_EXECUTED",
+  "currentGatewaySessionRoute": "GET /api/identity/session returns 401 with session:null in base gateway v15.0, retained by v16.0 wrappers",
+  "oneSqlState": "PENDING_COMMITTED is a pending intent, not an authenticated session",
+  "newHostSessionPort": "DRAFT_NOT_IMPLEMENTED_BY_CURRENT_ONE_GATEWAY",
+  "nativeFixtureScope": "SELECTED_COLUMN_CONTRACT_ONLY_NOT_FULL_ONE_MIGRATION",
+  "authorization": "NONE",
+  "acceptance": "HOLD"
+}
