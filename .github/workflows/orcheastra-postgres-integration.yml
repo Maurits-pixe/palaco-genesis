@@ -335,6 +335,9 @@ jobs:
       - name: Prepare v053 signed owner JA/NEE dossier and immutable audit history
         run: python3 scripts/orcheastra_owner_decision_dossier_v053.py --create
 
+      - name: Generate read-only v054 owner presentation from verified CI evidence
+        run: python3 scripts/orcheastra_owner_presentation_v054.py --create
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -421,3 +424,6 @@ jobs:
 
       - name: Reverify v053 owner decision audit and replay HOLD after restart
         run: python3 scripts/orcheastra_owner_decision_dossier_v053.py --verify
+
+      - name: Reverify v054 read-only owner presentation after database restart
+        run: python3 scripts/orcheastra_owner_presentation_v054.py --verify
