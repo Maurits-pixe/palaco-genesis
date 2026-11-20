@@ -39,6 +39,7 @@ tracing = "0.1"
 uuid = { version = "1", features = ["serde", "v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 sha2 = "0.10"
+serde_json = "1"
 palaco-constitution = { path = "crates/palaco-constitution" }
 palaco-types = { path = "crates/palaco-types" }
 palaco-errors = { path = "crates/palaco-errors" }

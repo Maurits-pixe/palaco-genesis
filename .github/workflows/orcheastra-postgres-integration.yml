@@ -1,0 +1,429 @@
+name: ORCHEASTRA PostgreSQL isolated integration
+
+on:
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-integration:
+    name: PostgreSQL CAS and rollback tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: palaco_test
+          POSTGRES_PASSWORD: local_only_ci_test
+          POSTGRES_DB: palaco_orcheastra_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U palaco_test -d palaco_orcheastra_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      PALACO_TEST_EPHEMERAL: "YES"
+      PALACO_TEST_PG_URI: postgresql://palaco_test:local_only_ci_test@127.0.0.1:5432/palaco_orcheastra_test
+      PGCONNECT_TIMEOUT: "5"
+
+    steps:
+      - name: Checkout untrusted draft branch
+        uses: actions/checkout@v4
+
+      - name: Install isolated PostgreSQL test client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Apply draft migration only to disposable CI database
+        run: |
+          psql -X -v ON_ERROR_STOP=1 "$PALACO_TEST_PG_URI" \
+            -f docs/architecture/orcheastra-authority-postgres-v0.20.sql
+
+      - name: Create isolated no-login privilege fixtures
+        run: |
+          psql -X -v ON_ERROR_STOP=1 "$PALACO_TEST_PG_URI" \
+            -f scripts/orcheastra_postgres_test_roles.sql
+
+      - name: Validate CAS concurrency revocation rollback and privileges
+        run: python3 scripts/orcheastra_postgres_integration.py
+
+      - name: Install authorization epoch candidate in ephemeral database
+        run: |
+          psql -X -v ON_ERROR_STOP=1 "$PALACO_TEST_PG_URI" \
+            -f docs/architecture/orcheastra-authority-authz-v0.25.sql
+
+      - name: Verify authorization revoke scope and rollback
+        run: python3 scripts/orcheastra_postgres_authz_integration.py
+
+      - name: Install session-bound publisher facade in disposable database
+        run: |
+          psql -X -v ON_ERROR_STOP=1 "$PALACO_TEST_PG_URI" \
+            -f docs/architecture/orcheastra-authority-session-v0.26.sql
+
+      - name: Install ordered revocation route in disposable database
+        run: |
+          psql -X -v ON_ERROR_STOP=1 "$PALACO_TEST_PG_URI" \
+            -f docs/architecture/orcheastra-authority-ordering-v0.27.sql
+
+      - name: Validate authenticated PostgreSQL session identity and restrictions
+        env:
+          PALACO_TEST_PUBLISHER_URI: postgresql://palaco_audit_ci_publisher:local_only_ci_publisher@127.0.0.1:5432/palaco_orcheastra_test
+        run: python3 scripts/orcheastra_postgres_session_integration.py
+
+      - name: Install key-policy lock ordering and deletion guards
+        run: |
+          psql -X -v ON_ERROR_STOP=1 "$PALACO_TEST_PG_URI" \
+            -f docs/architecture/orcheastra-authority-key-policy-v0.28.sql
+
+      - name: Verify key rotation revocation races and deletion protection
+        env:
+          PALACO_TEST_PUBLISHER_URI: postgresql://palaco_audit_ci_publisher:local_only_ci_publisher@127.0.0.1:5432/palaco_orcheastra_test
+        run: python3 scripts/orcheastra_postgres_key_policy_integration.py
+
+      - name: Install transactional policy evidence in disposable database
+        run: |
+          psql -X -v ON_ERROR_STOP=1 "$PALACO_TEST_PG_URI" \
+            -f docs/architecture/orcheastra-policy-evidence-v0.29.sql
+
+      - name: Verify policy changes rollback and tamper denial
+        env:
+          PALACO_TEST_PUBLISHER_URI: postgresql://palaco_audit_ci_publisher:local_only_ci_publisher@127.0.0.1:5432/palaco_orcheastra_test
+        run: python3 scripts/orcheastra_postgres_policy_evidence.py
+
+      - name: Install SHA-256 policy evidence hash chain
+        run: |
+          psql -X -v ON_ERROR_STOP=1 "$PALACO_TEST_PG_URI" \
+            -f docs/architecture/orcheastra-policy-hash-v0.30.sql
+
+      - name: Independently verify and pin policy hash heads
+        run: python3 scripts/orcheastra_policy_hash_verify.py --pin
+
+      - name: Seal policy heads with isolated ephemeral Ed25519 key
+        run: python3 scripts/orcheastra_policy_signed_checkpoint.py --seal
+
+      - name: Exercise root-authorized rotation and pinned trust version
+        run: python3 scripts/orcheastra_policy_trust_rotation.py --seal
+
+      - name: Seal scoped key statuses and trusted checkpoint registry
+        run: python3 scripts/orcheastra_trust_registry_v033.py --seal
+
+      - name: Test fail-closed recovery dispositions without execution
+        run: python3 scripts/orcheastra_recovery_disposition_v034.py --test
+
+      - name: Generate and adversarially verify read-only recovery report
+        run: python3 scripts/orcheastra_recovery_report_v035.py --create
+
+      - name: Sign portable recovery bundle and run offline tamper tests
+        run: python3 scripts/orcheastra_recovery_bundle_v036.py --create
+
+      - name: Verify exported bundle with no database connection
+        env:
+          PALACO_TEST_PG_URI: ""
+          PALACO_TEST_EPHEMERAL: ""
+        run: |
+          python3 scripts/orcheastra_recovery_bundle_v036.py --verify-portable \
+            "$RUNNER_TEMP/orcheastra-v036/recovery-evidence-v036.zip" \
+            "$RUNNER_TEMP/orcheastra-v036/trusted-public-key.sha256"
+
+      - name: Create controlled handoff manifest and test historical freshness
+        run: python3 scripts/orcheastra_evidence_handoff_v037.py --create
+
+      - name: Independently evaluate handoff with database access disabled
+        env:
+          PALACO_TEST_PG_URI: ""
+          PALACO_TEST_EPHEMERAL: ""
+        run: |
+          python3 scripts/orcheastra_evidence_handoff_v037.py --verify-portable \
+            "$RUNNER_TEMP/orcheastra-v037/historical-evidence.zip" \
+            "$RUNNER_TEMP/orcheastra-v037/trusted-report-signer.sha256" \
+            "$RUNNER_TEMP/orcheastra-v037/handoff.json" \
+            "$RUNNER_TEMP/orcheastra-v037/independent-high-water.json"
+
+      - name: Sign independent high-water witness and reject replay
+        run: python3 scripts/orcheastra_signed_high_water_v038.py --seal
+
+      - name: Verify signed witness entirely offline against externally supplied pins
+        env:
+          PALACO_TEST_PG_URI: ""
+          PALACO_TEST_EPHEMERAL: ""
+        run: |
+          python3 scripts/orcheastra_signed_high_water_v038.py --verify-portable \
+            "$RUNNER_TEMP/orcheastra-v037/historical-evidence.zip" \
+            "$RUNNER_TEMP/orcheastra-v037/trusted-report-signer.sha256" \
+            "$RUNNER_TEMP/orcheastra-v037/handoff.json" \
+            "$RUNNER_TEMP/orcheastra-v038/signed-high-water.json" \
+            "$RUNNER_TEMP/orcheastra-v038/signed-high-water.sig" \
+            "$RUNNER_TEMP/orcheastra-v038/witness-public.pem" \
+            "$RUNNER_TEMP/orcheastra-v038/witness-public.sha256" \
+            "$RUNNER_TEMP/orcheastra-v038/trusted-minimum-version.txt"
+
+      - name: Create three independently signed witnesses and test quorum failures
+        run: python3 scripts/orcheastra_witness_quorum_v039.py --create
+
+      - name: Check witness quorum entirely offline
+        env:
+          PALACO_TEST_PG_URI: ""
+          PALACO_TEST_EPHEMERAL: ""
+        run: |
+          python3 scripts/orcheastra_witness_quorum_v039.py --verify-portable \
+            "$RUNNER_TEMP/orcheastra-v039/quorum-record.json" \
+            "$RUNNER_TEMP/orcheastra-v039/independent-trust-pins.json" \
+            "$RUNNER_TEMP/orcheastra-v037/historical-evidence.zip" \
+            "$RUNNER_TEMP/orcheastra-v037/trusted-report-signer.sha256" \
+            "$RUNNER_TEMP/orcheastra-v037/handoff.json"
+
+      - name: Validate registered witness transport and response failures
+        run: python3 scripts/orcheastra_witness_transport_v040.py --create
+
+      - name: Check transport responses offline with no PostgreSQL credentials
+        env:
+          PALACO_TEST_PG_URI: ""
+          PALACO_TEST_EPHEMERAL: ""
+        run: |
+          python3 scripts/orcheastra_witness_transport_v040.py --verify-portable \
+            "$RUNNER_TEMP/orcheastra-v040/trusted-endpoint-registry.json" \
+            "$RUNNER_TEMP/orcheastra-v040/challenge.json" \
+            "$RUNNER_TEMP/orcheastra-v040/responses.json" \
+            "$RUNNER_TEMP/orcheastra-v039/independent-trust-pins.json" \
+            "$RUNNER_TEMP/orcheastra-v037/historical-evidence.zip" \
+            "$RUNNER_TEMP/orcheastra-v037/trusted-report-signer.sha256" \
+            "$RUNNER_TEMP/orcheastra-v037/handoff.json"
+
+      - name: Sign and adversarially test challenge-bound witness responses
+        run: python3 scripts/orcheastra_witness_signed_transport_v041.py --create
+
+      - name: Verify challenge-bound transport signatures without database
+        env:
+          PALACO_TEST_PG_URI: ""
+          PALACO_TEST_EPHEMERAL: ""
+        run: |
+          python3 scripts/orcheastra_witness_signed_transport_v041.py --verify-portable \
+            "$RUNNER_TEMP/orcheastra-v040/trusted-endpoint-registry.json" \
+            "$RUNNER_TEMP/orcheastra-v040/challenge.json" \
+            "$RUNNER_TEMP/orcheastra-v041/signed-responses.json" \
+            "$RUNNER_TEMP/orcheastra-v041/transport-key-pins.json" \
+            "$RUNNER_TEMP/orcheastra-v039/independent-trust-pins.json" \
+            "$RUNNER_TEMP/orcheastra-v037/historical-evidence.zip" \
+            "$RUNNER_TEMP/orcheastra-v037/trusted-report-signer.sha256" \
+            "$RUNNER_TEMP/orcheastra-v037/handoff.json"
+
+      - name: Atomically consume verified challenge and reject concurrent replays
+        run: python3 scripts/orcheastra_replay_ledger_v042.py --create
+
+      - name: Validate v043 challenge issuance and audit integrity
+        run: python3 scripts/orcheastra_nonce_issuer_v043.py --create
+
+      - name: Bind fresh signed nonce to witnesses and atomic admission
+        run: python3 scripts/orcheastra_end_to_end_nonce_v044.py --create
+
+      - name: Validate v045 single-authority issuance rollback and replay
+        run: python3 scripts/orcheastra_unified_authority_v045.py --create
+
+      - name: Verify pinned recovery backup and reject rollback or tampering
+        run: python3 scripts/orcheastra_recovery_backup_v046.py --create
+
+      - name: Seal independent signed recovery witness and test rollback
+        run: python3 scripts/orcheastra_signed_recovery_anchor_v047.py --create
+
+      - name: Verify recovery witness offline with independently supplied trust
+        env:
+          PALACO_TEST_PG_URI: ""
+          PALACO_TEST_EPHEMERAL: ""
+        run: |
+          python3 scripts/orcheastra_signed_recovery_anchor_v047.py --verify-portable \
+            "$RUNNER_TEMP/orcheastra-v046/authority-backup.sqlite3" \
+            "$RUNNER_TEMP/orcheastra-v046/recovery-high-water.json" \
+            "$RUNNER_TEMP/orcheastra-v047/signed-recovery-anchor.json" \
+            "$RUNNER_TEMP/orcheastra-v047/signed-recovery-anchor.sig" \
+            "$RUNNER_TEMP/orcheastra-v047/recovery-witness-public.pem" \
+            "$RUNNER_TEMP/orcheastra-v047/independent-receiver-trust.json"
+
+      - name: Build recovery 2-of-3 signatures and adversarial quorum checks
+        run: python3 scripts/orcheastra_recovery_quorum_v048.py --create
+
+      - name: Verify recovery quorum without database credentials
+        env:
+          PALACO_TEST_PG_URI: ""
+          PALACO_TEST_EPHEMERAL: ""
+        run: |
+          python3 scripts/orcheastra_recovery_quorum_v048.py --verify-portable \
+            "$RUNNER_TEMP/orcheastra-v046/authority-backup.sqlite3" \
+            "$RUNNER_TEMP/orcheastra-v046/recovery-high-water.json" \
+            "$RUNNER_TEMP/orcheastra-v048/recovery-quorum.json" \
+            "$RUNNER_TEMP/orcheastra-v048/receiver-quorum-trust.json"
+
+      - name: Rotate recovery witness keys and exercise epoch revocation checks
+        run: python3 scripts/orcheastra_recovery_trust_epoch_v049.py --create
+
+      - name: Verify recovery trust epoch offline using explicit predecessor trust
+        env:
+          PALACO_TEST_PG_URI: ""
+          PALACO_TEST_EPHEMERAL: ""
+        run: |
+          python3 scripts/orcheastra_recovery_trust_epoch_v049.py --verify-portable \
+            "$RUNNER_TEMP/orcheastra-v046/authority-backup.sqlite3" \
+            "$RUNNER_TEMP/orcheastra-v046/recovery-high-water.json" \
+            "$RUNNER_TEMP/orcheastra-v049/epoch2-recovery-votes.json" \
+            "$RUNNER_TEMP/orcheastra-v049/receiver-trust-epoch2.json" \
+            "$RUNNER_TEMP/orcheastra-v048/receiver-quorum-trust.json"
+
+      - name: Root-sign recovery epoch transition and reject illicit trust changes
+        run: python3 scripts/orcheastra_root_transition_v050.py --create
+
+      - name: Verify signed root transition without PostgreSQL credentials
+        env:
+          PALACO_TEST_PG_URI: ""
+          PALACO_TEST_EPHEMERAL: ""
+        run: |
+          python3 scripts/orcheastra_root_transition_v050.py --verify-portable \
+            "$RUNNER_TEMP/orcheastra-v046/authority-backup.sqlite3" \
+            "$RUNNER_TEMP/orcheastra-v046/recovery-high-water.json" \
+            "$RUNNER_TEMP/orcheastra-v049/epoch2-recovery-votes.json" \
+            "$RUNNER_TEMP/orcheastra-v049/receiver-trust-epoch2.json" \
+            "$RUNNER_TEMP/orcheastra-v048/receiver-quorum-trust.json" \
+            "$RUNNER_TEMP/orcheastra-v050/root-transition-certificate.json" \
+            "$RUNNER_TEMP/orcheastra-v050/root-transition-certificate.sig" \
+            "$RUNNER_TEMP/orcheastra-v050/ci-root-public.pem" \
+            "$RUNNER_TEMP/orcheastra-v050/independent-root-trust.json"
+
+      - name: Exercise v051 dual-signed root custody and lost-key HOLD
+        run: python3 scripts/orcheastra_root_custody_v051.py --create
+
+      - name: Verify v051 dual-root handoff with no database credentials
+        env:
+          PALACO_TEST_PG_URI: ""
+          PALACO_TEST_EPHEMERAL: ""
+        run: |
+          python3 scripts/orcheastra_root_custody_v051.py --verify-portable \
+            "$RUNNER_TEMP/orcheastra-v051/root-custody-handoff.json" \
+            "$RUNNER_TEMP/orcheastra-v051/prior-root.sig" \
+            "$RUNNER_TEMP/orcheastra-v051/successor-root.sig" \
+            "$RUNNER_TEMP/orcheastra-v051/prior-root-public.pem" \
+            "$RUNNER_TEMP/orcheastra-v051/successor-root-public.pem" \
+            "$RUNNER_TEMP/orcheastra-v051/receiver-root-custody-policy.json" \
+            "$RUNNER_TEMP/orcheastra-v050/ci-root-public.pem" \
+            "$RUNNER_TEMP/orcheastra-v050/root-transition-certificate.json"
+
+      - name: Evaluate v052 root incident review quorum without activation
+        run: python3 scripts/orcheastra_root_incident_review_v052.py --create
+
+      - name: Verify v052 incident-review decision offline without credentials
+        env:
+          PALACO_TEST_PG_URI: ""
+          PALACO_TEST_EPHEMERAL: ""
+        run: |
+          python3 scripts/orcheastra_root_incident_review_v052.py --verify-portable \
+            "$RUNNER_TEMP/orcheastra-v052/incident-case.json" \
+            "$RUNNER_TEMP/orcheastra-v052/review-votes.json" \
+            "$RUNNER_TEMP/orcheastra-v052/reviewer-trust.json" \
+            "$RUNNER_TEMP/orcheastra-v052/incident-evidence.json" \
+            "$RUNNER_TEMP/orcheastra-v051/root-custody-handoff.json" \
+            "$RUNNER_TEMP/orcheastra-v051/prior-root.sig" \
+            "$RUNNER_TEMP/orcheastra-v051/successor-root.sig" \
+            "$RUNNER_TEMP/orcheastra-v051/prior-root-public.pem" \
+            "$RUNNER_TEMP/orcheastra-v051/successor-root-public.pem" \
+            "$RUNNER_TEMP/orcheastra-v051/receiver-root-custody-policy.json" \
+            "$RUNNER_TEMP/orcheastra-v050/ci-root-public.pem" \
+            "$RUNNER_TEMP/orcheastra-v050/root-transition-certificate.json"
+
+      - name: Prepare v053 signed owner JA/NEE dossier and immutable audit history
+        run: python3 scripts/orcheastra_owner_decision_dossier_v053.py --create
+
+      - name: Generate read-only v054 owner presentation from verified CI evidence
+        run: python3 scripts/orcheastra_owner_presentation_v054.py --create
+
+      - name: Restart only the ephemeral PostgreSQL CI service
+        run: |
+          docker restart "${{ job.services.postgres.id }}"
+          for attempt in $(seq 1 40); do
+            if pg_isready -d "$PALACO_TEST_PG_URI" -q; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Ephemeral PostgreSQL service failed to restart" >&2
+          exit 1
+
+      - name: Verify committed history and revocation after restart
+        run: python3 scripts/orcheastra_postgres_integration.py --verify-restart
+
+      - name: Verify policy hash heads after restart
+        run: python3 scripts/orcheastra_policy_hash_verify.py --verify
+
+      - name: Verify signed policy heads after PostgreSQL restart
+        run: python3 scripts/orcheastra_policy_signed_checkpoint.py --verify
+
+      - name: Verify rotated trust and anti-rollback after PostgreSQL restart
+        run: python3 scripts/orcheastra_policy_trust_rotation.py --verify
+
+      - name: Verify signed key statuses and recovery gate after restart
+        run: python3 scripts/orcheastra_trust_registry_v033.py --verify
+
+      - name: Verify non-executing recovery disposition after restart
+        run: python3 scripts/orcheastra_recovery_disposition_v034.py --verify
+
+      - name: Reproduce and verify recovery report after database restart
+        run: python3 scripts/orcheastra_recovery_report_v035.py --verify
+
+      - name: Verify portable Ed25519 report and original evidence after restart
+        run: python3 scripts/orcheastra_recovery_bundle_v036.py --verify
+
+      - name: Reverify evidence handoff and retention after database restart
+        run: python3 scripts/orcheastra_evidence_handoff_v037.py --verify
+
+      - name: Reverify independent signed witness after database restart
+        run: python3 scripts/orcheastra_signed_high_water_v038.py --verify
+
+      - name: Verify witness quorum after isolated PostgreSQL restart
+        run: python3 scripts/orcheastra_witness_quorum_v039.py --verify
+
+      - name: Reverify witness transport registrations after PostgreSQL restart
+        run: python3 scripts/orcheastra_witness_transport_v040.py --verify
+
+      - name: Recheck signed challenge-bound responses after PostgreSQL restart
+        run: python3 scripts/orcheastra_witness_signed_transport_v041.py --verify
+
+      - name: Verify once-only challenge stays consumed after PostgreSQL restart
+        run: python3 scripts/orcheastra_replay_ledger_v042.py --verify
+
+      - name: Verify v043 challenge audit after restart
+        run: python3 scripts/orcheastra_nonce_issuer_v043.py --verify
+
+      - name: Verify fresh challenge replay denied after database restart
+        run: python3 scripts/orcheastra_end_to_end_nonce_v044.py --verify
+
+      - name: Reverify v045 single-authority transaction after restart
+        run: python3 scripts/orcheastra_unified_authority_v045.py --verify
+
+      - name: Verify recovery head and staged backup after PostgreSQL restart
+        run: python3 scripts/orcheastra_recovery_backup_v046.py --verify
+
+      - name: Reverify signed recovery anchor after PostgreSQL restart
+        run: python3 scripts/orcheastra_signed_recovery_anchor_v047.py --verify
+
+      - name: Verify recovery quorum survives isolated database restart
+        run: python3 scripts/orcheastra_recovery_quorum_v048.py --verify
+
+      - name: Reverify revoked witness and current epoch after database restart
+        run: python3 scripts/orcheastra_recovery_trust_epoch_v049.py --verify
+
+      - name: Verify root-signed trust transition after isolated database restart
+        run: python3 scripts/orcheastra_root_transition_v050.py --verify
+
+      - name: Reverify v051 root custody evidence after restart
+        run: python3 scripts/orcheastra_root_custody_v051.py --verify
+
+      - name: Reverify v052 root incident review gate after restart
+        run: python3 scripts/orcheastra_root_incident_review_v052.py --verify
+
+      - name: Reverify v053 owner decision audit and replay HOLD after restart
+        run: python3 scripts/orcheastra_owner_decision_dossier_v053.py --verify
+
+      - name: Reverify v054 read-only owner presentation after database restart
+        run: python3 scripts/orcheastra_owner_presentation_v054.py --verify

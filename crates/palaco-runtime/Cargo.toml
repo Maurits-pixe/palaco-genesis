@@ -11,6 +11,9 @@ description = "Runtime orchestration contracts for PALACO."
 workspace = true
 
 [dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sha2 = { workspace = true }
 palaco-citadel = { workspace = true }
 palaco-foundation = { path = "../palaco-foundation" }
 

@@ -3,6 +3,9 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+/// Fail-closed admission contract for the ORCHEASTRA coordinator.
+pub mod orcheastra;
+
 use palaco_citadel::{BoundaryDisposition, ExecutionBoundary};
 use palaco_foundation::{
     errors::RevalidationError,
@@ -184,6 +187,65 @@ mod tests {
             CurrentValidity::InsufficientEvidence
         );
 
+        Ok(())
+    }
+    #[test]
+    fn orcheastra_runtime_adapter_revalidates_actual_boundary() -> Result<(), &'static str> {
+        use crate::orcheastra::{
+            evaluate_runtime_proposal, AdmissionDecision, AdmissionEvidence, AdmissionReason,
+        };
+
+        let executable = plan(AuthorizationScope::Execute)?;
+        let context = executable.boundary.decision.context;
+        let claims = AdmissionEvidence {
+            identity_verified: true,
+            authority_verified: true,
+            evidence_verified: true,
+            scope_matches: true,
+            context_current: true,
+            revoked: false,
+            hold_active: false,
+            citadel_execute: true,
+        };
+        assert_eq!(
+            evaluate_runtime_proposal(&executable, &context, &claims),
+            AdmissionDecision::Proposed
+        );
+
+        let mut blocked = claims;
+        blocked.hold_active = true;
+        assert_eq!(
+            evaluate_runtime_proposal(&executable, &context, &blocked),
+            AdmissionDecision::Blocked(AdmissionReason::Hold)
+        );
+
+        let non_executable = plan(AuthorizationScope::Observe)?;
+        assert_ne!(
+            evaluate_runtime_proposal(
+                &non_executable,
+                &non_executable.boundary.decision.context,
+                &claims,
+            ),
+            AdmissionDecision::Proposed
+        );
+
+        let mismatched = DecisionContext {
+            state: StateSnapshotId::new(),
+            ..context
+        };
+        assert_eq!(
+            evaluate_runtime_proposal(&executable, &mismatched, &claims),
+            AdmissionDecision::Blocked(AdmissionReason::StaleContext)
+        );
+
+        let expired = DecisionContext {
+            observed_at: timestamp(2026, 2, 1, 0, 0, 0)?,
+            ..context
+        };
+        assert_eq!(
+            evaluate_runtime_proposal(&executable, &expired, &claims),
+            AdmissionDecision::Blocked(AdmissionReason::StaleContext)
+        );
         Ok(())
     }
 }
