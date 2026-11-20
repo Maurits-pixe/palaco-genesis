@@ -1513,3 +1513,39 @@ public fingerprint. A compromised or missing root must never
 be automatically replaced based solely on a self-generated
 new trust manifest. `authorization: NONE`,
 `execution: HOLD`; PR #348 DRAFT, GO-13 HOLD.
+
+## v0.52 root incident human-review gate (DRAFT / GO-13 HOLD)
+
+`scripts/orcheastra_root_incident_review_v052.py` implements an
+isolated **root incident evidence/review gate** for suspected root
+compromise and root-key loss. A cryptographically random case ID
+binds an incident type, exact root-public-key SHA-256, the v0.51
+dual-root custody certificate SHA-256, incident evidence SHA-256,
+scope and root generation 2. Only `HUMAN_REVIEW_ONLY` is a valid
+requested action; `authorization: NONE` and `execution: HOLD`
+are mandatory.
+
+Three distinct ephemeral Ed25519 CI reviewer keys vote over a
+canonical, domain-separated ballot binding their identity,
+incident-case digest and `REVIEW` or `REJECT`. An independently
+provided receiver pinset requires 2 unique reviews and verifies
+**every supplied** vote. Any authentic dissent, duplicate signer,
+forged signature, deficient quorum, altered evidence or root,
+missing custody signature, unknown root generation, unauthorized
+action or scope substitution fails closed. A valid quorum yields
+only `REVIEW_READY_HOLD`; it **does not issue any approval,
+authorize a new root, mutate the trust store or restore a backup**.
+The portable verifier accepts all incident/custody inputs explicitly
+and has no PostgreSQL dependency. CI repeats verification after
+the disposable PostgreSQL restart.
+
+**Security boundary:** reviewer keys and trusted pins exist
+only on one disposable CI runner, not independent operators.
+The incident evidence is synthetic, not a real incident report.
+The new test root custody lineage from v0.51 remains separate
+from the destroyed v0.50 root private key. A human review decision,
+even if unanimous, is not an executable root rotation or
+proof of production trust. An actual root emergency needs an
+externally governed, independently verified trust ceremony
+and a human decision outside this test gate. PR #348 stays DRAFT,
+GO-13 HOLD; no merge, publication or deployment.
