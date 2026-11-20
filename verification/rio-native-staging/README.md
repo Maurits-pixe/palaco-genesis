@@ -14,7 +14,7 @@ npm ci --prefix native-staging --ignore-scripts --no-audit --no-fund
 npm run test:ci
 ```
 
-`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v297.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
+`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v298.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
 
 ## Source continuity and status
 
@@ -78,6 +78,31 @@ const route = createRioSignedOneInspectionRouteV297({
 
 Every dependency remains an explicitly configured trusted server service. Construction performs only structural validation and public-key parsing; it does not call providers or prove their readiness. A missing or unsigned source refuses inspection before One SQL or receipt policy. There is no public fixture-cookie fallback, listener, configured real issuer or enabled sign-in.
 
-The current `test:ci` command now uses the v297 runner and additionally requires the two native central-entry scenarios: successful synthetic signed-source/One SQL/original-route composition, and refusal after One revocation during that inspection. Evidence is written to `evidence/CI-RESULT-v297.json`. Earlier verifier modules, native suites and runners remain preserved.
+`run-ci-v297.mjs` adds two native central-entry scenarios: successful synthetic signed-source/One SQL/original-route composition, and refusal after One revocation during that inspection. Its evidence is written to `evidence/CI-RESULT-v297.json`. Earlier verifier modules, native suites and runners remain preserved.
 
 AI review: TRIAS keeps the original read-only route and HOLD/NONE boundary; ORACLE requires native evidence for the central entry point rather than inferring its behavior from separately tested components; MENTOR replaces manual wiring with one explicit constructor and rejects ambiguous overrides. A real authenticated One issuer, original One transaction chain and production transport still require separate integration and evidence.
+
+## Existing-session statement producer (v298)
+
+`createRioOneSessionStatementIssuerV298` in `rio-one-session-statement-issuer-v298.mjs` implements the producer side of the unchanged v296 signed-message protocol. It produces a short-lived statement about an **already authenticated existing One session**. It does not create a session, log in a person, register PP, issue an identity or grant authority. No listener, cookie handler or network endpoint is provided.
+
+```js
+const issuer = createRioOneSessionStatementIssuerV298({
+  tenantRef, allowedOrigin, issuerKey, readAuthenticatedOneSession,
+  readIssuerKeyState, signSessionStatement, now,
+});
+const route = createRioSignedOneInspectionRouteV297({
+  ...trustedRouteConfiguration,
+  requestSignedSession: issuer.requestSignedSession,
+});
+```
+
+The trusted One backend must implement `readAuthenticatedOneSession(request)` by authenticating the existing user session and returning the exact active v295 host-session contract. This dependency is not implemented here and must never copy self-reported labels, a pending-intent row or browser identity fields. The One backend and RIO verifier require independently approved issuer-key configuration. The issuer accepts only a pinned public Ed25519 key; a private key is not a configuration option.
+
+`signSessionStatement({purpose,issuerId,keyId,payload})` is a separately configured server/HSM signer restricted to the read-only RIO review purpose. It returns a canonical base64url Ed25519 signature. This is not a public arbitrary-message signing API. The module verifies the returned signature against the independent public pin before exposing any envelope.
+
+The producer validates the request/challenge and current signing-key state before requesting authentication. It requires a source observation made during this lookup, preserves its timestamp, and bounds the statement's lifetime by five seconds, the existing session expiry and key expiry. It checks the existing session again after signing and re-reads the key state; changed identity, epochs, PP revision, device binding, session expiry or key state withholds the statement. Only the observation time may refresh. Cached facts are never relabeled as fresh, and failures return no statement or private diagnostic.
+
+The v298 native fixture pairs this implemented producer with the unchanged verifier, One reader, central entry point and original receipt route. A private synthetic server binding simulates the unavailable user-authentication service; actual PostgreSQL queries check selected One column contracts. Four scenarios cover missing authentication, the complete paired chain, One revocation during signing and One revocation during receipt inspection. Real user authentication, registered WebAuthn, the original One SQL transaction chain, approved real signing keys and remote TLS remain unverified.
+
+The current `test:ci` command uses `run-ci-v298.mjs`, requires all four producer scenarios and writes `evidence/CI-RESULT-v298.json`. Earlier modules and runners remain preserved. AI review: TRIAS distinguishes a session statement from session/identity issuance; ORACLE records synthetic authentication separately from real cryptographic/native SQL checks; MENTOR provides the producer callback needed by the existing central entry point. Acceptance HOLD; authorization NONE; no live login or deployment.
