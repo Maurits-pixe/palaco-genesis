@@ -332,6 +332,9 @@ jobs:
             "$RUNNER_TEMP/orcheastra-v050/ci-root-public.pem" \
             "$RUNNER_TEMP/orcheastra-v050/root-transition-certificate.json"
 
+      - name: Prepare v053 signed owner JA/NEE dossier and immutable audit history
+        run: python3 scripts/orcheastra_owner_decision_dossier_v053.py --create
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -415,3 +418,6 @@ jobs:
 
       - name: Reverify v052 root incident review gate after restart
         run: python3 scripts/orcheastra_root_incident_review_v052.py --verify
+
+      - name: Reverify v053 owner decision audit and replay HOLD after restart
+        run: python3 scripts/orcheastra_owner_decision_dossier_v053.py --verify
