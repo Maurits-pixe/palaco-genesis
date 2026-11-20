@@ -310,6 +310,28 @@ jobs:
             "$RUNNER_TEMP/orcheastra-v050/ci-root-public.pem" \
             "$RUNNER_TEMP/orcheastra-v050/root-transition-certificate.json"
 
+      - name: Evaluate v052 root incident review quorum without activation
+        run: python3 scripts/orcheastra_root_incident_review_v052.py --create
+
+      - name: Verify v052 incident-review decision offline without credentials
+        env:
+          PALACO_TEST_PG_URI: ""
+          PALACO_TEST_EPHEMERAL: ""
+        run: |
+          python3 scripts/orcheastra_root_incident_review_v052.py --verify-portable \
+            "$RUNNER_TEMP/orcheastra-v052/incident-case.json" \
+            "$RUNNER_TEMP/orcheastra-v052/review-votes.json" \
+            "$RUNNER_TEMP/orcheastra-v052/reviewer-trust.json" \
+            "$RUNNER_TEMP/orcheastra-v052/incident-evidence.json" \
+            "$RUNNER_TEMP/orcheastra-v051/root-custody-handoff.json" \
+            "$RUNNER_TEMP/orcheastra-v051/prior-root.sig" \
+            "$RUNNER_TEMP/orcheastra-v051/successor-root.sig" \
+            "$RUNNER_TEMP/orcheastra-v051/prior-root-public.pem" \
+            "$RUNNER_TEMP/orcheastra-v051/successor-root-public.pem" \
+            "$RUNNER_TEMP/orcheastra-v051/receiver-root-custody-policy.json" \
+            "$RUNNER_TEMP/orcheastra-v050/ci-root-public.pem" \
+            "$RUNNER_TEMP/orcheastra-v050/root-transition-certificate.json"
+
       - name: Restart only the ephemeral PostgreSQL CI service
         run: |
           docker restart "${{ job.services.postgres.id }}"
@@ -390,3 +412,6 @@ jobs:
 
       - name: Reverify v051 root custody evidence after restart
         run: python3 scripts/orcheastra_root_custody_v051.py --verify
+
+      - name: Reverify v052 root incident review gate after restart
+        run: python3 scripts/orcheastra_root_incident_review_v052.py --verify
