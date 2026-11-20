@@ -1549,3 +1549,47 @@ proof of production trust. An actual root emergency needs an
 externally governed, independently verified trust ceremony
 and a human decision outside this test gate. PR #348 stays DRAFT,
 GO-13 HOLD; no merge, publication or deployment.
+
+## v0.53 owner JA/NEE decision dossier with immutable CI decision log (DRAFT / HOLD)
+
+`scripts/orcheastra_owner_decision_dossier_v053.py` creates a
+CI-only **Owner Decision Dossier** from the verified v0.52
+incident case, signed reviewer quorum, evidence, and v0.51
+custody proof. Each dossier pins their canonical SHA-256 digests,
+an exact recovery scope, and the risks of suspected compromise,
+untrusted replacement, runner-local test trust, and lack of
+production approval. The only presented choices are `JA` and
+`NEE`, but **JA means only that a human-style *review
+decision* was recorded**, never permission to restore or activate
+a root.
+
+The fixture creates one disposable Ed25519 **test-owner** key
+and pins its public fingerprint in a separate test-trust input.
+Both JA and NEE are signed as independent non-executing
+statements binding exact dossier and incident digests, signer,
+`authorization: NONE`, `execution: HOLD`, and
+`root_activation: DENIED`. The two statements race through
+eight concurrent contenders; one atomic SQLite `BEGIN
+IMMEDIATE` transaction may append a decision, and every
+repeated or conflicting decision must fail.
+
+The append-only history stores a genesis-dossier event and at
+most one decision event, each hash chained to its predecessor.
+SQLite triggers reject UPDATE and DELETE. CI rejects invalid
+signatures, altered dossiers, untrusted keys, authority
+escalation, duplicate decisions, in-place rewrite and deletion.
+A separately stored runner-local high-water digest is checked
+with the chain and the chosen signed decision after service
+restart.
+
+**Security boundary:** no real PALACO owner, operator account,
+approval credential or user decision is obtained or impersonated.
+The disposable test key and its pin are created on the same
+ephemeral CI runner; SQLite hash chaining and triggers do not
+protect against a privileged database/file-system administrator
+who can replace both history and its local high-water digest.
+Production needs independently pinned owner identity, off-host
+append-only audit custody, monotonic history anchoring, and
+a separate human authorization ceremony. No actual owner
+JA/NEE decision has been made. `authorization: NONE`,
+`execution: HOLD`; PR #348 DRAFT; GO-13 HOLD.
