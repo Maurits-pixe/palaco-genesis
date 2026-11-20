@@ -1593,3 +1593,40 @@ append-only audit custody, monotonic history anchoring, and
 a separate human authorization ceremony. No actual owner
 JA/NEE decision has been made. `authorization: NONE`,
 `execution: HOLD`; PR #348 DRAFT; GO-13 HOLD.
+
+## v0.54 read-only Owner Decision Presentation Gate (DRAFT / GO-13 HOLD)
+
+`scripts/orcheastra_owner_presentation_v054.py` reads the v0.53
+**CI fixture** decision dossier and ledger **without opening the
+decision database for writing**. It verifies the underlying
+v0.52 incident review, v0.51 root custody signatures, all
+dossier evidence fingerprints, owner **test** signature and trust
+pin, the exact signed JA/NEE choice actually present in the
+two-event SQLite SHA-256 audit chain, the update/delete guards,
+and the separately stored runner-local audit head. It rejects
+a substituted incident, absent risks, altered decision signature,
+a CI owner falsely described as real, an activation request,
+a swapped signed choice, an invalid audit head, or a missing
+ledger before producing any presentation.
+
+The resulting artifacts are `owner-presentation.json` and
+`owner-presentation.html` beneath the ephemeral
+`$RUNNER_TEMP/orcheastra-v054` directory. HTML is deliberately
+**static and non-interactive**: no forms, buttons, scripts,
+network assets, approvals, submissions, deployments or links.
+The report labels the chosen JA/NEE as a **disposable test-key
+decision**, not an owner's actual decision, and exposes the
+risks, proof fingerprints, `authorization: NONE`,
+`execution: HOLD` and `root_activation: DENIED`.
+The JSON/HTML digests are saved in a locally pinned report seal,
+and all evidence is reverified after PostgreSQL restart.
+
+**Non-production boundary:** this does not authenticate the
+actual PALACO owner, deliver a dossier to them, collect an
+owner decision, or publish an app/site. The v0.53 choice was
+recorded by one disposable CI test key. The SQLite audit log,
+presentation and head pins share the same runner and are not
+independent transparency or archival guarantees. Production
+owner presentation requires a trusted identity/session check
+and separately pinned audit provenance. No real human approval
+has occurred. PR #348 DRAFT, GO-13 HOLD; no merge or deployment.
