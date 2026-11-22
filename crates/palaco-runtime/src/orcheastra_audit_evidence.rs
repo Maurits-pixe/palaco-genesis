@@ -111,6 +111,51 @@ pub fn inspect_audit_evidence_lineage(evidence: &[RecoveryEvidence<'_>]) -> Rest
     RestartInspection::ReviewOnly
 }
 
+/// Requires one stable signer identity and validity window per audit batch.
+///
+/// Every original evidence bundle must reference the same key ID, public key,
+/// and authorized checkpoint interval. Key registry revisions may increase
+/// but cannot decrease; changes to key identity or validity window are denied
+/// pending an independently authenticated rotation policy. This is a local
+/// consistency gate, not proof of key provenance or genuine signatures.
+#[must_use]
+pub fn inspect_audit_evidence_signers(evidence: &[RecoveryEvidence<'_>]) -> RestartInspection {
+    let Some(first) = evidence.first() else {
+        return RestartInspection::Deny;
+    };
+    if evidence.len() > MAX_AUDIT_LINKS {
+        return RestartInspection::Deny;
+    }
+    let baseline = first.trusted_key;
+    if baseline.key_id.is_empty()
+        || baseline.public_key == [0; 32]
+        || baseline.first_sequence == 0
+        || baseline.first_sequence > baseline.last_sequence
+    {
+        return RestartInspection::Deny;
+    }
+    let mut last_registry = 0;
+    for source in evidence {
+        let key = source.trusted_key;
+        if key.revoked
+            || key.key_id != baseline.key_id
+            || key.public_key != baseline.public_key
+            || key.first_sequence != baseline.first_sequence
+            || key.last_sequence != baseline.last_sequence
+            || key.registry_sequence == 0
+            || key.registry_sequence < last_registry
+            || source.signed.key_id != key.key_id
+            || source.signed.public_key != key.public_key
+            || source.signed.anchor.sequence < key.first_sequence
+            || source.signed.anchor.sequence > key.last_sequence
+        {
+            return RestartInspection::Deny;
+        }
+        last_registry = key.registry_sequence;
+    }
+    RestartInspection::ReviewOnly
+}
+
 /// Reviews audit-chain linkage and recomputes every corresponding receipt.
 ///
 /// Denies empty/mismatched evidence batches and any receipt that cannot be
@@ -130,6 +175,7 @@ pub fn inspect_audit_evidence(
         || evidence.len() != receipts.len()
         || inspect_audit_evidence_budget(evidence) != RestartInspection::ReviewOnly
         || inspect_audit_evidence_lineage(evidence) != RestartInspection::ReviewOnly
+        || inspect_audit_evidence_signers(evidence) != RestartInspection::ReviewOnly
         || inspect_bound_audit_receipts(links, receipts, expected) != RestartInspection::ReviewOnly
     {
         return RestartInspection::Deny;
@@ -181,7 +227,7 @@ pub fn inspect_custodied_audit_evidence(
 mod tests {
     use super::{
         inspect_audit_evidence, inspect_audit_evidence_budget, inspect_audit_evidence_lineage,
-        inspect_custodied_audit_evidence, RecoveryEvidence,
+        inspect_audit_evidence_signers, inspect_custodied_audit_evidence, RecoveryEvidence,
     };
     use crate::orcheastra_audit_chain::{audit_link_digest, AuditChainExpectation, AuditLink};
     use crate::orcheastra_audit_custody::{AuditCustodyWitness, CustodyVerdict};
@@ -464,6 +510,117 @@ mod tests {
         assert_eq!(
             inspect_audit_evidence_lineage(&contiguous),
             RestartInspection::ReviewOnly
+        );
+        assert_eq!(
+            inspect_audit_evidence_signers(&contiguous),
+            RestartInspection::ReviewOnly
+        );
+        let swapped_key = TrustedKey {
+            key_id: "swapped",
+            public_key: trusted_key.public_key,
+            registry_sequence: trusted_key.registry_sequence,
+            first_sequence: trusted_key.first_sequence,
+            last_sequence: trusted_key.last_sequence,
+            revoked: false,
+        };
+        let switched = [
+            RecoveryEvidence {
+                checkpoints: &checkpoints,
+                payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            },
+            RecoveryEvidence {
+                checkpoints: &following_checkpoint,
+                payloads: following_payloads,
+                signed: &signed,
+                trusted_key: &swapped_key,
+                floor: &floor,
+            },
+        ];
+        assert_eq!(
+            inspect_audit_evidence_signers(&switched),
+            RestartInspection::Deny
+        );
+        let expanded_key = TrustedKey {
+            key_id: trusted_key.key_id,
+            public_key: trusted_key.public_key,
+            registry_sequence: trusted_key.registry_sequence,
+            first_sequence: trusted_key.first_sequence,
+            last_sequence: 11,
+            revoked: false,
+        };
+        let changed_range = [
+            RecoveryEvidence {
+                checkpoints: &checkpoints,
+                payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            },
+            RecoveryEvidence {
+                checkpoints: &following_checkpoint,
+                payloads: following_payloads,
+                signed: &signed,
+                trusted_key: &expanded_key,
+                floor: &floor,
+            },
+        ];
+        assert_eq!(
+            inspect_audit_evidence_signers(&changed_range),
+            RestartInspection::Deny
+        );
+        let newer_key = TrustedKey {
+            key_id: trusted_key.key_id,
+            public_key: trusted_key.public_key,
+            registry_sequence: 4,
+            first_sequence: trusted_key.first_sequence,
+            last_sequence: trusted_key.last_sequence,
+            revoked: false,
+        };
+        let decreasing_registry = [
+            RecoveryEvidence {
+                checkpoints: &checkpoints,
+                payloads,
+                signed: &signed,
+                trusted_key: &newer_key,
+                floor: &floor,
+            },
+            RecoveryEvidence {
+                checkpoints: &following_checkpoint,
+                payloads: following_payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            },
+        ];
+        assert_eq!(
+            inspect_audit_evidence_signers(&decreasing_registry),
+            RestartInspection::Deny
+        );
+        let revoked_key = TrustedKey {
+            key_id: trusted_key.key_id,
+            public_key: trusted_key.public_key,
+            registry_sequence: trusted_key.registry_sequence,
+            first_sequence: trusted_key.first_sequence,
+            last_sequence: trusted_key.last_sequence,
+            revoked: true,
+        };
+        let revoked = [RecoveryEvidence {
+            checkpoints: &checkpoints,
+            payloads,
+            signed: &signed,
+            trusted_key: &revoked_key,
+            floor: &floor,
+        }];
+        assert_eq!(
+            inspect_audit_evidence_signers(&revoked),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_audit_evidence_signers(&[]),
+            RestartInspection::Deny
         );
         let replay = [
             RecoveryEvidence {
