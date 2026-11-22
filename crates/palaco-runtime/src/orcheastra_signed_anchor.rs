@@ -96,9 +96,8 @@ pub fn anchor_message_v2(anchor: &RestartAnchor, key: &TrustedKey<'_>) -> Option
         return None;
     }
     let key_id_length = u16::try_from(key.key_id.len()).ok()?;
-    let mut message = Vec::with_capacity(
-        ANCHOR_DOMAIN_V2.len() + 2 + key.key_id.len() + 32 + 32 + 72,
-    );
+    let mut message =
+        Vec::with_capacity(ANCHOR_DOMAIN_V2.len() + 2 + key.key_id.len() + 32 + 32 + 72);
     message.extend_from_slice(ANCHOR_DOMAIN_V2);
     message.extend_from_slice(&key_id_length.to_be_bytes());
     message.extend_from_slice(key.key_id.as_bytes());
@@ -159,8 +158,9 @@ pub fn inspect_signed_anchor(
 #[cfg(test)]
 mod tests {
     use super::{
-        anchor_message, anchor_message_v2, inspect_signed_anchor, Ed25519Verifier, SignatureVerdict,
-        SignedAnchor, TrustedKey, ANCHOR_DOMAIN, ANCHOR_DOMAIN_V2, MAX_KEY_ID_BYTES,
+        anchor_message, anchor_message_v2, inspect_signed_anchor, Ed25519Verifier,
+        SignatureVerdict, SignedAnchor, TrustedKey, ANCHOR_DOMAIN, ANCHOR_DOMAIN_V2,
+        MAX_KEY_ID_BYTES,
     };
     use crate::orcheastra_restart::{RestartAnchor, RestartInspection};
 
@@ -317,16 +317,28 @@ mod tests {
         assert_ne!(message, anchor_message(&signed.anchor));
         let mut modified = key.clone();
         modified.registry_sequence += 1;
-        assert_ne!(Some(message.clone()), anchor_message_v2(&signed.anchor, &modified));
+        assert_ne!(
+            Some(message.clone()),
+            anchor_message_v2(&signed.anchor, &modified)
+        );
         modified = key.clone();
         modified.first_sequence += 1;
-        assert_ne!(Some(message.clone()), anchor_message_v2(&signed.anchor, &modified));
+        assert_ne!(
+            Some(message.clone()),
+            anchor_message_v2(&signed.anchor, &modified)
+        );
         modified = key.clone();
         modified.last_sequence -= 1;
-        assert_ne!(Some(message.clone()), anchor_message_v2(&signed.anchor, &modified));
+        assert_ne!(
+            Some(message.clone()),
+            anchor_message_v2(&signed.anchor, &modified)
+        );
         modified = key.clone();
         modified.key_id = "other-key-a";
-        assert_ne!(Some(message.clone()), anchor_message_v2(&signed.anchor, &modified));
+        assert_ne!(
+            Some(message.clone()),
+            anchor_message_v2(&signed.anchor, &modified)
+        );
         modified = key.clone();
         modified.public_key[0] ^= 1;
         assert_ne!(Some(message), anchor_message_v2(&signed.anchor, &modified));
