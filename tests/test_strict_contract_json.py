@@ -6,6 +6,7 @@ from pathlib import Path
 from tools.strict_contract_json import (
     MAX_DOCUMENT_BYTES,
     MAX_NESTING_DEPTH,
+    MAX_NUMBER_TOKEN_CHARS,
     load_strict_json,
 )
 
@@ -175,6 +176,20 @@ class StrictContractJsonTests(unittest.TestCase):
     def test_integer_zero_and_signed_zero_accepted(self):
         self.assertEqual(self.load_raw('{"zero":0,"signed":-0}'),
                          {"zero": 0, "signed": 0})
+
+    def test_overlong_float_token_rejected(self):
+        token = "1." + "0" * MAX_NUMBER_TOKEN_CHARS
+        with self.assertRaisesRegex(ValueError, "numeric token exceeds length limit"):
+            self.load_raw('{"ratio":' + token + '}')
+
+    def test_maximum_length_float_token_accepted(self):
+        token = "1." + "0" * (MAX_NUMBER_TOKEN_CHARS - 2)
+        self.assertEqual(self.load_raw('{"ratio":' + token + '}'), {"ratio": 1.0})
+
+    def test_overlong_integer_token_rejected(self):
+        token = "9" * (MAX_NUMBER_TOKEN_CHARS + 1)
+        with self.assertRaisesRegex(ValueError, "numeric token exceeds length limit"):
+            self.load_raw('{"ratio":' + token + '}')
 
     def test_positive_exponent_overflow_rejected(self):
         with self.assertRaisesRegex(ValueError, "non-finite"):
