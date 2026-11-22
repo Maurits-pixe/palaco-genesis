@@ -44,4 +44,4 @@ jobs:
       - name: Validate fail-closed interface contract
         run: python3 tools/validate_boundary_contract.py
       - name: Run positive and negative contract tests
-        run: python3 -m unittest discover -s tests -p 'test_*contract.py' -v
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
