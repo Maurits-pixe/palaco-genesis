@@ -434,8 +434,7 @@ mod tests {
             inspect_audit_evidence_lineage(&evidence),
             RestartInspection::ReviewOnly
         );
-        let next_snapshot =
-            digest_snapshot(8, &snapshot, b"next").unwrap_or([0; 32]);
+        let next_snapshot = digest_snapshot(8, &snapshot, b"next").unwrap_or([0; 32]);
         let following_checkpoint = [RestartCheckpoint {
             sequence: 8,
             predecessor_digest: snapshot,
