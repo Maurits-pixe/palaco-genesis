@@ -14,6 +14,11 @@ bounded strict JSON reader before encoding.
 - Both Python and Node.js canonicalizers enforce at most **64 levels** of
   array/object nesting, including for in-memory objects; a 65th level fails.
 - Non-NFC Unicode strings are **rejected**, not silently normalized.
+- The bounded Python contract reader also rejects **nonzero decimal values
+  that underflow to floating-point zero** (for example `1e-999`).
+  Genuine zeros such as `0e-999` and signed zero are still accepted.
+  Nonzero finite values that round to other nonzero floats are not thereby
+  guaranteed exact; this guard only prevents complete underflow to zero.
 - The bounded Python contract reader rejects decimal exponent overflows
   (e.g. `1e400`) that would decode as Infinity. Finite JSON floats are
   still accepted by the design-time reader when allowed by the contract
