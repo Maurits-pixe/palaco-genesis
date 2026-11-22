@@ -322,11 +322,12 @@ mod tests {
         }
     }
 
-    // A rejection during preflight must not call an external custody adapter.
-    struct PanicCustody;
-    impl AuditCustodyWitness for PanicCustody {
+    // Tracks external callbacks without using panic or shared locks.
+    struct CountingCustody(std::cell::Cell<usize>);
+    impl AuditCustodyWitness for CountingCustody {
         fn verify_expectation(&self, _expectation: &AuditChainExpectation) -> CustodyVerdict {
-            panic!("custody must not be reached for invalid preflight evidence");
+            self.0.set(self.0.get() + 1);
+            CustodyVerdict::Verified
         }
     }
 
@@ -423,13 +424,14 @@ mod tests {
             RestartInspection::Deny
         );
 
+        let custody_counter = CountingCustody(std::cell::Cell::new(0));
         assert_eq!(
             inspect_custodied_audit_evidence(
                 &links,
                 &receipts,
                 &[],
                 Some(&expected),
-                Some(&PanicCustody),
+                Some(&custody_counter),
                 &verifier,
             ),
             RestartInspection::Deny
@@ -447,11 +449,13 @@ mod tests {
                 &receipts,
                 &invalid_payloads,
                 Some(&expected),
-                Some(&PanicCustody),
+                Some(&custody_counter),
                 &verifier,
             ),
             RestartInspection::Deny
         );
+
+        assert_eq!(custody_counter.0.get(), 0);
 
         let tampered_payloads: &[&[u8]] = &[b"ORIGINAL"];
         let altered = [RecoveryEvidence {
