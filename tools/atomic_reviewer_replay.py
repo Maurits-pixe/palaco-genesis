@@ -19,6 +19,7 @@ floor = _load("palaco_atomic_floor", "local_reviewer_revision_floor.py")
 reviewers = _load("palaco_atomic_reviewer", "signed_reviewer_registry.py")
 signed = _load("palaco_atomic_signed", "signed_evidence_envelope.py")
 intake = _load("palaco_atomic_intake", "local_evidence_intake.py")
+audit = _load("palaco_atomic_audit", "local_audit_chain.py")
 MAX_BATCH = 10000
 
 
@@ -90,6 +91,7 @@ def inspect_and_index(database, items, registry, issuer_roots, evidence_keys,
     try:
         conn.execute("BEGIN IMMEDIATE")
         floor._schema(conn)
+        audit._schema(conn)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS seen_candidate_ids(
                 record_id TEXT PRIMARY KEY NOT NULL,
@@ -114,6 +116,7 @@ def inspect_and_index(database, items, registry, issuer_roots, evidence_keys,
                 ON CONFLICT(issuer_key_id) DO UPDATE SET
                 revision=excluded.revision, snapshot_digest=excluded.snapshot_digest
             """, (issuer_id, revision, digest))
+            audit.append(conn, "registry-revision", issuer_id, f"revision-{revision}:{digest}")
         for pos, meta in accepted:
             try:
                 conn.execute("""
@@ -125,6 +128,7 @@ def inspect_and_index(database, items, registry, issuer_roots, evidence_keys,
                                   "reason": "previously-seen-record-id",
                                   "record_id": meta["record_id"]}
             else:
+                audit.append(conn, "candidate-indexed", meta["record_id"], meta["lineage_id"])
                 decisions[pos] = {"index": pos, "state": "pending-review",
                                   "reason": "integrity-and-signature-only-authority-unverified",
                                   "record_id": meta["record_id"]}
