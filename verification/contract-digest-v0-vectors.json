@@ -1,0 +1,59 @@
+{
+  "profile": "PALACO-CJSON-v0",
+  "domain_hex": "50414c41434f2d434a534f4e2d763000",
+  "vectors": [
+    {
+      "name": "empty_object",
+      "value": {},
+      "canonical_hex": "7b7d",
+      "sha256": "9893f244103a654c2ed0f837dd41b4c7e448fac580df4e11d3e423c8ec00138a"
+    },
+    {
+      "name": "nested_keys",
+      "value": {
+        "z": 1,
+        "a": {
+          "b": true,
+          "a": null
+        }
+      },
+      "canonical_hex": "7b2261223a7b2261223a6e756c6c2c2262223a747275657d2c227a223a317d",
+      "sha256": "174fc28b8b1c2b88eb5038daac2e1a4c978f663dfd6daf716768b1b2b1d979bb"
+    },
+    {
+      "name": "unicode_nfc",
+      "value": {
+        "name": "Citadél",
+        "symbol": "🚀"
+      },
+      "canonical_hex": "7b226e616d65223a224369746164c3a96c222c2273796d626f6c223a22f09f9a80227d",
+      "sha256": "f48e494ac524fc7809d8db6619e96dca53a9c595176d2afea9665f94c8984d0a"
+    },
+    {
+      "name": "safe_integers",
+      "value": {
+        "min": -9007199254740991,
+        "max": 9007199254740991,
+        "zero": 0
+      },
+      "canonical_hex": "7b226d6178223a393030373139393235343734303939312c226d696e223a2d393030373139393235343734303939312c227a65726f223a307d",
+      "sha256": "18cc3b1324d55d246274002a0fb901654e8a97ab30c8c11c767b3a5c343a5d6d"
+    },
+    {
+      "name": "arrays_and_hold",
+      "value": {
+        "records": [
+          {
+            "id": "a",
+            "valid": false
+          },
+          null,
+          3
+        ],
+        "release_gate": "HOLD"
+      },
+      "canonical_hex": "7b227265636f726473223a5b7b226964223a2261222c2276616c6964223a66616c73657d2c6e756c6c2c335d2c2272656c656173655f67617465223a22484f4c44227d",
+      "sha256": "c1029f1e4e18c8452ed1481055112ceae28624ed2e2ad1b449b3c3a39d39183d"
+    }
+  ]
+}
