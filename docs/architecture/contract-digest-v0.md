@@ -23,6 +23,12 @@ bounded strict JSON reader before encoding.
   Genuine zeros such as `0e-999` and signed zero are still accepted.
   Nonzero finite values that round to other nonzero floats are not thereby
   guaranteed exact; this guard only prevents complete underflow to zero.
+- The bounded Python contract reader now rejects integer literals outside
+  **±(2^53−1)** during JSON decoding, using a lexically bounded check
+  before constructing large Python integers. Safe boundary values and
+  `-0` remain valid. This aligns design-time admission with the existing
+  restricted CJSON digest profile; it does not assert that Node.js's
+  general-purpose JSON parser is a strict untrusted-input reader.
 - The bounded Python contract reader rejects decimal exponent overflows
   (e.g. `1e400`) that would decode as Infinity. Finite JSON floats are
   still accepted by the design-time reader when allowed by the contract
