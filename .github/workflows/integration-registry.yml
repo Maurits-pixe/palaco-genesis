@@ -52,6 +52,8 @@ on:
       - 'tests/test_signed_review_history_anchor.py'
       - 'tools/offline_review_anchor_handoff.py'
       - 'tests/test_offline_review_anchor_handoff.py'
+      - 'tools/signed_handoff_receipt.py'
+      - 'tests/test_signed_handoff_receipt.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -105,6 +107,8 @@ on:
       - 'tests/test_signed_review_history_anchor.py'
       - 'tools/offline_review_anchor_handoff.py'
       - 'tests/test_offline_review_anchor_handoff.py'
+      - 'tools/signed_handoff_receipt.py'
+      - 'tests/test_signed_handoff_receipt.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
