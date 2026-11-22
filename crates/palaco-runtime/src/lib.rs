@@ -27,6 +27,9 @@ pub mod orcheastra_audit_receipts;
 /// End-to-end read-only audit-link verification against original recovery evidence.
 pub mod orcheastra_audit_evidence;
 
+/// Independent custody-witness policy boundary for audit endpoints.
+pub mod orcheastra_audit_custody;
+
 use palaco_citadel::{BoundaryDisposition, ExecutionBoundary};
 use palaco_foundation::{
     errors::RevalidationError,
