@@ -18,6 +18,8 @@ on:
       - 'tests/test_local_replay_index.py'
       - 'tools/signed_evidence_envelope.py'
       - 'tests/test_signed_evidence_envelope.py'
+      - 'tools/signed_replay_pipeline.py'
+      - 'tests/test_signed_replay_pipeline.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -37,6 +39,8 @@ on:
       - 'tests/test_local_replay_index.py'
       - 'tools/signed_evidence_envelope.py'
       - 'tests/test_signed_evidence_envelope.py'
+      - 'tools/signed_replay_pipeline.py'
+      - 'tests/test_signed_replay_pipeline.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
