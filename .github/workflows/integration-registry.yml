@@ -1,0 +1,39 @@
+name: PALACO Integration Registry Contract
+
+on:
+  pull_request:
+    paths:
+      - 'ecosystem/integration-registry.v0.1.json'
+      - 'tools/validate_integration_registry.py'
+      - 'tests/test_integration_registry.py'
+      - '.github/workflows/integration-registry.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ecosystem/integration-registry.v0.1.json'
+      - 'tools/validate_integration_registry.py'
+      - 'tests/test_integration_registry.py'
+      - '.github/workflows/integration-registry.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-contract:
+    name: Verify integration graph (HOLD)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate design-time registry
+        run: python3 tools/validate_integration_registry.py
+      - name: Run positive and negative contract tests
+        run: python3 -m unittest discover -s tests -p 'test_integration_registry.py' -v
