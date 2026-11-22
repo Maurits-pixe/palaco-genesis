@@ -41,8 +41,11 @@ def _parse_finite_float(token):
 
 
 def _check_depth(document):
-    """Bound nesting before invoking json.loads; ignore delimiters in strings."""
-    depth = 0
+    """Bound and pair delimiters before json.loads, ignoring quoted content.
+
+    This structural guard is not a replacement for JSON grammar validation.
+    """
+    openings = []
     quoted = False
     escaped = False
     for char in document:
@@ -56,15 +59,15 @@ def _check_depth(document):
         elif char == '"':
             quoted = True
         elif char in "[{":
-            depth += 1
-            if depth > MAX_NESTING_DEPTH:
+            openings.append(char)
+            if len(openings) > MAX_NESTING_DEPTH:
                 raise ValueError("JSON nesting depth exceeds limit")
         elif char in "]}":
-            depth -= 1
-            if depth < 0:
-                raise ValueError("unbalanced JSON nesting")
-    if depth != 0 or quoted:
-        raise ValueError("unbalanced JSON nesting")
+            expected = "[" if char == "]" else "{"
+            if not openings or openings.pop() != expected:
+                raise ValueError("mismatched JSON delimiters")
+    if openings or quoted:
+        raise ValueError("unbalanced JSON nesting or unterminated string")
 
 
 def _reject_noncanonical_text(value):
