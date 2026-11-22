@@ -14,7 +14,7 @@ npm ci --prefix native-staging --ignore-scripts --no-audit --no-fund
 npm run test:ci
 ```
 
-`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer/lifecycle checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v300.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
+`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer/lifecycle/handover checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v301.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
 
 ## Source continuity and status
 
@@ -171,4 +171,45 @@ After draining, this backend drops its own signing-handle and registry-callback 
 
 The v300 contract suite covers concurrent drain barriers, stops during both registry lookups, provider failure, synchronous/reentrant stop, admission validation and producer/verifier use before and after stop. Three additional native scenarios run real Ed25519 cryptography and selected One PostgreSQL column checks through the existing issuer/verifier/reader/route: successful OPEN operation, stop after signing with no exposed result, and later refusal while the fixture's key/session state remains active. Authentication remains a synthetic server binding; the original One SQL function chain and real authentication are not executed.
 
-`test:ci` now uses `run-ci-v300.mjs`, requires all three lifecycle scenarios alongside the preserved suites and writes `evidence/CI-RESULT-v300.json`. AI review: TRIAS distinguishes stopping one software instance from revocation or authority; ORACLE requires observed DRAINING/STOPPED transitions and a withheld cryptographic result in the native chain; MENTOR supplies an idempotent completion signal and documents nonreturning providers. These are three lenses applied by one assistant. Acceptance HOLD; authorization NONE.
+The preserved `run-ci-v300.mjs` requires all three lifecycle scenarios alongside the earlier suites and writes `evidence/CI-RESULT-v300.json`. AI review: TRIAS distinguishes stopping one software instance from revocation or authority; ORACLE requires observed DRAINING/STOPPED transitions and a withheld cryptographic result in the native chain; MENTOR supplies an idempotent completion signal and documents nonreturning providers. These are three lenses applied by one assistant. Acceptance HOLD; authorization NONE.
+
+## Explicit same-key backend handover (v301)
+
+`createRioOneSignerHandoverV301` owns successive v300 software-backend instances behind one stable `signSessionStatement` callback. This lets an existing v298 issuer keep its callback while a trusted host explicitly replaces a completely retired software instance. Tenant, HTTPS origin, issuer/public-key pin, clock and capacity remain fixed for this controller. Replacement is not key rotation, key enrollment, a new session, or revocation.
+
+```js
+const host = createRioOneSignerHandoverV301({
+  tenantRef, allowedOrigin, issuerKey, privateSigningKey,
+  readIssuerKeyState, now, maxConcurrentSignatures: 1,
+});
+// Configure the existing issuer once with host.signSessionStatement.
+const expectedGeneration = host.getStatus().generation;
+const drained = host.retireGeneration({expectedGeneration});
+if (drained !== null) {
+  await drained;
+  const installed = host.installReplacement({
+    expectedGeneration, privateSigningKey: replacementHandle,
+    readIssuerKeyState: replacementRegistryReader,
+  });
+  // null means refused; a receipt reports structural installation only.
+}
+// Final service shutdown: irreversible for this controller.
+await host.close();
+```
+
+| Controller state | Meaning |
+| --- | --- |
+| SERVING | Current backend is OPEN; signing readiness has not been proved by this label |
+| RETIRING | Admitted work is draining and its result will be withheld |
+| RETIRED | Current backend is STOPPED; explicit replacement may be attempted |
+| CLOSED | Terminal admission gate; inspect backendState/inFlight for drain completion |
+
+Generation numbers start at one and advance only after installation. A stale expected generation, extra configuration fields, accessors, an OPEN/DRAINING backend or a closed controller refuse installation. Concurrent/reentrant install attempts cannot install two generations. An invalid constructor configuration leaves the retired generation in place. `close()` synchronously closes admission, returns the current backend's idempotent stop promise and prevents all later installations. A frozen status contains no signing handle or registry callback.
+
+The controller invokes no authentication, registry or signing providers during construction/installation. Its installation receipt explicitly reports `readiness: NOT_CHECKED`. A well-shaped private handle for a different key can be structurally installed, but subsequent signing fails the unchanged independent public-pin verification and returns no signature; there is no fallback to a retired instance. Trusted hosts must supply the approved same-key handle and registry service. A new public signing key requires separate coordinated issuer/verifier configuration outside this controller.
+
+Drain completion still covers only this controller's admitted backend signing work. A nonreturning provider remains pending; there is no forced cancellation or background queue. Other controllers/processes and external key references remain outside the boundary. CLOSED may have backendState DRAINING until the provider settles. This does not destroy/zeroize a key, revoke an already exposed statement, cancel all upstream inspections or provide hardware isolation. The v299 software-key protection limits and the requirement for genuine One authentication remain unchanged.
+
+Fifteen contract cases exercise real Ed25519 signing across generations, drain barriers, stale/duplicate commands, invalid/mismatched handles, immutable scope, accessor/reentrant configuration, terminal close and the unchanged producer/verifier callback. Four new native scenarios reuse one actual RIO route instance: generation-one success; retirement during the post-sign registry lookup; explicit generation-two installation with stale-command refusal and successful inspection; terminal close with active fixture key/session state unchanged. SQL uses selected One columns and a synthetic authenticated-server binding, not the original One function chain or a real IdP.
+
+`test:ci` uses `run-ci-v301.mjs`, requires the four handover records alongside preserved suites and writes `evidence/CI-RESULT-v301.json`. AI review: TRIAS separates backend generation from identity/key authority; ORACLE requires the same route to succeed across explicit replacement and refuses to infer readiness from construction; MENTOR provides a stable callback and expected-generation checks. These are three lenses applied by one assistant, not independent approvals. Acceptance HOLD; authorization NONE.
