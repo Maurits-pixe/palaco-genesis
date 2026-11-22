@@ -170,7 +170,7 @@ class StrictContractJsonTests(unittest.TestCase):
             self.load_raw('{"records":[{"value":9007199254740993}]}')
 
     def test_very_long_integer_rejected_without_bigint_conversion(self):
-        with self.assertRaisesRegex(ValueError, "safe range"):
+        with self.assertRaisesRegex(ValueError, "numeric token exceeds length limit"):
             self.load_raw('{"value":' + "9" * 5000 + '}')
 
     def test_integer_zero_and_signed_zero_accepted(self):
