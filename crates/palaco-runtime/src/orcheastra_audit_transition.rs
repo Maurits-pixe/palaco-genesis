@@ -103,6 +103,39 @@ pub fn inspect_transition_snapshot_link(
     RestartInspection::ReviewOnly
 }
 
+/// Requires an unchanged signer identity across two audit segments.
+///
+/// This deliberately denies all key rotations until a separate, independently
+/// authenticated rotation policy is implemented. Matching caller-provided keys
+/// are only a consistency check, not proof of key ownership or authenticity.
+#[must_use]
+pub fn inspect_transition_signer_continuity(
+    previous: &AuditSegmentEvidence<'_>,
+    current: &AuditSegmentEvidence<'_>,
+) -> RestartInspection {
+    let (Some(previous_source), Some(current_source)) =
+        (previous.evidence.last(), current.evidence.first())
+    else {
+        return RestartInspection::Deny;
+    };
+    let previous_key = previous_source.trusted_key;
+    let current_key = current_source.trusted_key;
+    if previous_key.revoked
+        || current_key.revoked
+        || previous_key.key_id.is_empty()
+        || previous_key.key_id != current_key.key_id
+        || previous_key.public_key == [0; 32]
+        || previous_key.public_key != current_key.public_key
+        || previous_source.signed.key_id != previous_key.key_id
+        || current_source.signed.key_id != current_key.key_id
+        || previous_source.signed.public_key != previous_key.public_key
+        || current_source.signed.public_key != current_key.public_key
+    {
+        return RestartInspection::Deny;
+    }
+    RestartInspection::ReviewOnly
+}
+
 /// Requires consecutive witnessed segments and complete recovery evidence.
 ///
 /// Checks both source-evidence batches as well as the exact transition between
@@ -117,6 +150,7 @@ pub fn inspect_custodied_audit_transition(
 ) -> RestartInspection {
     if inspect_transition_monotonicity(previous, current) != RestartInspection::ReviewOnly
         || inspect_transition_snapshot_link(previous, current) != RestartInspection::ReviewOnly
+        || inspect_transition_signer_continuity(previous, current) != RestartInspection::ReviewOnly
         || inspect_audit_continuity(
             previous.links,
             Some(previous.expected),
@@ -149,7 +183,8 @@ pub fn inspect_custodied_audit_transition(
 mod tests {
     use super::{
         inspect_custodied_audit_transition, inspect_transition_monotonicity,
-        inspect_transition_snapshot_link, AuditSegmentEvidence,
+        inspect_transition_signer_continuity, inspect_transition_snapshot_link,
+        AuditSegmentEvidence,
     };
     use crate::orcheastra_audit_chain::{audit_link_digest, AuditChainExpectation, AuditLink};
     use crate::orcheastra_audit_custody::{AuditCustodyWitness, CustodyVerdict};
@@ -519,6 +554,95 @@ mod tests {
         };
         assert_eq!(
             inspect_transition_snapshot_link(&previous, &replay_current),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &current),
+            RestartInspection::ReviewOnly
+        );
+        let different_key_id = TrustedKey {
+            key_id: "different-key",
+            public_key: key.public_key,
+            registry_sequence: key.registry_sequence,
+            first_sequence: key.first_sequence,
+            last_sequence: key.last_sequence,
+            revoked: false,
+        };
+        let different_identity = [RecoveryEvidence {
+            checkpoints: &checkpoints_current,
+            payloads: payloads_current,
+            signed: &signed_current,
+            trusted_key: &different_key_id,
+            floor: &floor_current,
+        }];
+        let rotated_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &different_identity,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &rotated_current),
+            RestartInspection::Deny
+        );
+        let different_public_key = TrustedKey {
+            key_id: key.key_id,
+            public_key: [7; 32],
+            registry_sequence: key.registry_sequence,
+            first_sequence: key.first_sequence,
+            last_sequence: key.last_sequence,
+            revoked: false,
+        };
+        let different_identity = [RecoveryEvidence {
+            checkpoints: &checkpoints_current,
+            payloads: payloads_current,
+            signed: &signed_current,
+            trusted_key: &different_public_key,
+            floor: &floor_current,
+        }];
+        let rotated_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &different_identity,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &rotated_current),
+            RestartInspection::Deny
+        );
+        let revoked_key = TrustedKey {
+            key_id: key.key_id,
+            public_key: key.public_key,
+            registry_sequence: key.registry_sequence,
+            first_sequence: key.first_sequence,
+            last_sequence: key.last_sequence,
+            revoked: true,
+        };
+        let revoked_identity = [RecoveryEvidence {
+            checkpoints: &checkpoints_current,
+            payloads: payloads_current,
+            signed: &signed_current,
+            trusted_key: &revoked_key,
+            floor: &floor_current,
+        }];
+        let revoked_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &revoked_identity,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &revoked_current),
+            RestartInspection::Deny
+        );
+        let missing_identity = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &[],
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &missing_identity),
             RestartInspection::Deny
         );
         let witness = TestWitness([expected_previous, expected_current]);
