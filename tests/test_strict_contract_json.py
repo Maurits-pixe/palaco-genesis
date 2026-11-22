@@ -81,6 +81,30 @@ class StrictContractJsonTests(unittest.TestCase):
             with self.assertRaises(UnicodeDecodeError):
                 load_strict_json(path)
 
+    def test_utf8_bom_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "with-bom.json"
+            path.write_bytes(bytes.fromhex("efbbbf") + b'{"gate":"HOLD"}')
+            with self.assertRaisesRegex(ValueError, "byte-order mark"):
+                load_strict_json(path)
+
+    def test_utf16_little_endian_bom_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "utf16-le.json"
+            path.write_bytes(bytes.fromhex("fffe") + '{}'.encode("utf-16-le"))
+            with self.assertRaisesRegex(ValueError, "byte-order mark"):
+                load_strict_json(path)
+
+    def test_utf16_big_endian_bom_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "utf16-be.json"
+            path.write_bytes(bytes.fromhex("feff") + '{}'.encode("utf-16-be"))
+            with self.assertRaisesRegex(ValueError, "byte-order mark"):
+                load_strict_json(path)
+
+    def test_clean_utf8_without_bom_accepted(self):
+        self.assertEqual(self.load_raw('{"gate":"HOLD"}'), {"gate": "HOLD"})
+
     def test_unpaired_high_surrogate_value_rejected(self):
         with self.assertRaisesRegex(ValueError, "unpaired Unicode surrogate"):
             self.load_raw(r'{"name":"\ud800"}')
