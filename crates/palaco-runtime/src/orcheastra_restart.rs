@@ -78,9 +78,54 @@ pub fn inspect_restart(
     RestartInspection::ReviewOnly
 }
 
+
+/// Inspects a consecutive, in-memory checkpoint chain against its latest anchor.
+///
+/// Each link must refer to the preceding snapshot digest, sequence numbers must
+/// be consecutive, and every link must be committed and unblocked. The anchor
+/// is checked on the last link. This is not proof of chain authenticity, disk
+/// durability or resistance to an attacker who controls both chain and anchor.
+#[must_use]
+pub fn inspect_restart_chain(
+    checkpoints: &[RestartCheckpoint],
+    anchor: Option<&RestartAnchor>,
+) -> RestartInspection {
+    let Some(latest) = checkpoints.last() else {
+        return RestartInspection::Deny;
+    };
+    if inspect_restart(Some(latest), anchor) != RestartInspection::ReviewOnly {
+        return RestartInspection::Deny;
+    }
+    for checkpoint in checkpoints {
+        if !checkpoint.committed
+            || checkpoint.hold
+            || checkpoint.revoked
+            || checkpoint.sequence == 0
+            || checkpoint.snapshot_digest == [0; 32]
+            || checkpoint.predecessor_digest == [0; 32]
+        {
+            return RestartInspection::Deny;
+        }
+    }
+    for adjacent in checkpoints.windows(2) {
+        let [previous, current] = adjacent else {
+            return RestartInspection::Deny;
+        };
+        if previous.sequence.checked_add(1) != Some(current.sequence)
+            || current.predecessor_digest != previous.snapshot_digest
+        {
+            return RestartInspection::Deny;
+        }
+    }
+    RestartInspection::ReviewOnly
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{inspect_restart, RestartAnchor, RestartCheckpoint, RestartInspection};
+    use super::{
+        inspect_restart, inspect_restart_chain, RestartAnchor, RestartCheckpoint,
+        RestartInspection,
+    };
 
     fn fixture() -> (RestartCheckpoint, RestartAnchor) {
         (
@@ -113,53 +158,174 @@ mod tests {
     #[test]
     fn missing_evidence_is_denied() {
         let (checkpoint, anchor) = fixture();
-        assert_eq!(inspect_restart(None, Some(&anchor)), RestartInspection::Deny);
-        assert_eq!(inspect_restart(Some(&checkpoint), None), RestartInspection::Deny);
+        assert_eq!(
+            inspect_restart(None, Some(&anchor)),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_restart(Some(&checkpoint), None),
+            RestartInspection::Deny
+        );
     }
 
     #[test]
     fn hold_and_revocation_override_matches() {
         let (mut checkpoint, anchor) = fixture();
         checkpoint.hold = true;
-        assert_eq!(inspect_restart(Some(&checkpoint), Some(&anchor)), RestartInspection::Deny);
+        assert_eq!(
+            inspect_restart(Some(&checkpoint), Some(&anchor)),
+            RestartInspection::Deny
+        );
         checkpoint.hold = false;
         checkpoint.revoked = true;
-        assert_eq!(inspect_restart(Some(&checkpoint), Some(&anchor)), RestartInspection::Deny);
+        assert_eq!(
+            inspect_restart(Some(&checkpoint), Some(&anchor)),
+            RestartInspection::Deny
+        );
     }
 
     #[test]
     fn pending_commit_and_unverified_anchor_are_denied() {
         let (mut checkpoint, mut anchor) = fixture();
         checkpoint.committed = false;
-        assert_eq!(inspect_restart(Some(&checkpoint), Some(&anchor)), RestartInspection::Deny);
+        assert_eq!(
+            inspect_restart(Some(&checkpoint), Some(&anchor)),
+            RestartInspection::Deny
+        );
         checkpoint.committed = true;
         anchor.externally_verified = false;
-        assert_eq!(inspect_restart(Some(&checkpoint), Some(&anchor)), RestartInspection::Deny);
+        assert_eq!(
+            inspect_restart(Some(&checkpoint), Some(&anchor)),
+            RestartInspection::Deny
+        );
     }
 
     #[test]
     fn sequence_rollback_and_digest_changes_are_denied() {
         let (mut checkpoint, anchor) = fixture();
         checkpoint.sequence -= 1;
-        assert_eq!(inspect_restart(Some(&checkpoint), Some(&anchor)), RestartInspection::Deny);
+        assert_eq!(
+            inspect_restart(Some(&checkpoint), Some(&anchor)),
+            RestartInspection::Deny
+        );
         checkpoint.sequence += 1;
         checkpoint.snapshot_digest[0] ^= 1;
-        assert_eq!(inspect_restart(Some(&checkpoint), Some(&anchor)), RestartInspection::Deny);
+        assert_eq!(
+            inspect_restart(Some(&checkpoint), Some(&anchor)),
+            RestartInspection::Deny
+        );
         checkpoint.snapshot_digest[0] ^= 1;
         checkpoint.predecessor_digest[0] ^= 1;
-        assert_eq!(inspect_restart(Some(&checkpoint), Some(&anchor)), RestartInspection::Deny);
+        assert_eq!(
+            inspect_restart(Some(&checkpoint), Some(&anchor)),
+            RestartInspection::Deny
+        );
     }
 
     #[test]
     fn zero_digest_and_genesis_sequence_are_denied() {
         let (mut checkpoint, anchor) = fixture();
         checkpoint.snapshot_digest = [0; 32];
-        assert_eq!(inspect_restart(Some(&checkpoint), Some(&anchor)), RestartInspection::Deny);
+        assert_eq!(
+            inspect_restart(Some(&checkpoint), Some(&anchor)),
+            RestartInspection::Deny
+        );
         checkpoint.snapshot_digest = [7; 32];
         checkpoint.predecessor_digest = [0; 32];
-        assert_eq!(inspect_restart(Some(&checkpoint), Some(&anchor)), RestartInspection::Deny);
+        assert_eq!(
+            inspect_restart(Some(&checkpoint), Some(&anchor)),
+            RestartInspection::Deny
+        );
         checkpoint.predecessor_digest = [6; 32];
         checkpoint.sequence = 0;
-        assert_eq!(inspect_restart(Some(&checkpoint), Some(&anchor)), RestartInspection::Deny);
+        assert_eq!(
+            inspect_restart(Some(&checkpoint), Some(&anchor)),
+            RestartInspection::Deny
+        );
     }
+    #[test]
+    fn linked_chain_is_review_only() {
+        let (latest, anchor) = fixture();
+        let previous = RestartCheckpoint {
+            sequence: 6,
+            snapshot_digest: [6; 32],
+            predecessor_digest: [5; 32],
+            committed: true,
+            hold: false,
+            revoked: false,
+        };
+        assert_eq!(
+            inspect_restart_chain(&[previous, latest], Some(&anchor)),
+            RestartInspection::ReviewOnly
+        );
+    }
+
+    #[test]
+    fn missing_and_gapped_chain_are_denied() {
+        let (latest, anchor) = fixture();
+        assert_eq!(
+            inspect_restart_chain(&[], Some(&anchor)),
+            RestartInspection::Deny
+        );
+        let previous = RestartCheckpoint {
+            sequence: 5,
+            snapshot_digest: [6; 32],
+            predecessor_digest: [4; 32],
+            committed: true,
+            hold: false,
+            revoked: false,
+        };
+        assert_eq!(
+            inspect_restart_chain(&[previous, latest], Some(&anchor)),
+            RestartInspection::Deny
+        );
+    }
+
+    #[test]
+    fn broken_link_and_prior_hold_are_denied() {
+        let (latest, anchor) = fixture();
+        let mut previous = RestartCheckpoint {
+            sequence: 6,
+            snapshot_digest: [8; 32],
+            predecessor_digest: [5; 32],
+            committed: true,
+            hold: false,
+            revoked: false,
+        };
+        assert_eq!(
+            inspect_restart_chain(&[previous, latest], Some(&anchor)),
+            RestartInspection::Deny
+        );
+        previous.snapshot_digest = [6; 32];
+        previous.hold = true;
+        assert_eq!(
+            inspect_restart_chain(&[previous, latest], Some(&anchor)),
+            RestartInspection::Deny
+        );
+    }
+
+    #[test]
+    fn altered_last_anchor_and_uncommitted_predecessor_are_denied() {
+        let (latest, mut anchor) = fixture();
+        let mut previous = RestartCheckpoint {
+            sequence: 6,
+            snapshot_digest: [6; 32],
+            predecessor_digest: [5; 32],
+            committed: true,
+            hold: false,
+            revoked: false,
+        };
+        anchor.externally_verified = false;
+        assert_eq!(
+            inspect_restart_chain(&[previous, latest], Some(&anchor)),
+            RestartInspection::Deny
+        );
+        anchor.externally_verified = true;
+        previous.committed = false;
+        assert_eq!(
+            inspect_restart_chain(&[previous, latest], Some(&anchor)),
+            RestartInspection::Deny
+        );
+    }
+
 }
