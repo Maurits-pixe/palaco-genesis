@@ -78,11 +78,17 @@ function digest(value) {
 
 assert.equal(fixture.profile, 'PALACO-CJSON-v0');
 assert.equal(DOMAIN.toString('hex'), fixture.domain_hex);
-assert.equal(fixture.vectors.length, 5);
+assert.equal(fixture.vectors.length, 9);
 for (const vector of fixture.vectors) {
   assert.equal(canonicalBytes(vector.value).toString('hex'), vector.canonical_hex, vector.name + ' bytes');
   assert.equal(digest(vector.value), vector.sha256, vector.name + ' digest');
 }
+const names = fixture.vectors.map((vector) => vector.name);
+assert.equal(new Set(names).size, names.length, 'reference vector names must be unique');
+assert.ok(names.includes('escaped_controls'));
+assert.ok(names.includes('unicode_key_order'));
+assert.ok(names.includes('line_separators'));
+assert.ok(names.includes('numeric_key_order'));
 assert.throws(() => canonicalBytes({ invalid: Number.MAX_SAFE_INTEGER + 1 }), /safe range/);
 assert.throws(() => canonicalBytes({ invalid: 1.5 }), /non-integer/);
 assert.throws(() => canonicalBytes({ name: 'e\u0301' }), /non-NFC/);
@@ -122,4 +128,4 @@ for (const testCase of negativeCorpus.cases) {
   assert.throws(() => canonicalBytes(candidate), negativePatterns[testCase.reason], testCase.name);
 }
 
-console.log('PASS: 5 positive and 10 shared negative PALACO-CJSON-v0 vectors independently verified with Node.js; HOLD');
+console.log('PASS: 9 positive and 10 shared negative PALACO-CJSON-v0 vectors independently verified with Node.js; HOLD');
