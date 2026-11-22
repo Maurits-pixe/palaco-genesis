@@ -119,6 +119,27 @@ class AtomicReviewerReplayTests(unittest.TestCase):
         self.assertEqual(result["decisions"][0]["reason"], "stale-registry-revision")
         self.assertFalse(self.db.exists())
 
+    def test_revision_and_replay_have_audit_events(self):
+        self.check()
+        result = mod.audit.verify(self.db)
+        self.assertTrue(result["chain_valid"])
+        self.assertEqual(result["events_checked"], 2)
+
+    def test_replay_rejection_does_not_extend_audit(self):
+        self.check()
+        prior = mod.audit.verify(self.db)["head_hash"]
+        self.check()
+        after = mod.audit.verify(self.db)
+        self.assertEqual(after["head_hash"], prior)
+        self.assertEqual(after["events_checked"], 2)
+
+    def test_revocation_update_audited_but_not_indexed(self):
+        self.check()
+        self.check(self.registry(6, revoked=True), [self.item("rec-b")])
+        result = mod.audit.verify(self.db)
+        self.assertTrue(result["chain_valid"])
+        self.assertEqual(result["events_checked"], 3)
+
     def test_input_unchanged(self):
         records = [self.item()]
         previous = copy.deepcopy(records)
