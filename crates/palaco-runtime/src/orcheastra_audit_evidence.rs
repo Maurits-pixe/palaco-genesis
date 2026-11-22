@@ -76,6 +76,41 @@ pub fn inspect_audit_evidence_budget(evidence: &[RecoveryEvidence<'_>]) -> Resta
     RestartInspection::ReviewOnly
 }
 
+/// Requires contiguous original snapshot lineage across audit receipts.
+///
+/// Each individual receipt is revalidated by the caller. This additional
+/// boundary prevents adjacent, individually valid evidence bundles from
+/// representing disconnected, overlapping or replayed checkpoint chains.
+/// A matching hash is only consistency, not authenticated provenance.
+#[must_use]
+pub fn inspect_audit_evidence_lineage(evidence: &[RecoveryEvidence<'_>]) -> RestartInspection {
+    if evidence.is_empty() || evidence.len() > MAX_AUDIT_LINKS {
+        return RestartInspection::Deny;
+    }
+    for source in evidence {
+        if source.checkpoints.is_empty() {
+            return RestartInspection::Deny;
+        }
+    }
+    for pair in evidence.windows(2) {
+        let (Some(previous), Some(current)) =
+            (pair[0].checkpoints.last(), pair[1].checkpoints.first())
+        else {
+            return RestartInspection::Deny;
+        };
+        let Some(next) = previous.sequence.checked_add(1) else {
+            return RestartInspection::Deny;
+        };
+        if previous.snapshot_digest == [0; 32]
+            || current.sequence != next
+            || current.predecessor_digest != previous.snapshot_digest
+        {
+            return RestartInspection::Deny;
+        }
+    }
+    RestartInspection::ReviewOnly
+}
+
 /// Reviews audit-chain linkage and recomputes every corresponding receipt.
 ///
 /// Denies empty/mismatched evidence batches and any receipt that cannot be
@@ -94,6 +129,7 @@ pub fn inspect_audit_evidence(
         || evidence.len() > MAX_AUDIT_LINKS
         || evidence.len() != receipts.len()
         || inspect_audit_evidence_budget(evidence) != RestartInspection::ReviewOnly
+        || inspect_audit_evidence_lineage(evidence) != RestartInspection::ReviewOnly
         || inspect_bound_audit_receipts(links, receipts, expected) != RestartInspection::ReviewOnly
     {
         return RestartInspection::Deny;
@@ -144,8 +180,8 @@ pub fn inspect_custodied_audit_evidence(
 #[cfg(test)]
 mod tests {
     use super::{
-        inspect_audit_evidence, inspect_audit_evidence_budget, inspect_custodied_audit_evidence,
-        RecoveryEvidence,
+        inspect_audit_evidence, inspect_audit_evidence_budget, inspect_audit_evidence_lineage,
+        inspect_custodied_audit_evidence, RecoveryEvidence,
     };
     use crate::orcheastra_audit_chain::{audit_link_digest, AuditChainExpectation, AuditLink};
     use crate::orcheastra_audit_custody::{AuditCustodyWitness, CustodyVerdict};
@@ -392,6 +428,110 @@ mod tests {
         }];
         assert_eq!(
             inspect_audit_evidence_budget(&wrong_count),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_audit_evidence_lineage(&evidence),
+            RestartInspection::ReviewOnly
+        );
+        let next_snapshot =
+            digest_snapshot(8, &snapshot, b"next").unwrap_or([0; 32]);
+        let following_checkpoint = [RestartCheckpoint {
+            sequence: 8,
+            predecessor_digest: snapshot,
+            snapshot_digest: next_snapshot,
+            committed: true,
+            hold: false,
+            revoked: false,
+        }];
+        let following_payloads: &[&[u8]] = &[b"next"];
+        let following = RecoveryEvidence {
+            checkpoints: &following_checkpoint,
+            payloads: following_payloads,
+            signed: &signed,
+            trusted_key: &trusted_key,
+            floor: &floor,
+        };
+        let contiguous = [
+            RecoveryEvidence {
+                checkpoints: &checkpoints,
+                payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            },
+            following,
+        ];
+        assert_eq!(
+            inspect_audit_evidence_lineage(&contiguous),
+            RestartInspection::ReviewOnly
+        );
+        let replay = [
+            RecoveryEvidence {
+                checkpoints: &checkpoints,
+                payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            },
+            RecoveryEvidence {
+                checkpoints: &checkpoints,
+                payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            },
+        ];
+        assert_eq!(
+            inspect_audit_evidence_lineage(&replay),
+            RestartInspection::Deny
+        );
+        let skipped = [RestartCheckpoint {
+            sequence: 9,
+            ..following_checkpoint[0]
+        }];
+        let gap = [
+            RecoveryEvidence {
+                checkpoints: &checkpoints,
+                payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            },
+            RecoveryEvidence {
+                checkpoints: &skipped,
+                payloads: following_payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            },
+        ];
+        assert_eq!(
+            inspect_audit_evidence_lineage(&gap),
+            RestartInspection::Deny
+        );
+        let altered_predecessor = [RestartCheckpoint {
+            predecessor_digest: [4; 32],
+            ..following_checkpoint[0]
+        }];
+        let disconnected = [
+            RecoveryEvidence {
+                checkpoints: &checkpoints,
+                payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            },
+            RecoveryEvidence {
+                checkpoints: &altered_predecessor,
+                payloads: following_payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            },
+        ];
+        assert_eq!(
+            inspect_audit_evidence_lineage(&disconnected),
             RestartInspection::Deny
         );
         let mut altered_receipts = receipts;
