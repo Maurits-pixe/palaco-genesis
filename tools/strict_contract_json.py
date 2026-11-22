@@ -50,6 +50,24 @@ def _check_depth(document):
         raise ValueError("unbalanced JSON nesting")
 
 
+def _reject_unpaired_surrogates(value):
+    """Reject lone UTF-16 surrogates in decoded keys and values.
+
+    Walk iteratively to avoid recursion; JSON input and nesting are already bounded.
+    """
+    pending = [value]
+    while pending:
+        current = pending.pop()
+        if isinstance(current, str):
+            if any(0xD800 <= ord(char) <= 0xDFFF for char in current):
+                raise ValueError("unpaired Unicode surrogate in JSON")
+        elif isinstance(current, dict):
+            pending.extend(current.keys())
+            pending.extend(current.values())
+        elif isinstance(current, list):
+            pending.extend(current)
+
+
 def load_strict_json(path):
     """Read at most 1 MiB, precheck depth, and reject ambiguous JSON values."""
     with Path(path).open("rb") as source:
@@ -58,8 +76,10 @@ def load_strict_json(path):
         raise ValueError("JSON document exceeds size limit")
     document = raw.decode("utf-8")
     _check_depth(document)
-    return json.loads(
+    parsed = json.loads(
         document,
         object_pairs_hook=_unique_object_pairs,
         parse_constant=_reject_nonfinite,
     )
+    _reject_unpaired_surrogates(parsed)
+    return parsed
