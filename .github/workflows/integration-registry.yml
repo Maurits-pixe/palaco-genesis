@@ -56,6 +56,8 @@ on:
       - 'tests/test_signed_handoff_receipt.py'
       - 'tools/receipt_audit_chain.py'
       - 'tests/test_receipt_audit_chain.py'
+      - 'tools/signed_receipt_chain_anchor.py'
+      - 'tests/test_signed_receipt_chain_anchor.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -113,6 +115,8 @@ on:
       - 'tests/test_signed_handoff_receipt.py'
       - 'tools/receipt_audit_chain.py'
       - 'tests/test_receipt_audit_chain.py'
+      - 'tools/signed_receipt_chain_anchor.py'
+      - 'tests/test_signed_receipt_chain_anchor.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
