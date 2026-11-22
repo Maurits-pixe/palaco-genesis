@@ -30,6 +30,9 @@ pub mod orcheastra_audit_evidence;
 /// Independent custody-witness policy boundary for audit endpoints.
 pub mod orcheastra_audit_custody;
 
+/// Fail-closed witnessed continuity between successive audit segments.
+pub mod orcheastra_audit_continuity;
+
 use palaco_citadel::{BoundaryDisposition, ExecutionBoundary};
 use palaco_foundation::{
     errors::RevalidationError,
