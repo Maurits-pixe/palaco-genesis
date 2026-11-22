@@ -33,6 +33,9 @@ pub mod orcheastra_audit_custody;
 /// Fail-closed witnessed continuity between successive audit segments.
 pub mod orcheastra_audit_continuity;
 
+/// Complete source revalidation across witnessed consecutive audit segments.
+pub mod orcheastra_audit_transition;
+
 use palaco_citadel::{BoundaryDisposition, ExecutionBoundary};
 use palaco_foundation::{
     errors::RevalidationError,
