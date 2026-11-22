@@ -7,7 +7,10 @@
 use crate::orcheastra_audit_chain::{AuditChainExpectation, AuditLink};
 use crate::orcheastra_audit_continuity::inspect_audit_continuity;
 use crate::orcheastra_audit_custody::AuditCustodyWitness;
-use crate::orcheastra_audit_evidence::{inspect_audit_evidence, RecoveryEvidence};
+use crate::orcheastra_audit_evidence::{
+    inspect_audit_evidence, inspect_audit_evidence_budget, inspect_audit_evidence_floors,
+    inspect_audit_evidence_lineage, inspect_audit_evidence_signers, RecoveryEvidence,
+};
 use crate::orcheastra_payload::{MAX_CHAIN_CHECKPOINTS, MAX_SNAPSHOT_BYTES};
 use crate::orcheastra_restart::RestartInspection;
 use crate::orcheastra_review_receipt::ReviewReceipt;
@@ -295,7 +298,16 @@ pub fn inspect_custodied_audit_transition(
     witness: Option<&impl AuditCustodyWitness>,
     verifier: &impl Ed25519Verifier,
 ) -> RestartInspection {
-    if inspect_transition_evidence_budget(previous, current) != RestartInspection::ReviewOnly
+    // Deterministic source preflight must precede external custody callbacks.
+    if inspect_audit_evidence_budget(previous.evidence) != RestartInspection::ReviewOnly
+        || inspect_audit_evidence_budget(current.evidence) != RestartInspection::ReviewOnly
+        || inspect_audit_evidence_lineage(previous.evidence) != RestartInspection::ReviewOnly
+        || inspect_audit_evidence_lineage(current.evidence) != RestartInspection::ReviewOnly
+        || inspect_audit_evidence_signers(previous.evidence) != RestartInspection::ReviewOnly
+        || inspect_audit_evidence_signers(current.evidence) != RestartInspection::ReviewOnly
+        || inspect_audit_evidence_floors(previous.evidence) != RestartInspection::ReviewOnly
+        || inspect_audit_evidence_floors(current.evidence) != RestartInspection::ReviewOnly
+        || inspect_transition_evidence_budget(previous, current) != RestartInspection::ReviewOnly
         || inspect_segment_snapshot_continuity(previous) != RestartInspection::ReviewOnly
         || inspect_segment_snapshot_continuity(current) != RestartInspection::ReviewOnly
         || inspect_segment_signer_consistency(previous) != RestartInspection::ReviewOnly
@@ -359,6 +371,14 @@ mod tests {
             } else {
                 CustodyVerdict::Denied
             }
+        }
+    }
+
+    struct CountingWitness(std::cell::Cell<usize>);
+    impl AuditCustodyWitness for CountingWitness {
+        fn verify_expectation(&self, _expected: &AuditChainExpectation) -> CustodyVerdict {
+            self.0.set(self.0.get() + 1);
+            CustodyVerdict::Verified
         }
     }
 
@@ -1136,6 +1156,61 @@ mod tests {
             inspect_transition_evidence_budget(&previous, &mismatched_current),
             RestartInspection::Deny
         );
+        let never_called = CountingWitness(std::cell::Cell::new(0));
+        let invalid_floor = RecoveryFloor {
+            checkpoint_sequence: 0,
+            registry_sequence: 3,
+        };
+        let invalid_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_current,
+            payloads: payloads_current,
+            signed: &signed_current,
+            trusted_key: &key,
+            floor: &invalid_floor,
+        }];
+        let invalid_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &invalid_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_custodied_audit_transition(
+                &previous,
+                &invalid_current,
+                Some(&never_called),
+                &verifier,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(never_called.0.get(), 0);
+        let invalid_prior_floor = RecoveryFloor {
+            checkpoint_sequence: 0,
+            registry_sequence: 3,
+        };
+        let invalid_previous_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_previous,
+            payloads: payloads_previous,
+            signed: &signed_previous,
+            trusted_key: &key,
+            floor: &invalid_prior_floor,
+        }];
+        let invalid_previous = AuditSegmentEvidence {
+            links: &links_previous,
+            receipts: &receipts_previous,
+            evidence: &invalid_previous_evidence,
+            expected: &expected_previous,
+        };
+        assert_eq!(
+            inspect_custodied_audit_transition(
+                &invalid_previous,
+                &current,
+                Some(&never_called),
+                &verifier,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(never_called.0.get(), 0);
         let witness = TestWitness([expected_previous, expected_current]);
         assert_eq!(
             inspect_custodied_audit_transition(&previous, &current, Some(&witness), &verifier),
