@@ -238,6 +238,7 @@ pub fn inspect_audit_evidence(
 /// Rejects missing/denying custody evidence even if the caller supplied a
 /// perfectly self-consistent audit chain and recovery receipts. The witness
 /// implementation and signature verifier must still be independently trusted;
+/// Untrusted evidence is preflighted before the custody witness is called.
 /// this function grants no authority and performs no writes.
 #[must_use]
 pub fn inspect_custodied_audit_evidence(
@@ -248,7 +249,13 @@ pub fn inspect_custodied_audit_evidence(
     witness: Option<&impl AuditCustodyWitness>,
     verifier: &impl Ed25519Verifier,
 ) -> RestartInspection {
-    if inspect_custodied_audit_chain(links, expected, witness) != RestartInspection::ReviewOnly
+    // Preflight untrusted input before invoking an external custody witness.
+    if evidence.len() != receipts.len()
+        || inspect_audit_evidence_budget(evidence) != RestartInspection::ReviewOnly
+        || inspect_audit_evidence_lineage(evidence) != RestartInspection::ReviewOnly
+        || inspect_audit_evidence_signers(evidence) != RestartInspection::ReviewOnly
+        || inspect_audit_evidence_floors(evidence) != RestartInspection::ReviewOnly
+        || inspect_custodied_audit_chain(links, expected, witness) != RestartInspection::ReviewOnly
         || inspect_audit_evidence(links, receipts, evidence, expected, verifier)
             != RestartInspection::ReviewOnly
     {
@@ -312,6 +319,14 @@ mod tests {
             } else {
                 CustodyVerdict::Denied
             }
+        }
+    }
+
+    // A rejection during preflight must not call an external custody adapter.
+    struct PanicCustody;
+    impl AuditCustodyWitness for PanicCustody {
+        fn verify_expectation(&self, _expectation: &AuditChainExpectation) -> CustodyVerdict {
+            panic!("custody must not be reached for invalid preflight evidence");
         }
     }
 
@@ -405,6 +420,36 @@ mod tests {
         );
         assert_eq!(
             inspect_audit_evidence(&links, &receipts, &[], Some(&expected), &verifier),
+            RestartInspection::Deny
+        );
+
+        assert_eq!(
+            inspect_custodied_audit_evidence(
+                &links,
+                &receipts,
+                &[],
+                Some(&expected),
+                Some(&PanicCustody),
+                &verifier,
+            ),
+            RestartInspection::Deny
+        );
+        let invalid_payloads = [RecoveryEvidence {
+            checkpoints: &checkpoints,
+            payloads: &[],
+            signed: &signed,
+            trusted_key: &trusted_key,
+            floor: &floor,
+        }];
+        assert_eq!(
+            inspect_custodied_audit_evidence(
+                &links,
+                &receipts,
+                &invalid_payloads,
+                Some(&expected),
+                Some(&PanicCustody),
+                &verifier,
+            ),
             RestartInspection::Deny
         );
 
