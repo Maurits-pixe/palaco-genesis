@@ -87,6 +87,22 @@ class BoundaryContractTests(unittest.TestCase):
         data["edges"][0]["purpose"] = ""
         self.rejects(data, "missing purpose")
 
+    def test_nonstring_data_class(self):
+        data = self.candidate()
+        data["edges"][0]["data_class"] = {"unexpected": "object"}
+        self.rejects(data, "unsupported data class")
+
+    def test_nonstring_offline_behavior(self):
+        data = self.candidate()
+        data["edges"][0]["offline_behavior"] = ["deny"]
+        self.rejects(data, "invalid offline behavior")
+
+    def test_nonstring_dependency_in_registry(self):
+        registry = copy.deepcopy(self.registry)
+        registry["modules"][0]["depends_on"] = [{"bad": "dependency"}]
+        errors = mod.validate(registry, self.candidate())
+        self.assertTrue(any("dependency not registered" in e for e in errors), errors)
+
     def test_empty_edges(self):
         data = self.candidate()
         data["edges"] = []
