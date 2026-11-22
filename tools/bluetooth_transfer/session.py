@@ -31,6 +31,11 @@ class TransferSession:
         self._received = 0
 
     @property
+    def offered_bytes(self) -> int:
+        """Immutable length bound from the validated offer."""
+        return self._offer.payload_size
+
+    @property
     def next_index(self) -> int:
         """Next required chunk index, starting at zero."""
         return len(self._parts)
