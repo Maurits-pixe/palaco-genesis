@@ -4,6 +4,7 @@
 This is not an authorization, signing, or production admission engine.
 """
 import json
+import unicodedata
 from pathlib import Path
 
 MAX_DOCUMENT_BYTES = 1024 * 1024
@@ -50,8 +51,8 @@ def _check_depth(document):
         raise ValueError("unbalanced JSON nesting")
 
 
-def _reject_unpaired_surrogates(value):
-    """Reject lone UTF-16 surrogates in decoded keys and values.
+def _reject_noncanonical_text(value):
+    """Reject lone surrogates and non-NFC strings in decoded keys and values.
 
     Walk iteratively to avoid recursion; JSON input and nesting are already bounded.
     """
@@ -61,6 +62,8 @@ def _reject_unpaired_surrogates(value):
         if isinstance(current, str):
             if any(0xD800 <= ord(char) <= 0xDFFF for char in current):
                 raise ValueError("unpaired Unicode surrogate in JSON")
+            if unicodedata.normalize("NFC", current) != current:
+                raise ValueError("non-NFC Unicode text in JSON")
         elif isinstance(current, dict):
             pending.extend(current.keys())
             pending.extend(current.values())
@@ -81,5 +84,5 @@ def load_strict_json(path):
         object_pairs_hook=_unique_object_pairs,
         parse_constant=_reject_nonfinite,
     )
-    _reject_unpaired_surrogates(parsed)
+    _reject_noncanonical_text(parsed)
     return parsed
