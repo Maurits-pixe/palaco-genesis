@@ -99,7 +99,7 @@ class BoundaryContractTests(unittest.TestCase):
 
     def test_nonstring_dependency_in_registry(self):
         registry = copy.deepcopy(self.registry)
-        registry["modules"][0]["depends_on"] = [{"bad": "dependency"}]
+        registry["modules"][1]["depends_on"] = [{"bad": "dependency"}]
         errors = mod.validate(registry, self.candidate())
         self.assertTrue(any("dependency not registered" in e for e in errors), errors)
 
