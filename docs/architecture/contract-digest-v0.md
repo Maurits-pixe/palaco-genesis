@@ -23,6 +23,11 @@ bounded strict JSON reader before encoding.
   Genuine zeros such as `0e-999` and signed zero are still accepted.
   Nonzero finite values that round to other nonzero floats are not thereby
   guaranteed exact; this guard only prevents complete underflow to zero.
+- The bounded Python JSON reader enforces a **1,024-character numeric-token
+  ceiling** before integer or floating-point conversion, separately from
+  the 1 MiB document limit. A finite decimal token at the boundary is
+  accepted, while longer numeric tokens fail closed. This is an input
+  resource guard, not a claim of exact binary floating-point precision.
 - The bounded Python contract reader now rejects integer literals outside
   **±(2^53−1)** during JSON decoding, using a lexically bounded check
   before constructing large Python integers. Safe boundary values and
