@@ -91,9 +91,44 @@ pub fn review_receipt(
     })
 }
 
+/// Recomputes the complete assessment and compares its receipt to an expected one.
+///
+/// The entire evidence set and verifier are re-evaluated: a caller cannot
+/// validate a receipt merely by repeating its digest. Any mismatch or absent
+/// input yields DENY. This comparison does not authenticate the expected
+/// receipt or its storage, and never authorizes execution.
+#[must_use]
+pub fn revalidate_review_receipt(
+    expected: Option<&ReviewReceipt>,
+    checkpoints: &[RestartCheckpoint],
+    payloads: &[&[u8]],
+    signed: Option<&SignedAnchor<'_>>,
+    trusted_key: Option<&TrustedKey<'_>>,
+    floor: Option<&RecoveryFloor>,
+    verifier: &impl Ed25519Verifier,
+) -> RestartInspection {
+    let Some(expected) = expected else {
+        return RestartInspection::Deny;
+    };
+    let Some(recomputed) = review_receipt(
+        checkpoints,
+        payloads,
+        signed,
+        trusted_key,
+        floor,
+        verifier,
+    ) else {
+        return RestartInspection::Deny;
+    };
+    if expected != &recomputed {
+        return RestartInspection::Deny;
+    }
+    RestartInspection::ReviewOnly
+}
+
 #[cfg(test)]
 mod tests {
-    use super::review_receipt;
+    use super::{revalidate_review_receipt, review_receipt};
     use crate::orcheastra_payload::digest_snapshot;
     use crate::orcheastra_recovery::RecoveryFloor;
     use crate::orcheastra_restart::{RestartAnchor, RestartCheckpoint};
@@ -174,6 +209,83 @@ mod tests {
             &matcher,
         );
         assert!(first.is_some());
+        assert_eq!(
+            revalidate_review_receipt(
+                first.as_ref(),
+                &checkpoints,
+                &[b"payload"],
+                Some(&signed),
+                Some(&key),
+                Some(&floor),
+                &matcher,
+            ),
+            crate::orcheastra_restart::RestartInspection::ReviewOnly
+        );
+        assert_eq!(
+            revalidate_review_receipt(
+                None,
+                &checkpoints,
+                &[b"payload"],
+                Some(&signed),
+                Some(&key),
+                Some(&floor),
+                &matcher,
+            ),
+            crate::orcheastra_restart::RestartInspection::Deny
+        );
+        assert_eq!(
+            revalidate_review_receipt(
+                first.as_ref(),
+                &checkpoints,
+                &[b"PAYLOAD"],
+                Some(&signed),
+                Some(&key),
+                Some(&floor),
+                &matcher,
+            ),
+            crate::orcheastra_restart::RestartInspection::Deny
+        );
+        assert_eq!(
+            revalidate_review_receipt(
+                first.as_ref(),
+                &checkpoints,
+                &[b"payload"],
+                Some(&signed),
+                Some(&key),
+                Some(&floor),
+                &RejectAll,
+            ),
+            crate::orcheastra_restart::RestartInspection::Deny
+        );
+        if let Some(mut changed) = first {
+            changed.digest[0] ^= 1;
+            assert_eq!(
+                revalidate_review_receipt(
+                    Some(&changed),
+                    &checkpoints,
+                    &[b"payload"],
+                    Some(&signed),
+                    Some(&key),
+                    Some(&floor),
+                    &matcher,
+                ),
+                crate::orcheastra_restart::RestartInspection::Deny
+            );
+            changed.digest[0] ^= 1;
+            changed.checkpoint_count += 1;
+            assert_eq!(
+                revalidate_review_receipt(
+                    Some(&changed),
+                    &checkpoints,
+                    &[b"payload"],
+                    Some(&signed),
+                    Some(&key),
+                    Some(&floor),
+                    &matcher,
+                ),
+                crate::orcheastra_restart::RestartInspection::Deny
+            );
+        }
         assert_eq!(
             first,
             review_receipt(
