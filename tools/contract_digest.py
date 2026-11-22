@@ -15,6 +15,7 @@ except ModuleNotFoundError:
     from strict_contract_json import load_strict_json
 
 DOMAIN = b"PALACO-CJSON-v0\x00"
+MAX_SAFE_INTEGER = (1 << 53) - 1
 
 
 def canonical_bytes(value):
@@ -22,7 +23,11 @@ def canonical_bytes(value):
     stack = [value]
     while stack:
         item = stack.pop()
-        if item is None or item is True or item is False or type(item) is int:
+        if item is None or item is True or item is False:
+            continue
+        if type(item) is int:
+            if abs(item) > MAX_SAFE_INTEGER:
+                raise ValueError("integer outside interoperable safe range")
             continue
         if isinstance(item, str):
             if unicodedata.normalize("NFC", item) != item:
