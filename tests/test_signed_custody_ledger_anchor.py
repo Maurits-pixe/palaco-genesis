@@ -37,7 +37,7 @@ class CustodyLedgerAnchorTests(unittest.TestCase):
             index, events = anchor.ledger._rows(conn)
             state = anchor.ledger._validate(index, events)
             seq, prev = state["entries"] + 1, state["head_hash"]
-            fields = (ident, "custodian-a", "c"*64, "d"*64,
+            fields = (ident, "custodian-a", "c"*64, ident * 2,
                       "e"*64, anchor_hash, count, "f"*64)
             event = anchor.ledger._hash(seq, *fields, prev)
             conn.execute("INSERT INTO observed_custody_statements VALUES(?,?,?,?,?,?,?,?)", fields)
