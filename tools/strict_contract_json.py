@@ -4,6 +4,7 @@
 This is not an authorization, signing, or production admission engine.
 """
 import json
+import math
 import unicodedata
 from pathlib import Path
 
@@ -22,6 +23,14 @@ def _unique_object_pairs(pairs):
 
 def _reject_nonfinite(value):
     raise ValueError(f"non-finite JSON number: {value}")
+
+
+def _parse_finite_float(token):
+    """Prevent exponent overflow from silently creating Infinity."""
+    number = float(token)
+    if not math.isfinite(number):
+        raise ValueError("non-finite JSON number from exponent overflow")
+    return number
 
 
 def _check_depth(document):
@@ -83,6 +92,7 @@ def load_strict_json(path):
         document,
         object_pairs_hook=_unique_object_pairs,
         parse_constant=_reject_nonfinite,
+        parse_float=_parse_finite_float,
     )
     _reject_noncanonical_text(parsed)
     return parsed
