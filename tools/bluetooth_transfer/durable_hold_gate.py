@@ -1,22 +1,19 @@
-"""Restart-persistent HOLD gate requiring an independently protected incident store.
+"""Fail-closed incident/HOLD interface for an independently protected native store.
 
-An incident store MUST atomically latch HOLD in a protected, non-rollbackable
-namespace, and MUST NOT expose release/clear through this interface. This
-module supplies no secure storage or native hardware calls. The fake stores
-used in tests DO NOT prove persistent or anti-rollback security.
-
-On the first checkpoint failure, the wrapper attempts to persist HOLD, then
-rejects operations unconditionally. If persisting fails, the same instance
-stays locked; on restart the caller MUST fail closed until a trustworthy
-protected incident source is again available. In a compromised backend,
-neither persistent safety nor restart safety is guaranteed.
+The native incident store MUST provide sticky, rollback-resistant state; it is
+NOT implemented by this module. A process-local RLock serializes this wrapper
+only, not another process/device or a native incident racing a checkpoint CAS.
+External native code MUST make the incident check and privileged write
+mutually exclusive or enforce a protected fencing token; this module cannot.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 import hmac
+import threading
 from typing import Protocol
 
+from anchored_challenges import _validate_state
 from protocol import TransferError
 
 
@@ -37,16 +34,16 @@ class ProtectedHoldState:
 
 
 class ProtectedIncidentStore(Protocol):
-    """Native service: secure monotonic sticky HOLD, never clear via this API."""
+    """Trusted durable monotonic latch, never clear through this interface."""
 
     def read(self) -> ProtectedHoldState: ...
 
     def latch(self, namespace: bytes) -> ProtectedHoldState:
-        """Atomically set durable HOLD, returning the authoritative state."""
+        """Atomically persist HOLD and return authoritative held state."""
 
 
 class DurableHoldChallengeAnchor:
-    """Fail-closed bridge from checkpoint IO to an external incident latch."""
+    """Native checkpoint adapter with serialized and fail-closed local access."""
 
     def __init__(self, checkpoint_anchor, incident_store: ProtectedIncidentStore,
                  namespace: bytes):
@@ -60,14 +57,18 @@ class DurableHoldChallengeAnchor:
         self._incident = incident_store
         self._namespace = namespace
         self._held_locally = False
+        self._lock = threading.RLock()
         self.read()
 
     @property
     def is_held(self):
-        """Only a local indicator; always consult native store for decisions."""
-        return self._held_locally
+        """In-memory indicator only; externally protected state is decisive."""
+        with self._lock:
+            return self._held_locally
 
     def _state(self):
+        if self._held_locally:
+            raise TransferError("local incident HOLD active")
         try:
             state = self._incident.read()
         except Exception as exc:
@@ -80,8 +81,6 @@ class DurableHoldChallengeAnchor:
         if state.held:
             self._held_locally = True
             raise TransferError("durable incident HOLD active")
-        if self._held_locally:
-            raise TransferError("local incident HOLD active")
         return state
 
     def _latch(self):
@@ -96,21 +95,32 @@ class DurableHoldChallengeAnchor:
             raise TransferError("incident checkpoint failed; native HOLD required") from exc
 
     def read(self):
-        self._state()
-        try:
-            value = self._checkpoint.read()
-        except Exception as exc:
-            self._latch()
-            raise TransferError("checkpoint read failed; incident HOLD") from exc
-        self._state()
-        return value
+        with self._lock:
+            prior = self._state()
+            try:
+                value = _validate_state(self._checkpoint.read())
+            except Exception as exc:
+                self._latch()
+                raise TransferError("checkpoint read failed; incident HOLD") from exc
+            final = self._state()
+            if final != prior:
+                self._latch()
+                raise TransferError("incident state changed during checkpoint read: HOLD")
+            return value
 
     def advance(self, previous, current):
-        self._state()
-        try:
-            self._checkpoint.advance(previous, current)
-        except Exception as exc:
-            self._latch()
-            raise TransferError("checkpoint advancement failed; incident HOLD") from exc
-        # A concurrent incident or disappearing store must not be ignored.
-        self._state()
+        with self._lock:
+            prior = self._state()
+            try:
+                before = _validate_state(previous)
+                after = _validate_state(current)
+                if after == before or after[0] not in (before[0], before[0] + 1):
+                    raise TransferError("invalid checkpoint transition")
+                self._checkpoint.advance(before, after)
+            except Exception as exc:
+                self._latch()
+                raise TransferError("checkpoint advancement failed; incident HOLD") from exc
+            final = self._state()
+            if final != prior:
+                self._latch()
+                raise TransferError("incident changed during checkpoint write: HOLD")
