@@ -6,7 +6,7 @@ transfer and session; this module does not implement that requirement.
 """
 from __future__ import annotations
 
-from ble_frames import VERSION, encode_chunk, _check_value_limit
+from ble_frames import VERSION, BleTransferBridge, encode_chunk, _check_value_limit
 from protocol import TransferError, chunks
 
 ACK_MAGIC = 0x41
@@ -89,4 +89,50 @@ class StopAndWaitSender:
     def cancel(self) -> None:
         """Discard queued frames; no resume or automatic new session."""
         self._frames = ()
+        self._closed = True
+
+
+class AckingBleReceiver:
+    """Bridge wrapper allowing one identical immediate retransmission.
+
+    ACK messages are not authenticated. A native implementation must deliver
+    both packet and ACK on the same authenticated encrypted peer session.
+    """
+
+    def __init__(self, bridge: BleTransferBridge) -> None:
+        if not isinstance(bridge, BleTransferBridge):
+            raise TransferError("BLE transfer bridge required")
+        self._bridge = bridge
+        self._last: bytes | None = None
+        self._closed = False
+
+    def receive(self, frame: bytes) -> bytes:
+        """ACK a new frame after ingest or re-ACK exact last packet only."""
+        if self._closed:
+            raise TransferError("receiver closed")
+        if self._last is not None and frame == self._last:
+            return ack_for_frame(frame)
+        try:
+            self._bridge.push(frame)
+            ack = ack_for_frame(frame)
+        except (TransferError, TypeError, ValueError):
+            self.abort()
+            raise
+        self._last = frame
+        return ack
+
+    def finish(self) -> bytes:
+        """Validate entire export, then disallow any further ACKs."""
+        if self._closed:
+            raise TransferError("receiver closed")
+        try:
+            return self._bridge.finish()
+        finally:
+            self._closed = True
+            self._last = None
+
+    def abort(self) -> None:
+        """Cancel the complete downstream transfer."""
+        self._bridge.abort()
+        self._last = None
         self._closed = True
