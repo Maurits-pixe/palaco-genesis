@@ -148,6 +148,34 @@ class StrictContractJsonTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "non-finite"):
             self.load_raw('{"value":-Infinity}')
 
+    def test_max_safe_integer_accepted(self):
+        self.assertEqual(self.load_raw('{"value":9007199254740991}'),
+                         {"value": 9007199254740991})
+
+    def test_min_safe_integer_accepted(self):
+        self.assertEqual(self.load_raw('{"value":-9007199254740991}'),
+                         {"value": -9007199254740991})
+
+    def test_positive_unsafe_integer_rejected(self):
+        with self.assertRaisesRegex(ValueError, "safe range"):
+            self.load_raw('{"value":9007199254740992}')
+
+    def test_negative_unsafe_integer_rejected(self):
+        with self.assertRaisesRegex(ValueError, "safe range"):
+            self.load_raw('{"value":-9007199254740992}')
+
+    def test_nested_unsafe_integer_rejected(self):
+        with self.assertRaisesRegex(ValueError, "safe range"):
+            self.load_raw('{"records":[{"value":9007199254740993}]}')
+
+    def test_very_long_integer_rejected_without_bigint_conversion(self):
+        with self.assertRaisesRegex(ValueError, "safe range"):
+            self.load_raw('{"value":' + "9" * 5000 + '}')
+
+    def test_integer_zero_and_signed_zero_accepted(self):
+        self.assertEqual(self.load_raw('{"zero":0,"signed":-0}'),
+                         {"zero": 0, "signed": 0})
+
     def test_positive_exponent_overflow_rejected(self):
         with self.assertRaisesRegex(ValueError, "non-finite"):
             self.load_raw('{"ratio":1e400}')
