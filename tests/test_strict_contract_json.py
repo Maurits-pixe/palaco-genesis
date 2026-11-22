@@ -71,6 +71,30 @@ class StrictContractJsonTests(unittest.TestCase):
     def test_valid_utf8_non_ascii_accepted(self):
         self.assertEqual(self.load_raw('{"name":"Citadél"}'), {"name": "Citadél"})
 
+    def test_decomposed_unicode_value_rejected(self):
+        with self.assertRaisesRegex(ValueError, "non-NFC"):
+            self.load_raw('{"name":"e\u0301"}')
+
+    def test_decomposed_unicode_key_rejected(self):
+        with self.assertRaisesRegex(ValueError, "non-NFC"):
+            self.load_raw('{"e\u0301":"value"}')
+
+    def test_escaped_decomposed_unicode_rejected(self):
+        with self.assertRaisesRegex(ValueError, "non-NFC"):
+            self.load_raw(r'{"name":"e\u0301"}')
+
+    def test_duplicate_alias_via_unicode_escape_rejected(self):
+        with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
+            self.load_raw(r'{"release_gate":"HOLD","release_\u0067ate":"GO"}')
+
+    def test_nested_duplicate_alias_rejected(self):
+        with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
+            self.load_raw(r'{"edges":[{"authorization":"deny","authoriz\u0061tion":"allow"}]}')
+
+    def test_valid_nfc_escaped_value_accepted(self):
+        self.assertEqual(self.load_raw(r'{"name":"Citad\u00e9l"}'),
+                         {"name": "Citadél"})
+
     def test_valid_nested_document(self):
         self.assertEqual(
             self.load_raw('{"release_gate":"HOLD","edges":[{"runtime_enabled":false}]}'),
