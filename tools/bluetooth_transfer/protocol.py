@@ -43,7 +43,7 @@ def _validate_id(value: str) -> None:
 
 
 def _validate_offer(offer: Offer) -> None:
-    if offer.kind not in ALLOWED_KINDS:
+    if not isinstance(offer.kind, str) or offer.kind not in ALLOWED_KINDS:
         raise TransferError("unsupported resource kind")
     _validate_id(offer.transfer_id)
     if type(offer.payload_size) is not int or not 1 <= offer.payload_size <= MAX_BYTES:
@@ -51,7 +51,7 @@ def _validate_offer(offer: Offer) -> None:
     expected = (offer.payload_size + CHUNK_BYTES - 1) // CHUNK_BYTES
     if type(offer.chunk_count) is not int or offer.chunk_count != expected:
         raise TransferError("invalid chunk count")
-    if len(offer.payload_sha256) != 64 or any(
+    if not isinstance(offer.payload_sha256, str) or len(offer.payload_sha256) != 64 or any(
         ch not in "0123456789abcdef" for ch in offer.payload_sha256
     ):
         raise TransferError("invalid payload digest")
