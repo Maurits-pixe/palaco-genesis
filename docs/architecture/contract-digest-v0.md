@@ -62,6 +62,21 @@ full cross-language compatibility, cryptographic authenticity, or permission.
 The Node path reads the version-controlled fixture with JSON.parse; it does
 not claim to validate adversarial JSON files for duplicate object keys.
 
+## Shared negative interoperability corpus
+
+`verification/contract-digest-v0-negative.json` defines ten invalid
+canonicalization cases shared by Python and Node.js: fractional and
+out-of-safe-range numbers, nested integer overflow, non-NFC keys and
+values, unpaired Unicode surrogates, and array/object nesting deeper
+than 64 levels. The fixture stores in-memory value descriptions;
+it is **not** an adversarial JSON-parser or duplicate-member test suite.
+
+`tests/test_contract_digest_negative.py` and
+`tools/verify_contract_vectors.mjs` each construct the same cases
+and assert failure categories. The checks demonstrate rejection
+parity on the finite corpus, **not** full cross-language equivalence,
+cryptographic authentication or runtime authorization.
+
 ## Validate
 
 ```sh
