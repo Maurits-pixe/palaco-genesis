@@ -1,0 +1,31 @@
+name: PALACO Bluetooth offline transfer tests
+
+on:
+  pull_request:
+    paths:
+      - "tools/bluetooth_transfer/**"
+      - ".github/workflows/bluetooth-transfer-tests.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "tools/bluetooth_transfer/**"
+      - ".github/workflows/bluetooth-transfer-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  bluetooth-stdlib-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile-check reference modules
+        run: python -m compileall -q tools/bluetooth_transfer
+      - name: Run offline Bluetooth framing regressions
+        working-directory: tools/bluetooth_transfer
+        run: python -m unittest -v test_protocol.py test_session.py test_ble_frames.py test_ble_sender.py
