@@ -11,6 +11,10 @@ bounded strict JSON reader before encoding.
 
 - JSON objects are ordered lexicographically by Python Unicode string keys.
 - Output uses UTF-8, no insignificant whitespace, and unescaped valid Unicode.
+- The strict Python reader's pre-parse structural guard now checks matching
+  array/object delimiters and unterminated strings, ignoring delimiters inside
+  quoted JSON strings. The standard JSON decoder still performs full grammar
+  validation; the structural guard is not an independent JSON parser.
 - Both Python and Node.js canonicalizers enforce at most **64 levels** of
   array/object nesting, including for in-memory objects; a 65th level fails.
 - Non-NFC Unicode strings are **rejected**, not silently normalized.
