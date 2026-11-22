@@ -10,6 +10,7 @@ from pathlib import Path
 
 MAX_DOCUMENT_BYTES = 1024 * 1024
 MAX_NESTING_DEPTH = 64
+MAX_SAFE_INTEGER = (1 << 53) - 1
 
 
 def _unique_object_pairs(pairs):
@@ -23,6 +24,17 @@ def _unique_object_pairs(pairs):
 
 def _reject_nonfinite(value):
     raise ValueError(f"non-finite JSON number: {value}")
+
+
+def _parse_safe_integer(token):
+    """Reject unsafe integers lexically before constructing Python big ints."""
+    digits = token[1:] if token.startswith("-") else token
+    bound = str(MAX_SAFE_INTEGER)
+    if len(digits) > len(bound) or (
+        len(digits) == len(bound) and digits > bound
+    ):
+        raise ValueError("JSON integer outside interoperable safe range")
+    return int(token)
 
 
 def _parse_finite_float(token):
@@ -103,6 +115,7 @@ def load_strict_json(path):
         object_pairs_hook=_unique_object_pairs,
         parse_constant=_reject_nonfinite,
         parse_float=_parse_finite_float,
+        parse_int=_parse_safe_integer,
     )
     _reject_noncanonical_text(parsed)
     return parsed
