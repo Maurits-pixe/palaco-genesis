@@ -89,9 +89,11 @@ pub fn inspect_audit_chain(
     let mut next_sequence = expected.first_sequence;
     let mut predecessor = expected.predecessor_digest;
     for (index, link) in links.iter().enumerate() {
-        let Some(computed) =
-            audit_link_digest(link.sequence, &link.predecessor_digest, &link.receipt_digest)
-        else {
+        let Some(computed) = audit_link_digest(
+            link.sequence,
+            &link.predecessor_digest,
+            &link.receipt_digest,
+        ) else {
             return RestartInspection::Deny;
         };
         if link.sequence != next_sequence
@@ -163,7 +165,10 @@ mod tests {
     #[test]
     fn missing_and_modified_receipts_are_denied() {
         let (mut links, expected) = fixture();
-        assert_eq!(inspect_audit_chain(&[], Some(&expected)), RestartInspection::Deny);
+        assert_eq!(
+            inspect_audit_chain(&[], Some(&expected)),
+            RestartInspection::Deny
+        );
         assert_eq!(inspect_audit_chain(&links, None), RestartInspection::Deny);
         links[0].receipt_digest[0] ^= 1;
         assert_eq!(
