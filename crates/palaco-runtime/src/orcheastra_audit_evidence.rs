@@ -156,6 +156,39 @@ pub fn inspect_audit_evidence_signers(evidence: &[RecoveryEvidence<'_>]) -> Rest
     RestartInspection::ReviewOnly
 }
 
+/// Enforces monotonic recovery floors throughout an audit evidence batch.
+///
+/// The caller-supplied minimum checkpoint and key-registry revisions cannot
+/// decrease between successive evidence bundles. Each floor must be nonzero
+/// and cannot exceed the bundle's final checkpoint or key registry revision.
+/// This is a consistency check, not a trusted external anti-rollback store.
+#[must_use]
+pub fn inspect_audit_evidence_floors(evidence: &[RecoveryEvidence<'_>]) -> RestartInspection {
+    if evidence.is_empty() || evidence.len() > MAX_AUDIT_LINKS {
+        return RestartInspection::Deny;
+    }
+    let mut last_checkpoint_floor = 0;
+    let mut last_registry_floor = 0;
+    for source in evidence {
+        let Some(last_checkpoint) = source.checkpoints.last() else {
+            return RestartInspection::Deny;
+        };
+        let floor = source.floor;
+        if floor.checkpoint_sequence == 0
+            || floor.registry_sequence == 0
+            || floor.checkpoint_sequence < last_checkpoint_floor
+            || floor.registry_sequence < last_registry_floor
+            || floor.checkpoint_sequence > last_checkpoint.sequence
+            || floor.registry_sequence > source.trusted_key.registry_sequence
+        {
+            return RestartInspection::Deny;
+        }
+        last_checkpoint_floor = floor.checkpoint_sequence;
+        last_registry_floor = floor.registry_sequence;
+    }
+    RestartInspection::ReviewOnly
+}
+
 /// Reviews audit-chain linkage and recomputes every corresponding receipt.
 ///
 /// Denies empty/mismatched evidence batches and any receipt that cannot be
@@ -176,6 +209,7 @@ pub fn inspect_audit_evidence(
         || inspect_audit_evidence_budget(evidence) != RestartInspection::ReviewOnly
         || inspect_audit_evidence_lineage(evidence) != RestartInspection::ReviewOnly
         || inspect_audit_evidence_signers(evidence) != RestartInspection::ReviewOnly
+        || inspect_audit_evidence_floors(evidence) != RestartInspection::ReviewOnly
         || inspect_bound_audit_receipts(links, receipts, expected) != RestartInspection::ReviewOnly
     {
         return RestartInspection::Deny;
@@ -226,8 +260,9 @@ pub fn inspect_custodied_audit_evidence(
 #[cfg(test)]
 mod tests {
     use super::{
-        inspect_audit_evidence, inspect_audit_evidence_budget, inspect_audit_evidence_lineage,
-        inspect_audit_evidence_signers, inspect_custodied_audit_evidence, RecoveryEvidence,
+        inspect_audit_evidence, inspect_audit_evidence_budget, inspect_audit_evidence_floors,
+        inspect_audit_evidence_lineage, inspect_audit_evidence_signers,
+        inspect_custodied_audit_evidence, RecoveryEvidence,
     };
     use crate::orcheastra_audit_chain::{audit_link_digest, AuditChainExpectation, AuditLink};
     use crate::orcheastra_audit_custody::{AuditCustodyWitness, CustodyVerdict};
@@ -619,6 +654,101 @@ mod tests {
             RestartInspection::Deny
         );
         assert_eq!(inspect_audit_evidence_signers(&[]), RestartInspection::Deny);
+        assert_eq!(
+            inspect_audit_evidence_floors(&contiguous),
+            RestartInspection::ReviewOnly
+        );
+        let advanced_floor = RecoveryFloor {
+            checkpoint_sequence: 8,
+            registry_sequence: 3,
+        };
+        let advancing = [
+            RecoveryEvidence {
+                checkpoints: &checkpoints,
+                payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            },
+            RecoveryEvidence {
+                checkpoints: &following_checkpoint,
+                payloads: following_payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &advanced_floor,
+            },
+        ];
+        assert_eq!(
+            inspect_audit_evidence_floors(&advancing),
+            RestartInspection::ReviewOnly
+        );
+        let lowered_floor = RecoveryFloor {
+            checkpoint_sequence: 6,
+            registry_sequence: 2,
+        };
+        let regressed = [
+            RecoveryEvidence {
+                checkpoints: &checkpoints,
+                payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            },
+            RecoveryEvidence {
+                checkpoints: &following_checkpoint,
+                payloads: following_payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &lowered_floor,
+            },
+        ];
+        assert_eq!(
+            inspect_audit_evidence_floors(&regressed),
+            RestartInspection::Deny
+        );
+        let lowered_registry_floor = RecoveryFloor {
+            checkpoint_sequence: 8,
+            registry_sequence: 2,
+        };
+        let registry_regressed = [
+            RecoveryEvidence {
+                checkpoints: &checkpoints,
+                payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            },
+            RecoveryEvidence {
+                checkpoints: &following_checkpoint,
+                payloads: following_payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &lowered_registry_floor,
+            },
+        ];
+        assert_eq!(
+            inspect_audit_evidence_floors(&registry_regressed),
+            RestartInspection::Deny
+        );
+        let future_floor = RecoveryFloor {
+            checkpoint_sequence: 9,
+            registry_sequence: 3,
+        };
+        let impossible = [RecoveryEvidence {
+            checkpoints: &following_checkpoint,
+            payloads: following_payloads,
+            signed: &signed,
+            trusted_key: &trusted_key,
+            floor: &future_floor,
+        }];
+        assert_eq!(
+            inspect_audit_evidence_floors(&impossible),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_audit_evidence_floors(&[]),
+            RestartInspection::Deny
+        );
         let replay = [
             RecoveryEvidence {
                 checkpoints: &checkpoints,
