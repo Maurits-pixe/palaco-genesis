@@ -87,7 +87,8 @@ class AttestedNativeTests(unittest.TestCase):
         anchor = self.bind()
         anchor.read()
         anchor.read()
-        self.assertEqual(len(set(self.service.last_challenges)), 3)
+        self.assertGreaterEqual(len(self.service.last_challenges), 4)
+        self.assertEqual(len(set(self.service.last_challenges)), len(self.service.last_challenges))
 
     def test_write_verified_by_new_signed_snapshot(self):
         anchor = self.bind()
