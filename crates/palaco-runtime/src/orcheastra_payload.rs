@@ -7,7 +7,7 @@
 use sha2::{Digest, Sha256};
 
 use crate::orcheastra_restart::{
-    inspect_restart, RestartAnchor, RestartCheckpoint, RestartInspection,
+    inspect_restart, inspect_restart_chain, RestartAnchor, RestartCheckpoint, RestartInspection,
 };
 
 /// Maximum snapshot input accepted by the read-only verifier (one MiB).
@@ -69,9 +69,50 @@ pub fn inspect_restart_payload(
     RestartInspection::ReviewOnly
 }
 
+/// Maximum chain length accepted in a single bounded inspection.
+pub const MAX_CHAIN_CHECKPOINTS: usize = 256;
+
+/// Checks the actual snapshot bytes of every checkpoint in an in-memory chain.
+///
+/// Requires exactly one payload per checkpoint, rejects empty or oversized
+/// chains and validates each SHA-256 digest against its payload and context.
+/// The initial predecessor and the caller-provided anchor still require
+/// independent authentication outside this module. This never authorizes work.
+#[must_use]
+pub fn inspect_restart_chain_payloads(
+    checkpoints: &[RestartCheckpoint],
+    payloads: &[&[u8]],
+    anchor: Option<&RestartAnchor>,
+) -> RestartInspection {
+    if checkpoints.is_empty()
+        || checkpoints.len() > MAX_CHAIN_CHECKPOINTS
+        || checkpoints.len() != payloads.len()
+        || inspect_restart_chain(checkpoints, anchor) != RestartInspection::ReviewOnly
+    {
+        return RestartInspection::Deny;
+    }
+
+    for (checkpoint, payload) in checkpoints.iter().zip(payloads.iter()) {
+        let Some(digest) =
+            digest_snapshot(checkpoint.sequence, &checkpoint.predecessor_digest, payload)
+        else {
+            return RestartInspection::Deny;
+        };
+
+        if digest != checkpoint.snapshot_digest {
+            return RestartInspection::Deny;
+        }
+    }
+
+    RestartInspection::ReviewOnly
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{digest_snapshot, inspect_restart_payload, MAX_SNAPSHOT_BYTES};
+    use super::{
+        digest_snapshot, inspect_restart_chain_payloads, inspect_restart_payload,
+        MAX_CHAIN_CHECKPOINTS, MAX_SNAPSHOT_BYTES,
+    };
     use crate::orcheastra_restart::{RestartAnchor, RestartCheckpoint, RestartInspection};
 
     fn fixture() -> (RestartCheckpoint, RestartAnchor) {
@@ -149,4 +190,95 @@ mod tests {
             RestartInspection::Deny
         );
     }
+
+    fn chain_fixture() -> (Vec<RestartCheckpoint>, RestartAnchor) {
+        let first = digest_snapshot(7, &[6; 32], b"first").unwrap_or([0; 32]);
+        let second = digest_snapshot(8, &first, b"second").unwrap_or([0; 32]);
+        let checkpoints = vec![
+            RestartCheckpoint {
+                sequence: 7,
+                predecessor_digest: [6; 32],
+                snapshot_digest: first,
+                committed: true,
+                hold: false,
+                revoked: false,
+            },
+            RestartCheckpoint {
+                sequence: 8,
+                predecessor_digest: first,
+                snapshot_digest: second,
+                committed: true,
+                hold: false,
+                revoked: false,
+            },
+        ];
+        let anchor = RestartAnchor {
+            sequence: 8,
+            predecessor_digest: first,
+            snapshot_digest: second,
+            externally_verified: true,
+        };
+        (checkpoints, anchor)
+    }
+
+    #[test]
+    fn all_snapshots_match_for_review_only() {
+        let (checkpoints, anchor) = chain_fixture();
+        assert_eq!(
+            inspect_restart_chain_payloads(&checkpoints, &[b"first", b"second"], Some(&anchor)),
+            RestartInspection::ReviewOnly
+        );
+    }
+
+    #[test]
+    fn altered_earlier_payload_is_denied() {
+        let (checkpoints, anchor) = chain_fixture();
+        assert_eq!(
+            inspect_restart_chain_payloads(&checkpoints, &[b"FIRST", b"second"], Some(&anchor)),
+            RestartInspection::Deny
+        );
+    }
+
+    #[test]
+    fn missing_extra_and_empty_payload_sets_are_denied() {
+        let (checkpoints, anchor) = chain_fixture();
+        assert_eq!(
+            inspect_restart_chain_payloads(&checkpoints, &[b"first"], Some(&anchor)),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_restart_chain_payloads(
+                &checkpoints,
+                &[b"first", b"second", b"extra"],
+                Some(&anchor)
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_restart_chain_payloads(&[], &[], Some(&anchor)),
+            RestartInspection::Deny
+        );
+    }
+
+    #[test]
+    fn oversized_chain_is_denied_before_hashing() {
+        let (checkpoints, anchor) = chain_fixture();
+        let repeated = vec![checkpoints[0]; MAX_CHAIN_CHECKPOINTS + 1];
+        let payloads = vec![b"first".as_slice(); MAX_CHAIN_CHECKPOINTS + 1];
+        assert_eq!(
+            inspect_restart_chain_payloads(&repeated, &payloads, Some(&anchor)),
+            RestartInspection::Deny
+        );
+    }
+
+    #[test]
+    fn revoked_intermediate_checkpoint_is_denied() {
+        let (mut checkpoints, anchor) = chain_fixture();
+        checkpoints[0].revoked = true;
+        assert_eq!(
+            inspect_restart_chain_payloads(&checkpoints, &[b"first", b"second"], Some(&anchor)),
+            RestartInspection::Deny
+        );
+    }
+
 }
