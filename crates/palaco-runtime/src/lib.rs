@@ -21,6 +21,9 @@ pub mod orcheastra_review_receipt;
 /// Bounded audit-link chain integrity inspection without execution authority.
 pub mod orcheastra_audit_chain;
 
+/// Read-only binding of audit-chain links to recovery review receipt metadata.
+pub mod orcheastra_audit_receipts;
+
 use palaco_citadel::{BoundaryDisposition, ExecutionBoundary};
 use palaco_foundation::{
     errors::RevalidationError,
