@@ -15,21 +15,24 @@ Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices 
 ## Protocol and testing
 
 - `protocol.py`: offer, strict canonical JSON metadata, 16 KiB chunker, fail-closed receiver, replay guard.
-- `session.py`: incremental, fail-closed session with ordered frames, explicit cancel and disconnect handling. On failure it discards all retained frames; restarting requires a fresh transfer ID.
-- `test_protocol.py` and `test_session.py`: Python standard-library regression suites; no Bluetooth hardware required.
+- `session.py`: incremental, fail-closed session with ordered frames, explicit cancel and disconnect handling. On failure it discards retained frames; restarting requires a fresh transfer ID.
+- `ble_frames.py`: BLE-GATT-value framing reference with a 7-byte header, protocol version, chunk and fragment indices, final flag, configurable bounded value size (8–512 bytes) and strict sequential reassembly. It is not a BLE radio driver, encrypted channel, authenticated link, retransmission protocol or complete transfer flow.
+- `test_protocol.py`, `test_session.py`, and `test_ble_frames.py`: Python standard-library regression suites; no Bluetooth hardware required.
 
 Run from this directory:
 
 ```sh
-python -m unittest -v test_protocol.py test_session.py
+python -m unittest -v test_protocol.py test_session.py test_ble_frames.py
 ```
 
 ### Device integration plan
 
-- **Windows/Android native adapter:** BLE GATT service with a versioned service UUID, negotiated MTU, frame numbering, retransmission, backpressure and cancel support. Keep the adapter outside the trusted core.
+- **Windows/Android native adapter:** BLE GATT service with a versioned service UUID, verified negotiated GATT application-value size, transport-specific ACK/retransmission policy, backpressure and cancel support. The framed bytes MUST remain within the negotiated value limit; BLE ATT MTU itself is not the same thing as the usable GATT value size. Keep the adapter outside the trusted core.
 - **Browser:** Web Bluetooth can act as a BLE GATT client in supported secure-context browsers, but cannot be assumed to provide a browser-to-browser generic file-transfer server. Browser support and platform permissions must be checked; provide native-app or QR/local-file export fallback.
 - **iOS:** requires a platform-specific Core Bluetooth implementation and relevant platform permissions. No claim of background operation.
 - **Offline:** never require an internet server to send or verify framed bytes. External identity/revocation evidence must be locally available and within its specified freshness policy; unknown evidence => HOLD.
 - **Interoperability:** add real-device tests for disconnect/reconnect, peer impersonation, forged metadata, MTU changes, permission denial, battery exhaustion, duplicate packets, power loss and encryption handshake before release.
+
+**Known limitations:** Frame headers are not authenticated. There is no transport ACK, retry, encryption, cryptographic peer binding or live BLE API. The in-process buffers are not a secure secret-erasure primitive. The bridge requires an approved session and a caller-supplied size; production integration must bind this size to the authenticated offer rather than allowing arbitrary input. Tests have been authored but not executed in the current run.
 
 **Status:** DRAFT / GO-13 HOLD / authorization DENY. No merge, deploy, website publishing or hardware verification is performed by this change.
