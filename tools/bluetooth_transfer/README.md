@@ -1,4 +1,4 @@
-# PALACO Bluetooth Offline Transfer — v1.0 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v1.1 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
 
@@ -18,6 +18,8 @@ Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices 
 - `session.py`: incremental, fail-closed session with ordered frames, explicit cancel and disconnect handling. On failure it discards retained frames; restarting requires a fresh transfer ID.
 - `ble_frames.py`: BLE-GATT-value framing reference with a 7-byte header, protocol version, chunk and fragment indices, final flag, configurable bounded value size (8–512 bytes) and strict sequential reassembly. It is not a BLE radio driver, encrypted channel, authenticated link, retransmission protocol or complete transfer flow.
 - `ble_sender.py`: stop-and-wait sender (at most one chunk's packets queued), caller-triggered bounded retransmission on timeout and a receiver wrapper that re-ACKs only the immediately previous, byte-identical packet without duplicate ingestion. ACKs are unauthenticated control hints; this is NOT a secure radio adapter.
+- `receipt_integrity.py`: optional SHA-256 content commitment of all completed receipt IDs and payload hashes in canonical order, checked against an independent trusted `(count, root)` anchor. A matching count alone is insufficient; same-count row substitution and changed hashes are detected when the external root is genuinely protected. Single-writer prototype only; no actual secure anchor included.
+- `test_receipt_integrity.py`: 19 synthetic tamper, rollback, mismatch and interrupted-checkpoint regression cases.
 - `replay_checkpoint.py`: optional external monotonic counter admission contract. It compares an independently protected receipt count with SQLite's row count, and refuses to return newly received bytes unless the database receipt and counter advancement both complete. The reference supplies **no** trusted hardware counter. A crash between the two stores will deliberately cause HOLD until authorized recovery.
 - `test_replay_checkpoint.py`: synthetic external-counter tests for rollback, mismatches and storage faults, including a test demonstrating that same-count record substitution remains undetectable.
 - `durable_replay.py`: opt-in SQLite-backed durable completed-transfer registry. Unique transfer IDs are claimed atomically after payload validation and before returning bytes. It rejects duplicate completed IDs after restarts, missing/corrupted databases during a running process, and registry capacity exhaustion (100,000 entries). It requires an absolute path in an existing trusted local directory. It is not encrypted, tamper-evident, rollback-resistant or a replacement for authenticated sender identity.
@@ -35,7 +37,7 @@ Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices 
 Run from this directory:
 
 ```sh
-python -m unittest -v test_protocol.py test_session.py test_ble_frames.py test_ble_sender.py test_transport_gate.py test_native_adapter_contract.py test_receive_watchdog.py test_send_watchdog.py test_durable_replay.py test_replay_checkpoint.py
+python -m unittest -v test_protocol.py test_session.py test_ble_frames.py test_ble_sender.py test_transport_gate.py test_native_adapter_contract.py test_receive_watchdog.py test_send_watchdog.py test_durable_replay.py test_replay_checkpoint.py test_receipt_integrity.py
 ```
 
 ### Device integration plan
@@ -53,6 +55,8 @@ python -m unittest -v test_protocol.py test_session.py test_ble_frames.py test_b
 **Timeout policy:** Default idle timeout 15 seconds and total timeout 600 seconds; accepted bounds are idle 1–120 seconds and total 1–3600 seconds. The watchdog requires an external trusted monotonic clock; it does not schedule timers itself. Never use wall-clock time for elapsed-time policy and never treat this as a trusted timestamp or revocation check.
 
 **Send timer contract:** The native adapter writes the frame returned by `start()`, schedules monotonic `poll()` even in radio silence, sends frames returned by `poll()` on timeout, and writes the next frame returned by `acknowledge()` only after receipt of an independently authenticated ACK. The reference does not actually authenticate an ACK or send bytes over Bluetooth. Invalid clocks and elapsed deadlines cancel the session.
+
+**Content checkpoint policy:** `ContentAnchoredReceiver` derives a domain-separated SHA-256 commitment across the complete, canonically ordered SQLite receipt set and checks it against an external trusted `(count, root)` pair. The included `FakeAnchor` exists only in unit tests. The digest is not authenticated by itself; without a separately protected anchor an attacker can rewrite both files. This variant is explicitly single-writer, and SQLite + external anchor do not share an atomic transaction: interrupted or competing writes must fail closed and require supervised recovery. It is not a working secure element, mobile keystore integration or cryptographic signature system.
 
 **External checkpoint policy:** `AnchoredDurableReceiver` requires an OS- or hardware-protected monotonic counter implementing `read()` and irreversible compare-and-advance `advance(expected, new_value)`. The included tests use an in-memory fake counter **only**. The counter is not available in this repository. An independent secure native component must own the counter; never accept it from a website, device name, JSON payload, or untrusted file. An equal row count does NOT prove the receipt rows are unchanged. For production, require a cryptographically authenticated digest/append-only accumulator or trusted ledger anchored with the counter. No automatic reconciliation or rollback is permitted after a mismatch.
 
