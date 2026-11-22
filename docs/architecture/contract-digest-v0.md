@@ -13,7 +13,9 @@ bounded strict JSON reader before encoding.
 - Output uses UTF-8, no insignificant whitespace, and unescaped valid Unicode.
 - Non-NFC Unicode strings are **rejected**, not silently normalized.
 - Floating-point values, nonstring dictionary keys, and lone Unicode surrogates
-  are rejected. Booleans, null, integers, arrays and objects are supported.
+  are rejected. Booleans, null, arrays and objects are supported. Integers are
+  permitted only in the inclusive safe range **-9007199254740991 through
+  9007199254740991** (±(2^53−1)); values outside this range are rejected.
 - The digest is SHA-256 over `b"PALACO-CJSON-v0\\x00"`, an eight-byte
   big-endian payload length, and the encoded payload.
 
@@ -35,9 +37,9 @@ a HOLD state. `tests/test_contract_digest_vectors.py` checks all three outputs.
 The corpus is an independent comparison target, **not proof** of implementation
 correctness or interoperability in languages other than Python. Implementations
 must explicitly agree on UTF-8, Unicode key ordering, integer ranges, string
-normalization policy, and rejection rules. The Python encoder currently accepts
-integers beyond ±(2^53−1), so consumers must not assume arbitrary-precision
-integers round-trip identically through JavaScript.
+normalization policy, and rejection rules. The Python encoder now rejects integers beyond ±(2^53−1), but consumers must
+still independently verify parser behavior, including duplicate members,
+Unicode handling, safe integer parsing and floating-point rejection.
 
 The hash input is the literal UTF-8 domain label `PALACO-CJSON-v0` followed
 by a single zero byte, then the canonical byte length as eight unsigned
