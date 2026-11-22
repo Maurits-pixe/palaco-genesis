@@ -20,6 +20,7 @@ class ReceiptAuditChainTests(unittest.TestCase):
             c.execute("""CREATE TABLE observed_handoff_receipts(
                 receipt_id TEXT PRIMARY KEY, bundle_sha256 TEXT, recipient_id TEXT,
                 custodian_key_id TEXT, receipt_digest TEXT)""")
+            mod._schema(c)
 
     def put(self, rid):
         with sqlite3.connect(self.db) as c:
@@ -91,12 +92,7 @@ class ReceiptAuditChainTests(unittest.TestCase):
             c.rollback()
         with sqlite3.connect(self.db) as c:
             self.assertEqual(c.execute("SELECT COUNT(*) FROM observed_handoff_receipts").fetchone()[0], 0)
-            # The chain schema was created inside BEGIN IMMEDIATE, so SQLite
-            # rolls back the CREATE TABLE together with the receipt and event.
-            self.assertIsNone(c.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-                ("receipt_audit_chain",),
-            ).fetchone())
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM receipt_audit_chain").fetchone()[0], 0)
 
     def test_no_transaction_rejected(self):
         with sqlite3.connect(self.db) as c:
