@@ -1,0 +1,57 @@
+"""Tests for the review-only PALACO-CJSON-v0 digest convention."""
+import tempfile
+import unittest
+from pathlib import Path
+
+from tools.contract_digest import canonical_bytes, digest_contract, digest_contract_file
+
+
+class ContractDigestTests(unittest.TestCase):
+    def test_key_order_is_deterministic(self):
+        first = {"z": 1, "a": {"b": True, "a": None}}
+        second = {"a": {"a": None, "b": True}, "z": 1}
+        self.assertEqual(canonical_bytes(first), canonical_bytes(second))
+        self.assertEqual(digest_contract(first), digest_contract(second))
+
+    def test_compact_canonical_encoding(self):
+        self.assertEqual(canonical_bytes({"b": 2, "a": 1}), b'{"a":1,"b":2}')
+
+    def test_changes_change_digest(self):
+        self.assertNotEqual(digest_contract({"release_gate": "HOLD"}),
+                            digest_contract({"release_gate": "GO"}))
+
+    def test_reject_floats(self):
+        with self.assertRaisesRegex(ValueError, "unsupported"):
+            canonical_bytes({"value": 1.0})
+
+    def test_reject_decomposed_unicode(self):
+        with self.assertRaisesRegex(ValueError, "non-NFC"):
+            canonical_bytes({"name": "e\u0301"})
+
+    def test_accept_nfc_unicode(self):
+        self.assertIn("é".encode(), canonical_bytes({"name": "é"}))
+
+    def test_reject_nonstring_keys(self):
+        with self.assertRaisesRegex(ValueError, "keys must be strings"):
+            canonical_bytes({1: "one"})
+
+    def test_reject_unpaired_surrogate(self):
+        with self.assertRaisesRegex(ValueError, "unpaired"):
+            canonical_bytes({"name": "\ud800"})
+
+    def test_file_digest_rejects_duplicate_members(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "candidate.json"
+            path.write_text('{"gate":"HOLD","gate":"GO"}', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
+                digest_contract_file(path)
+
+    def test_file_digest_matches_in_memory_digest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "candidate.json"
+            path.write_text('{"b":2,"a":1}', encoding="utf-8")
+            self.assertEqual(digest_contract_file(path), digest_contract({"a": 1, "b": 2}))
+
+
+if __name__ == "__main__":
+    unittest.main()
