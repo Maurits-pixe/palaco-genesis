@@ -115,7 +115,7 @@ def load_strict_json(path):
         raise ValueError("JSON document exceeds size limit")
     # Do not accept encoding markers that change interpretation between
     # independently implemented contract readers.
-    if raw.startswith((b"\\xef\\xbb\\xbf", b"\\xff\\xfe", b"\\xfe\\xff")):
+    if raw.startswith((b"\xef\xbb\xbf", b"\xff\xfe", b"\xfe\xff")):
         raise ValueError("JSON byte-order mark is not permitted")
     document = raw.decode("utf-8")
     _check_depth(document)
