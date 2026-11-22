@@ -45,7 +45,8 @@ pub fn inspect_transition_monotonicity(
         current.receipts.first(),
         previous.evidence.last(),
         current.evidence.first(),
-    ) else {
+    )
+    else {
         return RestartInspection::Deny;
     };
 
@@ -81,12 +82,12 @@ pub fn inspect_custodied_audit_transition(
 ) -> RestartInspection {
     if inspect_transition_monotonicity(previous, current) != RestartInspection::ReviewOnly
         || inspect_audit_continuity(
-        previous.links,
-        Some(previous.expected),
-        current.links,
-        Some(current.expected),
-        witness,
-    ) != RestartInspection::ReviewOnly
+            previous.links,
+            Some(previous.expected),
+            current.links,
+            Some(current.expected),
+            witness,
+        ) != RestartInspection::ReviewOnly
         || inspect_audit_evidence(
             previous.links,
             previous.receipts,
@@ -110,7 +111,9 @@ pub fn inspect_custodied_audit_transition(
 
 #[cfg(test)]
 mod tests {
-    use super::{inspect_custodied_audit_transition, inspect_transition_monotonicity, AuditSegmentEvidence};
+    use super::{
+        inspect_custodied_audit_transition, inspect_transition_monotonicity, AuditSegmentEvidence,
+    };
     use crate::orcheastra_audit_chain::{audit_link_digest, AuditChainExpectation, AuditLink};
     use crate::orcheastra_audit_custody::{AuditCustodyWitness, CustodyVerdict};
     use crate::orcheastra_audit_evidence::RecoveryEvidence;
