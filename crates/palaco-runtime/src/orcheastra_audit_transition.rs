@@ -7,9 +7,7 @@
 use crate::orcheastra_audit_chain::{AuditChainExpectation, AuditLink};
 use crate::orcheastra_audit_continuity::inspect_audit_continuity;
 use crate::orcheastra_audit_custody::AuditCustodyWitness;
-use crate::orcheastra_audit_evidence::{
-    inspect_audit_evidence, RecoveryEvidence,
-};
+use crate::orcheastra_audit_evidence::{inspect_audit_evidence, RecoveryEvidence};
 use crate::orcheastra_restart::RestartInspection;
 use crate::orcheastra_review_receipt::ReviewReceipt;
 use crate::orcheastra_signed_anchor::Ed25519Verifier;
@@ -215,12 +213,8 @@ mod tests {
         })];
         let digest_previous =
             audit_link_digest(10, &[5; 32], &receipts_previous[0].digest).unwrap_or([0; 32]);
-        let digest_current = audit_link_digest(
-            11,
-            &digest_previous,
-            &receipts_current[0].digest,
-        )
-        .unwrap_or([0; 32]);
+        let digest_current =
+            audit_link_digest(11, &digest_previous, &receipts_current[0].digest).unwrap_or([0; 32]);
         let links_previous = [AuditLink {
             sequence: 10,
             predecessor_digest: [5; 32],
@@ -277,11 +271,21 @@ mod tests {
             RestartInspection::ReviewOnly
         );
         assert_eq!(
-            inspect_custodied_audit_transition(&previous, &current, None::<&TestWitness>, &verifier),
+            inspect_custodied_audit_transition(
+                &previous,
+                &current,
+                None::<&TestWitness>,
+                &verifier
+            ),
             RestartInspection::Deny
         );
         assert_eq!(
-            inspect_custodied_audit_transition(&previous, &current, Some(&witness), &RejectVerifier),
+            inspect_custodied_audit_transition(
+                &previous,
+                &current,
+                Some(&witness),
+                &RejectVerifier
+            ),
             RestartInspection::Deny
         );
         let changed_payloads: &[&[u8]] = &[b"SECOND"];
@@ -318,7 +322,12 @@ mod tests {
             expected: &wrong_expected,
         };
         assert_eq!(
-            inspect_custodied_audit_transition(&previous, &wrong_current, Some(&witness), &verifier),
+            inspect_custodied_audit_transition(
+                &previous,
+                &wrong_current,
+                Some(&witness),
+                &verifier
+            ),
             RestartInspection::Deny
         );
     }
