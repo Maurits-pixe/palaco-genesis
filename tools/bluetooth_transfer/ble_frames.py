@@ -113,8 +113,8 @@ class BleTransferBridge:
         if not isinstance(session, TransferSession) or session.closed:
             raise TransferError("active session required")
         _check_value_limit(value_limit)
-        if type(payload_size) is not int or not 1 <= payload_size <= 1_048_576:
-            raise TransferError("invalid offered length")
+        if type(payload_size) is not int or payload_size != session.offered_bytes:
+            raise TransferError("GATT size is not bound to authenticated offer")
         self._session = session
         self._total = payload_size
         self._limit = value_limit
