@@ -745,10 +745,7 @@ mod tests {
             inspect_audit_evidence_floors(&impossible),
             RestartInspection::Deny
         );
-        assert_eq!(
-            inspect_audit_evidence_floors(&[]),
-            RestartInspection::Deny
-        );
+        assert_eq!(inspect_audit_evidence_floors(&[]), RestartInspection::Deny);
         let replay = [
             RecoveryEvidence {
                 checkpoints: &checkpoints,
