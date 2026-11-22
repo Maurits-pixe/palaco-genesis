@@ -14,7 +14,7 @@ npm ci --prefix native-staging --ignore-scripts --no-audit --no-fund
 npm run test:ci
 ```
 
-`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer/lifecycle/handover/key-and-registry checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v303.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
+`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer/lifecycle/handover/key-and-registry/cancellation checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v304.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
 
 ## Source continuity and status
 
@@ -296,4 +296,49 @@ Seventeen contract cases cover invalid/revoked/expired/misbound records, copied 
 
 Six new native scenarios reuse one actual route and selected One PostgreSQL columns: verified initial generation; retirement after signing; committed issuer-key revocation before installation; committed revocation between the two candidate observations; successful same-key replacement at the new active registry revision; close during a real registry query with candidate withheld. The fixture intentionally revokes/restores its disposable key registry through revisions 1 to 5. The reviewer session remains ACTIVE with its original epoch/revocation revision. Native cryptography is not intercepted, and the original One SQL function chain and real user authentication remain unexecuted.
 
-`test:ci` uses `run-ci-v303.mjs`, requires all six registry-check records alongside preserved suites and writes `evidence/CI-RESULT-v303.json`. AI review: TRIAS separates installation observations from continuous authority; ORACLE requires committed native registry changes and bounds the evidence to sampled observations; MENTOR rejects an invalid candidate before service installation while retaining the stable callback. These are three lenses applied by one assistant, not independent approvals. Software/Node-host key-isolation limits, synthetic authentication and unverified remote TLS remain unchanged. Acceptance HOLD; authorization NONE.
+The preserved `run-ci-v303.mjs` requires all six registry-check records alongside earlier suites and writes `evidence/CI-RESULT-v303.json`. AI review: TRIAS separates installation observations from continuous authority; ORACLE requires committed native registry changes and bounds the evidence to sampled observations; MENTOR rejects an invalid candidate before service installation while retaining the stable callback. These are three lenses applied by one assistant, not independent approvals. Software/Node-host key-isolation limits, synthetic authentication and unverified remote TLS remain unchanged. Acceptance HOLD; authorization NONE.
+
+## Cancellation bound to one replacement attempt (v304)
+
+`createRioOneCancellableSignerHandoverV304` retains the v303 key/registry checks and adds `cancelReplacement({expectedGeneration,attemptId})` for an admitted replacement attempt. Construction remains asynchronous and must finish before this control API is available. The earlier v303 module remains unchanged. The existing issuer/route still receives one stable `signSessionStatement` callback.
+
+```js
+const host = await createRioOneCancellableSignerHandoverV304(trustedConfiguration);
+const expectedGeneration = host.getStatus().generation;
+const retired = host.retireGeneration({expectedGeneration});
+if (retired !== null) {
+  await retired;
+  const work = host.installReplacement({
+    expectedGeneration, privateSigningKey: replacementHandle,
+    readIssuerKeyState: replacementRegistryReader,
+  });
+  const status = host.getStatus();
+  if (status.candidateAttemptId !== null) {
+    const acknowledgement = host.cancelReplacement({
+      expectedGeneration: status.generation, attemptId: status.candidateAttemptId,
+    });
+    // null means refused; an acknowledgement means only cancellation requested.
+  }
+  const result = await work; // null after an accepted cancellation has settled
+}
+await host.close();
+```
+
+An attempt identifier increases for every admitted candidate, including a candidate that later fails or is cancelled. It is not reused by this controller. This keeps a delayed cancellation for an earlier attempt from affecting a later attempt in the same retired generation. Generation and attempt must both match. Identifiers are local to one controller, are not persisted across process restarts and are not authentication tokens or transferable authority. These methods are trusted host controls; no public endpoint is added.
+
+| Observation | Meaning |
+| --- | --- |
+| `CANCELLATION_REQUESTED` acknowledgement | This matching attempt is marked to withhold installation; its operation may still be running |
+| `CANCELLING_REPLACEMENT` / `candidateChecksInFlight: 1` | The marked candidate still occupies its slot while actual work/cleanup settles |
+| `candidateAttemptId: null` with RETIRED | No pending attempt remains; a trusted host may explicitly submit a new attempt |
+| Successful installation receipt `attemptId` | The attempt that installed the new generation; later cancellation cannot undo it |
+
+Cancellation is idempotent for the pending attempt and returns the same frozen acknowledgement. Wrong/stale generations or attempt IDs, malformed/extra/accessor fields, idle/serving states, a completed installation or a closed controller return null. There is no background retry or automatic reopening. Attempt/generation counter exhaustion refuses further installation.
+
+An accepted cancellation prevents installation even if it arrives after the final assessment has completed but before the installation continuation commits it. During a registry wait or actual asynchronous key proof, the slot remains occupied until the operation really settles. A cancelled first registry observation skips the key proof and later lookup; a cancellation during proof skips later lookup after proof returns. No query or crypto operation is forcibly aborted or signalled, and a nonreturning provider keeps the installation promise pending. The one-second observation acceptance bound remains separate from completion.
+
+Cancellation leaves the old generation retired and grants no identity/key authority. It does not revoke an installed generation, destroy a key, cancel all upstream requests or affect other controllers/processes. Terminal `close()` still prevents all future installations and waits for admitted candidate work even when cancellation was already requested. Installation-time registry metadata remains historical; per-request registry/session/receipt checks are unchanged. The internal key-check challenge retains the separate v303 domain and is not a One session statement.
+
+Thirteen contract cases cover cancellation at both registry lookups, during real cryptography, immediately before installation commit, from a trusted clock, across failed/duplicate/stale attempts, after completion, through provider failure and terminal close, plus unchanged issuer/verifier use. Test-only scheduling interception is restored after each case; successful cryptography uses real WebCrypto. Six new native scenarios reuse one actual route and selected One PostgreSQL columns: checked initial success, full retirement, cancellation after the first registry query, stale-command refusal with cancellation after actual key proof, explicit successful retry, and terminal close during a candidate query. Native crypto/SQL is not intercepted. The fixture's key and reviewer session remain active with their original registry/epoch/revocation values.
+
+`test:ci` uses `run-ci-v304.mjs`, requires all six cancellation records alongside preserved suites and writes `evidence/CI-RESULT-v304.json`. AI review: TRIAS distinguishes withholding a candidate from revocation or authority; ORACLE requires stale-attempt refusal and real completion barriers; MENTOR provides an idempotent acknowledgement without falsely freeing occupied work. These are three lenses applied by one assistant. Synthetic authentication, unexecuted original One SQL functions, software/Node-host key-isolation limits and unverified remote TLS remain unchanged. Acceptance HOLD; authorization NONE.
