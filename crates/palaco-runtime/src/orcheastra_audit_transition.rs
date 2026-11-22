@@ -11,6 +11,7 @@ use crate::orcheastra_audit_evidence::{
     inspect_audit_evidence, inspect_audit_evidence_budget, inspect_audit_evidence_floors,
     inspect_audit_evidence_lineage, inspect_audit_evidence_signers, RecoveryEvidence,
 };
+use crate::orcheastra_audit_receipts::inspect_bound_audit_receipts;
 use crate::orcheastra_payload::{MAX_CHAIN_CHECKPOINTS, MAX_SNAPSHOT_BYTES};
 use crate::orcheastra_restart::RestartInspection;
 use crate::orcheastra_review_receipt::ReviewReceipt;
@@ -307,6 +308,16 @@ pub fn inspect_custodied_audit_transition(
         || inspect_audit_evidence_signers(current.evidence) != RestartInspection::ReviewOnly
         || inspect_audit_evidence_floors(previous.evidence) != RestartInspection::ReviewOnly
         || inspect_audit_evidence_floors(current.evidence) != RestartInspection::ReviewOnly
+        || inspect_bound_audit_receipts(
+            previous.links,
+            previous.receipts,
+            Some(previous.expected),
+        ) != RestartInspection::ReviewOnly
+        || inspect_bound_audit_receipts(
+            current.links,
+            current.receipts,
+            Some(current.expected),
+        ) != RestartInspection::ReviewOnly
         || inspect_transition_evidence_budget(previous, current) != RestartInspection::ReviewOnly
         || inspect_segment_snapshot_continuity(previous) != RestartInspection::ReviewOnly
         || inspect_segment_snapshot_continuity(current) != RestartInspection::ReviewOnly
@@ -1204,6 +1215,47 @@ mod tests {
         assert_eq!(
             inspect_custodied_audit_transition(
                 &invalid_previous,
+                &current,
+                Some(&never_called),
+                &verifier,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(never_called.0.get(), 0);
+        // Corrupted receipt linkage must reject before invoking custody.
+        let bad_receipt = [ReviewReceipt {
+            digest: [0; 32],
+            ..receipts_current[0]
+        }];
+        let bad_receipt_segment = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &bad_receipt,
+            evidence: &evidence_current,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_custodied_audit_transition(
+                &previous,
+                &bad_receipt_segment,
+                Some(&never_called),
+                &verifier,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(never_called.0.get(), 0);
+        let bad_links = [AuditLink {
+            receipt_digest: [1; 32],
+            ..links_previous[0]
+        }];
+        let bad_link_segment = AuditSegmentEvidence {
+            links: &bad_links,
+            receipts: &receipts_previous,
+            evidence: &evidence_previous,
+            expected: &expected_previous,
+        };
+        assert_eq!(
+            inspect_custodied_audit_transition(
+                &bad_link_segment,
                 &current,
                 Some(&never_called),
                 &verifier,
