@@ -18,7 +18,7 @@ class StrictContractJsonTests(unittest.TestCase):
             return load_strict_json(path)
 
     def test_maximum_document_size_accepted(self):
-        self.assertIsNone(self.load_raw(" " * MAX_DOCUMENT_BYTES))
+        self.assertEqual(self.load_raw("0" + " " * (MAX_DOCUMENT_BYTES - 1)), 0)
 
     def test_document_exceeding_size_rejected(self):
         with self.assertRaisesRegex(ValueError, "size limit"):
