@@ -3,18 +3,12 @@
 //! A successful consistency check is NOT a cryptographic attestation, does not
 //! authenticate an externally supplied custody root, and cannot authorize work.
 
-use crate::orcheastra_audit_chain::{
-    AuditChainExpectation, AuditLink, MAX_AUDIT_LINKS,
-};
+use crate::orcheastra_audit_chain::{AuditChainExpectation, AuditLink, MAX_AUDIT_LINKS};
 use crate::orcheastra_audit_receipts::inspect_bound_audit_receipts;
 use crate::orcheastra_recovery::RecoveryFloor;
 use crate::orcheastra_restart::{RestartCheckpoint, RestartInspection};
-use crate::orcheastra_review_receipt::{
-    revalidate_review_receipt, ReviewReceipt,
-};
-use crate::orcheastra_signed_anchor::{
-    Ed25519Verifier, SignedAnchor, TrustedKey,
-};
+use crate::orcheastra_review_receipt::{revalidate_review_receipt, ReviewReceipt};
+use crate::orcheastra_signed_anchor::{Ed25519Verifier, SignedAnchor, TrustedKey};
 
 /// Borrowed original evidence used for one audit receipt revalidation.
 ///
@@ -50,8 +44,7 @@ pub fn inspect_audit_evidence(
     if evidence.is_empty()
         || evidence.len() > MAX_AUDIT_LINKS
         || evidence.len() != receipts.len()
-        || inspect_bound_audit_receipts(links, receipts, expected)
-            != RestartInspection::ReviewOnly
+        || inspect_bound_audit_receipts(links, receipts, expected) != RestartInspection::ReviewOnly
     {
         return RestartInspection::Deny;
     }
@@ -77,18 +70,13 @@ pub fn inspect_audit_evidence(
 #[cfg(test)]
 mod tests {
     use super::{inspect_audit_evidence, RecoveryEvidence};
-    use crate::orcheastra_audit_chain::{
-        audit_link_digest, AuditChainExpectation, AuditLink,
-    };
+    use crate::orcheastra_audit_chain::{audit_link_digest, AuditChainExpectation, AuditLink};
     use crate::orcheastra_payload::digest_snapshot;
     use crate::orcheastra_recovery::RecoveryFloor;
-    use crate::orcheastra_restart::{
-        RestartAnchor, RestartCheckpoint, RestartInspection,
-    };
+    use crate::orcheastra_restart::{RestartAnchor, RestartCheckpoint, RestartInspection};
     use crate::orcheastra_review_receipt::{review_receipt, ReviewReceipt};
     use crate::orcheastra_signed_anchor::{
-        anchor_message_v2, Ed25519Verifier, SignatureVerdict, SignedAnchor,
-        TrustedKey,
+        anchor_message_v2, Ed25519Verifier, SignatureVerdict, SignedAnchor, TrustedKey,
     };
 
     // Test-only exact-byte comparison. This is NOT Ed25519 validation.
@@ -164,7 +152,8 @@ mod tests {
             Some(&trusted_key),
             Some(&floor),
             &verifier,
-        ).unwrap_or(ReviewReceipt {
+        )
+        .unwrap_or(ReviewReceipt {
             digest: [0; 32],
             checkpoint_sequence: 0,
             registry_sequence: 0,
