@@ -1,4 +1,4 @@
-# PALACO Bluetooth Offline Transfer — v1.6 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v1.7 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
 
@@ -18,6 +18,8 @@ Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices 
 - `session.py`: incremental, fail-closed session with ordered frames, explicit cancel and disconnect handling. On failure it discards retained frames; restarting requires a fresh transfer ID.
 - `ble_frames.py`: BLE-GATT-value framing reference with a 7-byte header, protocol version, chunk and fragment indices, final flag, configurable bounded value size (8–512 bytes) and strict sequential reassembly. It is not a BLE radio driver, encrypted channel, authenticated link, retransmission protocol or complete transfer flow.
 - `ble_sender.py`: stop-and-wait sender (at most one chunk's packets queued), caller-triggered bounded retransmission on timeout and a receiver wrapper that re-ACKs only the immediately previous, byte-identical packet without duplicate ingestion. ACKs are unauthenticated control hints; this is NOT a secure radio adapter.
+- `ed25519_review_verifier.py`: genuine Ed25519 signature validation via the `cryptography` package, using an explicit snapshot of trusted reviewer public keys with required `recovery_reviewer` role, nonrevoked status and trusted UTC validity window. The native trusted service must provision and protect keys, revocation evidence and clock independently; none are fetched from BLE or user-controlled input.
+- `test_ed25519_review_verifier.py`: 24 tests using ephemeral Ed25519 keypairs, tampering, revocation, role, expiry and registry validation.
 - `review_challenges.py`: opt-in SQLite-backed 256-bit random challenge issuance with short trusted-UTC expiry, reviewer/evidence binding and atomic one-shot consumption after externally verified reviewer submission. The SQLite file is not anti-rollback or tamper-proof; a protected native storage boundary and trusted clock remain required.
 - `test_review_challenges.py`: 20 synthetic expiration, replay, concurrent-submit, identity/evidence binding and registry-failure tests.
 - `signed_review_gate.py`: HOLD-only review-intake contract binding exact canonical recovery evidence to a fresh challenge and a reviewer key identifier; requires trusted external signature, role and revocation verification, with no signing keys, trusted verifier or repair authority provided.
@@ -47,7 +49,7 @@ Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices 
 Run from this directory:
 
 ```sh
-python -m unittest -v test_protocol.py test_session.py test_ble_frames.py test_ble_sender.py test_transport_gate.py test_native_adapter_contract.py test_receive_watchdog.py test_send_watchdog.py test_durable_replay.py test_replay_checkpoint.py test_receipt_integrity.py test_recovery_inspection.py test_serialized_receipts.py test_recovery_evidence.py test_signed_review_gate.py test_review_challenges.py
+python -m unittest -v test_protocol.py test_session.py test_ble_frames.py test_ble_sender.py test_transport_gate.py test_native_adapter_contract.py test_receive_watchdog.py test_send_watchdog.py test_durable_replay.py test_replay_checkpoint.py test_receipt_integrity.py test_recovery_inspection.py test_serialized_receipts.py test_recovery_evidence.py test_signed_review_gate.py test_review_challenges.py test_ed25519_review_verifier.py
 ```
 
 ### Device integration plan
@@ -70,7 +72,9 @@ python -m unittest -v test_protocol.py test_session.py test_ble_frames.py test_b
 
 **Review challenge storage:** The privileged native service must own the newly created registry and trust its UTC clock. A challenge is 32 bytes from `secrets.token_bytes`, expires after 300 seconds by default (configurable 1–3600 seconds), and is linked to a reviewer key ID plus the recovery evidence fingerprint. On valid externally verified intake, a SQLite write lock serializes single-use consumption even across cooperating processes. It does not prevent replays after malicious DB rollback or clock rollback; production requires independently anchored anti-rollback state, trusted time, authenticated reviewer credentials and an operational key-revocation process. No automatic recovery is possible.
 
-**Signed review limitation:** `assess_review_submission` delegates the signature, key trust, reviewer authority, challenge freshness and revocation check to an external trusted verifier. None of these are implemented here. The test verifier uses an insecure SHA-256 equality stand-in and MUST NOT be reused in native production. The only possible success is `HOLD_REVIEWABLE`: this does not repair registers, reset checkpoints, release data or authorize imports. Native integration must implement genuine cryptographic signature verification, trusted reviewer roles and replay-resistant challenge issuance.
+**Ed25519 verification:** This optional module uses an audited external library (`cryptography>=44,<49` in CI) rather than custom cryptography. It verifies genuine Ed25519 signatures over the existing domain-bound challenge + canonical recovery report. The keys supplied to its constructor MUST come from a separate privileged, integrity-protected reviewer registry; accepting public keys from a submitted report is never allowed. This module does not enroll identities, distribute revocations, establish trusted UTC, issue secure hardware-backed keys, or prevent rollback of reviewer policy. Passing verification only produces HOLD_REVIEWABLE, never data-release authority.
+
+**Signed review limitation:** `assess_review_submission` delegates the signature, key trust, reviewer authority, challenge freshness and revocation check to an external trusted verifier. The Ed25519 verifier supplies actual signature checking and a local key-policy snapshot when explicitly used. The existing older tests use an insecure SHA-256 equality stand-in and MUST NOT be reused in native production. Secure source-of-trust provisioning and clock attestation remain unimplemented. The only possible success is `HOLD_REVIEWABLE`: this does not repair registers, reset checkpoints, release data or authorize imports. Native integration must implement genuine cryptographic signature verification, trusted reviewer roles and replay-resistant challenge issuance.
 
 **Recovery evidence:** `inspect_evidence(path, anchor)` creates a deterministic JSON report with fingerprint for human review. It does not sign or publish the report, grant authorization or repair anything. The only generated decision is HOLD. Validating a checksum is NOT validating author identity. Protected signing and reviewer workflow must be built separately.
 
