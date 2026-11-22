@@ -21,21 +21,29 @@ on:
       - 'verification/contract-digest-v0-negative.json'
       - 'verification/contract-digest-v0-raw-variants.json'
       - '.github/workflows/cjson-contract-verify.yml'
+      - 'docs/architecture/contract-digest-v0.md'
   push:
     branches: [main]
     paths:
       - 'tools/strict_contract_json.py'
       - 'tools/contract_digest.py'
       - 'tools/verify_contract_vectors.mjs'
+      - 'tools/validate_integration_registry.py'
+      - 'tools/validate_boundary_contract.py'
+      - 'tools/validate_offline_recovery.py'
       - 'tests/test_strict_contract_json.py'
       - 'tests/test_contract_digest.py'
       - 'tests/test_contract_digest_vectors.py'
       - 'tests/test_contract_digest_negative.py'
       - 'tests/test_contract_digest_raw_variants.py'
+      - 'tests/test_integration_registry.py'
+      - 'tests/test_boundary_contract.py'
+      - 'tests/test_offline_recovery.py'
       - 'verification/contract-digest-v0-vectors.json'
       - 'verification/contract-digest-v0-negative.json'
       - 'verification/contract-digest-v0-raw-variants.json'
       - '.github/workflows/cjson-contract-verify.yml'
+      - 'docs/architecture/contract-digest-v0.md'
   workflow_dispatch:
 
 permissions:
