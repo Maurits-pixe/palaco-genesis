@@ -1,9 +1,10 @@
 """Deterministic, synthetic stop-and-wait BLE sender regressions."""
 import unittest
+from session import TransferSession
 
-from ble_sender import StopAndWaitSender, ack_for_frame
-from ble_frames import BleChunkReassembler, encode_chunk
-from protocol import TransferError
+from ble_sender import AckingBleReceiver, StopAndWaitSender, ack_for_frame
+from ble_frames import BleChunkReassembler, BleTransferBridge, encode_chunk
+from protocol import Receiver, TransferError, make_offer
 
 
 class SenderTests(unittest.TestCase):
@@ -116,6 +117,65 @@ class SenderTests(unittest.TestCase):
         # A synthetic ACK works: production MUST authenticate the BLE channel.
         sender.acknowledge(ack_for_frame(sender.pending()))
         self.assertTrue(sender.done)
+
+
+class AckingReceiverTests(unittest.TestCase):
+    def make_receiver(self, payload: bytes):
+        offer = make_offer("citadel", "a" * 32, payload)
+        session = TransferSession(
+            offer, Receiver(), user_approved=True, identity_verified=True
+        )
+        return AckingBleReceiver(BleTransferBridge(session, len(payload), 20))
+
+    def test_lost_ack_immediate_retry(self):
+        payload = b"x" * 25
+        receiver = self.make_receiver(payload)
+        frames = encode_chunk(0, payload, 20)
+        ack = receiver.receive(frames[0])
+        self.assertEqual(receiver.receive(frames[0]), ack)
+        for frame in frames[1:]:
+            receiver.receive(frame)
+        self.assertEqual(receiver.finish(), payload)
+
+    def test_full_sender_receiver_with_lost_ack(self):
+        payload = b"y" * 50
+        sender = StopAndWaitSender(payload, 20)
+        receiver = self.make_receiver(payload)
+        frame = sender.pending()
+        first_ack = receiver.receive(frame)
+        self.assertEqual(receiver.receive(sender.on_timeout()), first_ack)
+        sender.acknowledge(first_ack)
+        while not sender.done:
+            sender.acknowledge(receiver.receive(sender.pending()))
+        self.assertEqual(receiver.finish(), payload)
+
+    def test_modified_duplicate_aborts(self):
+        payload = b"A" * 30
+        receiver = self.make_receiver(payload)
+        first = encode_chunk(0, payload, 20)[0]
+        receiver.receive(first)
+        corrupted = bytearray(first)
+        corrupted[-1] ^= 1
+        with self.assertRaises(TransferError):
+            receiver.receive(bytes(corrupted))
+        with self.assertRaises(TransferError):
+            receiver.finish()
+
+    def test_post_finish_replay_rejected(self):
+        receiver = self.make_receiver(b"x")
+        frame = encode_chunk(0, b"x", 20)[0]
+        receiver.receive(frame)
+        self.assertEqual(receiver.finish(), b"x")
+        with self.assertRaises(TransferError):
+            receiver.receive(frame)
+
+    def test_abort_rejects_retransmit(self):
+        receiver = self.make_receiver(b"x")
+        frame = encode_chunk(0, b"x", 20)[0]
+        receiver.receive(frame)
+        receiver.abort()
+        with self.assertRaises(TransferError):
+            receiver.receive(frame)
 
 
 if __name__ == "__main__":
