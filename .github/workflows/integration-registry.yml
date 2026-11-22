@@ -11,6 +11,7 @@ on:
       - 'tools/contract_digest.py'
       - 'tests/test_contract_digest.py'
       - 'tests/test_contract_digest_vectors.py'
+      - 'tools/verify_contract_vectors.mjs'
       - 'verification/contract-digest-v0-vectors.json'
       - 'tests/test_strict_contract_json.py'
       - 'tools/validate_boundary_contract.py'
@@ -38,6 +39,7 @@ on:
       - 'tools/contract_digest.py'
       - 'tests/test_contract_digest.py'
       - 'tests/test_contract_digest_vectors.py'
+      - 'tools/verify_contract_vectors.mjs'
       - 'verification/contract-digest-v0-vectors.json'
       - 'tests/test_strict_contract_json.py'
       - 'tools/validate_boundary_contract.py'
@@ -83,3 +85,9 @@ jobs:
         run: python3 tools/validate_offline_recovery.py
       - name: Run positive and negative contract tests
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Setup independent Node.js verifier
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify pinned canonical bytes and hashes independently
+        run: node tools/verify_contract_vectors.mjs
