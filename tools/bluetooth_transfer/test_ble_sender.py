@@ -97,6 +97,16 @@ class SenderTests(unittest.TestCase):
         with self.assertRaises(TransferError):
             ack_for_frame(bytes(frame))
 
+    def test_sender_advances_between_chunks(self):
+        payload = b"Q" * 16384 + b"R" * 3
+        sender = StopAndWaitSender(payload, 512)
+        seen_chunks = set()
+        while not sender.done:
+            frame = sender.pending()
+            seen_chunks.add(int.from_bytes(frame[2:4], "big"))
+            sender.acknowledge(ack_for_frame(frame))
+        self.assertEqual(seen_chunks, {0, 1})
+
     def test_maximum_chunk_sender(self):
         sender = StopAndWaitSender(b"a" * 16384, 512)
         count = 0
