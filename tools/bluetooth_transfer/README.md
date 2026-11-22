@@ -17,12 +17,13 @@ Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices 
 - `protocol.py`: offer, strict canonical JSON metadata, 16 KiB chunker, fail-closed receiver, replay guard.
 - `session.py`: incremental, fail-closed session with ordered frames, explicit cancel and disconnect handling. On failure it discards retained frames; restarting requires a fresh transfer ID.
 - `ble_frames.py`: BLE-GATT-value framing reference with a 7-byte header, protocol version, chunk and fragment indices, final flag, configurable bounded value size (8–512 bytes) and strict sequential reassembly. It is not a BLE radio driver, encrypted channel, authenticated link, retransmission protocol or complete transfer flow.
-- `test_protocol.py`, `test_session.py`, and `test_ble_frames.py`: Python standard-library regression suites; no Bluetooth hardware required.
+- `ble_sender.py`: stop-and-wait sender (at most one chunk's packets queued), caller-triggered bounded retransmission on timeout and a receiver wrapper that re-ACKs only the immediately previous, byte-identical packet without duplicate ingestion. ACKs are unauthenticated control hints; this is NOT a secure radio adapter.
+- `test_protocol.py`, `test_session.py`, `test_ble_frames.py`, and `test_ble_sender.py`: Python standard-library regression suites; no Bluetooth hardware required.
 
 Run from this directory:
 
 ```sh
-python -m unittest -v test_protocol.py test_session.py test_ble_frames.py
+python -m unittest -v test_protocol.py test_session.py test_ble_frames.py test_ble_sender.py
 ```
 
 ### Device integration plan
@@ -33,6 +34,6 @@ python -m unittest -v test_protocol.py test_session.py test_ble_frames.py
 - **Offline:** never require an internet server to send or verify framed bytes. External identity/revocation evidence must be locally available and within its specified freshness policy; unknown evidence => HOLD.
 - **Interoperability:** add real-device tests for disconnect/reconnect, peer impersonation, forged metadata, MTU changes, permission denial, battery exhaustion, duplicate packets, power loss and encryption handshake before release.
 
-**Known limitations:** Frame headers are not authenticated. There is no transport ACK, retry, encryption, cryptographic peer binding or live BLE API. The in-process buffers are not a secure secret-erasure primitive. The bridge requires an approved session and rejects sizes inconsistent with its validated offer; production integration must additionally authenticate the offer itself. Tests have been authored but not executed in the current run.
+**Known limitations:** Frame headers are not authenticated. There is a local stop-and-wait ACK/retry reference but no authenticated ACK, timer implementation, BLE stack, encryption, cryptographic peer binding or live radio API. Only an immediate identical prior frame can be re-ACKed; delayed or out-of-window packets abort. The caller drives timeouts and MUST use authenticated, encrypted peer transport before relying on ACKs. The in-process buffers are not a secure secret-erasure primitive. The bridge requires an approved session and rejects sizes inconsistent with its validated offer; production integration must additionally authenticate the offer itself. Automated Python stdlib checks are configured in `.github/workflows/bluetooth-transfer-tests.yml`; check their actual GitHub Actions run status before claiming PASS.
 
 **Status:** DRAFT / GO-13 HOLD / authorization DENY. No merge, deploy, website publishing or hardware verification is performed by this change.
