@@ -60,6 +60,10 @@ on:
       - 'tests/test_signed_receipt_chain_anchor.py'
       - 'tools/receipt_custody_policy.py'
       - 'tests/test_receipt_custody_policy.py'
+      - 'tools/signed_custody_statement.py'
+      - 'tests/test_signed_custody_statement.py'
+      - 'tools/custody_statement_ledger.py'
+      - 'tests/test_custody_statement_ledger.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -121,6 +125,10 @@ on:
       - 'tests/test_signed_receipt_chain_anchor.py'
       - 'tools/receipt_custody_policy.py'
       - 'tests/test_receipt_custody_policy.py'
+      - 'tools/signed_custody_statement.py'
+      - 'tests/test_signed_custody_statement.py'
+      - 'tools/custody_statement_ledger.py'
+      - 'tests/test_custody_statement_ledger.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
