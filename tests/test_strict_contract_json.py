@@ -53,6 +53,24 @@ class StrictContractJsonTests(unittest.TestCase):
             with self.assertRaises(UnicodeDecodeError):
                 load_strict_json(path)
 
+    def test_unpaired_high_surrogate_value_rejected(self):
+        with self.assertRaisesRegex(ValueError, "unpaired Unicode surrogate"):
+            self.load_raw(r'{"name":"\ud800"}')
+
+    def test_unpaired_low_surrogate_value_rejected(self):
+        with self.assertRaisesRegex(ValueError, "unpaired Unicode surrogate"):
+            self.load_raw(r'{"name":"\udfff"}')
+
+    def test_unpaired_surrogate_key_rejected(self):
+        with self.assertRaisesRegex(ValueError, "unpaired Unicode surrogate"):
+            self.load_raw(r'{"\ud800":"value"}')
+
+    def test_valid_surrogate_pair_accepted(self):
+        self.assertEqual(self.load_raw(r'{"symbol":"\ud83d\ude80"}'), {"symbol": "🚀"})
+
+    def test_valid_utf8_non_ascii_accepted(self):
+        self.assertEqual(self.load_raw('{"name":"Citadél"}'), {"name": "Citadél"})
+
     def test_valid_nested_document(self):
         self.assertEqual(
             self.load_raw('{"release_gate":"HOLD","edges":[{"runtime_enabled":false}]}'),
