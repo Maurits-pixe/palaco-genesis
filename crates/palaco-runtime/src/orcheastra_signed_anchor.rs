@@ -240,7 +240,6 @@ mod tests {
     #[test]
     fn oversized_identifier_and_invalid_registry_version_deny() {
         let (signed, mut key) = fixture();
-        signed.key_id = "owner-key-a";
         key.registry_sequence = 0;
         assert_eq!(
             inspect_signed_anchor(Some(&signed), Some(&key), &RejectAll),
