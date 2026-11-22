@@ -359,8 +359,12 @@ mod tests {
             RestartInspection::Deny
         );
         let rollback_key = TrustedKey {
+            key_id: key.key_id,
+            public_key: key.public_key,
             registry_sequence: 2,
-            ..key
+            first_sequence: key.first_sequence,
+            last_sequence: key.last_sequence,
+            revoked: key.revoked,
         };
         let rollback_evidence = [RecoveryEvidence {
             checkpoints: &checkpoints_current,
