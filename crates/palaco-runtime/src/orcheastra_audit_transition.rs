@@ -9,7 +9,8 @@ use crate::orcheastra_audit_continuity::inspect_audit_continuity;
 use crate::orcheastra_audit_custody::AuditCustodyWitness;
 use crate::orcheastra_audit_evidence::{
     inspect_audit_evidence, inspect_audit_evidence_budget, inspect_audit_evidence_floors,
-    inspect_audit_evidence_lineage, inspect_audit_evidence_signers, RecoveryEvidence,
+    inspect_audit_evidence_lineage, inspect_audit_evidence_signers,
+    inspect_audit_receipt_source_binding, RecoveryEvidence,
 };
 use crate::orcheastra_audit_receipts::inspect_bound_audit_receipts;
 use crate::orcheastra_payload::{MAX_CHAIN_CHECKPOINTS, MAX_SNAPSHOT_BYTES};
@@ -308,6 +309,10 @@ pub fn inspect_custodied_audit_transition(
         || inspect_audit_evidence_signers(current.evidence) != RestartInspection::ReviewOnly
         || inspect_audit_evidence_floors(previous.evidence) != RestartInspection::ReviewOnly
         || inspect_audit_evidence_floors(current.evidence) != RestartInspection::ReviewOnly
+        || inspect_audit_receipt_source_binding(previous.receipts, previous.evidence)
+            != RestartInspection::ReviewOnly
+        || inspect_audit_receipt_source_binding(current.receipts, current.evidence)
+            != RestartInspection::ReviewOnly
         || inspect_bound_audit_receipts(previous.links, previous.receipts, Some(previous.expected))
             != RestartInspection::ReviewOnly
         || inspect_bound_audit_receipts(current.links, current.receipts, Some(current.expected))
@@ -1250,6 +1255,46 @@ mod tests {
         assert_eq!(
             inspect_custodied_audit_transition(
                 &bad_link_segment,
+                &current,
+                Some(&never_called),
+                &verifier,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(never_called.0.get(), 0);
+        let wrong_source_count = [ReviewReceipt {
+            checkpoint_count: 2,
+            ..receipts_current[0]
+        }];
+        let mismatched_count_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &wrong_source_count,
+            evidence: &evidence_current,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_custodied_audit_transition(
+                &previous,
+                &mismatched_count_current,
+                Some(&never_called),
+                &verifier,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(never_called.0.get(), 0);
+        let wrong_source_registry = [ReviewReceipt {
+            registry_sequence: receipts_previous[0].registry_sequence + 1,
+            ..receipts_previous[0]
+        }];
+        let mismatched_registry_previous = AuditSegmentEvidence {
+            links: &links_previous,
+            receipts: &wrong_source_registry,
+            evidence: &evidence_previous,
+            expected: &expected_previous,
+        };
+        assert_eq!(
+            inspect_custodied_audit_transition(
+                &mismatched_registry_previous,
                 &current,
                 Some(&never_called),
                 &verifier,
