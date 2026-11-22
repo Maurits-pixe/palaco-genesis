@@ -9,6 +9,9 @@ pub mod orcheastra_restart;
 /// Bounded SHA-256 snapshot integrity checks for read-only ORCHEASTRA review.
 pub mod orcheastra_payload;
 
+/// Fail-closed external-signature verification boundary for recovery anchors.
+pub mod orcheastra_signed_anchor;
+
 use palaco_citadel::{BoundaryDisposition, ExecutionBoundary};
 use palaco_foundation::{
     errors::RevalidationError,
