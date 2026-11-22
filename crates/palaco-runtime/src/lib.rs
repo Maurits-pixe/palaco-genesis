@@ -3,6 +3,9 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+/// Read-only ORCHEASTRA restart guard. Never grants execution authority.
+pub mod orcheastra_restart;
+
 use palaco_citadel::{BoundaryDisposition, ExecutionBoundary};
 use palaco_foundation::{
     errors::RevalidationError,
