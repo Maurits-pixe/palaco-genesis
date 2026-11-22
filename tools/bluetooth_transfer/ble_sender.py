@@ -1,0 +1,92 @@
+"""Stop-and-wait sender reference for PALACO BLE frames.
+
+ACKs are transport control hints, NOT authorization or authenticity proofs.
+An authenticated encrypted transport MUST bind ACKs to the current peer,
+transfer and session; this module does not implement that requirement.
+"""
+from __future__ import annotations
+
+from ble_frames import VERSION, encode_chunk, _check_value_limit
+from protocol import TransferError, chunks
+
+ACK_MAGIC = 0x41
+ACK_SIZE = 6
+DEFAULT_MAX_RETRIES = 3
+
+
+def ack_for_frame(packet: bytes) -> bytes:
+    """Encode a receiver-side ACK for a syntactically valid data header."""
+    if not isinstance(packet, bytes) or len(packet) < 8 or packet[0] != 0x50:
+        raise TransferError("invalid data frame")
+    if packet[1] != VERSION or packet[6] not in (0, 1):
+        raise TransferError("invalid frame header")
+    return bytes((ACK_MAGIC, VERSION)) + packet[2:6]
+
+
+class StopAndWaitSender:
+    """One outstanding packet; bounded retransmissions on caller-driven timeout."""
+
+    def __init__(self, payload: bytes, value_limit: int, *,
+                 max_retries: int = DEFAULT_MAX_RETRIES) -> None:
+        _check_value_limit(value_limit)
+        if type(max_retries) is not int or not 0 <= max_retries <= 8:
+            raise TransferError("invalid retry bound")
+        frames: list[bytes] = []
+        for chunk_index, data in enumerate(chunks(payload)):
+            frames.extend(encode_chunk(chunk_index, data, value_limit))
+        self._frames = tuple(frames)
+        self._position = 0
+        self._retries = 0
+        self._max_retries = max_retries
+        self._closed = False
+        self._completed = False
+
+    @property
+    def done(self) -> bool:
+        """True only after ACK of every frame."""
+        return self._completed
+
+    @property
+    def closed(self) -> bool:
+        """True after cancel, failed timeout limit or completion."""
+        return self._closed
+
+    @property
+    def acknowledged_frames(self) -> int:
+        return self._position
+
+    def pending(self) -> bytes:
+        """Get current packet; caller must send over authenticated BLE channel."""
+        if self._closed:
+            raise TransferError("sender closed")
+        return self._frames[self._position]
+
+    def acknowledge(self, ack: bytes) -> None:
+        """Accept ACK only for current frame; reject spoofable malformed controls."""
+        if self._closed:
+            raise TransferError("sender closed")
+        expected = ack_for_frame(self._frames[self._position])
+        if not isinstance(ack, bytes) or ack != expected:
+            self.cancel()
+            raise TransferError("unexpected acknowledgement")
+        self._position += 1
+        self._retries = 0
+        if self._position == len(self._frames):
+            self._completed = True
+            self._closed = True
+            self._frames = ()
+
+    def on_timeout(self) -> bytes:
+        """Return exact same packet to retransmit, or abort after retry budget."""
+        if self._closed:
+            raise TransferError("sender closed")
+        if self._retries >= self._max_retries:
+            self.cancel()
+            raise TransferError("retry budget exhausted")
+        self._retries += 1
+        return self.pending()
+
+    def cancel(self) -> None:
+        """Discard queued frames; no resume or automatic new session."""
+        self._frames = ()
+        self._closed = True
