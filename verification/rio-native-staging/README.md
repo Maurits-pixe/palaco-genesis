@@ -14,7 +14,7 @@ npm ci --prefix native-staging --ignore-scripts --no-audit --no-fund
 npm run test:ci
 ```
 
-`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v299.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
+`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer/lifecycle checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v300.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
 
 ## Source continuity and status
 
@@ -54,7 +54,7 @@ The authenticated callback, database pool, receipt policies, original request le
 
 The six new native scenarios use minimal synthetic tables with selected One column names and dedicated tenant RLS policies. They verify the reader's actual SQL, fresh physical connections, committed revocation, registry changes, another tenant's denial and unsafe source configuration. They **do not execute the original One login/session/revocation functions**, verify the full migration chain or prove a real IdP. Contract unit tests separately simulate the trusted session service and adverse database replies. Real One authentication and remote TLS remain NOT EXECUTED.
 
-`run-ci-v295.mjs` adds `one-session-reader-v295.test.mjs`, requires all six scenario records, and writes `evidence/CI-RESULT-v295.json`. The earlier runners remain preserved; v297 is the current command entry point. AI review: TRIAS keeps pending intents outside authentication; ORACLE limits native evidence to the selected SQL contract; MENTOR provides an explicit callback integration point while retaining HOLD until a genuine One session service exists.
+`run-ci-v295.mjs` adds `one-session-reader-v295.test.mjs`, requires all six scenario records, and writes `evidence/CI-RESULT-v295.json`. The earlier runners remain preserved; the current command entry point is documented in Run above. AI review: TRIAS keeps pending intents outside authentication; ORACLE limits native evidence to the selected SQL contract; MENTOR provides an explicit callback integration point while retaining HOLD until a genuine One session service exists.
 
 ## Signed source preparation (v296)
 
@@ -138,6 +138,37 @@ The native fixture generates its ephemeral source key through WebCrypto without 
 
 Six new native scenarios run the software backend through the unchanged issuer, verifier, One reader and central RIO route: key-protection scope, missing synthetic authentication, the complete paired chain, real issuer-key revocation between signer registry reads, One revocation during signing and One revocation during receipt inspection. The selected-column SQL fixtures and synthetic authentication remain distinct from an actual One IdP or the original One transaction chain.
 
-`ONE-COMPATIBILITY-v299.json` records hashes of the reviewed One v16.7 package/readme. That source still declares no real authentication or sessions; its actual RIO signed-session protocol compatibility is not established. The current `test:ci` command uses the separate v299 runner and requires all six software-backend scenarios, with source-bound evidence in `evidence/CI-RESULT-v299.json`.
+`ONE-COMPATIBILITY-v299.json` records hashes of the reviewed One v16.7 package/readme. That source still declares no real authentication or sessions; its actual RIO signed-session protocol compatibility is not established. This record does not assess later One gateway versions. The preserved v299 runner requires all six software-backend scenarios, with source-bound evidence in `evidence/CI-RESULT-v299.json`.
 
 AI review: TRIAS retains HOLD/NONE and makes no hardware/identity-authority claim; ORACLE records the observed Node export bypass and confines cryptographic/native evidence to the tested software fixture; MENTOR supplies a usable bounded local signer while keeping the trusted-host requirement visible. Real One authentication, approved production key custody/enrollment and remote transport remain unconnected.
+
+## One-way signer shutdown (v300)
+
+`createRioOneDrainableSoftwareSignerV300` preserves the v299 signing restrictions and adds `stop()` and `getStatus()` for one backend instance. Instantiate it once per configured key/service instance and give its signing callback to the existing v298 issuer. The previous v299 module remains unchanged.
+
+```js
+const backend = createRioOneDrainableSoftwareSignerV300({
+  tenantRef, allowedOrigin, issuerKey, privateSigningKey,
+  readIssuerKeyState, now, maxConcurrentSignatures: 1,
+});
+// Configure the existing issuer with backend.signSessionStatement.
+const drained = backend.stop(); // synchronously refuses new signing work
+const status = backend.getStatus(); // DRAINING while admitted work remains
+await drained; // STOPPED only after that backend's admitted work has settled
+```
+
+| State | Signing behavior |
+| --- | --- |
+| OPEN | Accepts valid work within the per-instance capacity |
+| DRAINING | Refuses new work and withholds results from admitted work |
+| STOPPED | No admitted work remains; later signing requests are refused |
+
+`stop()` is idempotent and always returns the same completion promise. There is no resume operation. Status is a frozen snapshot with only state, in-flight count, capacity, availability and HOLD/NONE labels. A stop during input validation is checked again before admission. A stop during either registry lookup or asynchronous cryptography withholds the result; capacity stays occupied until the actual operation settles. Provider errors also release the occupied slot and can complete the drain.
+
+Shutdown does not forcibly cancel a provider or cryptographic operation. A provider that never settles leaves the instance DRAINING; hosts must not claim STOPPED based on an unrelated timeout. A provider must not await this same instance's stop promise from within its own admitted signing call, because that would wait on itself. Completion covers only this backend's admitted signing operations, not all upstream issuer/route requests or another instance/process.
+
+After draining, this backend drops its own signing-handle and registry-callback references. This is not a guarantee of memory zeroization, private-key destruction or removal of references held by the host. It does not revoke issuer keys, One sessions or authority. The trusted Node-host/software-only protection limit documented for v299 still applies. A new backend needs separate explicit trusted configuration; stopped instances cannot reopen.
+
+The v300 contract suite covers concurrent drain barriers, stops during both registry lookups, provider failure, synchronous/reentrant stop, admission validation and producer/verifier use before and after stop. Three additional native scenarios run real Ed25519 cryptography and selected One PostgreSQL column checks through the existing issuer/verifier/reader/route: successful OPEN operation, stop after signing with no exposed result, and later refusal while the fixture's key/session state remains active. Authentication remains a synthetic server binding; the original One SQL function chain and real authentication are not executed.
+
+`test:ci` now uses `run-ci-v300.mjs`, requires all three lifecycle scenarios alongside the preserved suites and writes `evidence/CI-RESULT-v300.json`. AI review: TRIAS distinguishes stopping one software instance from revocation or authority; ORACLE requires observed DRAINING/STOPPED transitions and a withheld cryptographic result in the native chain; MENTOR supplies an idempotent completion signal and documents nonreturning providers. These are three lenses applied by one assistant. Acceptance HOLD; authorization NONE.
