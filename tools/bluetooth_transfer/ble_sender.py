@@ -31,11 +31,12 @@ class StopAndWaitSender:
         _check_value_limit(value_limit)
         if type(max_retries) is not int or not 0 <= max_retries <= 8:
             raise TransferError("invalid retry bound")
-        frames: list[bytes] = []
-        for chunk_index, data in enumerate(chunks(payload)):
-            frames.extend(encode_chunk(chunk_index, data, value_limit))
-        self._frames = tuple(frames)
+        self._parts = chunks(payload)
+        self._value_limit = value_limit
+        self._chunk_index = 0
+        self._frames = encode_chunk(0, self._parts[0], value_limit)
         self._position = 0
+        self._acknowledged = 0
         self._retries = 0
         self._max_retries = max_retries
         self._closed = False
@@ -53,7 +54,7 @@ class StopAndWaitSender:
 
     @property
     def acknowledged_frames(self) -> int:
-        return self._position
+        return self._acknowledged
 
     def pending(self) -> bytes:
         """Get current packet; caller must send over authenticated BLE channel."""
@@ -70,11 +71,19 @@ class StopAndWaitSender:
             self.cancel()
             raise TransferError("unexpected acknowledgement")
         self._position += 1
+        self._acknowledged += 1
         self._retries = 0
         if self._position == len(self._frames):
-            self._completed = True
-            self._closed = True
-            self._frames = ()
+            self._chunk_index += 1
+            if self._chunk_index == len(self._parts):
+                self._completed = True
+                self.cancel()
+            else:
+                self._frames = encode_chunk(
+                    self._chunk_index, self._parts[self._chunk_index],
+                    self._value_limit,
+                )
+                self._position = 0
 
     def on_timeout(self) -> bytes:
         """Return exact same packet to retransmit, or abort after retry budget."""
@@ -89,6 +98,7 @@ class StopAndWaitSender:
     def cancel(self) -> None:
         """Discard queued frames; no resume or automatic new session."""
         self._frames = ()
+        self._parts = ()
         self._closed = True
 
 
