@@ -14,6 +14,10 @@ bounded strict JSON reader before encoding.
 - Both Python and Node.js canonicalizers enforce at most **64 levels** of
   array/object nesting, including for in-memory objects; a 65th level fails.
 - Non-NFC Unicode strings are **rejected**, not silently normalized.
+- The bounded Python contract loader also refuses non-NFC decoded keys and values
+  **before** structural contract validation. Escaped aliases of the same key
+  are rejected as duplicates after JSON decoding; accepted NFC data is not
+  silently rewritten. This applies to design-time contracts, not live traffic.
 - Floating-point values, nonstring dictionary keys, and lone Unicode surrogates
   are rejected. Booleans, null, arrays and objects are supported. Integers are
   permitted only in the inclusive safe range **-9007199254740991 through
