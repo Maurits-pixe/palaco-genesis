@@ -38,6 +38,8 @@ on:
       - 'tests/test_local_checkpoint_registry.py'
       - 'tools/checkpoint_recovery_assessment.py'
       - 'tests/test_checkpoint_recovery_assessment.py'
+      - 'tools/recovery_review_dossier.py'
+      - 'tests/test_recovery_review_dossier.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -77,6 +79,8 @@ on:
       - 'tests/test_local_checkpoint_registry.py'
       - 'tools/checkpoint_recovery_assessment.py'
       - 'tests/test_checkpoint_recovery_assessment.py'
+      - 'tools/recovery_review_dossier.py'
+      - 'tests/test_recovery_review_dossier.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
