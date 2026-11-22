@@ -83,6 +83,21 @@ and assert failure categories. The checks demonstrate rejection
 parity on the finite corpus, **not** full cross-language equivalence,
 cryptographic authentication or runtime authorization.
 
+## Curated raw JSON escape variants
+
+`verification/contract-digest-v0-raw-variants.json` defines six alternative
+serialized input forms that must yield the same pinned canonical bytes and
+digest as their semantic reference objects. These include escaped versus
+literal NFC Unicode, escaped surrogate pairs, escaped numeric-looking key
+names, reordered object members, escaped U+2028/U+2029 and control characters,
+and escaped versus literal slashes.
+
+The Python check uses the **strict bounded loader** and also covers duplicate
+decoded member names (including escaped key aliases) and invalid `\\x`
+escapes. The Node.js check uses `JSON.parse` only for trusted version-controlled
+valid fixtures; it is **not** a duplicate-key-resisting raw JSON parser.
+Agreement here is limited to the curated cases, not arbitrary inputs.
+
 ## Validate
 
 ```sh
