@@ -88,7 +88,7 @@ pub fn inspect_audit_chain(
 
     let mut next_sequence = expected.first_sequence;
     let mut predecessor = expected.predecessor_digest;
-    for link in links {
+    for (index, link) in links.iter().enumerate() {
         let Some(computed) =
             audit_link_digest(link.sequence, &link.predecessor_digest, &link.receipt_digest)
         else {
@@ -101,13 +101,12 @@ pub fn inspect_audit_chain(
             return RestartInspection::Deny;
         }
         predecessor = link.link_digest;
-        let Some(next) = next_sequence.checked_add(1) else {
-            if link.sequence != expected.last_sequence {
+        if index + 1 < links.len() {
+            let Some(next) = next_sequence.checked_add(1) else {
                 return RestartInspection::Deny;
-            }
-            break;
-        };
-        next_sequence = next;
+            };
+            next_sequence = next;
+        }
     }
 
     let Some(last) = links.last() else {
