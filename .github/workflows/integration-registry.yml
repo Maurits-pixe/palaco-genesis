@@ -42,6 +42,8 @@ on:
       - 'tests/test_recovery_review_dossier.py'
       - 'tools/signed_recovery_review.py'
       - 'tests/test_signed_recovery_review.py'
+      - 'tools/signed_review_replay_register.py'
+      - 'tests/test_signed_review_replay_register.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -85,6 +87,8 @@ on:
       - 'tests/test_recovery_review_dossier.py'
       - 'tools/signed_recovery_review.py'
       - 'tests/test_signed_recovery_review.py'
+      - 'tools/signed_review_replay_register.py'
+      - 'tests/test_signed_review_replay_register.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
