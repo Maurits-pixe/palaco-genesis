@@ -94,4 +94,32 @@ assert.ok(canonicalBytes(nested).length > 0);
 nested = [nested];
 assert.throws(() => canonicalBytes(nested), /nesting depth/);
 
-console.log('PASS: 5 pinned PALACO-CJSON-v0 vectors independently verified with Node.js; HOLD');
+const negativeCorpus = JSON.parse(
+  readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
+);
+assert.equal(negativeCorpus.profile, 'PALACO-CJSON-v0');
+assert.equal(negativeCorpus.cases.length, 10);
+const negativePatterns = {
+  non_integer: /non-integer/,
+  unsafe_integer: /safe range/,
+  non_nfc: /non-NFC/,
+  surrogate: /surrogate/,
+  depth: /nesting depth/,
+};
+for (const testCase of negativeCorpus.cases) {
+  let candidate;
+  if (testCase.kind === 'literal') {
+    candidate = testCase.value;
+  } else if (testCase.kind === 'nested_arrays' || testCase.kind === 'nested_objects') {
+    candidate = 0;
+    for (let i = 0; i < testCase.depth; i += 1) {
+      candidate = testCase.kind === 'nested_arrays' ? [candidate] : { child: candidate };
+    }
+  } else {
+    throw new Error('unknown negative vector kind: ' + testCase.kind);
+  }
+  assert.ok(Object.hasOwn(negativePatterns, testCase.reason), testCase.name);
+  assert.throws(() => canonicalBytes(candidate), negativePatterns[testCase.reason], testCase.name);
+}
+
+console.log('PASS: 5 positive and 10 shared negative PALACO-CJSON-v0 vectors independently verified with Node.js; HOLD');
