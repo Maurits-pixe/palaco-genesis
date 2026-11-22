@@ -147,6 +147,54 @@ pub fn inspect_transition_signer_continuity(
     RestartInspection::ReviewOnly
 }
 
+/// Denies unannounced signer changes anywhere inside a review segment.
+///
+/// Each receipt must have exactly one source evidence bundle. Every bundle
+/// must use the same key identity and validity window as the first, and each
+/// signed anchor must be bound to that key. Registry revisions may advance,
+/// but never roll back. This is not key or signature authentication.
+#[must_use]
+pub fn inspect_segment_signer_consistency(
+    segment: &AuditSegmentEvidence<'_>,
+) -> RestartInspection {
+    let Some(first) = segment.evidence.first() else {
+        return RestartInspection::Deny;
+    };
+    if segment.evidence.len() != segment.receipts.len() {
+        return RestartInspection::Deny;
+    }
+    let baseline = first.trusted_key;
+    if baseline.key_id.is_empty()
+        || baseline.public_key == [0; 32]
+        || baseline.first_sequence == 0
+        || baseline.first_sequence > baseline.last_sequence
+    {
+        return RestartInspection::Deny;
+    }
+
+    let mut prior_registry_sequence = 0;
+    for source in segment.evidence {
+        let key = source.trusted_key;
+        if key.revoked
+            || key.key_id != baseline.key_id
+            || key.public_key != baseline.public_key
+            || key.first_sequence != baseline.first_sequence
+            || key.last_sequence != baseline.last_sequence
+            || key.registry_sequence == 0
+            || key.registry_sequence < prior_registry_sequence
+            || source.signed.key_id != key.key_id
+            || source.signed.public_key != key.public_key
+            || source.signed.anchor.sequence < key.first_sequence
+            || source.signed.anchor.sequence > key.last_sequence
+        {
+            return RestartInspection::Deny;
+        }
+        prior_registry_sequence = key.registry_sequence;
+    }
+
+    RestartInspection::ReviewOnly
+}
+
 /// Requires consecutive witnessed segments and complete recovery evidence.
 ///
 /// Checks both source-evidence batches as well as the exact transition between
@@ -159,7 +207,9 @@ pub fn inspect_custodied_audit_transition(
     witness: Option<&impl AuditCustodyWitness>,
     verifier: &impl Ed25519Verifier,
 ) -> RestartInspection {
-    if inspect_transition_monotonicity(previous, current) != RestartInspection::ReviewOnly
+    if inspect_segment_signer_consistency(previous) != RestartInspection::ReviewOnly
+        || inspect_segment_signer_consistency(current) != RestartInspection::ReviewOnly
+        || inspect_transition_monotonicity(previous, current) != RestartInspection::ReviewOnly
         || inspect_transition_snapshot_link(previous, current) != RestartInspection::ReviewOnly
         || inspect_transition_signer_continuity(previous, current) != RestartInspection::ReviewOnly
         || inspect_audit_continuity(
@@ -193,8 +243,9 @@ pub fn inspect_custodied_audit_transition(
 #[cfg(test)]
 mod tests {
     use super::{
-        inspect_custodied_audit_transition, inspect_transition_monotonicity,
-        inspect_transition_signer_continuity, inspect_transition_snapshot_link,
+        inspect_custodied_audit_transition, inspect_segment_signer_consistency,
+        inspect_transition_monotonicity, inspect_transition_signer_continuity,
+        inspect_transition_snapshot_link,
         AuditSegmentEvidence,
     };
     use crate::orcheastra_audit_chain::{audit_link_digest, AuditChainExpectation, AuditLink};
@@ -729,6 +780,81 @@ mod tests {
         };
         assert_eq!(
             inspect_transition_signer_continuity(&previous, &missing_identity),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_segment_signer_consistency(&previous),
+            RestartInspection::ReviewOnly
+        );
+        let repeated_evidence = [
+            RecoveryEvidence {
+                checkpoints: &checkpoints_previous,
+                payloads: payloads_previous,
+                signed: &signed_previous,
+                trusted_key: &key,
+                floor: &floor_previous,
+            },
+            RecoveryEvidence {
+                checkpoints: &checkpoints_previous,
+                payloads: payloads_previous,
+                signed: &signed_previous,
+                trusted_key: &key,
+                floor: &floor_previous,
+            },
+        ];
+        let repeated_receipts = [receipts_previous[0], receipts_previous[0]];
+        let repeated_segment = AuditSegmentEvidence {
+            links: &links_previous,
+            receipts: &repeated_receipts,
+            evidence: &repeated_evidence,
+            expected: &expected_previous,
+        };
+        assert_eq!(
+            inspect_segment_signer_consistency(&repeated_segment),
+            RestartInspection::ReviewOnly
+        );
+        let changed_middle_key = TrustedKey {
+            key_id: "unannounced-key",
+            public_key: key.public_key,
+            registry_sequence: key.registry_sequence,
+            first_sequence: key.first_sequence,
+            last_sequence: key.last_sequence,
+            revoked: false,
+        };
+        let changed_evidence = [
+            RecoveryEvidence {
+                checkpoints: &checkpoints_previous,
+                payloads: payloads_previous,
+                signed: &signed_previous,
+                trusted_key: &key,
+                floor: &floor_previous,
+            },
+            RecoveryEvidence {
+                checkpoints: &checkpoints_previous,
+                payloads: payloads_previous,
+                signed: &signed_previous,
+                trusted_key: &changed_middle_key,
+                floor: &floor_previous,
+            },
+        ];
+        let changed_segment = AuditSegmentEvidence {
+            links: &links_previous,
+            receipts: &repeated_receipts,
+            evidence: &changed_evidence,
+            expected: &expected_previous,
+        };
+        assert_eq!(
+            inspect_segment_signer_consistency(&changed_segment),
+            RestartInspection::Deny
+        );
+        let missing_receipt_segment = AuditSegmentEvidence {
+            links: &links_previous,
+            receipts: &receipts_previous,
+            evidence: &repeated_evidence,
+            expected: &expected_previous,
+        };
+        assert_eq!(
+            inspect_segment_signer_consistency(&missing_receipt_segment),
             RestartInspection::Deny
         );
         let witness = TestWitness([expected_previous, expected_current]);
