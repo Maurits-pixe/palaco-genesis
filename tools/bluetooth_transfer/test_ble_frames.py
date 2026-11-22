@@ -121,6 +121,10 @@ class BridgeTests(unittest.TestCase):
             bridge.finish()
         self.assertTrue(self.session.closed)
 
+    def test_offer_size_mismatch_rejected(self):
+        with self.assertRaises(TransferError):
+            BleTransferBridge(self.session, len(self.payload) + 1, 77)
+
     def test_payload_digest_failure(self):
         bridge = BleTransferBridge(self.session, len(self.payload), 512)
         tampered = b"Z" * len(self.payload)
