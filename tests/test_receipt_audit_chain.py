@@ -20,6 +20,7 @@ class ReceiptAuditChainTests(unittest.TestCase):
             c.execute("""CREATE TABLE observed_handoff_receipts(
                 receipt_id TEXT PRIMARY KEY, bundle_sha256 TEXT, recipient_id TEXT,
                 custodian_key_id TEXT, receipt_digest TEXT)""")
+            mod._schema(c)
 
     def put(self, rid):
         with sqlite3.connect(self.db) as c:
