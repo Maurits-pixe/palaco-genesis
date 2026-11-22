@@ -32,6 +32,8 @@ on:
       - 'tests/test_atomic_reviewer_replay.py'
       - 'tools/local_audit_chain.py'
       - 'tests/test_local_audit_chain.py'
+      - 'tools/signed_audit_checkpoint.py'
+      - 'tests/test_signed_audit_checkpoint.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -65,6 +67,8 @@ on:
       - 'tests/test_atomic_reviewer_replay.py'
       - 'tools/local_audit_chain.py'
       - 'tests/test_local_audit_chain.py'
+      - 'tools/signed_audit_checkpoint.py'
+      - 'tests/test_signed_audit_checkpoint.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
