@@ -73,4 +73,16 @@ class AnchoredReviewVerifier:
                     current.root_public_key, self._snapshot.root_public_key,
                 )):
             return False
-        return self._delegate.verify(reviewer_key_id, message, signature)
+        signature_valid = self._delegate.verify(reviewer_key_id, message, signature)
+        if not signature_valid:
+            return False
+        # Check again after signature verification to catch policy rotation
+        # while the verifier was running. This is NOT a native atomic lease.
+        try:
+            final = self._read_anchor()
+        except TransferError:
+            return False
+        return (final.revision == self._snapshot.revision and
+                hmac.compare_digest(
+                    final.root_public_key, self._snapshot.root_public_key,
+                ))
