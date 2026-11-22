@@ -121,6 +121,21 @@ class StrictContractJsonTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "non-finite"):
             self.load_raw('{"value":-Infinity}')
 
+    def test_positive_exponent_overflow_rejected(self):
+        with self.assertRaisesRegex(ValueError, "non-finite"):
+            self.load_raw('{"ratio":1e400}')
+
+    def test_negative_exponent_overflow_rejected(self):
+        with self.assertRaisesRegex(ValueError, "non-finite"):
+            self.load_raw('{"ratio":-1e400}')
+
+    def test_nested_exponent_overflow_rejected(self):
+        with self.assertRaisesRegex(ValueError, "non-finite"):
+            self.load_raw('{"edges":[{"ratio":9.99e999}]}')
+
+    def test_finite_exponent_accepted(self):
+        self.assertEqual(self.load_raw('{"ratio":1.25e2}'), {"ratio": 125.0})
+
     def test_truncated_json_rejected(self):
         with self.assertRaises(ValueError):
             self.load_raw('{"release_gate":"HOLD"')
