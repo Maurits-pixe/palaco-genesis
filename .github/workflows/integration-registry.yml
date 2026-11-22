@@ -68,6 +68,8 @@ on:
       - 'tests/test_signed_custody_ledger_anchor.py'
       - 'tools/custody_anchor_handoff.py'
       - 'tests/test_custody_anchor_handoff.py'
+      - 'tools/custody_ack_audit_chain.py'
+      - 'tests/test_custody_ack_audit_chain.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -137,6 +139,8 @@ on:
       - 'tests/test_signed_custody_ledger_anchor.py'
       - 'tools/custody_anchor_handoff.py'
       - 'tests/test_custody_anchor_handoff.py'
+      - 'tools/custody_ack_audit_chain.py'
+      - 'tests/test_custody_ack_audit_chain.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
