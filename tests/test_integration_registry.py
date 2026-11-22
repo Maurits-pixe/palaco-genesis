@@ -91,6 +91,11 @@ class IntegrationRegistryTests(unittest.TestCase):
         data["modules"][0]["role"] = ""
         self.assert_rejected(data, "role must be nonempty")
 
+    def test_rejects_nonstring_dependency(self):
+        data = self.changed()
+        data["modules"][0]["depends_on"] = [{"invalid": "dependency"}]
+        self.assert_rejected(data, "depends_on must be an array")
+
     def test_rejects_empty_modules(self):
         data = self.changed()
         data["modules"] = []
