@@ -28,6 +28,8 @@ on:
       - 'tests/test_local_reviewer_revision_floor.py'
       - 'tools/revision_gated_replay.py'
       - 'tests/test_revision_gated_replay.py'
+      - 'tools/atomic_reviewer_replay.py'
+      - 'tests/test_atomic_reviewer_replay.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -57,6 +59,8 @@ on:
       - 'tests/test_local_reviewer_revision_floor.py'
       - 'tools/revision_gated_replay.py'
       - 'tests/test_revision_gated_replay.py'
+      - 'tools/atomic_reviewer_replay.py'
+      - 'tests/test_atomic_reviewer_replay.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
