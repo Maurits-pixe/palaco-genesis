@@ -267,8 +267,8 @@ pub fn inspect_audit_evidence(
 /// Rejects missing/denying custody evidence even if the caller supplied a
 /// perfectly self-consistent audit chain and recovery receipts. The witness
 /// implementation and signature verifier must still be independently trusted;
-/// Untrusted evidence is preflighted before the custody witness is called.
-/// this function grants no authority and performs no writes.
+/// All original evidence is fully revalidated before invoking the custody
+/// witness. This function grants no authority and performs no writes.
 #[must_use]
 pub fn inspect_custodied_audit_evidence(
     links: &[AuditLink],
@@ -284,9 +284,9 @@ pub fn inspect_custodied_audit_evidence(
         || inspect_audit_evidence_lineage(evidence) != RestartInspection::ReviewOnly
         || inspect_audit_evidence_signers(evidence) != RestartInspection::ReviewOnly
         || inspect_audit_evidence_floors(evidence) != RestartInspection::ReviewOnly
-        || inspect_custodied_audit_chain(links, expected, witness) != RestartInspection::ReviewOnly
         || inspect_audit_evidence(links, receipts, evidence, expected, verifier)
             != RestartInspection::ReviewOnly
+        || inspect_custodied_audit_chain(links, expected, witness) != RestartInspection::ReviewOnly
     {
         return RestartInspection::Deny;
     }
@@ -485,6 +485,53 @@ mod tests {
         );
 
         assert_eq!(custody_counter.0.get(), 0);
+
+        // Even evidence that passes cheap preflight but fails full payload
+        // hashing must not reach an external custody callback.
+        let corrupted_payloads: &[&[u8]] = &[b"ORIGINAL"];
+        let corrupted = [RecoveryEvidence {
+            checkpoints: &checkpoints,
+            payloads: corrupted_payloads,
+            signed: &signed,
+            trusted_key: &trusted_key,
+            floor: &floor,
+        }];
+        assert_eq!(
+            inspect_custodied_audit_evidence(
+                &links,
+                &receipts,
+                &corrupted,
+                Some(&expected),
+                Some(&custody_counter),
+                &verifier,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(custody_counter.0.get(), 0);
+        assert_eq!(
+            inspect_custodied_audit_evidence(
+                &links,
+                &receipts,
+                &evidence,
+                Some(&expected),
+                Some(&custody_counter),
+                &RejectAll,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(custody_counter.0.get(), 0);
+        assert_eq!(
+            inspect_custodied_audit_evidence(
+                &links,
+                &receipts,
+                &evidence,
+                Some(&expected),
+                Some(&custody_counter),
+                &verifier,
+            ),
+            RestartInspection::ReviewOnly
+        );
+        assert_eq!(custody_counter.0.get(), 1);
 
         let tampered_payloads: &[&[u8]] = &[b"ORIGINAL"];
         let altered = [RecoveryEvidence {
