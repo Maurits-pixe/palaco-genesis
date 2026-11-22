@@ -26,10 +26,17 @@ def _reject_nonfinite(value):
 
 
 def _parse_finite_float(token):
-    """Prevent exponent overflow from silently creating Infinity."""
+    """Reject overflows and nonzero decimals rounded all the way to zero."""
     number = float(token)
     if not math.isfinite(number):
         raise ValueError("non-finite JSON number from exponent overflow")
+    if number == 0.0:
+        # Inspect only the significand: a genuine all-zero literal (including
+        # signed zero and zero with any exponent) remains valid. A nonzero
+        # significand converting to zero would silently lose its entire value.
+        significand = token.split("e", 1)[0].split("E", 1)[0]
+        if any("1" <= char <= "9" for char in significand):
+            raise ValueError("JSON decimal underflow to zero")
     return number
 
 
