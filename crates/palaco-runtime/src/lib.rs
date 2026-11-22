@@ -24,6 +24,9 @@ pub mod orcheastra_audit_chain;
 /// Read-only binding of audit-chain links to recovery review receipt metadata.
 pub mod orcheastra_audit_receipts;
 
+/// End-to-end read-only audit-link verification against original recovery evidence.
+pub mod orcheastra_audit_evidence;
+
 use palaco_citadel::{BoundaryDisposition, ExecutionBoundary};
 use palaco_foundation::{
     errors::RevalidationError,
