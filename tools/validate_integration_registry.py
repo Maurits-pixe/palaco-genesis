@@ -13,27 +13,16 @@ DEFAULT = Path(__file__).resolve().parents[1] / "ecosystem" / "integration-regis
 ID = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 
 
-def _unique_object_pairs(pairs):
-    """Reject ambiguous duplicate JSON members at every nesting level."""
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"duplicate JSON key: {key}")
-        result[key] = value
-    return result
-
-
-def _reject_nonfinite(value):
-    raise ValueError(f"non-finite JSON number: {value}")
+try:
+    from tools.strict_contract_json import load_strict_json
+except ModuleNotFoundError:
+    # Support direct execution: python3 tools/validate_*.py
+    from strict_contract_json import load_strict_json
 
 
 def load_registry(path):
-    """Parse strict JSON, rejecting duplicate members and NaN/Infinity."""
-    return json.loads(
-        Path(path).read_text(encoding="utf-8"),
-        object_pairs_hook=_unique_object_pairs,
-        parse_constant=_reject_nonfinite,
-    )
+    """Preserve the validator's public loader while sharing strict parsing."""
+    return load_strict_json(path)
 
 
 def validate(data):
