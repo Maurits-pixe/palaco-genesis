@@ -247,11 +247,17 @@ mod tests {
             RestartInspection::Deny
         );
         let long_id = "x".repeat(MAX_KEY_ID_BYTES + 1);
-        signed.key_id = &long_id;
-        key.key_id = &long_id;
-        key.registry_sequence = 1;
+        let long_signed = SignedAnchor {
+            key_id: &long_id,
+            ..signed
+        };
+        let long_key = TrustedKey {
+            key_id: &long_id,
+            registry_sequence: 1,
+            ..key
+        };
         assert_eq!(
-            inspect_signed_anchor(Some(&signed), Some(&key), &RejectAll),
+            inspect_signed_anchor(Some(&long_signed), Some(&long_key), &RejectAll),
             RestartInspection::Deny
         );
     }
