@@ -184,6 +184,106 @@ class DurableHoldGateTests(unittest.TestCase):
         with self.assertRaises(TransferError):
             DurableHoldChallengeAnchor(self.native, object(), NAMESPACE)
 
+    def test_invalid_checkpoint_read_latches(self):
+        self.native.value = (True, EMPTY_ROOT)
+        with self.assertRaises(TransferError):
+            self.anchor.read()
+        self.assertTrue(self.incidents.value.held)
+
+    def test_invalid_checkpoint_transition_latches(self):
+        with self.assertRaises(TransferError):
+            self.anchor.advance((0, EMPTY_ROOT), (2, ROOT))
+        self.assertEqual(self.native.writes, 0)
+        self.assertTrue(self.incidents.value.held)
+
+    def test_checkpoint_replay_transition_latches(self):
+        with self.assertRaises(TransferError):
+            self.anchor.advance((0, EMPTY_ROOT), (0, EMPTY_ROOT))
+        self.assertEqual(self.native.writes, 0)
+        self.assertTrue(self.incidents.value.held)
+
+    def test_checkpoint_wrong_state_type_latches(self):
+        self.native.value = ["not", "tuple"]
+        with self.assertRaises(TransferError):
+            self.anchor.read()
+        self.assertTrue(self.incidents.value.held)
+
+    def test_external_hold_during_read_denies(self):
+        original_read = self.native.read
+        def inject():
+            self.incidents.value = ProtectedHoldState(NAMESPACE, True, 1)
+            return original_read()
+        self.native.read = inject
+        with self.assertRaises(TransferError):
+            self.anchor.read()
+        self.assertTrue(self.anchor.is_held)
+
+    def test_external_hold_during_advance_denies(self):
+        original_advance = self.native.advance
+        def inject(before, after):
+            original_advance(before, after)
+            self.incidents.value = ProtectedHoldState(NAMESPACE, True, 1)
+        self.native.advance = inject
+        with self.assertRaises(TransferError):
+            self.anchor.advance((0, EMPTY_ROOT), (1, ROOT))
+        self.assertTrue(self.anchor.is_held)
+
+    def test_external_incident_store_disappears_during_write(self):
+        original_advance = self.native.advance
+        def inject(before, after):
+            original_advance(before, after)
+            self.incidents.offline = True
+        self.native.advance = inject
+        with self.assertRaises(TransferError):
+            self.anchor.advance((0, EMPTY_ROOT), (1, ROOT))
+        self.assertTrue(self.anchor.is_held)
+
+    def test_local_hold_refuses_any_further_native_io(self):
+        self.native.fail_write = True
+        with self.assertRaises(TransferError):
+            self.anchor.advance((0, EMPTY_ROOT), (1, ROOT))
+        self.native.fail_write = False
+        reads = self.native.reads
+        writes = self.native.writes
+        with self.assertRaises(TransferError):
+            self.anchor.read()
+        with self.assertRaises(TransferError):
+            self.anchor.advance((0, EMPTY_ROOT), (1, ROOT))
+        self.assertEqual(self.native.reads, reads)
+        self.assertEqual(self.native.writes, writes)
+
+    def test_checkpoint_read_is_serialized_per_instance(self):
+        import threading
+        started = threading.Event()
+        release = threading.Event()
+        original_read = self.native.read
+        def slow_read():
+            started.set()
+            self.assertTrue(release.wait(3))
+            return original_read()
+        self.native.read = slow_read
+        results = []
+        def worker():
+            try:
+                results.append(self.anchor.read())
+            except BaseException as exc:
+                results.append(exc)
+        first = threading.Thread(target=worker)
+        second = threading.Thread(target=worker)
+        first.start()
+        self.assertTrue(started.wait(3))
+        second.start()
+        release.set()
+        first.join(3)
+        second.join(3)
+        self.assertFalse(first.is_alive() or second.is_alive())
+        self.assertEqual(results, [(0, EMPTY_ROOT), (0, EMPTY_ROOT)])
+
+    def test_no_native_fencing_claim(self):
+        # These fields are software-only. No OS/hardware fence exists here.
+        self.assertFalse(hasattr(self.anchor, "hardware_fence"))
+        self.assertFalse(hasattr(self.anchor, "authorize_repair"))
+
     def test_fake_rollback_of_incident_still_possible(self):
         self.native.fail_write = True
         with self.assertRaises(TransferError):
