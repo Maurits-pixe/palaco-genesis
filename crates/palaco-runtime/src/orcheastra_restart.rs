@@ -78,7 +78,6 @@ pub fn inspect_restart(
     RestartInspection::ReviewOnly
 }
 
-
 /// Inspects a consecutive, in-memory checkpoint chain against its latest anchor.
 ///
 /// Each link must refer to the preceding snapshot digest, sequence numbers must
@@ -123,8 +122,7 @@ pub fn inspect_restart_chain(
 #[cfg(test)]
 mod tests {
     use super::{
-        inspect_restart, inspect_restart_chain, RestartAnchor, RestartCheckpoint,
-        RestartInspection,
+        inspect_restart, inspect_restart_chain, RestartAnchor, RestartCheckpoint, RestartInspection,
     };
 
     fn fixture() -> (RestartCheckpoint, RestartAnchor) {
@@ -327,5 +325,4 @@ mod tests {
             RestartInspection::Deny
         );
     }
-
 }
