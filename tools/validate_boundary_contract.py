@@ -22,6 +22,29 @@ REQUIRED_EDGES = {
 }
 
 
+def _unique_object_pairs(pairs):
+    """Fail closed when a JSON object repeats any member name."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def _reject_nonfinite(value):
+    raise ValueError(f"non-finite JSON number: {value}")
+
+
+def load_document(path):
+    """Parse a design-time contract without ambiguous JSON extensions."""
+    return json.loads(
+        Path(path).read_text(encoding="utf-8"),
+        object_pairs_hook=_unique_object_pairs,
+        parse_constant=_reject_nonfinite,
+    )
+
+
 def validate(registry, contract):
     errors = []
     if not isinstance(registry, dict) or not isinstance(contract, dict):
@@ -84,9 +107,9 @@ def validate(registry, contract):
 
 def main():
     try:
-        registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
-        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        registry = load_document(REGISTRY)
+        contract = load_document(CONTRACT)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 2
     errors = validate(registry, contract)
