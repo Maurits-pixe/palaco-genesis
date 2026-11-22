@@ -1,0 +1,15 @@
+{
+  "format": "rio-one-compatibility-review-v299",
+  "sourceFile": "palaco-one-v16.7-lokale-gateway.zip",
+  "sourceSha256": "2c5a81a33f316578188f6aeb4f69cfe65f2f4ceb732931ec5b5b0c1605f59b34",
+  "reviewedFile": "README-palaco-one-v16.7.md",
+  "reviewedFileSha256": "8386f11e0f0c984c858597033d4cf8793e75eee32546018aa618ae8679a0dea8",
+  "reviewScope": "SOURCE_README_ONLY_NOT_RUNTIME_AUTHENTICATION",
+  "sourceDeclares": "PRIVATE_LOCAL_DEVELOPMENT_NO_REAL_AUTHENTICATION_OR_SESSIONS",
+  "rioSignedSessionProtocolImplementedByGateway": "NOT_ESTABLISHED",
+  "realAuthenticatedOneService": "NOT_CONNECTED",
+  "managedHardwareSigner": "NOT_CONNECTED",
+  "localSignerScope": "SOFTWARE_ONLY_TRUSTED_NODE_HOST_REQUIRED",
+  "authorization": "NONE",
+  "acceptance": "HOLD"
+}

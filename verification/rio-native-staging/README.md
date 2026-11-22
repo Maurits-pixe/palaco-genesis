@@ -14,7 +14,7 @@ npm ci --prefix native-staging --ignore-scripts --no-audit --no-fund
 npm run test:ci
 ```
 
-`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v298.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
+`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v299.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
 
 ## Source continuity and status
 
@@ -105,4 +105,39 @@ The producer validates the request/challenge and current signing-key state befor
 
 The v298 native fixture pairs this implemented producer with the unchanged verifier, One reader, central entry point and original receipt route. A private synthetic server binding simulates the unavailable user-authentication service; actual PostgreSQL queries check selected One column contracts. Four scenarios cover missing authentication, the complete paired chain, One revocation during signing and One revocation during receipt inspection. Real user authentication, registered WebAuthn, the original One SQL transaction chain, approved real signing keys and remote TLS remain unverified.
 
-The current `test:ci` command uses `run-ci-v298.mjs`, requires all four producer scenarios and writes `evidence/CI-RESULT-v298.json`. Earlier modules and runners remain preserved. AI review: TRIAS distinguishes a session statement from session/identity issuance; ORACLE records synthetic authentication separately from real cryptographic/native SQL checks; MENTOR provides the producer callback needed by the existing central entry point. Acceptance HOLD; authorization NONE; no live login or deployment.
+`run-ci-v298.mjs` requires all four producer scenarios and writes `evidence/CI-RESULT-v298.json`. Earlier modules and runners remain preserved. AI review: TRIAS distinguishes a session statement from session/identity issuance; ORACLE records synthetic authentication separately from real cryptographic/native SQL checks; MENTOR provides the producer callback needed by the existing central entry point. Acceptance HOLD; authorization NONE; no live login or deployment.
+
+## Restricted local software signer (v299)
+
+`createRioOneRestrictedSoftwareSignerV299` implements the issuer's signing port with a host-supplied, sign-only Ed25519 WebCrypto CryptoKey whose `extractable` flag is false. It generates no keys, reads no key files, persists no keys and exposes no key-export method. It verifies every produced signature against the independently configured public SPKI pin. A private-key PEM, exportable handle, different algorithm or handle/public-pin mismatch cannot produce a result through this API.
+
+```js
+const backend = createRioOneRestrictedSoftwareSignerV299({
+  tenantRef, allowedOrigin, issuerKey, privateSigningKey,
+  readIssuerKeyState, now, maxConcurrentSignatures: 1,
+});
+const issuer = createRioOneSessionStatementIssuerV298({
+  tenantRef, allowedOrigin, issuerKey, readAuthenticatedOneSession,
+  readIssuerKeyState, signSessionStatement: backend.signSessionStatement, now,
+});
+```
+
+Instantiate the backend once per configured key/service instance. Its concurrency bound is per instance, with no background queue. Calls above capacity, stale jobs, malformed/noncanonical messages, wrong purpose/issuer/tenant/request scope, pending session facts, expired validity or key-state changes return no signature. The signing port is for the trusted issuer; it is not a public arbitrary-message signing endpoint or a user authenticator.
+
+**Key protection is deliberately limited.** In the local Node v24.22.3 probe, `subtle.exportKey` refused an `extractable:false` private key, while `KeyObject.from(...).export(...)` could export it through a deprecated Node API. The module therefore records `hostKeyIsolation: NOT_PROVIDED` and `hardwareProtection: NOT_VERIFIED`. The WebCrypto flag must not be described as protection from a privileged Node host or as HSM custody.
+
+| Surface | Evidence/limit |
+| --- | --- |
+| Module API | No private-key or export method is returned |
+| WebCrypto export API | Rejected for the supplied private signing handle |
+| Privileged Node host | Remains trusted; the runtime probe records whether Node conversion/export succeeds |
+| Hardware custody / managed cloud signing | Not implemented or verified |
+| Key enrollment and restart persistence | Not supplied by this backend |
+
+The native fixture generates its ephemeral source key through WebCrypto without exporting that source private key. A separate disposable probe key tests Node-host export behavior; any returned probe buffer is wiped and never printed or retained. The probe does not test an enrolled/user key. Native evidence records the limitation rather than requiring a future Node runtime to remain exportable.
+
+Six new native scenarios run the software backend through the unchanged issuer, verifier, One reader and central RIO route: key-protection scope, missing synthetic authentication, the complete paired chain, real issuer-key revocation between signer registry reads, One revocation during signing and One revocation during receipt inspection. The selected-column SQL fixtures and synthetic authentication remain distinct from an actual One IdP or the original One transaction chain.
+
+`ONE-COMPATIBILITY-v299.json` records hashes of the reviewed One v16.7 package/readme. That source still declares no real authentication or sessions; its actual RIO signed-session protocol compatibility is not established. The current `test:ci` command uses the separate v299 runner and requires all six software-backend scenarios, with source-bound evidence in `evidence/CI-RESULT-v299.json`.
+
+AI review: TRIAS retains HOLD/NONE and makes no hardware/identity-authority claim; ORACLE records the observed Node export bypass and confines cryptographic/native evidence to the tested software fixture; MENTOR supplies a usable bounded local signer while keeping the trusted-host requirement visible. Real One authentication, approved production key custody/enrollment and remote transport remain unconnected.
