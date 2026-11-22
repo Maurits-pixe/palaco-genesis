@@ -55,17 +55,11 @@ pub fn inspect_bound_audit_receipts(
 #[cfg(test)]
 mod tests {
     use super::inspect_bound_audit_receipts;
-    use crate::orcheastra_audit_chain::{
-        audit_link_digest, AuditChainExpectation, AuditLink,
-    };
+    use crate::orcheastra_audit_chain::{audit_link_digest, AuditChainExpectation, AuditLink};
     use crate::orcheastra_restart::RestartInspection;
     use crate::orcheastra_review_receipt::ReviewReceipt;
 
-    fn fixture() -> (
-        Vec<AuditLink>,
-        Vec<ReviewReceipt>,
-        AuditChainExpectation,
-    ) {
+    fn fixture() -> (Vec<AuditLink>, Vec<ReviewReceipt>, AuditChainExpectation) {
         let receipts = vec![
             ReviewReceipt {
                 digest: [1; 32],
