@@ -46,6 +46,8 @@ on:
       - 'tests/test_signed_review_replay_register.py'
       - 'tools/signed_review_register_checkpoint.py'
       - 'tests/test_signed_review_register_checkpoint.py'
+      - 'tools/review_checkpoint_history.py'
+      - 'tests/test_review_checkpoint_history.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -93,6 +95,8 @@ on:
       - 'tests/test_signed_review_replay_register.py'
       - 'tools/signed_review_register_checkpoint.py'
       - 'tests/test_signed_review_register_checkpoint.py'
+      - 'tools/review_checkpoint_history.py'
+      - 'tests/test_review_checkpoint_history.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
