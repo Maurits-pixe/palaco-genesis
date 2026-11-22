@@ -102,6 +102,34 @@ class StrictContractJsonTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "byte-order mark"):
                 load_strict_json(path)
 
+    def test_utf32_little_endian_bom_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "utf32-le.json"
+            path.write_bytes(bytes.fromhex("fffe0000") + '{}'.encode("utf-32-le"))
+            with self.assertRaisesRegex(ValueError, "byte-order mark"):
+                load_strict_json(path)
+
+    def test_utf32_big_endian_bom_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "utf32-be.json"
+            path.write_bytes(bytes.fromhex("0000feff") + '{}'.encode("utf-32-be"))
+            with self.assertRaisesRegex(ValueError, "byte-order mark"):
+                load_strict_json(path)
+
+    def test_utf16_without_bom_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "utf16-no-bom.json"
+            path.write_bytes('{"gate":"HOLD"}'.encode("utf-16-le"))
+            with self.assertRaises(ValueError):
+                load_strict_json(path)
+
+    def test_overlong_utf8_encoding_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "overlong.json"
+            path.write_bytes(b'{"value":"' + bytes.fromhex("c0af") + b'"}')
+            with self.assertRaises(UnicodeDecodeError):
+                load_strict_json(path)
+
     def test_clean_utf8_without_bom_accepted(self):
         self.assertEqual(self.load_raw('{"gate":"HOLD"}'), {"gate": "HOLD"})
 
