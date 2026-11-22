@@ -12,6 +12,9 @@ pub mod orcheastra_payload;
 /// Fail-closed external-signature verification boundary for recovery anchors.
 pub mod orcheastra_signed_anchor;
 
+/// Composed read-only signed recovery and custody-floor inspection.
+pub mod orcheastra_recovery;
+
 use palaco_citadel::{BoundaryDisposition, ExecutionBoundary};
 use palaco_foundation::{
     errors::RevalidationError,
