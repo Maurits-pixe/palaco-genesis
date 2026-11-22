@@ -13,6 +13,7 @@ workspace = true
 [dependencies]
 palaco-citadel = { workspace = true }
 palaco-foundation = { path = "../palaco-foundation" }
+sha2.workspace = true
 
 [dev-dependencies]
 chrono.workspace = true
