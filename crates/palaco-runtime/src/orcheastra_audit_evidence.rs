@@ -5,6 +5,7 @@
 
 use crate::orcheastra_audit_chain::{AuditChainExpectation, AuditLink, MAX_AUDIT_LINKS};
 use crate::orcheastra_audit_receipts::inspect_bound_audit_receipts;
+use crate::orcheastra_audit_custody::{inspect_custodied_audit_chain, AuditCustodyWitness};
 use crate::orcheastra_recovery::RecoveryFloor;
 use crate::orcheastra_restart::{RestartCheckpoint, RestartInspection};
 use crate::orcheastra_review_receipt::{revalidate_review_receipt, ReviewReceipt};
@@ -67,10 +68,35 @@ pub fn inspect_audit_evidence(
     RestartInspection::ReviewOnly
 }
 
+/// Composes independently witnessed audit endpoints with complete source review.
+///
+/// Rejects missing/denying custody evidence even if the caller supplied a
+/// perfectly self-consistent audit chain and recovery receipts. The witness
+/// implementation and signature verifier must still be independently trusted;
+/// this function grants no authority and performs no writes.
+#[must_use]
+pub fn inspect_custodied_audit_evidence(
+    links: &[AuditLink],
+    receipts: &[ReviewReceipt],
+    evidence: &[RecoveryEvidence<'_>],
+    expected: Option<&AuditChainExpectation>,
+    witness: Option<&impl AuditCustodyWitness>,
+    verifier: &impl Ed25519Verifier,
+) -> RestartInspection {
+    if inspect_custodied_audit_chain(links, expected, witness) != RestartInspection::ReviewOnly
+        || inspect_audit_evidence(links, receipts, evidence, expected, verifier)
+            != RestartInspection::ReviewOnly
+    {
+        return RestartInspection::Deny;
+    }
+    RestartInspection::ReviewOnly
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{inspect_audit_evidence, RecoveryEvidence};
+    use super::{inspect_audit_evidence, inspect_custodied_audit_evidence, RecoveryEvidence};
     use crate::orcheastra_audit_chain::{audit_link_digest, AuditChainExpectation, AuditLink};
+    use crate::orcheastra_audit_custody::{AuditCustodyWitness, CustodyVerdict};
     use crate::orcheastra_payload::digest_snapshot;
     use crate::orcheastra_recovery::RecoveryFloor;
     use crate::orcheastra_restart::{RestartAnchor, RestartCheckpoint, RestartInspection};
@@ -105,6 +131,25 @@ mod tests {
             _signature: &[u8; 64],
         ) -> SignatureVerdict {
             SignatureVerdict::Invalid
+        }
+    }
+
+    // Test-only witness: byte equality is NOT independent custody.
+    struct TestWitness(AuditChainExpectation);
+    impl AuditCustodyWitness for TestWitness {
+        fn verify_expectation(&self, expectation: &AuditChainExpectation) -> CustodyVerdict {
+            if expectation == &self.0 {
+                CustodyVerdict::Verified
+            } else {
+                CustodyVerdict::Denied
+            }
+        }
+    }
+
+    struct RejectCustody;
+    impl AuditCustodyWitness for RejectCustody {
+        fn verify_expectation(&self, _expectation: &AuditChainExpectation) -> CustodyVerdict {
+            CustodyVerdict::Denied
         }
     }
 
@@ -204,6 +249,51 @@ mod tests {
         }];
         assert_eq!(
             inspect_audit_evidence(&links, &receipts, &altered, Some(&expected), &verifier),
+            RestartInspection::Deny
+        );
+
+        assert_eq!(
+            inspect_custodied_audit_evidence(
+                &links,
+                &receipts,
+                &evidence,
+                Some(&expected),
+                Some(&TestWitness(expected)),
+                &verifier,
+            ),
+            RestartInspection::ReviewOnly
+        );
+        assert_eq!(
+            inspect_custodied_audit_evidence(
+                &links,
+                &receipts,
+                &evidence,
+                Some(&expected),
+                None::<&RejectCustody>,
+                &verifier,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_custodied_audit_evidence(
+                &links,
+                &receipts,
+                &evidence,
+                Some(&expected),
+                Some(&RejectCustody),
+                &verifier,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_custodied_audit_evidence(
+                &links,
+                &receipts,
+                &evidence,
+                Some(&expected),
+                Some(&TestWitness(expected)),
+                &RejectAll,
+            ),
             RestartInspection::Deny
         );
 
