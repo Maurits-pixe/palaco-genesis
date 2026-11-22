@@ -103,6 +103,19 @@ class BoundaryContractTests(unittest.TestCase):
         errors = mod.validate(registry, self.candidate())
         self.assertTrue(any("dependency not registered" in e for e in errors), errors)
 
+    def test_missing_required_interface(self):
+        data = self.candidate()
+        data["edges"].pop()
+        self.rejects(data, "missing required interface")
+
+    def test_unexpected_extra_interface_is_rejected_when_unregistered(self):
+        data = self.candidate()
+        extra = copy.deepcopy(data["edges"][0])
+        extra["consumer"] = "mundo"
+        extra["provider"] = "era"
+        data["edges"].append(extra)
+        self.rejects(data, "dependency not registered")
+
     def test_empty_edges(self):
         data = self.candidate()
         data["edges"] = []
