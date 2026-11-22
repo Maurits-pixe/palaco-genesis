@@ -110,14 +110,9 @@ pub fn revalidate_review_receipt(
     let Some(expected) = expected else {
         return RestartInspection::Deny;
     };
-    let Some(recomputed) = review_receipt(
-        checkpoints,
-        payloads,
-        signed,
-        trusted_key,
-        floor,
-        verifier,
-    ) else {
+    let Some(recomputed) =
+        review_receipt(checkpoints, payloads, signed, trusted_key, floor, verifier)
+    else {
         return RestartInspection::Deny;
     };
     if expected != &recomputed {
