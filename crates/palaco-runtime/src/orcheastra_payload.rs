@@ -56,11 +56,9 @@ pub fn inspect_restart_payload(
     let Some(checkpoint) = checkpoint else {
         return RestartInspection::Deny;
     };
-    let Some(digest) = digest_snapshot(
-        checkpoint.sequence,
-        &checkpoint.predecessor_digest,
-        payload,
-    ) else {
+    let Some(digest) =
+        digest_snapshot(checkpoint.sequence, &checkpoint.predecessor_digest, payload)
+    else {
         return RestartInspection::Deny;
     };
 
