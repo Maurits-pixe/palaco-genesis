@@ -618,10 +618,7 @@ mod tests {
             inspect_audit_evidence_signers(&revoked),
             RestartInspection::Deny
         );
-        assert_eq!(
-            inspect_audit_evidence_signers(&[]),
-            RestartInspection::Deny
-        );
+        assert_eq!(inspect_audit_evidence_signers(&[]), RestartInspection::Deny);
         let replay = [
             RecoveryEvidence {
                 checkpoints: &checkpoints,
