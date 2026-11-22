@@ -189,6 +189,34 @@ pub fn inspect_audit_evidence_floors(evidence: &[RecoveryEvidence<'_>]) -> Resta
     RestartInspection::ReviewOnly
 }
 
+/// Checks receipt metadata against the exact original source bundle.
+///
+/// Rejects untrusted receipt counts or counters that do not match the
+/// checkpoint sequence, signed anchor and key registry. This cheap preflight
+/// does not recompute receipt digests, verify signatures or establish custody.
+#[must_use]
+pub fn inspect_audit_receipt_source_binding(
+    receipts: &[ReviewReceipt],
+    evidence: &[RecoveryEvidence<'_>],
+) -> RestartInspection {
+    if evidence.is_empty() || evidence.len() > MAX_AUDIT_LINKS || evidence.len() != receipts.len() {
+        return RestartInspection::Deny;
+    }
+    for (receipt, source) in receipts.iter().zip(evidence.iter()) {
+        let Some(last) = source.checkpoints.last() else {
+            return RestartInspection::Deny;
+        };
+        if receipt.checkpoint_count != source.checkpoints.len()
+            || receipt.checkpoint_sequence != last.sequence
+            || receipt.checkpoint_sequence != source.signed.anchor.sequence
+            || receipt.registry_sequence != source.trusted_key.registry_sequence
+        {
+            return RestartInspection::Deny;
+        }
+    }
+    RestartInspection::ReviewOnly
+}
+
 /// Reviews audit-chain linkage and recomputes every corresponding receipt.
 ///
 /// Denies empty/mismatched evidence batches and any receipt that cannot be
@@ -210,6 +238,7 @@ pub fn inspect_audit_evidence(
         || inspect_audit_evidence_lineage(evidence) != RestartInspection::ReviewOnly
         || inspect_audit_evidence_signers(evidence) != RestartInspection::ReviewOnly
         || inspect_audit_evidence_floors(evidence) != RestartInspection::ReviewOnly
+        || inspect_audit_receipt_source_binding(receipts, evidence) != RestartInspection::ReviewOnly
         || inspect_bound_audit_receipts(links, receipts, expected) != RestartInspection::ReviewOnly
     {
         return RestartInspection::Deny;
@@ -269,7 +298,7 @@ mod tests {
     use super::{
         inspect_audit_evidence, inspect_audit_evidence_budget, inspect_audit_evidence_floors,
         inspect_audit_evidence_lineage, inspect_audit_evidence_signers,
-        inspect_custodied_audit_evidence, RecoveryEvidence,
+        inspect_audit_receipt_source_binding, inspect_custodied_audit_evidence, RecoveryEvidence,
     };
     use crate::orcheastra_audit_chain::{audit_link_digest, AuditChainExpectation, AuditLink};
     use crate::orcheastra_audit_custody::{AuditCustodyWitness, CustodyVerdict};
@@ -861,6 +890,38 @@ mod tests {
         ];
         assert_eq!(
             inspect_audit_evidence_lineage(&disconnected),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_audit_receipt_source_binding(&receipts, &evidence),
+            RestartInspection::ReviewOnly
+        );
+        let wrong_count_receipt = [ReviewReceipt {
+            checkpoint_count: receipts[0].checkpoint_count + 1,
+            ..receipts[0]
+        }];
+        assert_eq!(
+            inspect_audit_receipt_source_binding(&wrong_count_receipt, &evidence),
+            RestartInspection::Deny
+        );
+        let wrong_registry_receipt = [ReviewReceipt {
+            registry_sequence: receipts[0].registry_sequence + 1,
+            ..receipts[0]
+        }];
+        assert_eq!(
+            inspect_audit_receipt_source_binding(&wrong_registry_receipt, &evidence),
+            RestartInspection::Deny
+        );
+        let wrong_sequence_receipt = [ReviewReceipt {
+            checkpoint_sequence: receipts[0].checkpoint_sequence + 1,
+            ..receipts[0]
+        }];
+        assert_eq!(
+            inspect_audit_receipt_source_binding(&wrong_sequence_receipt, &evidence),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_audit_receipt_source_binding(&[], &evidence),
             RestartInspection::Deny
         );
         let mut altered_receipts = receipts;
