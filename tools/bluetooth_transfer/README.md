@@ -1,4 +1,4 @@
-# PALACO Bluetooth Offline Transfer — v0.7 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v0.8 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
 
@@ -18,6 +18,8 @@ Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices 
 - `session.py`: incremental, fail-closed session with ordered frames, explicit cancel and disconnect handling. On failure it discards retained frames; restarting requires a fresh transfer ID.
 - `ble_frames.py`: BLE-GATT-value framing reference with a 7-byte header, protocol version, chunk and fragment indices, final flag, configurable bounded value size (8–512 bytes) and strict sequential reassembly. It is not a BLE radio driver, encrypted channel, authenticated link, retransmission protocol or complete transfer flow.
 - `ble_sender.py`: stop-and-wait sender (at most one chunk's packets queued), caller-triggered bounded retransmission on timeout and a receiver wrapper that re-ACKs only the immediately previous, byte-identical packet without duplicate ingestion. ACKs are unauthenticated control hints; this is NOT a secure radio adapter.
+- `send_watchdog.py`: caller-polled stop-and-wait sender ACK deadline (default 5s), bounded retry and total deadline (default 600s), with fail-closed monotonic clock validation. No actual timers, radio, identity or encryption.
+- `test_send_watchdog.py`: 19 synthetic ACK deadline and clock regression cases.
 - `receive_watchdog.py`: caller-driven monotonic idle and total deadlines, fail-closed clock checks, no automatic resumption. The native adapter MUST call `poll()` from a reliable scheduler even when no notifications arrive. Duplicate frames do not count as progress. Timeouts do not supply identity or revocation evidence.
 - `test_receive_watchdog.py`: 20 deterministic deadline and clock-failure regression cases.
 - `native_adapter_contract.py`: one-shot native receive-controller interface: begin, GATT notification, complete, disconnect, permission_revoked, abort; explicit IDLE / RECEIVING / RECEIVED_UNTRUSTED / ABORTED state model. It is an integration harness and contains NO radio implementation.
@@ -29,7 +31,7 @@ Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices 
 Run from this directory:
 
 ```sh
-python -m unittest -v test_protocol.py test_session.py test_ble_frames.py test_ble_sender.py test_transport_gate.py test_native_adapter_contract.py test_receive_watchdog.py
+python -m unittest -v test_protocol.py test_session.py test_ble_frames.py test_ble_sender.py test_transport_gate.py test_native_adapter_contract.py test_receive_watchdog.py test_send_watchdog.py
 ```
 
 ### Device integration plan
@@ -45,6 +47,8 @@ python -m unittest -v test_protocol.py test_session.py test_ble_frames.py test_b
 **Native integration gate:** A production Windows WinRT or Android BluetoothGatt adapter must independently authenticate the peer and session, establish application-layer encryption, securely bind the exact offer and user consent, and feed the resulting verified evidence only via trusted code. The current controller has no hardware access and can be bypassed by forged evidence if exposed to an untrusted caller. Do not ship until this trust boundary is enforced with device tests.
 
 **Timeout policy:** Default idle timeout 15 seconds and total timeout 600 seconds; accepted bounds are idle 1–120 seconds and total 1–3600 seconds. The watchdog requires an external trusted monotonic clock; it does not schedule timers itself. Never use wall-clock time for elapsed-time policy and never treat this as a trusted timestamp or revocation check.
+
+**Send timer contract:** The native adapter writes the frame returned by `start()`, schedules monotonic `poll()` even in radio silence, sends frames returned by `poll()` on timeout, and writes the next frame returned by `acknowledge()` only after receipt of an independently authenticated ACK. The reference does not actually authenticate an ACK or send bytes over Bluetooth. Invalid clocks and elapsed deadlines cancel the session.
 
 **Known limitations:** Frame headers are not authenticated. There is a local stop-and-wait ACK/retry reference but no authenticated ACK, timer implementation, BLE stack, encryption, cryptographic peer binding or live radio API. Only an immediate identical prior frame can be re-ACKed; delayed or out-of-window packets abort. The caller drives timeouts and MUST use authenticated, encrypted peer transport before relying on ACKs. The in-process buffers are not a secure secret-erasure primitive. The bridge requires an approved session and rejects sizes inconsistent with its validated offer; production integration must additionally authenticate the offer itself. Automated Python stdlib checks are configured in `.github/workflows/bluetooth-transfer-tests.yml`; check their actual GitHub Actions run status before claiming PASS.
 
