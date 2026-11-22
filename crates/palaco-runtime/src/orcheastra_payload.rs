@@ -280,5 +280,4 @@ mod tests {
             RestartInspection::Deny
         );
     }
-
 }
