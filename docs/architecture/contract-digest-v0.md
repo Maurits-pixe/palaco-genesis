@@ -29,12 +29,18 @@ execution. No existing canonical envelope format is replaced.
 
 ## Pinned reference vectors
 
-`verification/contract-digest-v0-vectors.json` is a versioned corpus of five
+`verification/contract-digest-v0-vectors.json` is a versioned corpus of nine
 review-only reference cases. Each case pins an input value, canonical UTF-8
 bytes as hexadecimal, and the expected domain-separated SHA-256 digest.
 The fixture includes empty objects, nested key sorting, NFC Unicode,
-integers within the exact interoperable range ±(2^53−1), and arrays containing
-a HOLD state. `tests/test_contract_digest_vectors.py` checks all three outputs.
+integers within the exact interoperable range ±(2^53−1), arrays containing
+a HOLD state, escaped control characters, line separators (U+2028/U+2029),
+astral-plane/BMP Unicode key ordering, and numeric-looking object keys. `tests/test_contract_digest_vectors.py` checks all three outputs.
+
+The four new vectors were checked using separately executed Python and Node.js
+serialization and SHA-256 computations before being committed. They help catch
+mismatches in string escaping and Unicode ordering, but do not constitute a
+complete cross-language proof.
 
 The corpus is an independent comparison target, **not proof** of implementation
 correctness or interoperability in languages other than Python. Implementations
@@ -56,7 +62,7 @@ verifies NFC and lone surrogate handling, enforces the safe integer range,
 and computes the domain-separated SHA-256 digest.
 
 The CI contract workflow runs this verifier with Node.js 22 and compares
-its output against the five pinned byte-and-digest vectors. A passing check
+its output against the nine pinned byte-and-digest vectors. A passing check
 establishes agreement **for this finite corpus only**; it does not establish
 full cross-language compatibility, cryptographic authenticity, or permission.
 The Node path reads the version-controlled fixture with JSON.parse; it does
