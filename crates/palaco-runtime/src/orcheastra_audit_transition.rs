@@ -24,6 +24,49 @@ pub struct AuditSegmentEvidence<'a> {
     pub expected: &'a AuditChainExpectation,
 }
 
+/// Verifies that recovery and custody counters cannot decrease at a segment boundary.
+///
+/// Each segment's own integrity validation is handled separately. This gate
+/// compares the final verified receipt and evidence of the preceding segment
+/// with the initial receipt and evidence of the next segment. No counter may
+/// decrease, and a checkpoint sequence must strictly advance.
+#[must_use]
+pub fn inspect_transition_monotonicity(
+    previous: &AuditSegmentEvidence<'_>,
+    current: &AuditSegmentEvidence<'_>,
+) -> RestartInspection {
+    let (
+        Some(previous_receipt),
+        Some(current_receipt),
+        Some(previous_source),
+        Some(current_source),
+    ) = (
+        previous.receipts.last(),
+        current.receipts.first(),
+        previous.evidence.last(),
+        current.evidence.first(),
+    ) else {
+        return RestartInspection::Deny;
+    };
+
+    if previous_receipt.checkpoint_sequence == 0
+        || current_receipt.checkpoint_sequence <= previous_receipt.checkpoint_sequence
+        || previous_receipt.registry_sequence == 0
+        || current_receipt.registry_sequence < previous_receipt.registry_sequence
+        || previous_source.floor.checkpoint_sequence == 0
+        || current_source.floor.checkpoint_sequence < previous_source.floor.checkpoint_sequence
+        || previous_source.floor.registry_sequence == 0
+        || current_source.floor.registry_sequence < previous_source.floor.registry_sequence
+        || previous_source.trusted_key.registry_sequence == 0
+        || current_source.trusted_key.registry_sequence
+            < previous_source.trusted_key.registry_sequence
+    {
+        return RestartInspection::Deny;
+    }
+
+    RestartInspection::ReviewOnly
+}
+
 /// Requires consecutive witnessed segments and complete recovery evidence.
 ///
 /// Checks both source-evidence batches as well as the exact transition between
@@ -36,7 +79,8 @@ pub fn inspect_custodied_audit_transition(
     witness: Option<&impl AuditCustodyWitness>,
     verifier: &impl Ed25519Verifier,
 ) -> RestartInspection {
-    if inspect_audit_continuity(
+    if inspect_transition_monotonicity(previous, current) != RestartInspection::ReviewOnly
+        || inspect_audit_continuity(
         previous.links,
         Some(previous.expected),
         current.links,
@@ -66,7 +110,7 @@ pub fn inspect_custodied_audit_transition(
 
 #[cfg(test)]
 mod tests {
-    use super::{inspect_custodied_audit_transition, AuditSegmentEvidence};
+    use super::{inspect_custodied_audit_transition, inspect_transition_monotonicity, AuditSegmentEvidence};
     use crate::orcheastra_audit_chain::{audit_link_digest, AuditChainExpectation, AuditLink};
     use crate::orcheastra_audit_custody::{AuditCustodyWitness, CustodyVerdict};
     use crate::orcheastra_audit_evidence::RecoveryEvidence;
@@ -265,6 +309,86 @@ mod tests {
             evidence: &evidence_current,
             expected: &expected_current,
         };
+        assert_eq!(
+            inspect_transition_monotonicity(&previous, &current),
+            RestartInspection::ReviewOnly
+        );
+        let mut rollback_receipt = receipts_current;
+        rollback_receipt[0].checkpoint_sequence = receipts_previous[0].checkpoint_sequence;
+        let rollback_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &rollback_receipt,
+            evidence: &evidence_current,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_monotonicity(&previous, &rollback_current),
+            RestartInspection::Deny
+        );
+        let mut rollback_registry_receipt = receipts_current;
+        rollback_registry_receipt[0].registry_sequence = 2;
+        let rollback_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &rollback_registry_receipt,
+            evidence: &evidence_current,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_monotonicity(&previous, &rollback_current),
+            RestartInspection::Deny
+        );
+        let rollback_floor = RecoveryFloor {
+            checkpoint_sequence: 6,
+            registry_sequence: 2,
+        };
+        let rollback_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_current,
+            payloads: payloads_current,
+            signed: &signed_current,
+            trusted_key: &key,
+            floor: &rollback_floor,
+        }];
+        let rollback_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &rollback_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_monotonicity(&previous, &rollback_current),
+            RestartInspection::Deny
+        );
+        let rollback_key = TrustedKey {
+            registry_sequence: 2,
+            ..key
+        };
+        let rollback_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_current,
+            payloads: payloads_current,
+            signed: &signed_current,
+            trusted_key: &rollback_key,
+            floor: &floor_current,
+        }];
+        let rollback_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &rollback_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_monotonicity(&previous, &rollback_current),
+            RestartInspection::Deny
+        );
+        let empty_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &[],
+            evidence: &evidence_current,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_monotonicity(&previous, &empty_current),
+            RestartInspection::Deny
+        );
         let witness = TestWitness([expected_previous, expected_current]);
         assert_eq!(
             inspect_custodied_audit_transition(&previous, &current, Some(&witness), &verifier),
