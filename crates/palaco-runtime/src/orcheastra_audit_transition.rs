@@ -106,8 +106,11 @@ pub fn inspect_transition_snapshot_link(
 /// Requires an unchanged signer identity across two audit segments.
 ///
 /// This deliberately denies all key rotations until a separate, independently
-/// authenticated rotation policy is implemented. Matching caller-provided keys
-/// are only a consistency check, not proof of key ownership or authenticity.
+/// authenticated rotation policy is implemented. The key validity interval
+/// must also remain identical, so expanding, shrinking or shifting a key's
+/// allowed checkpoint window is denied until separately authenticated.
+/// Matching caller-provided keys are only a consistency check, not proof of
+/// key ownership or authenticity.
 #[must_use]
 pub fn inspect_transition_signer_continuity(
     previous: &AuditSegmentEvidence<'_>,
@@ -130,6 +133,14 @@ pub fn inspect_transition_signer_continuity(
         || current_source.signed.key_id != current_key.key_id
         || previous_source.signed.public_key != previous_key.public_key
         || current_source.signed.public_key != current_key.public_key
+        || previous_key.first_sequence == 0
+        || previous_key.first_sequence > previous_key.last_sequence
+        || previous_key.first_sequence != current_key.first_sequence
+        || previous_key.last_sequence != current_key.last_sequence
+        || previous_source.signed.anchor.sequence < previous_key.first_sequence
+        || previous_source.signed.anchor.sequence > previous_key.last_sequence
+        || current_source.signed.anchor.sequence < current_key.first_sequence
+        || current_source.signed.anchor.sequence > current_key.last_sequence
     {
         return RestartInspection::Deny;
     }
@@ -633,6 +644,81 @@ mod tests {
         };
         assert_eq!(
             inspect_transition_signer_continuity(&previous, &revoked_current),
+            RestartInspection::Deny
+        );
+        let expanded_key = TrustedKey {
+            key_id: key.key_id,
+            public_key: key.public_key,
+            registry_sequence: key.registry_sequence,
+            first_sequence: key.first_sequence,
+            last_sequence: 9,
+            revoked: false,
+        };
+        let expanded_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_current,
+            payloads: payloads_current,
+            signed: &signed_current,
+            trusted_key: &expanded_key,
+            floor: &floor_current,
+        }];
+        let expanded_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &expanded_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &expanded_current),
+            RestartInspection::Deny
+        );
+        let shifted_key = TrustedKey {
+            key_id: key.key_id,
+            public_key: key.public_key,
+            registry_sequence: key.registry_sequence,
+            first_sequence: 8,
+            last_sequence: key.last_sequence,
+            revoked: false,
+        };
+        let shifted_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_current,
+            payloads: payloads_current,
+            signed: &signed_current,
+            trusted_key: &shifted_key,
+            floor: &floor_current,
+        }];
+        let shifted_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &shifted_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &shifted_current),
+            RestartInspection::Deny
+        );
+        let expired_key = TrustedKey {
+            key_id: key.key_id,
+            public_key: key.public_key,
+            registry_sequence: key.registry_sequence,
+            first_sequence: key.first_sequence,
+            last_sequence: 7,
+            revoked: false,
+        };
+        let expired_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_current,
+            payloads: payloads_current,
+            signed: &signed_current,
+            trusted_key: &expired_key,
+            floor: &floor_current,
+        }];
+        let expired_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &expired_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &expired_current),
             RestartInspection::Deny
         );
         let missing_identity = AuditSegmentEvidence {
