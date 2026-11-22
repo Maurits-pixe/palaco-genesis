@@ -45,10 +45,26 @@ The hash input is the literal UTF-8 domain label `PALACO-CJSON-v0` followed
 by a single zero byte, then the canonical byte length as eight unsigned
 big-endian bytes, then the canonical bytes.
 
+## Independent implementation check
+
+`tools/verify_contract_vectors.mjs` is a standalone Node.js verifier that
+does not import or execute the Python canonicalization module. It independently
+serializes supported JSON values, orders object keys by Unicode code points,
+verifies NFC and lone surrogate handling, enforces the safe integer range,
+and computes the domain-separated SHA-256 digest.
+
+The CI contract workflow runs this verifier with Node.js 22 and compares
+its output against the five pinned byte-and-digest vectors. A passing check
+establishes agreement **for this finite corpus only**; it does not establish
+full cross-language compatibility, cryptographic authenticity, or permission.
+The Node path reads the version-controlled fixture with JSON.parse; it does
+not claim to validate adversarial JSON files for duplicate object keys.
+
 ## Validate
 
 ```sh
 python3 -m unittest discover -s tests -p 'test_contract_digest*.py' -v
+node tools/verify_contract_vectors.mjs
 ```
 
 **GO-13 HOLD · authorization DENY · no signing, merge or deployment.**
