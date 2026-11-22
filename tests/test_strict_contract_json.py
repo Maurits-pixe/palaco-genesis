@@ -42,6 +42,9 @@ class StrictContractJsonTests(unittest.TestCase):
         document = '{"note":"a\\\"' + ("[{" * 100) + '"}'
         self.assertEqual(len(self.load_raw(document)["note"]), 202)
 
+    def test_valid_balanced_mixed_delimiters_accepted(self):
+        self.assertEqual(self.load_raw('{"edges":[1,2]}'), {"edges": [1, 2]})
+
     def test_mismatched_array_object_delimiters_rejected(self):
         with self.assertRaisesRegex(ValueError, "mismatched JSON delimiters"):
             self.load_raw('{"edges":[1,2}')
