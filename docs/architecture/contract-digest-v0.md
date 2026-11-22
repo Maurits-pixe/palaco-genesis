@@ -24,9 +24,10 @@ bounded strict JSON reader before encoding.
   Nonzero finite values that round to other nonzero floats are not thereby
   guaranteed exact; this guard only prevents complete underflow to zero.
 - The bounded strict reader accepts UTF-8 without a byte-order mark and
-  explicitly refuses UTF-8 BOM and UTF-16 BOM prefixes. This prevents
-  silent encoding disagreement between contract readers; it is a
-  design-time input rule, not a claim that all JSON decoders enforce it.
+  explicitly refuses UTF-8, UTF-16 and UTF-32 BOM prefixes. Invalid
+  UTF-8 byte sequences (including overlong encodings) fail UTF-8 decoding;
+  unmarked UTF-16 input fails JSON grammar validation. These are
+  design-time input rules, not a claim that all JSON decoders enforce them.
 - The bounded Python JSON reader enforces a **1,024-character numeric-token
   ceiling** before integer or floating-point conversion, separately from
   the 1 MiB document limit. A finite decimal token at the boundary is
