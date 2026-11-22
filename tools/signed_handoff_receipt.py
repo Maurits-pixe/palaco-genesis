@@ -17,6 +17,10 @@ _spec = importlib.util.spec_from_file_location(
     "palaco_receipt_handoff", Path(__file__).with_name("offline_review_anchor_handoff.py"))
 handoff = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(handoff)
+_chain_spec = importlib.util.spec_from_file_location(
+    "palaco_receipt_audit", Path(__file__).with_name("receipt_audit_chain.py"))
+audit_chain = importlib.util.module_from_spec(_chain_spec)
+_chain_spec.loader.exec_module(audit_chain)
 
 DOMAIN = b"PALACO-OFFLINE-HANDOFF-RECEIPT-V1\x00"
 BODY_FIELDS = {"schema_version", "recipient_id", "bundle_sha256", "receipt_id", "disposition"}
@@ -141,6 +145,8 @@ def index_receipt(receipt_db, history_db, package, receipt_envelope, expected_re
         except sqlite3.IntegrityError:
             conn.rollback()
             return deny("duplicate-bundle-acknowledgement")
+        audit_chain.append(conn, body["receipt_id"], body["bundle_sha256"],
+                           body["recipient_id"], key_id, digest)
         conn.commit()
     except BaseException:
         conn.rollback()
