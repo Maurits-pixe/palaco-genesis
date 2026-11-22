@@ -206,7 +206,7 @@ pub fn inspect_segment_snapshot_continuity(
     if segment.evidence.is_empty() || segment.evidence.len() != segment.receipts.len() {
         return RestartInspection::Deny;
     }
-    let mut prior_sequence = None;
+    let mut prior_sequence: Option<u64> = None;
     let mut prior_digest = [0; 32];
     for source in segment.evidence {
         let (Some(first), Some(last)) = (source.checkpoints.first(), source.checkpoints.last())
