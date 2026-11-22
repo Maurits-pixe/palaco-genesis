@@ -18,10 +18,13 @@ on:
     paths:
       - 'ecosystem/integration-registry.v0.1.json'
       - 'ecosystem/boundary-contract.v0.1.json'
+      - 'ecosystem/offline-recovery-policy.v0.1.json'
       - 'tools/validate_integration_registry.py'
       - 'tools/validate_boundary_contract.py'
+      - 'tools/validate_offline_recovery.py'
       - 'tests/test_integration_registry.py'
       - 'tests/test_boundary_contract.py'
+      - 'tests/test_offline_recovery.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
