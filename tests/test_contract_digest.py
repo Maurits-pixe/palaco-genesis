@@ -3,10 +3,23 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.contract_digest import MAX_SAFE_INTEGER, canonical_bytes, digest_contract, digest_contract_file
+from tools.contract_digest import MAX_NESTING_DEPTH, MAX_SAFE_INTEGER, canonical_bytes, digest_contract, digest_contract_file
 
 
 class ContractDigestTests(unittest.TestCase):
+    def test_exact_depth_limit_is_accepted(self):
+        nested = 0
+        for _ in range(MAX_NESTING_DEPTH):
+            nested = [nested]
+        self.assertTrue(canonical_bytes(nested).startswith(b"["))
+
+    def test_depth_over_limit_rejected(self):
+        nested = 0
+        for _ in range(MAX_NESTING_DEPTH + 1):
+            nested = [nested]
+        with self.assertRaisesRegex(ValueError, "nesting depth"):
+            canonical_bytes(nested)
+
     def test_safe_integer_boundaries(self):
         self.assertEqual(canonical_bytes({"max": MAX_SAFE_INTEGER}),
                          ('{"max":' + str(MAX_SAFE_INTEGER) + '}').encode())
