@@ -18,27 +18,16 @@ FORBIDDEN = {
 }
 
 
-def _unique_object_pairs(pairs):
-    """Reject repeated JSON members, including nested transition rules."""
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"duplicate JSON key: {key}")
-        result[key] = value
-    return result
-
-
-def _reject_nonfinite(value):
-    raise ValueError(f"non-finite JSON number: {value}")
+try:
+    from tools.strict_contract_json import load_strict_json
+except ModuleNotFoundError:
+    # Support direct execution: python3 tools/validate_*.py
+    from strict_contract_json import load_strict_json
 
 
 def load_policy(path):
-    """Read strict JSON; never silently accept ambiguous policy keys."""
-    return json.loads(
-        Path(path).read_text(encoding="utf-8"),
-        object_pairs_hook=_unique_object_pairs,
-        parse_constant=_reject_nonfinite,
-    )
+    """Preserve the validator's public loader while sharing strict parsing."""
+    return load_strict_json(path)
 
 
 def validate(data):
