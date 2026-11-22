@@ -16,6 +16,8 @@ on:
       - 'tools/local_evidence_intake.py'
       - 'tools/local_replay_index.py'
       - 'tests/test_local_replay_index.py'
+      - 'tools/signed_evidence_envelope.py'
+      - 'tests/test_signed_evidence_envelope.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -33,6 +35,8 @@ on:
       - 'tools/local_evidence_intake.py'
       - 'tools/local_replay_index.py'
       - 'tests/test_local_replay_index.py'
+      - 'tools/signed_evidence_envelope.py'
+      - 'tests/test_signed_evidence_envelope.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
@@ -53,6 +57,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install pinned signature verification dependency
+        run: python3 -m pip install cryptography==44.0.3
       - name: Validate integration registry
         run: python3 tools/validate_integration_registry.py
       - name: Validate fail-closed interface contract
