@@ -1,18 +1,19 @@
 {
-  "name": "palaco-rio-signer-handover-v301",
+  "name": "palaco-rio-key-checked-handover-v302",
   "version": "0.0.0-draft",
   "private": true,
   "scripts": {
     "test": "node --test tests/*.test.mjs staging/isolated-postgres-v276.test.mjs staging/outcome-atomicity-v279.test.mjs",
     "test:native": "npm --prefix native-staging test",
     "test:parallel": "node --test native-staging/native-postgres-v281.test.mjs",
-    "test:ci": "node scripts/run-ci-v301.mjs",
+    "test:ci": "node scripts/run-ci-v302.mjs",
     "test:one-native": "node --test native-staging/one-session-reader-v295.test.mjs",
     "test:one-signed-native": "node --test native-staging/one-signed-source-v296.test.mjs",
     "test:signed-one-entry-native": "node --test native-staging/signed-one-composition-v297.test.mjs",
     "test:one-statement-issuer-native": "node --test native-staging/one-statement-issuer-v298.test.mjs",
     "test:software-signer-native": "node --test native-staging/restricted-software-signer-v299.test.mjs",
     "test:drainable-signer-native": "node --test native-staging/drainable-software-signer-v300.test.mjs",
-    "test:signer-handover-native": "node --test native-staging/signer-handover-v301.test.mjs"
+    "test:signer-handover-native": "node --test native-staging/signer-handover-v301.test.mjs",
+    "test:key-checked-handover-native": "node --test native-staging/key-checked-handover-v302.test.mjs"
   }
 }

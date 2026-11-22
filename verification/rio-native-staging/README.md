@@ -14,7 +14,7 @@ npm ci --prefix native-staging --ignore-scripts --no-audit --no-fund
 npm run test:ci
 ```
 
-`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer/lifecycle/handover checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v301.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
+`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer/lifecycle/handover/key-correspondence checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v302.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
 
 ## Source continuity and status
 
@@ -212,4 +212,44 @@ Drain completion still covers only this controller's admitted backend signing wo
 
 Fifteen contract cases exercise real Ed25519 signing across generations, drain barriers, stale/duplicate commands, invalid/mismatched handles, immutable scope, accessor/reentrant configuration, terminal close and the unchanged producer/verifier callback. Four new native scenarios reuse one actual RIO route instance: generation-one success; retirement during the post-sign registry lookup; explicit generation-two installation with stale-command refusal and successful inspection; terminal close with active fixture key/session state unchanged. SQL uses selected One columns and a synthetic authenticated-server binding, not the original One function chain or a real IdP.
 
-`test:ci` uses `run-ci-v301.mjs`, requires the four handover records alongside preserved suites and writes `evidence/CI-RESULT-v301.json`. AI review: TRIAS separates backend generation from identity/key authority; ORACLE requires the same route to succeed across explicit replacement and refuses to infer readiness from construction; MENTOR provides a stable callback and expected-generation checks. These are three lenses applied by one assistant, not independent approvals. Acceptance HOLD; authorization NONE.
+The preserved `run-ci-v301.mjs` requires the four handover records alongside earlier suites and writes `evidence/CI-RESULT-v301.json`. AI review: TRIAS separates backend generation from identity/key authority; ORACLE requires the same route to succeed across explicit replacement and refuses to infer readiness from construction; MENTOR provides a stable callback and expected-generation checks. These are three lenses applied by one assistant, not independent approvals. Acceptance HOLD; authorization NONE.
+
+## Key-correspondence check before installation (v302)
+
+`createRioOneKeyCheckedSignerHandoverV302` rejects a mismatched private handle before returning the initial controller or installing a replacement generation. Both construction and `installReplacement` are asynchronous. It retains v301's fixed configuration scope, stable signing callback, explicit generation comparison, full retirement barrier and terminal close. Earlier v301/v300 implementations remain unchanged.
+
+```js
+const host = await createRioOneKeyCheckedSignerHandoverV302({
+  tenantRef, allowedOrigin, issuerKey, privateSigningKey,
+  readIssuerKeyState, now, maxConcurrentSignatures: 1,
+});
+// Configure the existing issuer with host.signSessionStatement once.
+const expectedGeneration = host.getStatus().generation;
+const drained = host.retireGeneration({expectedGeneration});
+if (drained !== null) {
+  await drained;
+  const installed = await host.installReplacement({
+    expectedGeneration, privateSigningKey: replacementHandle,
+    readIssuerKeyState: replacementRegistryReader,
+  });
+  // null means refused; no failed candidate replaces the retired generation.
+}
+await host.close();
+```
+
+After the unchanged v300 constructor validates the handle type and independent public SPKI pin, the candidate signs an internally generated message beginning with `RIO_ONE_SOFTWARE_KEY_CHECK_V302` and a NUL byte. Its JSON suffix binds tenant, origin, issuer, key identifier and a fresh 32-byte random nonce. Node crypto verifies the real Ed25519 result against the fixed public key. No caller controls the proof bytes; the proof is not a v296 session statement and neither its signature nor a private key is returned. This adds no key export, generation, enrollment, file storage or network endpoint.
+
+| Observation | Meaning |
+| --- | --- |
+| `keyCorrespondence: VERIFIED_AT_INSTALL` | The supplied handle signed a fresh local challenge verified by the fixed public key at installation |
+| `registryReadiness: NOT_CHECKED` | Proof construction/installation invokes no registry, session or clock provider; key revocation/expiry checks remain on every actual signing request |
+| `CHECKING_REPLACEMENT` | One candidate check is pending; no new signing or second installation is admitted |
+| `CLOSED` with `keyChecksInFlight: 1` | Terminal admission gate is closed while the pending proof is still settling |
+
+A failed, malformed or wrong-key candidate leaves the retired generation unchanged and returns null without private diagnostics. An invalid initial configuration or failed initial proof rejects construction with no usable controller. The fixed issuer/public pin cannot be changed by a replacement command. There is no automatic fallback, background retry or public-key rotation. SERVING still describes the local lifecycle and capacity; it does not promise registry, service, database or user-authentication readiness.
+
+Terminal close now also waits for an admitted candidate check to settle. A close during proof permanently withholds installation, stops the candidate and resolves the one idempotent close promise only when current backend work and the candidate check have finished. This does not forcibly cancel cryptography; a nonreturning runtime operation leaves completion pending. The completion scope still excludes upstream route requests, other instances/processes, host-held references and previously exposed statements. Memory zeroization, key destruction, hardware isolation and production authority are not supplied.
+
+Sixteen contract cases use real Ed25519 signing, including fresh internal challenge domains/nonces, wrong initial/replacement handles, bad pins, blocked admission during proof, close/proof races, crypto failure, revoked registry, immutable scope and unchanged issuer/verifier use. A test-only WebCrypto scheduling interception controls pending/failing operations and is restored after each case; successful proofs delegate to actual WebCrypto. Five new native scenarios reuse one original route with PostgreSQL selected One columns: checked generation-one success; retirement after real signing; mismatched-handle refusal; checked same-key replacement success; close during actual asynchronous proof with installation withheld and fixture key/session state unchanged. The native suite does not intercept crypto.
+
+`test:ci` uses `run-ci-v302.mjs`, requires all five key-check scenarios alongside preserved suites and writes `evidence/CI-RESULT-v302.json`. Authentication remains a synthetic server binding; original One SQL functions, real user authentication, production key custody and remote TLS remain unverified. AI review: TRIAS distinguishes a local key-pair proof from authority or authenticated identity; ORACLE records successful real verification and close barriers without inflating readiness; MENTOR refuses a wrong handle before service installation and retains the stable callback. These are three lenses applied by one assistant. Acceptance HOLD; authorization NONE.
