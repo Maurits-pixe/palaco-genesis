@@ -1,4 +1,4 @@
-# PALACO Bluetooth Offline Transfer — v1.3 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v1.4 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
 
@@ -18,6 +18,8 @@ Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices 
 - `session.py`: incremental, fail-closed session with ordered frames, explicit cancel and disconnect handling. On failure it discards retained frames; restarting requires a fresh transfer ID.
 - `ble_frames.py`: BLE-GATT-value framing reference with a 7-byte header, protocol version, chunk and fragment indices, final flag, configurable bounded value size (8–512 bytes) and strict sequential reassembly. It is not a BLE radio driver, encrypted channel, authenticated link, retransmission protocol or complete transfer flow.
 - `ble_sender.py`: stop-and-wait sender (at most one chunk's packets queued), caller-triggered bounded retransmission on timeout and a receiver wrapper that re-ACKs only the immediately previous, byte-identical packet without duplicate ingestion. ACKs are unauthenticated control hints; this is NOT a secure radio adapter.
+- `recovery_evidence.py`: immutable canonical JSON diagnostic envelopes with domain-separated SHA-256 checksums. The envelope exposes only status, bounded counters and root hashes; the decision is always HOLD, even for MATCH. A checksum detects incidental changes but is not a signature or cryptographically authenticated provenance.
+- `test_recovery_evidence.py`: 20 regression cases for stable evidence, altered decisions, mismatched status, read-only behavior and no plaintext payload leakage.
 - `serialized_receipts.py`: opt-in `SerializedContentReceiver` with SQLite `BEGIN IMMEDIATE` to serialize cooperating writers across processes on the SAME local database. Checks the content checkpoint inside the lock; validates data, inserts the receipt, advances the trusted external checkpoint, then commits SQLite before returning bytes. Cross-store atomicity is NOT achievable here: anchor-ahead crash failures require manual HOLD, and a test double cannot enforce trust. No automatic recovery.
 - `test_serialized_receipts.py`: concurrent same/different IDs, partial checkpoint commit, insertion failures, tamper and fail-closed regressions.
 - `recovery_inspection.py`: strictly read-only SQLite recovery diagnostic, classifies MATCH / DATABASE_AHEAD / ANCHOR_AHEAD / CONTENT_MISMATCH / UNAVAILABLE. It does not initialize databases, change receipt rows, advance anchors, authorize imports, or resolve a HOLD. Native app must keep transfers blocked until independently reviewed evidence supports recovery.
@@ -41,7 +43,7 @@ Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices 
 Run from this directory:
 
 ```sh
-python -m unittest -v test_protocol.py test_session.py test_ble_frames.py test_ble_sender.py test_transport_gate.py test_native_adapter_contract.py test_receive_watchdog.py test_send_watchdog.py test_durable_replay.py test_replay_checkpoint.py test_receipt_integrity.py test_recovery_inspection.py test_serialized_receipts.py
+python -m unittest -v test_protocol.py test_session.py test_ble_frames.py test_ble_sender.py test_transport_gate.py test_native_adapter_contract.py test_receive_watchdog.py test_send_watchdog.py test_durable_replay.py test_replay_checkpoint.py test_receipt_integrity.py test_recovery_inspection.py test_serialized_receipts.py test_recovery_evidence.py
 ```
 
 ### Device integration plan
@@ -61,6 +63,8 @@ python -m unittest -v test_protocol.py test_session.py test_ble_frames.py test_b
 **Send timer contract:** The native adapter writes the frame returned by `start()`, schedules monotonic `poll()` even in radio silence, sends frames returned by `poll()` on timeout, and writes the next frame returned by `acknowledge()` only after receipt of an independently authenticated ACK. The reference does not actually authenticate an ACK or send bytes over Bluetooth. Invalid clocks and elapsed deadlines cancel the session.
 
 **Serialized writer policy:** `SerializedContentReceiver` is a separate opt-in single-database writer contract for cooperating processes. It acquires a SQLite RESERVED writer lock (`BEGIN IMMEDIATE`) before comparing the trusted content root and inserting a new validated receipt. It advances the independently protected anchor before the SQLite transaction commits; under a crash or uncertain anchor write, checkpoint/DB divergence yields HOLD. No automatic repair and no import authorization. A second process that bypasses this contract, DB-file replacement, or an untrusted external anchor remains outside the guarantee. The older `ContentAnchoredReceiver` remains a single-writer reference and is not automatically upgraded.
+
+**Recovery evidence:** `inspect_evidence(path, anchor)` creates a deterministic JSON report with fingerprint for human review. It does not sign or publish the report, grant authorization or repair anything. The only generated decision is HOLD. Validating a checksum is NOT validating author identity. Protected signing and reviewer workflow must be built separately.
 
 **Recovery inspection:** `inspect_checkpoint(path, anchor)` opens SQLite in read-only mode and compares its computed content root with a separately trusted anchor. It returns counts, roots and a classification; a MATCH is diagnostic only, and all other statuses remain HOLD. It deliberately exposes no repair, rollback, replay reset, import, or execution operation. Never auto-advance an anchor or rewrite receipts to force MATCH; human review and independently protected provenance are mandatory.
 
