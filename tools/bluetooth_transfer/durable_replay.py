@@ -10,6 +10,7 @@ by the application. Losing/restoring an old DB snapshot weakens replay defense.
 from __future__ import annotations
 
 import os
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 
@@ -48,12 +49,13 @@ class DurableReceiver(Receiver):
 
     def _initialize(self) -> None:
         try:
-            with self._connect() as db:
-                db.execute(
-                    "CREATE TABLE IF NOT EXISTS completed_transfers ("
-                    "transfer_id TEXT PRIMARY KEY NOT NULL, "
-                    "payload_sha256 TEXT NOT NULL)"
-                )
+            with closing(self._connect()) as db:
+                with db:
+                    db.execute(
+                        "CREATE TABLE IF NOT EXISTS completed_transfers ("
+                        "transfer_id TEXT PRIMARY KEY NOT NULL, "
+                        "payload_sha256 TEXT NOT NULL)"
+                    )
         except sqlite3.Error as exc:
             raise TransferError("replay database could not initialize") from exc
 
@@ -61,7 +63,9 @@ class DurableReceiver(Receiver):
         """Durable lookup. On database failure DENY instead of bypassing."""
         _validate_id(transfer_id)
         try:
-            with self._connect() as db:
+            if not self._path.is_file() or self._path.is_symlink():
+                raise TransferError("replay database missing or replaced")
+            with closing(self._connect()) as db:
                 row = db.execute(
                     "SELECT 1 FROM completed_transfers WHERE transfer_id=?",
                     (transfer_id,),
@@ -83,18 +87,21 @@ class DurableReceiver(Receiver):
             identity_verified=identity_verified,
         )
         try:
-            with self._connect() as db:
-                db.execute("BEGIN IMMEDIATE")
-                count = db.execute(
-                    "SELECT COUNT(*) FROM completed_transfers"
-                ).fetchone()[0]
-                if count >= MAX_RECEIPTS:
-                    raise TransferError("replay registry at maximum capacity")
-                db.execute(
-                    "INSERT INTO completed_transfers "
-                    "(transfer_id, payload_sha256) VALUES (?, ?)",
-                    (offer.transfer_id, offer.payload_sha256),
-                )
+            if not self._path.is_file() or self._path.is_symlink():
+                raise TransferError("replay database missing or replaced")
+            with closing(self._connect()) as db:
+                with db:
+                    db.execute("BEGIN IMMEDIATE")
+                    count = db.execute(
+                        "SELECT COUNT(*) FROM completed_transfers"
+                    ).fetchone()[0]
+                    if count >= MAX_RECEIPTS:
+                        raise TransferError("replay registry at maximum capacity")
+                    db.execute(
+                        "INSERT INTO completed_transfers "
+                        "(transfer_id, payload_sha256) VALUES (?, ?)",
+                        (offer.transfer_id, offer.payload_sha256),
+                    )
         except sqlite3.IntegrityError as exc:
             raise TransferError("completed transfer already received") from exc
         except sqlite3.Error as exc:
