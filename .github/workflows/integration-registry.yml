@@ -24,6 +24,8 @@ on:
       - 'tests/test_signed_reviewer_registry.py'
       - 'tools/reviewer_gated_replay.py'
       - 'tests/test_reviewer_gated_replay.py'
+      - 'tools/local_reviewer_revision_floor.py'
+      - 'tests/test_local_reviewer_revision_floor.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -49,6 +51,8 @@ on:
       - 'tests/test_signed_reviewer_registry.py'
       - 'tools/reviewer_gated_replay.py'
       - 'tests/test_reviewer_gated_replay.py'
+      - 'tools/local_reviewer_revision_floor.py'
+      - 'tests/test_local_reviewer_revision_floor.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
