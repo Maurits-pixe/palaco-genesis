@@ -68,6 +68,41 @@ pub fn inspect_transition_monotonicity(
     RestartInspection::ReviewOnly
 }
 
+/// Requires an exact snapshot hash-chain junction between two audit segments.
+///
+/// Both source chains are checked separately by the composite review function.
+/// This boundary additionally rejects missing checkpoint records, skipped or
+/// replayed checkpoint sequences, and an incorrect snapshot predecessor.
+/// Hash consistency is not independent source authentication.
+#[must_use]
+pub fn inspect_transition_snapshot_link(
+    previous: &AuditSegmentEvidence<'_>,
+    current: &AuditSegmentEvidence<'_>,
+) -> RestartInspection {
+    let (Some(previous_source), Some(current_source)) =
+        (previous.evidence.last(), current.evidence.first())
+    else {
+        return RestartInspection::Deny;
+    };
+    let (Some(previous_checkpoint), Some(current_checkpoint)) = (
+        previous_source.checkpoints.last(),
+        current_source.checkpoints.first(),
+    ) else {
+        return RestartInspection::Deny;
+    };
+    let Some(next_sequence) = previous_checkpoint.sequence.checked_add(1) else {
+        return RestartInspection::Deny;
+    };
+    if previous_checkpoint.snapshot_digest == [0; 32]
+        || current_checkpoint.sequence != next_sequence
+        || current_checkpoint.predecessor_digest != previous_checkpoint.snapshot_digest
+    {
+        return RestartInspection::Deny;
+    }
+
+    RestartInspection::ReviewOnly
+}
+
 /// Requires consecutive witnessed segments and complete recovery evidence.
 ///
 /// Checks both source-evidence batches as well as the exact transition between
@@ -81,6 +116,7 @@ pub fn inspect_custodied_audit_transition(
     verifier: &impl Ed25519Verifier,
 ) -> RestartInspection {
     if inspect_transition_monotonicity(previous, current) != RestartInspection::ReviewOnly
+        || inspect_transition_snapshot_link(previous, current) != RestartInspection::ReviewOnly
         || inspect_audit_continuity(
             previous.links,
             Some(previous.expected),
@@ -112,7 +148,8 @@ pub fn inspect_custodied_audit_transition(
 #[cfg(test)]
 mod tests {
     use super::{
-        inspect_custodied_audit_transition, inspect_transition_monotonicity, AuditSegmentEvidence,
+        inspect_custodied_audit_transition, inspect_transition_monotonicity,
+        inspect_transition_snapshot_link, AuditSegmentEvidence,
     };
     use crate::orcheastra_audit_chain::{audit_link_digest, AuditChainExpectation, AuditLink};
     use crate::orcheastra_audit_custody::{AuditCustodyWitness, CustodyVerdict};
@@ -394,6 +431,94 @@ mod tests {
         };
         assert_eq!(
             inspect_transition_monotonicity(&previous, &empty_current),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_transition_snapshot_link(&previous, &current),
+            RestartInspection::ReviewOnly
+        );
+        let mut gap_checkpoints = checkpoints_current;
+        gap_checkpoints[0].sequence = 9;
+        let gap_evidence = [RecoveryEvidence {
+            checkpoints: &gap_checkpoints,
+            payloads: payloads_current,
+            signed: &signed_current,
+            trusted_key: &key,
+            floor: &floor_current,
+        }];
+        let gap_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &gap_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_snapshot_link(&previous, &gap_current),
+            RestartInspection::Deny
+        );
+        let mut wrong_predecessor = checkpoints_current;
+        wrong_predecessor[0].predecessor_digest[0] ^= 1;
+        let wrong_evidence = [RecoveryEvidence {
+            checkpoints: &wrong_predecessor,
+            payloads: payloads_current,
+            signed: &signed_current,
+            trusted_key: &key,
+            floor: &floor_current,
+        }];
+        let wrong_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &wrong_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_snapshot_link(&previous, &wrong_current),
+            RestartInspection::Deny
+        );
+        let empty_source = [RecoveryEvidence {
+            checkpoints: &[],
+            payloads: &[],
+            signed: &signed_current,
+            trusted_key: &key,
+            floor: &floor_current,
+        }];
+        let missing_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &empty_source,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_snapshot_link(&previous, &missing_current),
+            RestartInspection::Deny
+        );
+        let missing_source = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &[],
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_snapshot_link(&previous, &missing_source),
+            RestartInspection::Deny
+        );
+        let mut replay_checkpoint = checkpoints_current;
+        replay_checkpoint[0].sequence = 7;
+        let replay_evidence = [RecoveryEvidence {
+            checkpoints: &replay_checkpoint,
+            payloads: payloads_current,
+            signed: &signed_current,
+            trusted_key: &key,
+            floor: &floor_current,
+        }];
+        let replay_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &replay_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_snapshot_link(&previous, &replay_current),
             RestartInspection::Deny
         );
         let witness = TestWitness([expected_previous, expected_current]);
