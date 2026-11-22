@@ -1,4 +1,4 @@
-# PALACO Bluetooth Offline Transfer — v1.5 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v1.6 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
 
@@ -18,6 +18,8 @@ Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices 
 - `session.py`: incremental, fail-closed session with ordered frames, explicit cancel and disconnect handling. On failure it discards retained frames; restarting requires a fresh transfer ID.
 - `ble_frames.py`: BLE-GATT-value framing reference with a 7-byte header, protocol version, chunk and fragment indices, final flag, configurable bounded value size (8–512 bytes) and strict sequential reassembly. It is not a BLE radio driver, encrypted channel, authenticated link, retransmission protocol or complete transfer flow.
 - `ble_sender.py`: stop-and-wait sender (at most one chunk's packets queued), caller-triggered bounded retransmission on timeout and a receiver wrapper that re-ACKs only the immediately previous, byte-identical packet without duplicate ingestion. ACKs are unauthenticated control hints; this is NOT a secure radio adapter.
+- `review_challenges.py`: opt-in SQLite-backed 256-bit random challenge issuance with short trusted-UTC expiry, reviewer/evidence binding and atomic one-shot consumption after externally verified reviewer submission. The SQLite file is not anti-rollback or tamper-proof; a protected native storage boundary and trusted clock remain required.
+- `test_review_challenges.py`: 20 synthetic expiration, replay, concurrent-submit, identity/evidence binding and registry-failure tests.
 - `signed_review_gate.py`: HOLD-only review-intake contract binding exact canonical recovery evidence to a fresh challenge and a reviewer key identifier; requires trusted external signature, role and revocation verification, with no signing keys, trusted verifier or repair authority provided.
 - `test_signed_review_gate.py`: 20 negative and positive synthetic review gate scenarios using a deliberately non-cryptographic fake verifier.
 - `recovery_evidence.py`: immutable canonical JSON diagnostic envelopes with domain-separated SHA-256 checksums. The envelope exposes only status, bounded counters and root hashes; the decision is always HOLD, even for MATCH. A checksum detects incidental changes but is not a signature or cryptographically authenticated provenance.
@@ -45,7 +47,7 @@ Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices 
 Run from this directory:
 
 ```sh
-python -m unittest -v test_protocol.py test_session.py test_ble_frames.py test_ble_sender.py test_transport_gate.py test_native_adapter_contract.py test_receive_watchdog.py test_send_watchdog.py test_durable_replay.py test_replay_checkpoint.py test_receipt_integrity.py test_recovery_inspection.py test_serialized_receipts.py test_recovery_evidence.py test_signed_review_gate.py
+python -m unittest -v test_protocol.py test_session.py test_ble_frames.py test_ble_sender.py test_transport_gate.py test_native_adapter_contract.py test_receive_watchdog.py test_send_watchdog.py test_durable_replay.py test_replay_checkpoint.py test_receipt_integrity.py test_recovery_inspection.py test_serialized_receipts.py test_recovery_evidence.py test_signed_review_gate.py test_review_challenges.py
 ```
 
 ### Device integration plan
@@ -65,6 +67,8 @@ python -m unittest -v test_protocol.py test_session.py test_ble_frames.py test_b
 **Send timer contract:** The native adapter writes the frame returned by `start()`, schedules monotonic `poll()` even in radio silence, sends frames returned by `poll()` on timeout, and writes the next frame returned by `acknowledge()` only after receipt of an independently authenticated ACK. The reference does not actually authenticate an ACK or send bytes over Bluetooth. Invalid clocks and elapsed deadlines cancel the session.
 
 **Serialized writer policy:** `SerializedContentReceiver` is a separate opt-in single-database writer contract for cooperating processes. It acquires a SQLite RESERVED writer lock (`BEGIN IMMEDIATE`) before comparing the trusted content root and inserting a new validated receipt. It advances the independently protected anchor before the SQLite transaction commits; under a crash or uncertain anchor write, checkpoint/DB divergence yields HOLD. No automatic repair and no import authorization. A second process that bypasses this contract, DB-file replacement, or an untrusted external anchor remains outside the guarantee. The older `ContentAnchoredReceiver` remains a single-writer reference and is not automatically upgraded.
+
+**Review challenge storage:** The privileged native service must own the newly created registry and trust its UTC clock. A challenge is 32 bytes from `secrets.token_bytes`, expires after 300 seconds by default (configurable 1–3600 seconds), and is linked to a reviewer key ID plus the recovery evidence fingerprint. On valid externally verified intake, a SQLite write lock serializes single-use consumption even across cooperating processes. It does not prevent replays after malicious DB rollback or clock rollback; production requires independently anchored anti-rollback state, trusted time, authenticated reviewer credentials and an operational key-revocation process. No automatic recovery is possible.
 
 **Signed review limitation:** `assess_review_submission` delegates the signature, key trust, reviewer authority, challenge freshness and revocation check to an external trusted verifier. None of these are implemented here. The test verifier uses an insecure SHA-256 equality stand-in and MUST NOT be reused in native production. The only possible success is `HOLD_REVIEWABLE`: this does not repair registers, reset checkpoints, release data or authorize imports. Native integration must implement genuine cryptographic signature verification, trusted reviewer roles and replay-resistant challenge issuance.
 
