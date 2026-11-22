@@ -44,7 +44,7 @@ class StrictContractJsonTests(unittest.TestCase):
 
     def test_mismatched_array_object_delimiters_rejected(self):
         with self.assertRaisesRegex(ValueError, "mismatched JSON delimiters"):
-            self.load_raw('{"edges":[1,2]}')
+            self.load_raw('{"edges":[1,2}')
 
     def test_mismatched_object_array_delimiters_rejected(self):
         with self.assertRaisesRegex(ValueError, "mismatched JSON delimiters"):
