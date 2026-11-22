@@ -8,6 +8,7 @@ use crate::orcheastra_audit_chain::{AuditChainExpectation, AuditLink};
 use crate::orcheastra_audit_continuity::inspect_audit_continuity;
 use crate::orcheastra_audit_custody::AuditCustodyWitness;
 use crate::orcheastra_audit_evidence::{inspect_audit_evidence, RecoveryEvidence};
+use crate::orcheastra_payload::{MAX_CHAIN_CHECKPOINTS, MAX_SNAPSHOT_BYTES};
 use crate::orcheastra_restart::RestartInspection;
 use crate::orcheastra_review_receipt::ReviewReceipt;
 use crate::orcheastra_signed_anchor::Ed25519Verifier;
@@ -230,6 +231,58 @@ pub fn inspect_segment_snapshot_continuity(
     RestartInspection::ReviewOnly
 }
 
+/// Upper bound on cumulative snapshot bytes for one two-segment review.
+pub const MAX_TRANSITION_PAYLOAD_BYTES: usize = 8 * MAX_SNAPSHOT_BYTES;
+/// Upper bound on cumulative checkpoints for one two-segment review.
+pub const MAX_TRANSITION_CHECKPOINTS: usize = 1024;
+
+/// Rejects oversized audit evidence before signature or snapshot hashing.
+///
+/// Counts every occurrence, including repeated borrowed payload buffers, since
+/// each occurrence would otherwise be hashed again. All additions are checked.
+/// These are per-call limits, not global concurrency or API rate limits.
+#[must_use]
+pub fn inspect_transition_evidence_budget(
+    previous: &AuditSegmentEvidence<'_>,
+    current: &AuditSegmentEvidence<'_>,
+) -> RestartInspection {
+    let mut total_bytes = 0usize;
+    let mut total_checkpoints = 0usize;
+    for segment in [previous, current] {
+        if segment.evidence.is_empty() || segment.evidence.len() != segment.receipts.len() {
+            return RestartInspection::Deny;
+        }
+        for source in segment.evidence {
+            if source.checkpoints.is_empty()
+                || source.checkpoints.len() > MAX_CHAIN_CHECKPOINTS
+                || source.checkpoints.len() != source.payloads.len()
+            {
+                return RestartInspection::Deny;
+            }
+            let Some(count) = total_checkpoints.checked_add(source.checkpoints.len()) else {
+                return RestartInspection::Deny;
+            };
+            if count > MAX_TRANSITION_CHECKPOINTS {
+                return RestartInspection::Deny;
+            }
+            total_checkpoints = count;
+            for payload in source.payloads {
+                if payload.len() > MAX_SNAPSHOT_BYTES {
+                    return RestartInspection::Deny;
+                }
+                let Some(bytes) = total_bytes.checked_add(payload.len()) else {
+                    return RestartInspection::Deny;
+                };
+                if bytes > MAX_TRANSITION_PAYLOAD_BYTES {
+                    return RestartInspection::Deny;
+                }
+                total_bytes = bytes;
+            }
+        }
+    }
+    RestartInspection::ReviewOnly
+}
+
 /// Requires consecutive witnessed segments and complete recovery evidence.
 ///
 /// Checks both source-evidence batches as well as the exact transition between
@@ -242,7 +295,8 @@ pub fn inspect_custodied_audit_transition(
     witness: Option<&impl AuditCustodyWitness>,
     verifier: &impl Ed25519Verifier,
 ) -> RestartInspection {
-    if inspect_segment_snapshot_continuity(previous) != RestartInspection::ReviewOnly
+    if inspect_transition_evidence_budget(previous, current) != RestartInspection::ReviewOnly
+        || inspect_segment_snapshot_continuity(previous) != RestartInspection::ReviewOnly
         || inspect_segment_snapshot_continuity(current) != RestartInspection::ReviewOnly
         || inspect_segment_signer_consistency(previous) != RestartInspection::ReviewOnly
         || inspect_segment_signer_consistency(current) != RestartInspection::ReviewOnly
@@ -281,9 +335,9 @@ pub fn inspect_custodied_audit_transition(
 mod tests {
     use super::{
         inspect_custodied_audit_transition, inspect_segment_signer_consistency,
-        inspect_segment_snapshot_continuity, inspect_transition_monotonicity,
-        inspect_transition_signer_continuity, inspect_transition_snapshot_link,
-        AuditSegmentEvidence,
+        inspect_segment_snapshot_continuity, inspect_transition_evidence_budget,
+        inspect_transition_monotonicity, inspect_transition_signer_continuity,
+        inspect_transition_snapshot_link, AuditSegmentEvidence,
     };
     use crate::orcheastra_audit_chain::{audit_link_digest, AuditChainExpectation, AuditLink};
     use crate::orcheastra_audit_custody::{AuditCustodyWitness, CustodyVerdict};
@@ -1015,6 +1069,71 @@ mod tests {
         };
         assert_eq!(
             inspect_segment_snapshot_continuity(&missing_segment),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_transition_evidence_budget(&previous, &current),
+            RestartInspection::ReviewOnly
+        );
+        let max_payload = vec![0u8; 1_048_576];
+        let large_payloads: &[&[u8]] = &[max_payload.as_slice()];
+        let large_evidence: Vec<RecoveryEvidence<'_>> = (0..9)
+            .map(|_| RecoveryEvidence {
+                checkpoints: &checkpoints_current,
+                payloads: large_payloads,
+                signed: &signed_current,
+                trusted_key: &key,
+                floor: &floor_current,
+            })
+            .collect();
+        let large_receipts = vec![receipts_current[0]; 9];
+        let oversized_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &large_receipts,
+            evidence: &large_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_evidence_budget(&previous, &oversized_current),
+            RestartInspection::Deny
+        );
+        let excessive_checkpoints = vec![checkpoints_current[0]; 256];
+        let tiny_payloads: Vec<&[u8]> = vec![b"second".as_slice(); 256];
+        let excess_evidence: Vec<RecoveryEvidence<'_>> = (0..5)
+            .map(|_| RecoveryEvidence {
+                checkpoints: &excessive_checkpoints,
+                payloads: &tiny_payloads,
+                signed: &signed_current,
+                trusted_key: &key,
+                floor: &floor_current,
+            })
+            .collect();
+        let excess_receipts = vec![receipts_current[0]; 5];
+        let excessive_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &excess_receipts,
+            evidence: &excess_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_evidence_budget(&previous, &excessive_current),
+            RestartInspection::Deny
+        );
+        let missing_payloads = [RecoveryEvidence {
+            checkpoints: &checkpoints_current,
+            payloads: &[],
+            signed: &signed_current,
+            trusted_key: &key,
+            floor: &floor_current,
+        }];
+        let mismatched_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &missing_payloads,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_evidence_budget(&previous, &mismatched_current),
             RestartInspection::Deny
         );
         let witness = TestWitness([expected_previous, expected_current]);
