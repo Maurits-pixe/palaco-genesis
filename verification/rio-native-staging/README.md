@@ -14,7 +14,7 @@ npm ci --prefix native-staging --ignore-scripts --no-audit --no-fund
 npm run test:ci
 ```
 
-`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer/lifecycle/handover/key-and-registry/cancellation/reporting checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v305.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
+`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer/lifecycle/handover/key-and-registry/cancellation/reporting/controller-scope checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v306.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
 
 ## Source continuity and status
 
@@ -383,4 +383,50 @@ Publication occurs after the candidate assessment and any candidate stop/cleanup
 
 Twelve contract cases cover minimized immutable records, rejected/unadmitted commands, generic provider failure, pending registry/crypto barriers, cancellation versus terminal close, bounded previous-result retention, late cancellation, the final installation-continuation race and unchanged issuer/verifier use. Test-only scheduling interception is restored per case; successful cryptography uses real WebCrypto. Six new native scenarios reuse one original route and selected One PostgreSQL columns: checked initial success, full retirement, completed withholding after a real registry query, an actual missing-relation query error (42P01) producing a generic CHECK_FAILED record, successful explicit retry, and terminal close publishing the matching completed candidate record. Native SQL/crypto is not intercepted. The disposable key and reviewer session retain their original active states/revisions/epochs.
 
-`test:ci` uses `run-ci-v305.mjs`, requires all six reporting scenarios alongside preserved suites and writes `evidence/CI-RESULT-v305.json`. AI review: TRIAS separates local operational completion from authority or durable evidence; ORACLE requires actual completion barriers and a real SQL failure without diagnostic leakage; MENTOR distinguishes a request acknowledgement from one completed-attempt result using explicit IDs. These are three lenses applied by one assistant, not independent approvals. Synthetic authentication, original One SQL-function limits, software-key isolation limits and unverified remote TLS remain unchanged. Acceptance HOLD; authorization NONE.
+The preserved `run-ci-v305.mjs` requires all six reporting scenarios alongside earlier suites and writes `evidence/CI-RESULT-v305.json`. AI review: TRIAS separates local operational completion from authority or durable evidence; ORACLE requires actual completion barriers and a real SQL failure without diagnostic leakage; MENTOR distinguishes a request acknowledgement from one completed-attempt result using explicit IDs. These are three lenses applied by one assistant, not independent approvals. Synthetic authentication, original One SQL-function limits, software-key isolation limits and unverified remote TLS remain unchanged. Acceptance HOLD; authorization NONE.
+
+## Control commands bound to one controller instance (v306)
+
+`createRioOneScopedSignerHandoverV306` adds a freshly generated controller correlation identifier. Two independently created controllers can otherwise both be at generation one, attempt one, even with identical tenant, issuer and private-handle configuration. The new controller requires its own `controllerId` on data-driven retirement, replacement and cancellation commands. A command carrying another instance's identifier is refused even when its local numbers match. Previous v305 and earlier modules remain unchanged.
+
+```js
+const host = await createRioOneScopedSignerHandoverV306(trustedConfiguration);
+const status = host.getStatus();
+const control = {controllerId: status.controllerId, expectedGeneration: status.generation};
+const retired = host.retireGeneration(control);
+if (retired !== null) {
+  await retired;
+  const work = host.installReplacement({
+    ...control, privateSigningKey: replacementHandle,
+    readIssuerKeyState: replacementRegistryReader,
+  });
+  const pending = host.getStatus();
+  // Optional trusted-host cancellation of this exact controller/attempt:
+  // host.cancelReplacement({...control, attemptId: pending.candidateAttemptId});
+  await work;
+  const completed = host.getLastAttemptResult();
+  if (completed?.controllerId === control.controllerId &&
+      completed.attemptId === pending.candidateAttemptId) {
+    // Matching completed result for this controller and attempt.
+  }
+}
+await host.close();
+```
+
+The identifier is generated once from 32 cryptographically random bytes and encoded as canonical base64url. It remains constant across generations for that controller; another construction generates another value. It cannot be supplied through configuration. This is a public correlation label for one local lifetime, not an authentication secret, user/tenant identity, key identifier, capability or authority grant. A trusted host that knows an identifier still needs all existing service configuration and controls. No public management endpoint or authenticated One service is added.
+
+| Surface | Binding |
+| --- | --- |
+| Status | Own `controllerId`, current generation, pending/last-completed attempt IDs |
+| retireGeneration | Exact own `controllerId` plus expected generation |
+| installReplacement | Exact own `controllerId`, expected generation and trusted replacement ports |
+| cancelReplacement | Exact own `controllerId`, expected generation and pending attempt ID |
+| Installation/cancellation/completion results | Own `controllerId` attached to the existing minimized result |
+
+Missing, foreign, wrong-type, accessor or extra configuration fields are refused without implicit fallback to earlier command shapes. Foreign replacement commands reach neither registry lookup nor candidate admission. Same-controller stale attempt/generation checks still apply. Status and new v306 result formats are frozen. Callers correlating results must match controller and attempt IDs together; local numbers alone are insufficient across instances. `close()` remains bound to the host object reference and returns that host's scoped status; it is not a data-driven command.
+
+The v306 status, installation, cancellation and completed-result format identifiers are distinct from earlier versions. One's signed-session formats and the internal v303 key-check domain remain unchanged. Key/registry observations, completion barriers, bounded result retention and the stable issuer/route signing callback are preserved. A cancelled/closed controller does not revoke the host-held key: a separately configured fresh controller can reuse that approved handle while receiving a fresh control scope. This does not establish durable restart state, real process-restart safety, cross-process coordination or authentication.
+
+Twelve contract cases cover independent scopes for identical configuration, refusal of foreign/missing control data, simultaneous equal local numbers, scoped results, a closed/new instance sequence, invalid types/accessors, stale local commands, final-continuation cancellation, close completion and unchanged issuer/verifier use. Six new native scenarios use three controllers and reuse one original route with selected One PostgreSQL columns. They verify foreign retirement/installation refusal, matching-scope drain, simultaneous equal generation/attempt numbers with foreign cancellation refusal, explicit same-route retry and a fresh instance refusing the closed instance's command. Real SQL and Ed25519 are used; callback barriers control scheduling without intercepting SQL or crypto. This tests new instances within one process, not an operating-system restart.
+
+`test:ci` uses `run-ci-v306.mjs`, requires all six controller-scope scenarios alongside preserved suites and writes `evidence/CI-RESULT-v306.json`. AI review: TRIAS separates correlation scope from identity or authority; ORACLE requires equal-number cross-controller tests and matching result identifiers; MENTOR refuses stale routing context while retaining explicit trusted-host control. These are three lenses applied by one assistant. Synthetic authentication, original One SQL-function limits, software-key isolation limits and unverified remote TLS remain unchanged. Acceptance HOLD; authorization NONE.
