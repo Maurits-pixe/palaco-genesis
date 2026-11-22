@@ -11,6 +11,7 @@ from pathlib import Path
 MAX_DOCUMENT_BYTES = 1024 * 1024
 MAX_NESTING_DEPTH = 64
 MAX_SAFE_INTEGER = (1 << 53) - 1
+MAX_NUMBER_TOKEN_CHARS = 1024
 
 
 def _unique_object_pairs(pairs):
@@ -27,7 +28,9 @@ def _reject_nonfinite(value):
 
 
 def _parse_safe_integer(token):
-    """Reject unsafe integers lexically before constructing Python big ints."""
+    """Reject overlong/unsafe integers before constructing Python big ints."""
+    if len(token) > MAX_NUMBER_TOKEN_CHARS:
+        raise ValueError("JSON numeric token exceeds length limit")
     digits = token[1:] if token.startswith("-") else token
     bound = str(MAX_SAFE_INTEGER)
     if len(digits) > len(bound) or (
@@ -38,7 +41,9 @@ def _parse_safe_integer(token):
 
 
 def _parse_finite_float(token):
-    """Reject overflows and nonzero decimals rounded all the way to zero."""
+    """Bound numeric work; reject overflow and nonzero-to-zero underflow."""
+    if len(token) > MAX_NUMBER_TOKEN_CHARS:
+        raise ValueError("JSON numeric token exceeds length limit")
     number = float(token)
     if not math.isfinite(number):
         raise ValueError("non-finite JSON number from exponent overflow")
