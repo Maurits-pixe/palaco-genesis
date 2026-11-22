@@ -18,6 +18,29 @@ FORBIDDEN = {
 }
 
 
+def _unique_object_pairs(pairs):
+    """Reject repeated JSON members, including nested transition rules."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def _reject_nonfinite(value):
+    raise ValueError(f"non-finite JSON number: {value}")
+
+
+def load_policy(path):
+    """Read strict JSON; never silently accept ambiguous policy keys."""
+    return json.loads(
+        Path(path).read_text(encoding="utf-8"),
+        object_pairs_hook=_unique_object_pairs,
+        parse_constant=_reject_nonfinite,
+    )
+
+
 def validate(data):
     errors = []
     if not isinstance(data, dict):
@@ -64,8 +87,8 @@ def validate(data):
 
 def main():
     try:
-        data = json.loads(POLICY.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        data = load_policy(POLICY)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 2
     errors = validate(data)
