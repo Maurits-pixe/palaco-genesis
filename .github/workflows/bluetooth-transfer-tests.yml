@@ -28,4 +28,4 @@ jobs:
         run: python -m compileall -q tools/bluetooth_transfer
       - name: Run offline Bluetooth framing regressions
         working-directory: tools/bluetooth_transfer
-        run: python -m unittest -v test_protocol.py test_session.py test_ble_frames.py test_ble_sender.py
+        run: python -m unittest -v test_protocol.py test_session.py test_ble_frames.py test_ble_sender.py test_transport_gate.py
