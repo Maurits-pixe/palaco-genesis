@@ -5,9 +5,7 @@
 //! witness. ReviewOnly never grants execution or publishing rights.
 
 use crate::orcheastra_audit_chain::{AuditChainExpectation, AuditLink};
-use crate::orcheastra_audit_custody::{
-    inspect_custodied_audit_chain, AuditCustodyWitness,
-};
+use crate::orcheastra_audit_custody::{inspect_custodied_audit_chain, AuditCustodyWitness};
 use crate::orcheastra_restart::RestartInspection;
 
 /// Checks two complete witnessed audit segments and their exact junction.
@@ -48,9 +46,7 @@ pub fn inspect_audit_continuity(
 #[cfg(test)]
 mod tests {
     use super::inspect_audit_continuity;
-    use crate::orcheastra_audit_chain::{
-        audit_link_digest, AuditChainExpectation, AuditLink,
-    };
+    use crate::orcheastra_audit_chain::{audit_link_digest, AuditChainExpectation, AuditLink};
     use crate::orcheastra_audit_custody::{AuditCustodyWitness, CustodyVerdict};
     use crate::orcheastra_restart::RestartInspection;
 
