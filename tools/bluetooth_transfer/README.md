@@ -15,7 +15,8 @@ Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices 
 ## Protocol and testing
 
 - `protocol.py`: offer, strict canonical JSON metadata, 16 KiB chunker, fail-closed receiver, replay guard.
-- `session.py`: incremental, fail-closed session with ordered frames, explicit cancel and disconnect handling. On failure it discards all retained frames; restarting requires a fresh transfer ID.\n- `test_protocol.py` and `test_session.py`: Python standard-library regression suites; no Bluetooth hardware required.
+- `session.py`: incremental, fail-closed session with ordered frames, explicit cancel and disconnect handling. On failure it discards all retained frames; restarting requires a fresh transfer ID.
+- `test_protocol.py` and `test_session.py`: Python standard-library regression suites; no Bluetooth hardware required.
 
 Run from this directory:
 
