@@ -23,10 +23,30 @@ ranges, Unicode ordering, and encoding behavior. The digest does not prove a
 signer's identity or permission, protect against storage rollback, or authorize
 execution. No existing canonical envelope format is replaced.
 
+## Pinned reference vectors
+
+`verification/contract-digest-v0-vectors.json` is a versioned corpus of five
+review-only reference cases. Each case pins an input value, canonical UTF-8
+bytes as hexadecimal, and the expected domain-separated SHA-256 digest.
+The fixture includes empty objects, nested key sorting, NFC Unicode,
+integers within the exact interoperable range ±(2^53−1), and arrays containing
+a HOLD state. `tests/test_contract_digest_vectors.py` checks all three outputs.
+
+The corpus is an independent comparison target, **not proof** of implementation
+correctness or interoperability in languages other than Python. Implementations
+must explicitly agree on UTF-8, Unicode key ordering, integer ranges, string
+normalization policy, and rejection rules. The Python encoder currently accepts
+integers beyond ±(2^53−1), so consumers must not assume arbitrary-precision
+integers round-trip identically through JavaScript.
+
+The hash input is the literal UTF-8 domain label `PALACO-CJSON-v0` followed
+by a single zero byte, then the canonical byte length as eight unsigned
+big-endian bytes, then the canonical bytes.
+
 ## Validate
 
 ```sh
-python3 -m unittest discover -s tests -p 'test_contract_digest.py' -v
+python3 -m unittest discover -s tests -p 'test_contract_digest*.py' -v
 ```
 
 **GO-13 HOLD · authorization DENY · no signing, merge or deployment.**
