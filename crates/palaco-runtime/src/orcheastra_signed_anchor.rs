@@ -246,6 +246,13 @@ mod tests {
             inspect_signed_anchor(Some(&signed), Some(&key), &RejectAll),
             RestartInspection::Deny
         );
-        assert!(MAX_KEY_ID_BYTES > 0);
+        let long_id = "x".repeat(MAX_KEY_ID_BYTES + 1);
+        signed.key_id = &long_id;
+        key.key_id = &long_id;
+        key.registry_sequence = 1;
+        assert_eq!(
+            inspect_signed_anchor(Some(&signed), Some(&key), &RejectAll),
+            RestartInspection::Deny
+        );
     }
 }
