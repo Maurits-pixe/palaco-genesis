@@ -44,7 +44,7 @@ def _check(record):
             "payload_sha256": digest}, None
 
 
-def inspect(records):
+def inspect(records, previously_seen=None):
     """Return stable intake decisions without persisting or elevating trust.
 
     Even a locally intact digest is not an authentic signature: valid records
@@ -53,12 +53,25 @@ def inspect(records):
     """
     if not isinstance(records, list) or len(records) > MAX_RECORDS:
         raise ValueError("records must be an array of at most 10000 items")
+    # Caller-supplied snapshot is read-only and deliberately never authoritative.
+    # A real replay defense still requires an authenticated durable atomic index.
+    if previously_seen is None:
+        seen_ids = set()
+    elif not isinstance(previously_seen, (list, tuple, set, frozenset)) or len(previously_seen) > MAX_RECORDS:
+        raise ValueError("previously_seen must be a bounded collection of record IDs")
+    elif any(not isinstance(x, str) or not IDENTIFIER.fullmatch(x) for x in previously_seen):
+        raise ValueError("previously_seen contains invalid record ID")
+    else:
+        seen_ids = set(previously_seen)
     checked = [_check(r) for r in records]
     counts = Counter(meta["record_id"] for meta, error in checked if meta is not None)
     decisions = []
     for index, (meta, error) in enumerate(checked):
         if error:
             decisions.append({"index": index, "state": "quarantined", "reason": error})
+        elif meta["record_id"] in seen_ids:
+            decisions.append({"index": index, "record_id": meta["record_id"],
+                              "state": "quarantined", "reason": "previously-seen-record-id"})
         elif counts[meta["record_id"]] > 1:
             decisions.append({"index": index, "record_id": meta["record_id"],
                               "state": "quarantined", "reason": "duplicate-record-id"})
@@ -74,10 +87,14 @@ def main():
     from pathlib import Path
     parser = argparse.ArgumentParser(description="Inspect local untrusted evidence without persistence")
     parser.add_argument("input", type=Path, help="JSON array of local candidate records")
+    parser.add_argument("--seen-ids", type=Path, help="Optional JSON array of previously seen record IDs (untrusted snapshot)")
     args = parser.parse_args()
     try:
         candidate = json.loads(args.input.read_text(encoding="utf-8"))
-        report = inspect(candidate)
+        seen = None
+        if args.seen_ids is not None:
+            seen = json.loads(args.seen_ids.read_text(encoding="utf-8"))
+        report = inspect(candidate, seen)
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
         parser.exit(2, f"FAIL: {exc}\n")
     print(json.dumps(report, sort_keys=True, indent=2))
