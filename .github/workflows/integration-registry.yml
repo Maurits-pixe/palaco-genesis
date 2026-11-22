@@ -12,6 +12,8 @@ on:
       - 'tests/test_integration_registry.py'
       - 'tests/test_boundary_contract.py'
       - 'tests/test_offline_recovery.py'
+      - 'tests/test_local_evidence_intake.py'
+      - 'tools/local_evidence_intake.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -25,6 +27,8 @@ on:
       - 'tests/test_integration_registry.py'
       - 'tests/test_boundary_contract.py'
       - 'tests/test_offline_recovery.py'
+      - 'tests/test_local_evidence_intake.py'
+      - 'tools/local_evidence_intake.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
