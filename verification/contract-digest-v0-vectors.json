@@ -54,6 +54,48 @@
       },
       "canonical_hex": "7b227265636f726473223a5b7b226964223a2261222c2276616c6964223a66616c73657d2c6e756c6c2c335d2c2272656c656173655f67617465223a22484f4c44227d",
       "sha256": "c1029f1e4e18c8452ed1481055112ceae28624ed2e2ad1b449b3c3a39d39183d"
+    },
+    {
+      "name": "escaped_controls",
+      "value": {
+        "control": "\b\f\n\r\t\u0000\u001f",
+        "quote": "\"\\/",
+        "backslash": "\\"
+      },
+      "canonical_hex": "7b226261636b736c617368223a225c5c222c22636f6e74726f6c223a225c625c665c6e5c725c745c75303030305c7530303166222c2271756f7465223a225c225c5c2f227d",
+      "sha256": "874fdbf4ca468571f00f902ec0103f9688873c99dce49e131c94e0e4025b52ae"
+    },
+    {
+      "name": "unicode_key_order",
+      "value": {
+        "": "BMP private",
+        "🚀": "astral",
+        "A": "ascii",
+        "é": "NFC"
+      },
+      "canonical_hex": "7b2241223a226173636969222c22c3a9223a224e4643222c22ee8080223a22424d502070726976617465222c22f09f9a80223a2261737472616c227d",
+      "sha256": "2f94da33e85bdc3df7192704662bcc0831b68fe1dcd9177b54e81ad562a8a385"
+    },
+    {
+      "name": "line_separators",
+      "value": {
+        "line": "a b c",
+        "escaped": "\\u2028",
+        "slash": "a/b"
+      },
+      "canonical_hex": "7b2265736361706564223a225c5c7532303238222c226c696e65223a2261e280a862e280a963222c22736c617368223a22612f62227d",
+      "sha256": "a555cd7404c3b93e76403cc31ae5095105c67f21cf2229e1deec63d4be534b7c"
+    },
+    {
+      "name": "numeric_key_order",
+      "value": {
+        "0": "zero",
+        "2": "two",
+        "10": "ten",
+        "x": "letter"
+      },
+      "canonical_hex": "7b2230223a227a65726f222c223130223a2274656e222c2232223a2274776f222c2278223a226c6574746572227d",
+      "sha256": "677646bc93d4458ff40b7a8c66df88ae3b6d93a41d870cac9f8c9b0704b34f7a"
     }
   ]
 }
