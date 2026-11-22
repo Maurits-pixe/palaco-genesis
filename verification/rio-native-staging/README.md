@@ -14,7 +14,7 @@ npm ci --prefix native-staging --ignore-scripts --no-audit --no-fund
 npm run test:ci
 ```
 
-`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer/lifecycle/handover/key-correspondence checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v302.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
+`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer/lifecycle/handover/key-and-registry checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v303.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
 
 ## Source continuity and status
 
@@ -252,4 +252,48 @@ Terminal close now also waits for an admitted candidate check to settle. A close
 
 Sixteen contract cases use real Ed25519 signing, including fresh internal challenge domains/nonces, wrong initial/replacement handles, bad pins, blocked admission during proof, close/proof races, crypto failure, revoked registry, immutable scope and unchanged issuer/verifier use. A test-only WebCrypto scheduling interception controls pending/failing operations and is restored after each case; successful proofs delegate to actual WebCrypto. Five new native scenarios reuse one original route with PostgreSQL selected One columns: checked generation-one success; retirement after real signing; mismatched-handle refusal; checked same-key replacement success; close during actual asynchronous proof with installation withheld and fixture key/session state unchanged. The native suite does not intercept crypto.
 
-`test:ci` uses `run-ci-v302.mjs`, requires all five key-check scenarios alongside preserved suites and writes `evidence/CI-RESULT-v302.json`. Authentication remains a synthetic server binding; original One SQL functions, real user authentication, production key custody and remote TLS remain unverified. AI review: TRIAS distinguishes a local key-pair proof from authority or authenticated identity; ORACLE records successful real verification and close barriers without inflating readiness; MENTOR refuses a wrong handle before service installation and retains the stable callback. These are three lenses applied by one assistant. Acceptance HOLD; authorization NONE.
+The preserved `run-ci-v302.mjs` requires all five key-check scenarios alongside earlier suites and writes `evidence/CI-RESULT-v302.json`. Authentication remains a synthetic server binding; original One SQL functions, real user authentication, production key custody and remote TLS remain unverified. AI review: TRIAS distinguishes a local key-pair proof from authority or authenticated identity; ORACLE records successful real verification and close barriers without inflating readiness; MENTOR refuses a wrong handle before service installation and retains the stable callback. These are three lenses applied by one assistant. Acceptance HOLD; authorization NONE.
+
+## Bounded key-and-registry installation checks (v303)
+
+`createRioOneRegistryCheckedSignerHandoverV303` checks the trusted issuer registry before and after the real private/public-key proof, for initial construction and replacement. It preserves the stable signing callback, immutable scope, expected-generation checks and full retirement barrier. Previous v302 and earlier modules remain unchanged. Construction and replacement remain asynchronous:
+
+```js
+const host = await createRioOneRegistryCheckedSignerHandoverV303({
+  tenantRef, allowedOrigin, issuerKey, privateSigningKey,
+  readIssuerKeyState, now, maxConcurrentSignatures: 1,
+});
+// Configure the existing issuer once with host.signSessionStatement.
+const expectedGeneration = host.getStatus().generation;
+const retired = host.retireGeneration({expectedGeneration});
+if (retired !== null) {
+  await retired;
+  const installed = await host.installReplacement({
+    expectedGeneration, privateSigningKey: replacementHandle,
+    readIssuerKeyState: replacementRegistryReader,
+  });
+  // null means refused; the old generation stays retired.
+}
+await host.close();
+```
+
+The trusted registry callback must return exactly `state`, `issuerId`, `keyId`, `revision`, `notBefore` and `notAfter` as own enumerable data properties. ACTIVE state, the configured issuer/key, a positive safe-integer revision and canonical ISO validity timestamps are required. Each record is copied immediately after its lookup; a callback cannot mutate the first observation in place to conceal a later change. Both records must match in every field and remain valid through the completed check. No source callback, registry or network endpoint is configured by this module.
+
+All sampled host-clock values must be valid and nondecreasing, and the completed check must fit within 1,000 milliseconds from its initial clock observation. A stale first lookup is refused before cryptography. Expiry, revision/window changes, revocation, malformed data, clock rollback or provider/crypto failure return no installation. The cryptographic challenge uses the separate internal `RIO_ONE_SOFTWARE_KEY_CHECK_V303` plus NUL domain and a fresh nonce; it is not a session statement, and no proof signature or private key is exposed.
+
+| Status or receipt field | Scope |
+| --- | --- |
+| `keyCorrespondence: VERIFIED_AT_INSTALL` | Actual key-pair verification completed for this installed generation |
+| `registryReadiness: VERIFIED_AT_INSTALL` | Two matching active registry observations passed within the bounded check |
+| `registryRevisionAtInstall` / `installationCheckedAt` | The observed installation revision/time; not a live registry view |
+| `candidateChecksInFlight` | An admitted candidate assessment, including registry waits and cryptography, has not settled |
+
+These installation observations do not grant continuous readiness. The unchanged v300 signer still rechecks current registry state/expiry around every actual signature, and the existing One/session/receipt checks still run. A key revoked after installation must fail subsequent signing even while the status retains its historical installation revision. Sequential reads do not provide atomic authorization or rule out a change between/after observations. A registry service is still a separately trusted dependency; this module does not prove its backing transport or database.
+
+Close during either registry lookup or cryptography withholds the candidate and waits for the actual admitted assessment to settle. A close after the first registry lookup prevents unnecessary key proof and the second lookup. The one-second acceptance bound is not forced cancellation: a nonreturning provider keeps completion pending and occupies the candidate slot. CLOSED can therefore still have `candidateChecksInFlight: 1`. There is no automatic retry, fallback, new public key, authority grant, key destruction or memory-zeroization guarantee.
+
+Seventeen contract cases cover invalid/revoked/expired/misbound records, copied mutable observations, actual key mismatch, changed revision/windows during real crypto, clock bounds/rollback, provider failure, both close/registry races, immutable scope, duplicate/stale commands, per-request revocation and the unchanged issuer/verifier callback. Test-only crypto scheduling interception is restored after each case; successful crypto uses real WebCrypto.
+
+Six new native scenarios reuse one actual route and selected One PostgreSQL columns: verified initial generation; retirement after signing; committed issuer-key revocation before installation; committed revocation between the two candidate observations; successful same-key replacement at the new active registry revision; close during a real registry query with candidate withheld. The fixture intentionally revokes/restores its disposable key registry through revisions 1 to 5. The reviewer session remains ACTIVE with its original epoch/revocation revision. Native cryptography is not intercepted, and the original One SQL function chain and real user authentication remain unexecuted.
+
+`test:ci` uses `run-ci-v303.mjs`, requires all six registry-check records alongside preserved suites and writes `evidence/CI-RESULT-v303.json`. AI review: TRIAS separates installation observations from continuous authority; ORACLE requires committed native registry changes and bounds the evidence to sampled observations; MENTOR rejects an invalid candidate before service installation while retaining the stable callback. These are three lenses applied by one assistant, not independent approvals. Software/Node-host key-isolation limits, synthetic authentication and unverified remote TLS remain unchanged. Acceptance HOLD; authorization NONE.
