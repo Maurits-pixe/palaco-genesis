@@ -29,7 +29,7 @@ def validate(registry, contract):
     for module in modules:
         name = module.get("id")
         deps = module.get("depends_on")
-        if isinstance(name, str) and isinstance(deps, list):
+        if isinstance(name, str) and isinstance(deps, list) and all(isinstance(dep, str) for dep in deps):
             dependencies[name] = deps
     edges = contract.get("edges")
     if not isinstance(edges, list) or not edges:
@@ -57,15 +57,15 @@ def validate(registry, contract):
             errors.append(f"{loc}: dependency not registered")
         if not isinstance(edge["purpose"], str) or not edge["purpose"].strip():
             errors.append(f"{loc}: missing purpose")
-        if edge["data_class"] not in CLASSES:
+        if not isinstance(edge["data_class"], str) or edge["data_class"] not in CLASSES:
             errors.append(f"{loc}: unsupported data class")
         if edge["authentication"] != "required":
             errors.append(f"{loc}: authentication must be required")
         if edge["authorization"] != "provider-enforced":
             errors.append(f"{loc}: provider authorization required")
-        if edge["offline_behavior"] not in OFFLINE:
+        if not isinstance(edge["offline_behavior"], str) or edge["offline_behavior"] not in OFFLINE:
             errors.append(f"{loc}: invalid offline behavior")
-        if edge["data_class"] in {"identity-reference", "session-claims"} and edge["offline_behavior"] != "deny":
+        if isinstance(edge["data_class"], str) and edge["data_class"] in {"identity-reference", "session-claims"} and edge["offline_behavior"] != "deny":
             errors.append(f"{loc}: identity and session operations must deny offline")
         if edge["runtime_enabled"] is not False:
             errors.append(f"{loc}: runtime must be disabled")
