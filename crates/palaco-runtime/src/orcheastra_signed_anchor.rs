@@ -9,6 +9,9 @@ use crate::orcheastra_restart::{RestartAnchor, RestartInspection};
 /// Domain separation for signatures over restart anchor records.
 pub const ANCHOR_DOMAIN: &[u8] = b"PALACO-ORCHEASTRA-RESTART-ANCHOR-V1\0";
 
+/// New domain binds key identity and registry constraints to the signed bytes.
+pub const ANCHOR_DOMAIN_V2: &[u8] = b"PALACO-ORCHEASTRA-RESTART-ANCHOR-V2\0";
+
 /// Upper limit on key identifier length.
 pub const MAX_KEY_ID_BYTES: usize = 128;
 
@@ -79,6 +82,36 @@ pub fn anchor_message(anchor: &RestartAnchor) -> Vec<u8> {
     message
 }
 
+/// Constructs the v2 signed message, including the exact pinned key context.
+///
+/// Layout: domain || key-id length (u16 BE) || key-id bytes || public key ||
+/// registry sequence (u64 BE) || first sequence (u64 BE) || last sequence
+/// (u64 BE) || anchor sequence (u64 BE) || snapshot digest || predecessor
+/// digest. Key identifiers are bounded UTF-8 bytes and cannot be empty.
+///
+/// This only constructs bytes: it does not authenticate the registry or key.
+#[must_use]
+pub fn anchor_message_v2(anchor: &RestartAnchor, key: &TrustedKey<'_>) -> Option<Vec<u8>> {
+    if key.key_id.is_empty() || key.key_id.len() > MAX_KEY_ID_BYTES {
+        return None;
+    }
+    let key_id_length = u16::try_from(key.key_id.len()).ok()?;
+    let mut message = Vec::with_capacity(
+        ANCHOR_DOMAIN_V2.len() + 2 + key.key_id.len() + 32 + 32 + 72,
+    );
+    message.extend_from_slice(ANCHOR_DOMAIN_V2);
+    message.extend_from_slice(&key_id_length.to_be_bytes());
+    message.extend_from_slice(key.key_id.as_bytes());
+    message.extend_from_slice(&key.public_key);
+    message.extend_from_slice(&key.registry_sequence.to_be_bytes());
+    message.extend_from_slice(&key.first_sequence.to_be_bytes());
+    message.extend_from_slice(&key.last_sequence.to_be_bytes());
+    message.extend_from_slice(&anchor.sequence.to_be_bytes());
+    message.extend_from_slice(&anchor.snapshot_digest);
+    message.extend_from_slice(&anchor.predecessor_digest);
+    Some(message)
+}
+
 /// Enforces pinned-key policy then delegates actual cryptographic validation.
 ///
 /// The pinned registry must come from a trusted, rollback-protected source.
@@ -113,12 +146,10 @@ pub fn inspect_signed_anchor(
         return RestartInspection::Deny;
     }
 
-    if verifier.verify(
-        &key.public_key,
-        &anchor_message(&signed.anchor),
-        &signed.signature,
-    ) != SignatureVerdict::Valid
-    {
+    let Some(message) = anchor_message_v2(&signed.anchor, key) else {
+        return RestartInspection::Deny;
+    };
+    if verifier.verify(&key.public_key, &message, &signed.signature) != SignatureVerdict::Valid {
         return RestartInspection::Deny;
     }
 
@@ -128,8 +159,8 @@ pub fn inspect_signed_anchor(
 #[cfg(test)]
 mod tests {
     use super::{
-        anchor_message, inspect_signed_anchor, Ed25519Verifier, SignatureVerdict, SignedAnchor,
-        TrustedKey, ANCHOR_DOMAIN, MAX_KEY_ID_BYTES,
+        anchor_message, anchor_message_v2, inspect_signed_anchor, Ed25519Verifier, SignatureVerdict,
+        SignedAnchor, TrustedKey, ANCHOR_DOMAIN, ANCHOR_DOMAIN_V2, MAX_KEY_ID_BYTES,
     };
     use crate::orcheastra_restart::{RestartAnchor, RestartInspection};
 
@@ -259,5 +290,71 @@ mod tests {
             inspect_signed_anchor(Some(&long_signed), Some(&long_key), &RejectAll),
             RestartInspection::Deny
         );
+    }
+    /// Test-only adapter that checks the message transport contract, NOT Ed25519.
+    struct MessageMatcher(Vec<u8>);
+    impl Ed25519Verifier for MessageMatcher {
+        fn verify(
+            &self,
+            _public_key: &[u8; 32],
+            message: &[u8],
+            _signature: &[u8; 64],
+        ) -> SignatureVerdict {
+            if message == self.0 {
+                SignatureVerdict::Valid
+            } else {
+                SignatureVerdict::Invalid
+            }
+        }
+    }
+
+    #[test]
+    fn v2_message_binds_registry_and_key_identity() {
+        let (signed, key) = fixture();
+        let message = anchor_message_v2(&signed.anchor, &key).unwrap_or_default();
+        assert!(!message.is_empty());
+        assert!(message.starts_with(ANCHOR_DOMAIN_V2));
+        assert_ne!(message, anchor_message(&signed.anchor));
+        let mut modified = key.clone();
+        modified.registry_sequence += 1;
+        assert_ne!(Some(message.clone()), anchor_message_v2(&signed.anchor, &modified));
+        modified = key.clone();
+        modified.first_sequence += 1;
+        assert_ne!(Some(message.clone()), anchor_message_v2(&signed.anchor, &modified));
+        modified = key.clone();
+        modified.last_sequence -= 1;
+        assert_ne!(Some(message.clone()), anchor_message_v2(&signed.anchor, &modified));
+        modified = key.clone();
+        modified.key_id = "other-key-a";
+        assert_ne!(Some(message.clone()), anchor_message_v2(&signed.anchor, &modified));
+        modified = key.clone();
+        modified.public_key[0] ^= 1;
+        assert_ne!(Some(message), anchor_message_v2(&signed.anchor, &modified));
+    }
+
+    #[test]
+    fn v2_review_boundary_receives_key_bound_message() {
+        let (signed, key) = fixture();
+        let message = anchor_message_v2(&signed.anchor, &key).unwrap_or_default();
+        assert_eq!(
+            inspect_signed_anchor(Some(&signed), Some(&key), &MessageMatcher(message.clone())),
+            RestartInspection::ReviewOnly
+        );
+        let mut changed = key.clone();
+        changed.registry_sequence += 1;
+        assert_eq!(
+            inspect_signed_anchor(Some(&signed), Some(&changed), &MessageMatcher(message)),
+            RestartInspection::Deny
+        );
+    }
+
+    #[test]
+    fn v2_rejects_empty_and_oversized_key_identifiers() {
+        let (signed, mut key) = fixture();
+        key.key_id = "";
+        assert_eq!(anchor_message_v2(&signed.anchor, &key), None);
+        let long_id = "x".repeat(MAX_KEY_ID_BYTES + 1);
+        key.key_id = &long_id;
+        assert_eq!(anchor_message_v2(&signed.anchor, &key), None);
     }
 }
