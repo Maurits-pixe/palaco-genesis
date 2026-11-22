@@ -88,4 +88,10 @@ assert.throws(() => canonicalBytes({ invalid: 1.5 }), /non-integer/);
 assert.throws(() => canonicalBytes({ name: 'e\u0301' }), /non-NFC/);
 assert.throws(() => canonicalBytes({ name: '\ud800' }), /surrogate/);
 assert.equal(digest({ b: 2, a: 1 }), digest({ a: 1, b: 2 }));
+let nested = 0;
+for (let i = 0; i < MAX_DEPTH; i += 1) nested = [nested];
+assert.ok(canonicalBytes(nested).length > 0);
+nested = [nested];
+assert.throws(() => canonicalBytes(nested), /nesting depth/);
+
 console.log('PASS: 5 pinned PALACO-CJSON-v0 vectors independently verified with Node.js; HOLD');
