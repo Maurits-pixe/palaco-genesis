@@ -11,6 +11,8 @@ bounded strict JSON reader before encoding.
 
 - JSON objects are ordered lexicographically by Python Unicode string keys.
 - Output uses UTF-8, no insignificant whitespace, and unescaped valid Unicode.
+- Both Python and Node.js canonicalizers enforce at most **64 levels** of
+  array/object nesting, including for in-memory objects; a 65th level fails.
 - Non-NFC Unicode strings are **rejected**, not silently normalized.
 - Floating-point values, nonstring dictionary keys, and lone Unicode surrogates
   are rejected. Booleans, null, arrays and objects are supported. Integers are
