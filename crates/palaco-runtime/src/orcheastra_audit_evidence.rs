@@ -157,16 +157,20 @@ mod tests {
         let verifier =
             ByteMatcher(anchor_message_v2(&signed.anchor, &trusted_key).unwrap_or_default());
         let payloads: &[&[u8]] = &[b"original"];
-        let Some(receipt) = review_receipt(
+        let receipt = review_receipt(
             &checkpoints,
             payloads,
             Some(&signed),
             Some(&trusted_key),
             Some(&floor),
             &verifier,
-        ) else {
-            return;
-        };
+        ).unwrap_or(ReviewReceipt {
+            digest: [0; 32],
+            checkpoint_sequence: 0,
+            registry_sequence: 0,
+            checkpoint_count: 0,
+        });
+        assert_ne!(receipt.digest, [0; 32]);
         let receipts: [ReviewReceipt; 1] = [receipt];
         let link_digest = audit_link_digest(10, &[8; 32], &receipt.digest).unwrap_or([0; 32]);
         let links = [AuditLink {
