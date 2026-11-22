@@ -4,15 +4,21 @@ on:
   pull_request:
     paths:
       - 'ecosystem/integration-registry.v0.1.json'
+      - 'ecosystem/boundary-contract.v0.1.json'
       - 'tools/validate_integration_registry.py'
+      - 'tools/validate_boundary_contract.py'
       - 'tests/test_integration_registry.py'
+      - 'tests/test_boundary_contract.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
     paths:
       - 'ecosystem/integration-registry.v0.1.json'
+      - 'ecosystem/boundary-contract.v0.1.json'
       - 'tools/validate_integration_registry.py'
+      - 'tools/validate_boundary_contract.py'
       - 'tests/test_integration_registry.py'
+      - 'tests/test_boundary_contract.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
@@ -21,7 +27,7 @@ permissions:
 
 jobs:
   verify-contract:
-    name: Verify integration graph (HOLD)
+    name: Verify integration and security contracts (HOLD)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -33,7 +39,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Validate design-time registry
+      - name: Validate integration registry
         run: python3 tools/validate_integration_registry.py
+      - name: Validate fail-closed interface contract
+        run: python3 tools/validate_boundary_contract.py
       - name: Run positive and negative contract tests
-        run: python3 -m unittest discover -s tests -p 'test_integration_registry.py' -v
+        run: python3 -m unittest discover -s tests -p 'test_*contract.py' -v
