@@ -154,9 +154,7 @@ pub fn inspect_transition_signer_continuity(
 /// signed anchor must be bound to that key. Registry revisions may advance,
 /// but never roll back. This is not key or signature authentication.
 #[must_use]
-pub fn inspect_segment_signer_consistency(
-    segment: &AuditSegmentEvidence<'_>,
-) -> RestartInspection {
+pub fn inspect_segment_signer_consistency(segment: &AuditSegmentEvidence<'_>) -> RestartInspection {
     let Some(first) = segment.evidence.first() else {
         return RestartInspection::Deny;
     };
@@ -245,8 +243,7 @@ mod tests {
     use super::{
         inspect_custodied_audit_transition, inspect_segment_signer_consistency,
         inspect_transition_monotonicity, inspect_transition_signer_continuity,
-        inspect_transition_snapshot_link,
-        AuditSegmentEvidence,
+        inspect_transition_snapshot_link, AuditSegmentEvidence,
     };
     use crate::orcheastra_audit_chain::{audit_link_digest, AuditChainExpectation, AuditLink};
     use crate::orcheastra_audit_custody::{AuditCustodyWitness, CustodyVerdict};
