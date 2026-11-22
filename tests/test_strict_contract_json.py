@@ -42,6 +42,30 @@ class StrictContractJsonTests(unittest.TestCase):
         document = '{"note":"a\\\"' + ("[{" * 100) + '"}'
         self.assertEqual(len(self.load_raw(document)["note"]), 202)
 
+    def test_mismatched_array_object_delimiters_rejected(self):
+        with self.assertRaisesRegex(ValueError, "mismatched JSON delimiters"):
+            self.load_raw('{"edges":[1,2]}')
+
+    def test_mismatched_object_array_delimiters_rejected(self):
+        with self.assertRaisesRegex(ValueError, "mismatched JSON delimiters"):
+            self.load_raw('[{"id":"one"]}')
+
+    def test_extra_closing_delimiter_rejected(self):
+        with self.assertRaisesRegex(ValueError, "mismatched JSON delimiters"):
+            self.load_raw('{"gate":"HOLD"}}')
+
+    def test_unclosed_array_rejected(self):
+        with self.assertRaisesRegex(ValueError, "unbalanced JSON nesting"):
+            self.load_raw('{"edges":[1,2]')
+
+    def test_unterminated_string_rejected(self):
+        with self.assertRaisesRegex(ValueError, "unterminated string"):
+            self.load_raw('{"gate":"HOLD}')
+
+    def test_valid_mixed_nesting_and_escaped_brackets(self):
+        payload = r'{"rows":[{"text":"[\"{}]","next":{"hold":true}}]}'
+        self.assertEqual(self.load_raw(payload)["rows"][0]["next"]["hold"], True)
+
     def test_truncated_nested_json_rejected(self):
         with self.assertRaises(ValueError):
             self.load_raw('{"a":[1,2}')
