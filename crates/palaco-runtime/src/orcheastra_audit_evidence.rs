@@ -6,6 +6,7 @@
 use crate::orcheastra_audit_chain::{AuditChainExpectation, AuditLink, MAX_AUDIT_LINKS};
 use crate::orcheastra_audit_custody::{inspect_custodied_audit_chain, AuditCustodyWitness};
 use crate::orcheastra_audit_receipts::inspect_bound_audit_receipts;
+use crate::orcheastra_payload::{MAX_CHAIN_CHECKPOINTS, MAX_SNAPSHOT_BYTES};
 use crate::orcheastra_recovery::RecoveryFloor;
 use crate::orcheastra_restart::{RestartCheckpoint, RestartInspection};
 use crate::orcheastra_review_receipt::{revalidate_review_receipt, ReviewReceipt};
@@ -28,6 +29,53 @@ pub struct RecoveryEvidence<'a> {
     pub floor: &'a RecoveryFloor,
 }
 
+/// Maximum cumulative snapshot bytes in a single audit-evidence inspection.
+pub const MAX_AUDIT_EVIDENCE_BYTES: usize = 8 * MAX_SNAPSHOT_BYTES;
+/// Maximum cumulative checkpoints in a single audit-evidence inspection.
+pub const MAX_AUDIT_EVIDENCE_CHECKPOINTS: usize = 1024;
+
+/// Preflight check for cumulative work before digest or signature verification.
+///
+/// Every payload occurrence is counted, including repeated borrowed buffers.
+/// Limits are per inspection, not a concurrency or network admission control.
+/// Does not authenticate the evidence.
+#[must_use]
+pub fn inspect_audit_evidence_budget(evidence: &[RecoveryEvidence<'_>]) -> RestartInspection {
+    if evidence.is_empty() || evidence.len() > MAX_AUDIT_LINKS {
+        return RestartInspection::Deny;
+    }
+    let mut total_bytes = 0usize;
+    let mut total_checkpoints = 0usize;
+    for source in evidence {
+        if source.checkpoints.is_empty()
+            || source.checkpoints.len() > MAX_CHAIN_CHECKPOINTS
+            || source.checkpoints.len() != source.payloads.len()
+        {
+            return RestartInspection::Deny;
+        }
+        let Some(count) = total_checkpoints.checked_add(source.checkpoints.len()) else {
+            return RestartInspection::Deny;
+        };
+        if count > MAX_AUDIT_EVIDENCE_CHECKPOINTS {
+            return RestartInspection::Deny;
+        }
+        total_checkpoints = count;
+        for payload in source.payloads {
+            if payload.len() > MAX_SNAPSHOT_BYTES {
+                return RestartInspection::Deny;
+            }
+            let Some(bytes) = total_bytes.checked_add(payload.len()) else {
+                return RestartInspection::Deny;
+            };
+            if bytes > MAX_AUDIT_EVIDENCE_BYTES {
+                return RestartInspection::Deny;
+            }
+            total_bytes = bytes;
+        }
+    }
+    RestartInspection::ReviewOnly
+}
+
 /// Reviews audit-chain linkage and recomputes every corresponding receipt.
 ///
 /// Denies empty/mismatched evidence batches and any receipt that cannot be
@@ -45,6 +93,7 @@ pub fn inspect_audit_evidence(
     if evidence.is_empty()
         || evidence.len() > MAX_AUDIT_LINKS
         || evidence.len() != receipts.len()
+        || inspect_audit_evidence_budget(evidence) != RestartInspection::ReviewOnly
         || inspect_bound_audit_receipts(links, receipts, expected) != RestartInspection::ReviewOnly
     {
         return RestartInspection::Deny;
@@ -94,7 +143,10 @@ pub fn inspect_custodied_audit_evidence(
 
 #[cfg(test)]
 mod tests {
-    use super::{inspect_audit_evidence, inspect_custodied_audit_evidence, RecoveryEvidence};
+    use super::{
+        inspect_audit_evidence, inspect_audit_evidence_budget, inspect_custodied_audit_evidence,
+        RecoveryEvidence,
+    };
     use crate::orcheastra_audit_chain::{audit_link_digest, AuditChainExpectation, AuditLink};
     use crate::orcheastra_audit_custody::{AuditCustodyWitness, CustodyVerdict};
     use crate::orcheastra_payload::digest_snapshot;
@@ -297,6 +349,51 @@ mod tests {
             RestartInspection::Deny
         );
 
+        assert_eq!(
+            inspect_audit_evidence_budget(&evidence),
+            RestartInspection::ReviewOnly
+        );
+        let large = vec![0u8; 1_048_576];
+        let large_payloads: &[&[u8]] = &[large.as_slice()];
+        let oversized: Vec<RecoveryEvidence<'_>> = (0..9)
+            .map(|_| RecoveryEvidence {
+                checkpoints: &checkpoints,
+                payloads: large_payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            })
+            .collect();
+        assert_eq!(
+            inspect_audit_evidence_budget(&oversized),
+            RestartInspection::Deny
+        );
+        let many_checkpoints = vec![checkpoints[0]; 256];
+        let many_payloads: Vec<&[u8]> = vec![b"original".as_slice(); 256];
+        let excessive: Vec<RecoveryEvidence<'_>> = (0..5)
+            .map(|_| RecoveryEvidence {
+                checkpoints: &many_checkpoints,
+                payloads: &many_payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            })
+            .collect();
+        assert_eq!(
+            inspect_audit_evidence_budget(&excessive),
+            RestartInspection::Deny
+        );
+        let wrong_count = [RecoveryEvidence {
+            checkpoints: &checkpoints,
+            payloads: &[],
+            signed: &signed,
+            trusted_key: &trusted_key,
+            floor: &floor,
+        }];
+        assert_eq!(
+            inspect_audit_evidence_budget(&wrong_count),
+            RestartInspection::Deny
+        );
         let mut altered_receipts = receipts;
         altered_receipts[0].checkpoint_sequence += 1;
         assert_eq!(
