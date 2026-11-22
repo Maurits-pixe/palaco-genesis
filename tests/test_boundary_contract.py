@@ -101,7 +101,7 @@ class BoundaryContractTests(unittest.TestCase):
         registry = copy.deepcopy(self.registry)
         registry["modules"][1]["depends_on"] = [{"bad": "dependency"}]
         errors = mod.validate(registry, self.candidate())
-        self.assertTrue(any("dependency not registered" in e for e in errors), errors)
+        self.assertTrue(any("unknown module" in e for e in errors), errors)
 
     def test_missing_required_interface(self):
         data = self.candidate()
