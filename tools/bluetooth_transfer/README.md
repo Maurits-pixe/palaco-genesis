@@ -33,6 +33,6 @@ python -m unittest -v test_protocol.py test_session.py test_ble_frames.py
 - **Offline:** never require an internet server to send or verify framed bytes. External identity/revocation evidence must be locally available and within its specified freshness policy; unknown evidence => HOLD.
 - **Interoperability:** add real-device tests for disconnect/reconnect, peer impersonation, forged metadata, MTU changes, permission denial, battery exhaustion, duplicate packets, power loss and encryption handshake before release.
 
-**Known limitations:** Frame headers are not authenticated. There is no transport ACK, retry, encryption, cryptographic peer binding or live BLE API. The in-process buffers are not a secure secret-erasure primitive. The bridge requires an approved session and a caller-supplied size; production integration must bind this size to the authenticated offer rather than allowing arbitrary input. Tests have been authored but not executed in the current run.
+**Known limitations:** Frame headers are not authenticated. There is no transport ACK, retry, encryption, cryptographic peer binding or live BLE API. The in-process buffers are not a secure secret-erasure primitive. The bridge requires an approved session and rejects sizes inconsistent with its validated offer; production integration must additionally authenticate the offer itself. Tests have been authored but not executed in the current run.
 
 **Status:** DRAFT / GO-13 HOLD / authorization DENY. No merge, deploy, website publishing or hardware verification is performed by this change.
