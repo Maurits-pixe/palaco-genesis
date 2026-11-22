@@ -98,7 +98,7 @@ def verify_candidate(envelope, candidate, trusted_public_keys):
     intake = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(intake)
     meta, error = intake._check(candidate)
-    if error or meta != envelope["metadata"]:
+    if error or meta is None or {**meta, "schema_version": candidate.get("schema_version")} != envelope["metadata"]:
         return {**verdict, "signature_valid": False, "state": "quarantined",
                 "reason": "candidate-binding-failed"}
     return verdict
