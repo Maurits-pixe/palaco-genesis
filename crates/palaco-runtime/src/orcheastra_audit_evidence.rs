@@ -4,8 +4,8 @@
 //! authenticate an externally supplied custody root, and cannot authorize work.
 
 use crate::orcheastra_audit_chain::{AuditChainExpectation, AuditLink, MAX_AUDIT_LINKS};
-use crate::orcheastra_audit_receipts::inspect_bound_audit_receipts;
 use crate::orcheastra_audit_custody::{inspect_custodied_audit_chain, AuditCustodyWitness};
+use crate::orcheastra_audit_receipts::inspect_bound_audit_receipts;
 use crate::orcheastra_recovery::RecoveryFloor;
 use crate::orcheastra_restart::{RestartCheckpoint, RestartInspection};
 use crate::orcheastra_review_receipt::{revalidate_review_receipt, ReviewReceipt};
