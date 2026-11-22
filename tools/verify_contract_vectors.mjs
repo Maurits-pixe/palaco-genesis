@@ -128,4 +128,21 @@ for (const testCase of negativeCorpus.cases) {
   assert.throws(() => canonicalBytes(candidate), negativePatterns[testCase.reason], testCase.name);
 }
 
-console.log('PASS: 9 positive and 10 shared negative PALACO-CJSON-v0 vectors independently verified with Node.js; HOLD');
+const rawVariants = JSON.parse(
+  readFileSync(new URL('../verification/contract-digest-v0-raw-variants.json', import.meta.url), 'utf8')
+);
+assert.equal(rawVariants.profile, fixture.profile);
+assert.equal(rawVariants.cases.length, 6);
+const pinned = new Map(fixture.vectors.map((vector) => [vector.name, vector]));
+for (const variant of rawVariants.cases) {
+  const expected = pinned.get(variant.reference);
+  assert.ok(expected, variant.name + ': expected reference');
+  // Curated version-controlled JSON only. JSON.parse does not reject duplicate keys.
+  const parsed = JSON.parse(variant.raw);
+  assert.deepEqual(parsed, expected.value, variant.name + ': parsed value');
+  assert.equal(canonicalBytes(parsed).toString('hex'), expected.canonical_hex,
+               variant.name + ': canonical bytes');
+  assert.equal(digest(parsed), expected.sha256, variant.name + ': SHA-256');
+}
+
+console.log('PASS: 9 positive, 10 shared negative and 6 raw escape variants PALACO-CJSON-v0 vectors independently verified with Node.js; HOLD');
