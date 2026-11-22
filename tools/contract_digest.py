@@ -16,13 +16,14 @@ except ModuleNotFoundError:
 
 DOMAIN = b"PALACO-CJSON-v0\x00"
 MAX_SAFE_INTEGER = (1 << 53) - 1
+MAX_NESTING_DEPTH = 64
 
 
 def canonical_bytes(value):
     """Return sorted, compact UTF-8 JSON bytes for a restricted value set."""
-    stack = [value]
+    stack = [(value, 0)]
     while stack:
-        item = stack.pop()
+        item, depth = stack.pop()
         if item is None or item is True or item is False:
             continue
         if type(item) is int:
@@ -35,12 +36,16 @@ def canonical_bytes(value):
             if any(0xD800 <= ord(ch) <= 0xDFFF for ch in item):
                 raise ValueError("unpaired Unicode surrogate")
         elif isinstance(item, list):
-            stack.extend(item)
+            if depth >= MAX_NESTING_DEPTH:
+                raise ValueError("JSON nesting depth exceeds limit")
+            stack.extend((child, depth + 1) for child in item)
         elif isinstance(item, dict):
+            if depth >= MAX_NESTING_DEPTH:
+                raise ValueError("JSON nesting depth exceeds limit")
             if any(not isinstance(key, str) for key in item):
                 raise ValueError("object keys must be strings")
-            stack.extend(item.keys())
-            stack.extend(item.values())
+            stack.extend((key, depth + 1) for key in item.keys())
+            stack.extend((child, depth + 1) for child in item.values())
         else:
             raise ValueError("unsupported canonical JSON value type")
     return json.dumps(
