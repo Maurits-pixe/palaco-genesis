@@ -79,7 +79,7 @@ class SignedEnvelopeTests(unittest.TestCase):
         self.assertEqual(self.verdict(item)["reason"], "invalid-payload-digest")
 
     def test_missing_trust_map_rejected(self):
-        self.assertEqual(self.verdict(keys=None if False else [])["reason"], "missing-trust-map")
+        self.assertEqual(self.verdict(keys=[])["reason"], "missing-trust-map")
 
     def test_candidate_payload_binding(self):
         result = mod.verify_candidate(self.envelope, self.candidate, self.trust)
