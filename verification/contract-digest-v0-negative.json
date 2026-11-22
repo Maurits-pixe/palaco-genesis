@@ -1,0 +1,88 @@
+{
+  "profile": "PALACO-CJSON-v0",
+  "scope": "canonicalization-only; not raw JSON parsing, signature verification or authorization",
+  "cases": [
+    {
+      "name": "fractional_number",
+      "kind": "literal",
+      "value": {
+        "amount": 1.5
+      },
+      "reason": "non_integer"
+    },
+    {
+      "name": "positive_integer_overflow",
+      "kind": "literal",
+      "value": {
+        "counter": 9007199254740992
+      },
+      "reason": "unsafe_integer"
+    },
+    {
+      "name": "negative_integer_overflow",
+      "kind": "literal",
+      "value": {
+        "counter": -9007199254740992
+      },
+      "reason": "unsafe_integer"
+    },
+    {
+      "name": "nested_integer_overflow",
+      "kind": "literal",
+      "value": {
+        "metadata": {
+          "records": [
+            {
+              "counter": 9007199254740992
+            }
+          ]
+        }
+      },
+      "reason": "unsafe_integer"
+    },
+    {
+      "name": "non_nfc_value",
+      "kind": "literal",
+      "value": {
+        "name": "é"
+      },
+      "reason": "non_nfc"
+    },
+    {
+      "name": "non_nfc_key",
+      "kind": "literal",
+      "value": {
+        "é": "value"
+      },
+      "reason": "non_nfc"
+    },
+    {
+      "name": "unpaired_high_surrogate_value",
+      "kind": "literal",
+      "value": {
+        "name": "\ud800"
+      },
+      "reason": "surrogate"
+    },
+    {
+      "name": "unpaired_low_surrogate_key",
+      "kind": "literal",
+      "value": {
+        "\udfff": "value"
+      },
+      "reason": "surrogate"
+    },
+    {
+      "name": "array_nesting_65",
+      "kind": "nested_arrays",
+      "depth": 65,
+      "reason": "depth"
+    },
+    {
+      "name": "object_nesting_65",
+      "kind": "nested_objects",
+      "depth": 65,
+      "reason": "depth"
+    }
+  ]
+}
