@@ -6,6 +6,9 @@
 /// Read-only ORCHEASTRA restart guard. Never grants execution authority.
 pub mod orcheastra_restart;
 
+/// Bounded SHA-256 snapshot integrity checks for read-only ORCHEASTRA review.
+pub mod orcheastra_payload;
+
 use palaco_citadel::{BoundaryDisposition, ExecutionBoundary};
 use palaco_foundation::{
     errors::RevalidationError,
