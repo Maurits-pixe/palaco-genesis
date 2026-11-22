@@ -308,16 +308,10 @@ pub fn inspect_custodied_audit_transition(
         || inspect_audit_evidence_signers(current.evidence) != RestartInspection::ReviewOnly
         || inspect_audit_evidence_floors(previous.evidence) != RestartInspection::ReviewOnly
         || inspect_audit_evidence_floors(current.evidence) != RestartInspection::ReviewOnly
-        || inspect_bound_audit_receipts(
-            previous.links,
-            previous.receipts,
-            Some(previous.expected),
-        ) != RestartInspection::ReviewOnly
-        || inspect_bound_audit_receipts(
-            current.links,
-            current.receipts,
-            Some(current.expected),
-        ) != RestartInspection::ReviewOnly
+        || inspect_bound_audit_receipts(previous.links, previous.receipts, Some(previous.expected))
+            != RestartInspection::ReviewOnly
+        || inspect_bound_audit_receipts(current.links, current.receipts, Some(current.expected))
+            != RestartInspection::ReviewOnly
         || inspect_transition_evidence_budget(previous, current) != RestartInspection::ReviewOnly
         || inspect_segment_snapshot_continuity(previous) != RestartInspection::ReviewOnly
         || inspect_segment_snapshot_continuity(current) != RestartInspection::ReviewOnly
