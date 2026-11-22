@@ -12,6 +12,14 @@ FIELDS = {"consumer", "provider", "purpose", "data_class", "authentication",
 OFFLINE = {"deny", "queue-untrusted"}
 CLASSES = {"identity-reference", "evidence-metadata", "session-claims",
            "evidence-reference"}
+REQUIRED_EDGES = {
+    ("palaco-one", "palaco-database"),
+    ("era", "palaco-database"),
+    ("citadel", "palaco-one"),
+    ("citadel", "era"),
+    ("rio", "palaco-one"),
+    ("rio", "era"),
+}
 
 
 def validate(registry, contract):
@@ -69,6 +77,8 @@ def validate(registry, contract):
             errors.append(f"{loc}: identity and session operations must deny offline")
         if edge["runtime_enabled"] is not False:
             errors.append(f"{loc}: runtime must be disabled")
+    for consumer, provider in sorted(REQUIRED_EDGES - seen):
+        errors.append(f"missing required interface: {consumer} -> {provider}")
     return errors
 
 
