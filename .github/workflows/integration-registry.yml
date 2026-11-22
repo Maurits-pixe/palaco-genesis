@@ -22,6 +22,8 @@ on:
       - 'tests/test_signed_replay_pipeline.py'
       - 'tools/signed_reviewer_registry.py'
       - 'tests/test_signed_reviewer_registry.py'
+      - 'tools/reviewer_gated_replay.py'
+      - 'tests/test_reviewer_gated_replay.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -45,6 +47,8 @@ on:
       - 'tests/test_signed_replay_pipeline.py'
       - 'tools/signed_reviewer_registry.py'
       - 'tests/test_signed_reviewer_registry.py'
+      - 'tools/reviewer_gated_replay.py'
+      - 'tests/test_reviewer_gated_replay.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
