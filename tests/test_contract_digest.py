@@ -3,10 +3,35 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.contract_digest import canonical_bytes, digest_contract, digest_contract_file
+from tools.contract_digest import MAX_SAFE_INTEGER, canonical_bytes, digest_contract, digest_contract_file
 
 
 class ContractDigestTests(unittest.TestCase):
+    def test_safe_integer_boundaries(self):
+        self.assertEqual(canonical_bytes({"max": MAX_SAFE_INTEGER}),
+                         ('{"max":' + str(MAX_SAFE_INTEGER) + '}').encode())
+        self.assertEqual(canonical_bytes({"min": -MAX_SAFE_INTEGER}),
+                         ('{"min":-' + str(MAX_SAFE_INTEGER) + '}').encode())
+
+    def test_rejects_positive_integer_outside_safe_range(self):
+        with self.assertRaisesRegex(ValueError, "safe range"):
+            canonical_bytes({"counter": MAX_SAFE_INTEGER + 1})
+
+    def test_rejects_negative_integer_outside_safe_range(self):
+        with self.assertRaisesRegex(ValueError, "safe range"):
+            canonical_bytes({"counter": -MAX_SAFE_INTEGER - 1})
+
+    def test_rejects_nested_oversized_integer(self):
+        with self.assertRaisesRegex(ValueError, "safe range"):
+            canonical_bytes({"values": [0, {"counter": 2 ** 70}]})
+
+    def test_file_digest_rejects_oversized_integer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "candidate.json"
+            path.write_text('{"counter":9007199254740992}', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "safe range"):
+                digest_contract_file(path)
+
     def test_key_order_is_deterministic(self):
         first = {"z": 1, "a": {"b": True, "a": None}}
         second = {"a": {"a": None, "b": True}, "z": 1}
