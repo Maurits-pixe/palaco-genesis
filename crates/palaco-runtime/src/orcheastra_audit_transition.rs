@@ -292,6 +292,7 @@ pub fn inspect_transition_evidence_budget(
 ///
 /// Checks both source-evidence batches as well as the exact transition between
 /// independently witnessed audit endpoints. Every rejection remains Deny.
+/// Full bounded source revalidation precedes all external custody callbacks.
 /// No external custody implementation or Ed25519 algorithm is provided here.
 #[must_use]
 pub fn inspect_custodied_audit_transition(
@@ -325,13 +326,6 @@ pub fn inspect_custodied_audit_transition(
         || inspect_transition_monotonicity(previous, current) != RestartInspection::ReviewOnly
         || inspect_transition_snapshot_link(previous, current) != RestartInspection::ReviewOnly
         || inspect_transition_signer_continuity(previous, current) != RestartInspection::ReviewOnly
-        || inspect_audit_continuity(
-            previous.links,
-            Some(previous.expected),
-            current.links,
-            Some(current.expected),
-            witness,
-        ) != RestartInspection::ReviewOnly
         || inspect_audit_evidence(
             previous.links,
             previous.receipts,
@@ -345,6 +339,13 @@ pub fn inspect_custodied_audit_transition(
             current.evidence,
             Some(current.expected),
             verifier,
+        ) != RestartInspection::ReviewOnly
+        || inspect_audit_continuity(
+            previous.links,
+            Some(previous.expected),
+            current.links,
+            Some(current.expected),
+            witness,
         ) != RestartInspection::ReviewOnly
     {
         return RestartInspection::Deny;
@@ -1348,6 +1349,51 @@ mod tests {
             ),
             RestartInspection::Deny
         );
+        // Complete receipt and payload revalidation precedes external custody.
+        assert_eq!(
+            inspect_custodied_audit_transition(
+                &previous,
+                &changed_current,
+                Some(&never_called),
+                &verifier,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(never_called.0.get(), 0);
+        let changed_prior_payloads: &[&[u8]] = &[b"FIRST"];
+        let changed_prior_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_previous,
+            payloads: changed_prior_payloads,
+            signed: &signed_previous,
+            trusted_key: &key,
+            floor: &floor_previous,
+        }];
+        let changed_prior = AuditSegmentEvidence {
+            links: &links_previous,
+            receipts: &receipts_previous,
+            evidence: &changed_prior_evidence,
+            expected: &expected_previous,
+        };
+        assert_eq!(
+            inspect_custodied_audit_transition(
+                &changed_prior,
+                &current,
+                Some(&never_called),
+                &verifier,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(never_called.0.get(), 0);
+        assert_eq!(
+            inspect_custodied_audit_transition(
+                &previous,
+                &current,
+                Some(&never_called),
+                &RejectVerifier,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(never_called.0.get(), 0);
         let wrong_expected = AuditChainExpectation {
             first_sequence: 12,
             ..expected_current
