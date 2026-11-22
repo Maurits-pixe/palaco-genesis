@@ -45,80 +45,36 @@ class ProtectedCheckpointWitness(Protocol):
     def read(self) -> WitnessCheckpoint: ...
 
     def advance(
-        self, previous: WitnessCheckpoint, current: WitnessCheckpoint,
-    ) -> None:
-        """Atomically reject stale revision or root, then durably advance."""
-
-
-class WitnessedChallengeAnchor:
-    """Require native checkpoint and independent witness to agree before use."""
-
-    def __init__(
-        self,
-        native_anchor,
-        witness: ProtectedCheckpointWitness,
-        namespace: bytes,
-    ):
-        if (type(namespace) is not bytes or len(namespace) != 32 or
-                not callable(getattr(native_anchor, "read", None)) or
-                not callable(getattr(native_anchor, "advance", None)) or
-                not callable(getattr(witness, "read", None)) or
-                not callable(getattr(witness, "advance", None))):
-            raise TransferError("native anchor and independent witness required")
-        self._native = native_anchor
-        self._witness = witness
-        self._namespace = namespace
-        self.read()
-
-    def _witness_snapshot(self):
-        try:
-            item = self._witness.read()
-        except Exception as exc:
-            raise TransferError("independent checkpoint witness unavailable: HOLD") from exc
-        if (type(item) is not WitnessCheckpoint or
-                not hmac.compare_digest(item.namespace, self._namespace)):
-            raise TransferError("checkpoint witness namespace mismatch: HOLD")
-        return item
-
-    def read(self) -> tuple[int, str]:
-        witness_before = self._witness_snapshot()
-        try:
-            native = _validate_state(self._native.read())
-        except Exception as exc:
-            raise TransferError("native checkpoint unavailable: HOLD") from exc
-        witness_after = self._witness_snapshot()
-        if (witness_after != witness_before or
-                native[0] != witness_before.count or
-                not hmac.compare_digest(native[1], witness_before.root)):
-            raise TransferError("independent witness/native mismatch: HOLD")
-        return native
-
-    def advance(
         self, previous: tuple[int, str], current: tuple[int, str],
     ) -> None:
-        before = _validate_state(previous)
-        after = _validate_state(current)
-        if (after == before or after[0] not in (before[0], before[0] + 1)):
-            raise TransferError("invalid witnessed checkpoint transition")
-        if self.read() != before:
-            raise TransferError("stale witnessed checkpoint: HOLD")
-        witness_before = self._witness_snapshot()
-        if (witness_before.count != before[0] or
-                not hmac.compare_digest(witness_before.root, before[1]) or
-                witness_before.revision == 2**63 - 1):
-            raise TransferError("witness CAS mismatch or exhausted: HOLD")
-        witness_after = WitnessCheckpoint(
-            self._namespace, witness_before.revision + 1, after[0], after[1],
-        )
+        self._require_live()
         try:
-            self._witness.advance(witness_before, witness_after)
-        except Exception as exc:
-            raise TransferError("witness advancement uncertain: HOLD") from exc
-        # Witness advances first. A failure below MUST leave system in HOLD;
-        # never roll back the witness just to restore availability.
-        try:
-            self._native.advance(before, after)
-        except Exception as exc:
-            raise TransferError("native advance after witness write failed: HOLD") from exc
-        if self.read() != after:
-            raise TransferError("post-write witness checkpoint disagreement: HOLD")
+            before = _validate_state(previous)
+            after = _validate_state(current)
+            if (after == before or after[0] not in (before[0], before[0] + 1)):
+                raise TransferError("invalid witnessed checkpoint transition")
+            if self.read() != before:
+                raise TransferError("stale witnessed checkpoint: HOLD")
+            witness_before = self._witness_snapshot()
+            if (witness_before.count != before[0] or
+                    not hmac.compare_digest(witness_before.root, before[1]) or
+                    witness_before.revision == 2**63 - 1):
+                raise TransferError("witness CAS mismatch or exhausted: HOLD")
+            witness_after = WitnessCheckpoint(
+                self._namespace, witness_before.revision + 1, after[0], after[1],
+            )
+            try:
+                self._witness.advance(witness_before, witness_after)
+            except Exception as exc:
+                raise TransferError("witness advancement uncertain: HOLD") from exc
+            # Witness advances first. A failure below MUST leave system in HOLD;
+            # never roll back the witness just to restore availability.
+            try:
+                self._native.advance(before, after)
+            except Exception as exc:
+                raise TransferError("native advance after witness write failed: HOLD") from exc
+            if self.read() != after:
+                raise TransferError("post-write witness checkpoint disagreement: HOLD")
+        except TransferError:
+            self._held = True
+            raise
