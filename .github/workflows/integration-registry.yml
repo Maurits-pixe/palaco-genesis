@@ -36,6 +36,8 @@ on:
       - 'tests/test_signed_audit_checkpoint.py'
       - 'tools/local_checkpoint_registry.py'
       - 'tests/test_local_checkpoint_registry.py'
+      - 'tools/checkpoint_recovery_assessment.py'
+      - 'tests/test_checkpoint_recovery_assessment.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -73,6 +75,8 @@ on:
       - 'tests/test_signed_audit_checkpoint.py'
       - 'tools/local_checkpoint_registry.py'
       - 'tests/test_local_checkpoint_registry.py'
+      - 'tools/checkpoint_recovery_assessment.py'
+      - 'tests/test_checkpoint_recovery_assessment.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
