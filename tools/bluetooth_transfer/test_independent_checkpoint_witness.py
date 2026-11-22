@@ -146,7 +146,46 @@ class IndependentWitnessTests(unittest.TestCase):
             self.anchor.advance((0, EMPTY_ROOT), (1, ROOT1))
         # Even if both stores landed correctly, the acknowledgement was lost:
         # the caller receives HOLD, never an automatic approval.
-        self.assertEqual(self.anchor.read(), (1, ROOT1))
+        self.assertTrue(self.anchor.is_held)
+        with self.assertRaises(TransferError):
+            self.anchor.read()
+
+    def test_latch_after_uncertain_witness_write_even_when_stores_match(self):
+        self.witness.uncertain = True
+        with self.assertRaises(TransferError):
+            self.anchor.advance((0, EMPTY_ROOT), (1, ROOT1))
+        # Simulate external actor independently bringing native to the same state.
+        self.native.state = (1, ROOT1)
+        self.assertTrue(self.anchor.is_held)
+        with self.assertRaises(TransferError):
+            self.anchor.read()
+
+    def test_latch_after_native_uncertain_write_blocks_next_advance(self):
+        self.native.uncertain = True
+        with self.assertRaises(TransferError):
+            self.anchor.advance((0, EMPTY_ROOT), (1, ROOT1))
+        self.native.uncertain = False
+        with self.assertRaises(TransferError):
+            self.anchor.advance((1, ROOT1), (1, ROOT2))
+        self.assertEqual(self.witness.state.revision, 1)
+
+    def test_witness_unavailable_then_restored_stays_held(self):
+        self.witness.offline = True
+        with self.assertRaises(TransferError):
+            self.anchor.read()
+        self.witness.offline = False
+        with self.assertRaises(TransferError):
+            self.anchor.read()
+
+    def test_inprocess_hold_not_durable_across_instances(self):
+        self.native.uncertain = True
+        with self.assertRaises(TransferError):
+            self.anchor.advance((0, EMPTY_ROOT), (1, ROOT1))
+        # A new instance can read both matching fake stores. Real service needs
+        # an externally protected and durable incident/HOLD register.
+        fresh = WitnessedChallengeAnchor(self.native, self.witness, SCOPE)
+        self.assertFalse(fresh.is_held)
+        self.assertEqual(fresh.read(), (1, ROOT1))
 
     def test_wrong_previous_checkpoint_denied(self):
         with self.assertRaises(TransferError):
