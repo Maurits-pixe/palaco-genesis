@@ -14,7 +14,7 @@ npm ci --prefix native-staging --ignore-scripts --no-audit --no-fund
 npm run test:ci
 ```
 
-`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer/lifecycle/handover/key-and-registry/cancellation/reporting/controller-scope checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v306.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
+`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer/lifecycle/handover/key-and-registry/cancellation/reporting/controller/history checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v307.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
 
 ## Source continuity and status
 
@@ -429,4 +429,44 @@ The v306 status, installation, cancellation and completed-result format identifi
 
 Twelve contract cases cover independent scopes for identical configuration, refusal of foreign/missing control data, simultaneous equal local numbers, scoped results, a closed/new instance sequence, invalid types/accessors, stale local commands, final-continuation cancellation, close completion and unchanged issuer/verifier use. Six new native scenarios use three controllers and reuse one original route with selected One PostgreSQL columns. They verify foreign retirement/installation refusal, matching-scope drain, simultaneous equal generation/attempt numbers with foreign cancellation refusal, explicit same-route retry and a fresh instance refusing the closed instance's command. Real SQL and Ed25519 are used; callback barriers control scheduling without intercepting SQL or crypto. This tests new instances within one process, not an operating-system restart.
 
-`test:ci` uses `run-ci-v306.mjs`, requires all six controller-scope scenarios alongside preserved suites and writes `evidence/CI-RESULT-v306.json`. AI review: TRIAS separates correlation scope from identity or authority; ORACLE requires equal-number cross-controller tests and matching result identifiers; MENTOR refuses stale routing context while retaining explicit trusted-host control. These are three lenses applied by one assistant. Synthetic authentication, original One SQL-function limits, software-key isolation limits and unverified remote TLS remain unchanged. Acceptance HOLD; authorization NONE.
+The preserved `run-ci-v306.mjs` requires all six controller-scope scenarios alongside earlier suites and writes `evidence/CI-RESULT-v306.json`. AI review: TRIAS separates correlation scope from identity or authority; ORACLE requires equal-number cross-controller tests and matching result identifiers; MENTOR refuses stale routing context while retaining explicit trusted-host control. These are three lenses applied by one assistant. Synthetic authentication, original One SQL-function limits, software-key isolation limits and unverified remote TLS remain unchanged. Acceptance HOLD; authorization NONE.
+
+## Observed completion required for replacement admission (v307)
+
+`createRioOneHistoryBoundSignerHandoverV307` requires the last completed attempt observed by the caller when admitting a replacement. After a cancelled or failed assessment, the controller can return to RETIRED with the same generation. An earlier cached command would still match that generation and controller. The added `expectedLastCompletedAttemptId` must match the current completed result, so that cached command is refused before registry work or admission. Earlier v306 and older modules remain unchanged.
+
+```js
+const host = await createRioOneHistoryBoundSignerHandoverV307(trustedConfiguration);
+const initial = host.getStatus();
+const retired = host.retireGeneration({
+  controllerId: initial.controllerId, expectedGeneration: initial.generation,
+});
+if (retired !== null) {
+  await retired;
+  const observed = host.getStatus();
+  const result = await host.installReplacement({
+    controllerId: observed.controllerId,
+    expectedGeneration: observed.generation,
+    expectedLastCompletedAttemptId: observed.lastCompletedAttemptId,
+    privateSigningKey: replacementHandle,
+    readIssuerKeyState: replacementRegistryReader,
+  });
+  // After a completed failed/cancelled attempt, read a fresh status before retrying.
+}
+```
+
+| Marker | Admission behavior |
+| --- | --- |
+| Explicit null | Accepted only while this controller has no completed replacement attempt |
+| Current positive safe-integer attempt ID | Accepted only when it equals this controller's last completed attempt |
+| Older/future ID, missing field, undefined, zero or malformed type | Refused before provider work or candidate admission |
+
+The controller scope, expected generation, completed-attempt marker and full retirement barrier are checked together. The completed marker does not replace the other checks. A duplicate command is refused while an attempt is pending and remains stale after that attempt completes unsuccessfully, even if generation and RETIRED state are unchanged. A trusted host must observe the new completion marker and explicitly construct a new command. There is no automatic retry or implicit server substitution of the current marker.
+
+Only an admitted completed attempt advances the marker. Cancellation acknowledgement alone does not advance it while a provider/crypto operation remains pending. Rejected commands and invalid handles refused before admission do not create a result, consume an attempt or invalidate a current marker. All existing cancellation, terminal-close, registry/key validity and per-request checks remain in place.
+
+Installation receipts and completed-attempt records include `previousCompletedAttemptId`, the observed marker accepted for that attempt. New v307 status/result formats retain controller/attempt IDs and HOLD/NONE. The controller still retains only its latest completed record; this extra number does not create a persistent chain, audit ledger, cryptographic proof, approval, user identity or authority. The One statement formats and internal v303 key-check domain are unchanged. No new provider call, clock sample, network endpoint or storage is introduced by the marker check.
+
+Twelve contract cases cover explicit initial null, invalid/stale/future markers, unchanged-generation cancellation/failure, busy duplicates, multiple completed attempts, unadmitted commands, later generations, completion barriers, controller binding, final-continuation cancellation and unchanged issuer/verifier use. Six new native scenarios reuse one original route with selected One PostgreSQL columns: initial success, full retirement, cancellation plus cached-command refusal, actual PostgreSQL query error 42P01 plus stale-marker refusal, successful retry from a fresh observation, and close completion retaining its admitted predecessor. Stale native commands perform zero registry lookups and do not create results. SQL/Ed25519 are real and are not intercepted; the key and reviewer session retain their original active values.
+
+`test:ci` uses `run-ci-v307.mjs`, requires all six history-admission records alongside preserved suites and writes `evidence/CI-RESULT-v307.json`. AI review: TRIAS separates observed operation context from authority; ORACLE requires refusal after actual cancellation/SQL failure while generation remains unchanged; MENTOR requires a fresh explicit observation before retry. These are three lenses applied by one assistant, not independent approvals. Synthetic authentication, original One SQL-function limits, software-key isolation limits and unverified remote TLS remain unchanged. Acceptance HOLD; authorization NONE.

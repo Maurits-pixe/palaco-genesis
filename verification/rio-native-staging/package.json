@@ -1,12 +1,12 @@
 {
-  "name": "palaco-rio-scoped-handover-v306",
+  "name": "palaco-rio-history-bound-handover-v307",
   "version": "0.0.0-draft",
   "private": true,
   "scripts": {
     "test": "node --test tests/*.test.mjs staging/isolated-postgres-v276.test.mjs staging/outcome-atomicity-v279.test.mjs",
     "test:native": "npm --prefix native-staging test",
     "test:parallel": "node --test native-staging/native-postgres-v281.test.mjs",
-    "test:ci": "node scripts/run-ci-v306.mjs",
+    "test:ci": "node scripts/run-ci-v307.mjs",
     "test:one-native": "node --test native-staging/one-session-reader-v295.test.mjs",
     "test:one-signed-native": "node --test native-staging/one-signed-source-v296.test.mjs",
     "test:signed-one-entry-native": "node --test native-staging/signed-one-composition-v297.test.mjs",
@@ -18,6 +18,7 @@
     "test:registry-checked-handover-native": "node --test native-staging/registry-checked-handover-v303.test.mjs",
     "test:cancellable-handover-native": "node --test native-staging/cancellable-handover-v304.test.mjs",
     "test:reporting-handover-native": "node --test native-staging/reporting-handover-v305.test.mjs",
-    "test:scoped-handover-native": "node --test native-staging/scoped-handover-v306.test.mjs"
+    "test:scoped-handover-native": "node --test native-staging/scoped-handover-v306.test.mjs",
+    "test:history-bound-handover-native": "node --test native-staging/history-bound-handover-v307.test.mjs"
   }
 }
