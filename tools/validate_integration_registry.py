@@ -13,6 +13,29 @@ DEFAULT = Path(__file__).resolve().parents[1] / "ecosystem" / "integration-regis
 ID = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 
 
+def _unique_object_pairs(pairs):
+    """Reject ambiguous duplicate JSON members at every nesting level."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def _reject_nonfinite(value):
+    raise ValueError(f"non-finite JSON number: {value}")
+
+
+def load_registry(path):
+    """Parse strict JSON, rejecting duplicate members and NaN/Infinity."""
+    return json.loads(
+        Path(path).read_text(encoding="utf-8"),
+        object_pairs_hook=_unique_object_pairs,
+        parse_constant=_reject_nonfinite,
+    )
+
+
 def validate(data):
     errors = []
     if not isinstance(data, dict):
@@ -82,8 +105,8 @@ def validate(data):
 def main():
     path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        data = load_registry(path)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
         print(f"FAIL: cannot read registry: {exc}", file=sys.stderr)
         return 2
     errors = validate(data)
