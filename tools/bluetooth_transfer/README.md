@@ -9,18 +9,18 @@ Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices 
 3. The receiving user reviews the resource, sender identity, size and purpose, then explicitly consents. The receiver accepts `identity_verified=True` only from a **separate authenticated device-identity verifier**; the Bluetooth device name, MAC address and radio pairing alone are insufficient.
 4. Transfer all chunks in order. The receiver rejects missing, modified, reordered, duplicated or oversized content, using a domain-separated SHA-256 integrity digest. **SHA-256 is not sender authentication or encryption.**
 5. Successful reassembly returns **untrusted export bytes only**. Import requires separate schema validation, provenance/signature checks, Citadel authorization gates and user confirmation. Do not execute, publish, sync, mutate records, issue credentials or activate Citadels/MUNDO automatically.
-6. The in-memory transfer-ID replay set is lost on process restart. A production adapter must persist a bounded replay record, include a freshness window with trusted time, authenticate the offer/digest, and defend against concurrent sessions.
+6. Transfer sessions reject duplicates, missing frames, unexpected lengths and disconnections, and never resume automatically. An incomplete, canceled or failed transfer does not mark the ID complete; a retry must use a fresh transfer ID and a newly authenticated and approved session. The in-memory transfer-ID replay set is lost on process restart. A production adapter must persist a bounded replay record, include a freshness window with trusted time, authenticate the offer/digest, and defend against concurrent sessions.
 7. No claims of secure confidentiality: BLE link protection varies by pairing mode and platform. Production transfer must add application-layer authenticated encryption, key agreement with authenticated peer binding and device-specific secure key storage. Do not send sensitive exports before these exist.
 
 ## Protocol and testing
 
 - `protocol.py`: offer, strict canonical JSON metadata, 16 KiB chunker, fail-closed receiver, replay guard.
-- `test_protocol.py`: Python standard-library tests; no Bluetooth hardware required.
+- `session.py`: incremental, fail-closed session with ordered frames, explicit cancel and disconnect handling. On failure it discards all retained frames; restarting requires a fresh transfer ID.\n- `test_protocol.py` and `test_session.py`: Python standard-library regression suites; no Bluetooth hardware required.
 
 Run from this directory:
 
 ```sh
-python -m unittest -v test_protocol.py
+python -m unittest -v test_protocol.py test_session.py
 ```
 
 ### Device integration plan
