@@ -19,6 +19,10 @@ _spec = importlib.util.spec_from_file_location(
     "palaco_custody_handoff_anchor", Path(__file__).with_name("signed_custody_ledger_anchor.py"))
 anchor = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(anchor)
+_chain_spec = importlib.util.spec_from_file_location(
+    "palaco_handoff_ack_chain", Path(__file__).with_name("custody_ack_audit_chain.py"))
+audit_chain = importlib.util.module_from_spec(_chain_spec)
+_chain_spec.loader.exec_module(audit_chain)
 
 HEX = re.compile(r"^[0-9a-f]{64}$")
 IDENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
@@ -192,6 +196,8 @@ def register_ack(register_db, ledger_db, package, ack, expected_recipient,
             return _base(recorded=False, reason="acknowledgement-replay" if existing[0] == digest
                          else "acknowledgement-id-conflict")
         try:
+            event = audit_chain.append(conn, ident, key_id, expected_recipient,
+                                       expected_package_sha256, digest)
             conn.execute("""INSERT INTO custody_anchor_acknowledgements VALUES(?,?,?,?,?)""",
                          (ident, key_id, expected_recipient, expected_package_sha256, digest))
         except sqlite3.IntegrityError:
@@ -204,4 +210,5 @@ def register_ack(register_db, ledger_db, package, ack, expected_recipient,
     finally:
         conn.close()
     return _base(recorded=True, state="pending-review",
-                 reason="local-acknowledgement-indexed-no-authority")
+                 reason="local-acknowledgement-indexed-no-authority",
+                 entries=event["entries"], head_hash=event["head_hash"])
