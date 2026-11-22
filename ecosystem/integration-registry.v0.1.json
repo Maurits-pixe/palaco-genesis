@@ -1,0 +1,102 @@
+{
+  "schema_version": "0.1.0",
+  "description": "Design-time dependency registry. Not a deployment manifest or authorization grant.",
+  "release_gate": "HOLD",
+  "modules": [
+    {
+      "id": "palaco-database",
+      "role": "canonical register boundary",
+      "depends_on": [],
+      "stage": "proposed",
+      "runtime_enabled": false
+    },
+    {
+      "id": "palaco-one",
+      "role": "identity and session boundary",
+      "depends_on": [
+        "palaco-database"
+      ],
+      "stage": "proposed",
+      "runtime_enabled": false
+    },
+    {
+      "id": "era",
+      "role": "evidence and lineage boundary",
+      "depends_on": [
+        "palaco-database"
+      ],
+      "stage": "proposed",
+      "runtime_enabled": false
+    },
+    {
+      "id": "rio",
+      "role": "interaction and orchestration boundary",
+      "depends_on": [
+        "palaco-one",
+        "era"
+      ],
+      "stage": "proposed",
+      "runtime_enabled": false
+    },
+    {
+      "id": "citadel",
+      "role": "zero-trust authorization boundary",
+      "depends_on": [
+        "palaco-one",
+        "era"
+      ],
+      "stage": "proposed",
+      "runtime_enabled": false
+    },
+    {
+      "id": "mundo",
+      "role": "world atlas and atelier surface",
+      "depends_on": [
+        "palaco-one",
+        "citadel"
+      ],
+      "stage": "proposed",
+      "runtime_enabled": false
+    },
+    {
+      "id": "precisio",
+      "role": "controlled frontend adjustments",
+      "depends_on": [
+        "citadel",
+        "era"
+      ],
+      "stage": "proposed",
+      "runtime_enabled": false
+    },
+    {
+      "id": "hara",
+      "role": "assistant experience boundary",
+      "depends_on": [
+        "rio",
+        "citadel"
+      ],
+      "stage": "proposed",
+      "runtime_enabled": false
+    },
+    {
+      "id": "levensader",
+      "role": "wellbeing user surface",
+      "depends_on": [
+        "palaco-one",
+        "citadel"
+      ],
+      "stage": "proposed",
+      "runtime_enabled": false
+    },
+    {
+      "id": "palaco-offline",
+      "role": "offline packaging and sync boundary",
+      "depends_on": [
+        "era",
+        "citadel"
+      ],
+      "stage": "proposed",
+      "runtime_enabled": false
+    }
+  ]
+}
