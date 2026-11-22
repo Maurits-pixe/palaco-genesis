@@ -1,16 +1,9 @@
-"""Second independently protected witness for native challenge checkpoints.
+"""Second independent checkpoint witness, with an in-process sticky HOLD latch.
 
-The native signed checkpoint alone does not prevent a compromised signer from
-attesting rollback. This fail-closed wrapper requires a separate authoritative
-monotonic witness, outside the native service's rollback domain.
-
-Witness writes occur FIRST. Native and witness stores are NOT atomic; any
-failure after witness advancement causes HOLD and requires offline supervised
-reconciliation. No repair or rollback operation is supplied here.
-
-IMPORTANT: This is an integration contract. Only a genuinely independent,
-durable anti-rollback service can make the witness trustworthy. An in-memory
-fake, SQLite table, ordinary encrypted file, or same-device signer cannot.
+A separately protected monotonic witness is REQUIRED but NOT supplied here.
+Two-store commits are not atomic; failures deny subsequent operations in the
+same instance even if both stores later appear identical. This latch is NOT
+durable across process restarts or secure against caller-created instances.
 """
 from __future__ import annotations
 
@@ -24,8 +17,6 @@ from protocol import TransferError
 
 @dataclass(frozen=True)
 class WitnessCheckpoint:
-    """Namespace-scoped, monotonic revision and content commitment."""
-
     namespace: bytes
     revision: int
     count: int
@@ -45,13 +36,69 @@ class ProtectedCheckpointWitness(Protocol):
     def read(self) -> WitnessCheckpoint: ...
 
     def advance(
-        self, previous: tuple[int, str], current: tuple[int, str],
-    ) -> None:
+        self, previous: WitnessCheckpoint, current: WitnessCheckpoint,
+    ) -> None: ...
+
+
+class WitnessedChallengeAnchor:
+    """Block all further use of the instance after an uncertain operation."""
+
+    def __init__(self, native_anchor, witness: ProtectedCheckpointWitness, namespace: bytes):
+        if (type(namespace) is not bytes or len(namespace) != 32 or
+                not callable(getattr(native_anchor, "read", None)) or
+                not callable(getattr(native_anchor, "advance", None)) or
+                not callable(getattr(witness, "read", None)) or
+                not callable(getattr(witness, "advance", None))):
+            raise TransferError("native anchor and independent witness required")
+        self._native = native_anchor
+        self._witness = witness
+        self._namespace = namespace
+        self._held = False
+        self.read()
+
+    @property
+    def is_held(self) -> bool:
+        """Sticky within this object; NOT a durable recovery or trust record."""
+        return self._held
+
+    def _require_live(self):
+        if self._held:
+            raise TransferError("witness session locked in HOLD")
+
+    def _witness_snapshot(self):
+        try:
+            item = self._witness.read()
+        except Exception as exc:
+            raise TransferError("independent checkpoint witness unavailable: HOLD") from exc
+        if (type(item) is not WitnessCheckpoint or
+                not hmac.compare_digest(item.namespace, self._namespace)):
+            raise TransferError("checkpoint witness namespace mismatch: HOLD")
+        return item
+
+    def read(self) -> tuple[int, str]:
+        self._require_live()
+        try:
+            witness_before = self._witness_snapshot()
+            try:
+                native = _validate_state(self._native.read())
+            except Exception as exc:
+                raise TransferError("native checkpoint unavailable: HOLD") from exc
+            witness_after = self._witness_snapshot()
+            if (witness_after != witness_before or
+                    native[0] != witness_before.count or
+                    not hmac.compare_digest(native[1], witness_before.root)):
+                raise TransferError("independent witness/native mismatch: HOLD")
+            return native
+        except TransferError:
+            self._held = True
+            raise
+
+    def advance(self, previous: tuple[int, str], current: tuple[int, str]) -> None:
         self._require_live()
         try:
             before = _validate_state(previous)
             after = _validate_state(current)
-            if (after == before or after[0] not in (before[0], before[0] + 1)):
+            if after == before or after[0] not in (before[0], before[0] + 1):
                 raise TransferError("invalid witnessed checkpoint transition")
             if self.read() != before:
                 raise TransferError("stale witnessed checkpoint: HOLD")
@@ -67,8 +114,7 @@ class ProtectedCheckpointWitness(Protocol):
                 self._witness.advance(witness_before, witness_after)
             except Exception as exc:
                 raise TransferError("witness advancement uncertain: HOLD") from exc
-            # Witness advances first. A failure below MUST leave system in HOLD;
-            # never roll back the witness just to restore availability.
+            # The witness advances first. Never roll it back automatically.
             try:
                 self._native.advance(before, after)
             except Exception as exc:
