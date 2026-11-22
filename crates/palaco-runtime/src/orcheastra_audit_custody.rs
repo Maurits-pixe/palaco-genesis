@@ -80,9 +80,7 @@ mod tests {
         custody_expectation_digest, inspect_custodied_audit_chain, AuditCustodyWitness,
         CustodyVerdict,
     };
-    use crate::orcheastra_audit_chain::{
-        audit_link_digest, AuditChainExpectation, AuditLink,
-    };
+    use crate::orcheastra_audit_chain::{audit_link_digest, AuditChainExpectation, AuditLink};
     use crate::orcheastra_restart::RestartInspection;
 
     // Fake witness only tests policy plumbing, NOT trusted custody.
