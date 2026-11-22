@@ -79,6 +79,28 @@ class EvidenceIntakeTests(unittest.TestCase):
         self.assertEqual([d["record_id"] for d in decisions], ["rec-2", "rec-1"])
         self.assertTrue(all(d["state"] == "pending-review" for d in decisions))
 
+    def test_replay_across_batches_quarantined(self):
+        report = engine.inspect([record()], ["rec-1"])
+        self.assertEqual(report["decisions"][0]["reason"], "previously-seen-record-id")
+        self.assertFalse(report["authorization_granted"])
+
+    def test_seen_ids_do_not_block_other_records(self):
+        report = engine.inspect([record("rec-2")], ["rec-1"])
+        self.assertEqual(report["decisions"][0]["state"], "pending-review")
+
+    def test_invalid_seen_ids_fail_closed(self):
+        with self.assertRaises(ValueError):
+            engine.inspect([record()], [{"rec": "bad"}])
+
+    def test_seen_ids_limit(self):
+        with self.assertRaises(ValueError):
+            engine.inspect([record()], ["x"] * (engine.MAX_RECORDS + 1))
+
+    def test_seen_input_unchanged(self):
+        seen = ["rec-1"]
+        engine.inspect([record()], seen)
+        self.assertEqual(seen, ["rec-1"])
+
     def test_input_not_mutated(self):
         items = [record()]
         before = copy.deepcopy(items)
