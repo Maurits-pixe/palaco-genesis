@@ -136,6 +136,28 @@ class StrictContractJsonTests(unittest.TestCase):
     def test_finite_exponent_accepted(self):
         self.assertEqual(self.load_raw('{"ratio":1.25e2}'), {"ratio": 125.0})
 
+    def test_positive_decimal_underflow_rejected(self):
+        with self.assertRaisesRegex(ValueError, "underflow"):
+            self.load_raw('{"ratio":1e-999}')
+
+    def test_negative_decimal_underflow_rejected(self):
+        with self.assertRaisesRegex(ValueError, "underflow"):
+            self.load_raw('{"ratio":-1e-999}')
+
+    def test_nested_decimal_underflow_rejected(self):
+        with self.assertRaisesRegex(ValueError, "underflow"):
+            self.load_raw('{"edges":[{"ratio":2.5E-999}]}')
+
+    def test_genuine_zero_with_exponent_accepted(self):
+        self.assertEqual(self.load_raw('{"ratio":0e-999}'), {"ratio": 0.0})
+
+    def test_signed_zero_with_exponent_accepted(self):
+        self.assertEqual(self.load_raw('{"ratio":-0.000E-999}'), {"ratio": -0.0})
+
+    def test_finite_small_nonzero_decimal_accepted(self):
+        parsed = self.load_raw('{"ratio":1e-300}')
+        self.assertGreater(parsed["ratio"], 0.0)
+
     def test_truncated_json_rejected(self):
         with self.assertRaises(ValueError):
             self.load_raw('{"release_gate":"HOLD"')
