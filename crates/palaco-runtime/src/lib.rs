@@ -15,6 +15,9 @@ pub mod orcheastra_signed_anchor;
 /// Composed read-only signed recovery and custody-floor inspection.
 pub mod orcheastra_recovery;
 
+/// Deterministic, non-authorizing recovery review fingerprints.
+pub mod orcheastra_review_receipt;
+
 use palaco_citadel::{BoundaryDisposition, ExecutionBoundary};
 use palaco_foundation::{
     errors::RevalidationError,
