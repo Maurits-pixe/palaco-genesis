@@ -13,7 +13,9 @@ use crate::orcheastra_audit_evidence::{
     inspect_audit_receipt_source_binding, RecoveryEvidence,
 };
 use crate::orcheastra_audit_receipts::inspect_bound_audit_receipts;
-use crate::orcheastra_payload::{MAX_CHAIN_CHECKPOINTS, MAX_SNAPSHOT_BYTES};
+use crate::orcheastra_payload::{
+    inspect_restart_chain_payloads, MAX_CHAIN_CHECKPOINTS, MAX_SNAPSHOT_BYTES,
+};
 use crate::orcheastra_restart::RestartInspection;
 use crate::orcheastra_review_receipt::ReviewReceipt;
 use crate::orcheastra_signed_anchor::{Ed25519Verifier, MAX_KEY_ID_BYTES};
@@ -330,11 +332,41 @@ pub fn inspect_transition_evidence_budget(
     RestartInspection::ReviewOnly
 }
 
+/// Recomputes both segments' snapshot chains before external verifier calls.
+///
+/// The aggregate budget must be checked before this function to bound hashing
+/// across the two segments. Each original checkpoint and payload is checked
+/// against its supplied signed anchor; these anchors still need authentic
+/// signatures and independently trusted custody.
+#[must_use]
+pub fn inspect_transition_payload_integrity(
+    previous: &AuditSegmentEvidence<'_>,
+    current: &AuditSegmentEvidence<'_>,
+) -> RestartInspection {
+    if inspect_transition_evidence_budget(previous, current) != RestartInspection::ReviewOnly {
+        return RestartInspection::Deny;
+    }
+    for segment in [previous, current] {
+        for source in segment.evidence {
+            if inspect_restart_chain_payloads(
+                source.checkpoints,
+                source.payloads,
+                Some(&source.signed.anchor),
+            ) != RestartInspection::ReviewOnly
+            {
+                return RestartInspection::Deny;
+            }
+        }
+    }
+    RestartInspection::ReviewOnly
+}
+
 /// Requires consecutive witnessed segments and complete recovery evidence.
 ///
 /// Checks both source-evidence batches as well as the exact transition between
 /// independently witnessed audit endpoints. Every rejection remains Deny.
-/// Full bounded source revalidation precedes all external custody callbacks.
+/// Complete bounded snapshot integrity on both sides precedes any external
+/// signature-verifier calls; full source revalidation then precedes custody.
 /// No external custody implementation or Ed25519 algorithm is provided here.
 #[must_use]
 pub fn inspect_custodied_audit_transition(
@@ -368,6 +400,7 @@ pub fn inspect_custodied_audit_transition(
         || inspect_transition_monotonicity(previous, current) != RestartInspection::ReviewOnly
         || inspect_transition_snapshot_link(previous, current) != RestartInspection::ReviewOnly
         || inspect_transition_signer_continuity(previous, current) != RestartInspection::ReviewOnly
+        || inspect_transition_payload_integrity(previous, current) != RestartInspection::ReviewOnly
         || inspect_audit_evidence(
             previous.links,
             previous.receipts,
@@ -402,7 +435,7 @@ mod tests {
         inspect_custodied_audit_transition, inspect_segment_signer_consistency,
         inspect_segment_snapshot_continuity, inspect_transition_evidence_budget,
         inspect_transition_monotonicity, inspect_transition_signer_continuity,
-        inspect_transition_snapshot_link, AuditSegmentEvidence,
+        inspect_transition_payload_integrity, inspect_transition_snapshot_link, AuditSegmentEvidence,
     };
     use crate::orcheastra_audit_chain::{
         audit_link_digest, AuditChainExpectation, AuditLink, MAX_AUDIT_LINKS,
@@ -451,6 +484,19 @@ mod tests {
             } else {
                 SignatureVerdict::Invalid
             }
+        }
+    }
+
+    struct CountingVerifier(std::cell::Cell<usize>);
+    impl Ed25519Verifier for CountingVerifier {
+        fn verify(
+            &self,
+            _key: &[u8; 32],
+            _message: &[u8],
+            _signature: &[u8; 64],
+        ) -> SignatureVerdict {
+            self.0.set(self.0.get() + 1);
+            SignatureVerdict::Valid
         }
     }
 
@@ -1647,6 +1693,53 @@ mod tests {
             RestartInspection::Deny
         );
         assert_eq!(never_called.0.get(), 0);
+        // The second segment's corrupted bytes must be rejected before any
+        // verifier call on the otherwise valid first segment.
+        let verifier_counter = CountingVerifier(std::cell::Cell::new(0));
+        assert_eq!(
+            inspect_transition_payload_integrity(&previous, &changed_current),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_custodied_audit_transition(
+                &previous,
+                &changed_current,
+                Some(&never_called),
+                &verifier_counter,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(verifier_counter.0.get(), 0);
+        assert_eq!(never_called.0.get(), 0);
+        assert_eq!(
+            inspect_transition_payload_integrity(&changed_prior, &current),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_custodied_audit_transition(
+                &changed_prior,
+                &current,
+                Some(&never_called),
+                &verifier_counter,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(verifier_counter.0.get(), 0);
+        assert_eq!(
+            inspect_transition_payload_integrity(&previous, &current),
+            RestartInspection::ReviewOnly
+        );
+        assert_eq!(
+            inspect_custodied_audit_transition(
+                &previous,
+                &current,
+                Some(&never_called),
+                &verifier_counter,
+            ),
+            RestartInspection::ReviewOnly
+        );
+        assert_eq!(verifier_counter.0.get(), 2);
+        assert_eq!(never_called.0.get(), 2);
         let wrong_expected = AuditChainExpectation {
             first_sequence: 12,
             ..expected_current
