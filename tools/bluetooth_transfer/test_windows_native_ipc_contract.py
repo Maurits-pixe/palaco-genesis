@@ -68,7 +68,7 @@ class WindowsIPCContractTests(unittest.TestCase):
         self.reject(b"x"*(MAX_FRAME+1))
 
     def test_non_ascii_rejected(self):
-        self.reject(self.frame + b"\\xff")
+        self.reject(self.frame + bytes([255]))
 
     def test_wrong_input_type_rejected(self):
         self.reject(self.frame.decode("ascii"))
