@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 
 use crate::orcheastra_payload::inspect_chain_payload_budget;
 use crate::orcheastra_recovery::{inspect_recovery, RecoveryFloor};
-use crate::orcheastra_restart::{RestartCheckpoint, RestartInspection};
+use crate::orcheastra_restart::{inspect_restart_chain, RestartCheckpoint, RestartInspection};
 use crate::orcheastra_signed_anchor::{
     Ed25519Verifier, SignedAnchor, TrustedKey, MAX_KEY_ID_BYTES,
 };
@@ -62,6 +62,8 @@ pub fn review_receipt(
 /// recovery evidence and cryptographic signatures before treating a matching
 /// receipt as eligible for review. Key identifiers are limited to 128 bytes,
 /// and signed-anchor, registry and floor fields must be structurally consistent.
+/// The entire checkpoint chain must also be consecutive, committed, and free
+/// from HOLD/revocation before the fingerprint hashes any source data.
 #[must_use]
 pub fn fingerprint_review_receipt(
     checkpoints: &[RestartCheckpoint],
@@ -73,6 +75,7 @@ pub fn fingerprint_review_receipt(
     let last = checkpoints.last()?;
     if checkpoints.len() != payloads.len()
         || inspect_chain_payload_budget(payloads) != RestartInspection::ReviewOnly
+        || inspect_restart_chain(checkpoints, Some(&signed.anchor)) != RestartInspection::ReviewOnly
         || key.key_id.is_empty()
         || key.key_id.len() > MAX_KEY_ID_BYTES
         || signed.key_id != key.key_id
@@ -295,6 +298,116 @@ mod tests {
             None
         );
         assert_eq!(verifier.0.get(), 0);
+    }
+
+    #[test]
+    fn direct_fingerprint_denies_blocked_or_disconnected_prior_checkpoints() {
+        let first = digest_snapshot(4, &[3; 32], b"first").unwrap_or([0; 32]);
+        let second = digest_snapshot(5, &first, b"second").unwrap_or([0; 32]);
+        let previous = RestartCheckpoint {
+            sequence: 4,
+            snapshot_digest: first,
+            predecessor_digest: [3; 32],
+            committed: true,
+            hold: false,
+            revoked: false,
+        };
+        let latest = RestartCheckpoint {
+            sequence: 5,
+            snapshot_digest: second,
+            predecessor_digest: first,
+            committed: true,
+            hold: false,
+            revoked: false,
+        };
+        let signed = SignedAnchor {
+            key_id: "review-key",
+            public_key: [6; 32],
+            signature: [9; 64],
+            anchor: RestartAnchor {
+                sequence: 5,
+                snapshot_digest: second,
+                predecessor_digest: first,
+                externally_verified: true,
+            },
+        };
+        let key = TrustedKey {
+            key_id: "review-key",
+            public_key: [6; 32],
+            registry_sequence: 4,
+            first_sequence: 1,
+            last_sequence: 6,
+            revoked: false,
+        };
+        let floor = RecoveryFloor {
+            checkpoint_sequence: 5,
+            registry_sequence: 4,
+        };
+        let payloads: &[&[u8]] = &[b"first", b"second"];
+        let valid = super::fingerprint_review_receipt(
+            &[previous, latest],
+            payloads,
+            &signed,
+            &key,
+            &floor,
+        );
+        assert!(valid.is_some());
+        for invalid_previous in [
+            RestartCheckpoint {
+                committed: false,
+                ..previous
+            },
+            RestartCheckpoint {
+                hold: true,
+                ..previous
+            },
+            RestartCheckpoint {
+                revoked: true,
+                ..previous
+            },
+            RestartCheckpoint {
+                sequence: 3,
+                ..previous
+            },
+            RestartCheckpoint {
+                snapshot_digest: [8; 32],
+                ..previous
+            },
+        ] {
+            assert_eq!(
+                super::fingerprint_review_receipt(
+                    &[invalid_previous, latest],
+                    payloads,
+                    &signed,
+                    &key,
+                    &floor,
+                ),
+                None
+            );
+        }
+        let verifier = CountingVerifier(std::cell::Cell::new(0));
+        if let Some(receipt) = valid {
+            let invalid = [
+                RestartCheckpoint {
+                    hold: true,
+                    ..previous
+                },
+                latest,
+            ];
+            assert_eq!(
+                revalidate_review_receipt(
+                    Some(&receipt),
+                    &invalid,
+                    payloads,
+                    Some(&signed),
+                    Some(&key),
+                    Some(&floor),
+                    &verifier,
+                ),
+                crate::orcheastra_restart::RestartInspection::Deny
+            );
+            assert_eq!(verifier.0.get(), 0);
+        }
     }
 
     #[test]
