@@ -176,6 +176,86 @@ class WitnessedSQLiteTests(unittest.TestCase):
         with self.assertRaises(TransferError):
             FencingWitnessState(NS, 0, True, False, 0, EMPTY_ROOT)
 
+    def test_illegal_count_jump_does_not_poison_external_witness(self):
+        with self.assertRaises(TransferError):
+            self.service.compare_and_advance(
+                self.service.read(), NativeCheckpoint(NS, 2, ROOT1),
+            )
+        self.assertEqual(self.witness.state.revision, 0)
+        self.assertEqual(self.sqlite.read().checkpoint.count, 0)
+        self.assertTrue(self.service.is_held)
+
+    def test_identical_cas_does_not_poison_external_witness(self):
+        with self.assertRaises(TransferError):
+            self.service.compare_and_advance(
+                self.service.read(), NativeCheckpoint(NS, 0, EMPTY_ROOT),
+            )
+        self.assertEqual(self.witness.state.revision, 0)
+        self.assertEqual(self.sqlite.read().checkpoint.count, 0)
+
+    def test_stale_fence_cas_does_not_poison_witness(self):
+        state = self.service.read()
+        with self.assertRaises(TransferError):
+            self.service.compare_and_advance(
+                replace(state, epoch=2), NativeCheckpoint(NS, 1, ROOT1),
+            )
+        self.assertEqual(self.witness.state.revision, 0)
+
+    def test_wrong_namespace_cas_does_not_poison_witness(self):
+        state = self.service.read()
+        with self.assertRaises(TransferError):
+            self.service.compare_and_advance(
+                replace(state, namespace=OTHER), NativeCheckpoint(NS, 1, ROOT1),
+            )
+        self.assertEqual(self.witness.state.revision, 0)
+
+    def test_held_fence_cas_does_not_write_witness(self):
+        self.service.latch_incident()
+        prior = self.witness.state
+        with self.assertRaises(TransferError):
+            self.service.compare_and_advance(
+                self.service.read(), NativeCheckpoint(NS, 1, ROOT1),
+            )
+        self.assertEqual(self.witness.state, prior)
+
+    def test_witness_revision_exhausted_before_sqlite_write(self):
+        self.witness.state = replace(self.witness.state, revision=2**63 - 1)
+        with self.assertRaises(TransferError):
+            self.service.compare_and_advance(
+                self.service.read(), NativeCheckpoint(NS, 1, ROOT1),
+            )
+        self.assertEqual(self.sqlite.read().checkpoint.count, 0)
+
+    def test_concurrent_calls_same_instance_one_commit(self):
+        from concurrent.futures import ThreadPoolExecutor
+        previous = self.service.read()
+        def attempt(root):
+            try:
+                self.service.compare_and_advance(
+                    previous, NativeCheckpoint(NS, 1, root),
+                )
+                return True
+            except TransferError:
+                return False
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(attempt, (ROOT1, ROOT2)))
+        self.assertEqual(results.count(True), 1)
+        self.assertEqual(results.count(False), 1)
+        self.assertEqual(self.witness.state.revision, 1)
+
+    def test_no_automatic_repair_after_partial_commit(self):
+        self.sqlite.compare_and_advance = lambda *_: (_ for _ in ()).throw(
+            TransferError("disk unavailable")
+        )
+        with self.assertRaises(TransferError):
+            self.service.compare_and_advance(
+                self.service.read(), NativeCheckpoint(NS, 1, ROOT1),
+            )
+        with self.assertRaises(TransferError):
+            self.service.latch_incident()
+        self.assertEqual(self.sqlite.read().checkpoint.count, 0)
+        self.assertEqual(self.witness.state.revision, 1)
+
     def test_both_fake_stores_reset_not_detected(self):
         self.service.compare_and_advance(
             self.service.read(), NativeCheckpoint(NS, 1, ROOT1),
