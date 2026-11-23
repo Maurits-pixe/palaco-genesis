@@ -35,6 +35,26 @@ class StrictContractJsonTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "nesting depth"):
             self.load_raw(document)
 
+    def test_maximum_object_depth_accepted(self):
+        document = '{"a":' * MAX_NESTING_DEPTH + "0" + "}" * MAX_NESTING_DEPTH
+        self.assertIsInstance(self.load_raw(document), dict)
+
+    def test_excessive_object_depth_rejected(self):
+        document = '{"a":' * (MAX_NESTING_DEPTH + 1) + "0" + "}" * (MAX_NESTING_DEPTH + 1)
+        with self.assertRaisesRegex(ValueError, "nesting depth"):
+            self.load_raw(document)
+
+    def test_mixed_object_array_depth_boundary_accepted(self):
+        layers = ['{"a":' if i % 2 == 0 else "[" for i in range(MAX_NESTING_DEPTH)]
+        close = ["}" if item == '{"a":' else "]" for item in reversed(layers)]
+        self.assertIsInstance(self.load_raw("".join(layers) + "0" + "".join(close)), dict)
+
+    def test_mixed_object_array_excessive_depth_rejected(self):
+        layers = ['{"a":' if i % 2 == 0 else "[" for i in range(MAX_NESTING_DEPTH + 1)]
+        close = ["}" if item == '{"a":' else "]" for item in reversed(layers)]
+        with self.assertRaisesRegex(ValueError, "nesting depth"):
+            self.load_raw("".join(layers) + "0" + "".join(close))
+
     def test_brackets_inside_json_string_are_not_nesting(self):
         document = '{"note":"' + ("[{" * 100) + '"}'
         self.assertEqual(len(self.load_raw(document)["note"]), 200)
