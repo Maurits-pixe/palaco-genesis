@@ -56,7 +56,7 @@ class OrganizationDelegationHistoryTests(unittest.TestCase):
             self.f.f.f.snapshots, self.f.f.f.records,
             self.f.f.envelope,
             self.f.delegation if signed_delegation is None else signed_delegation,
-            self.f.f.f.roots, set(),
+            rr, self.f.f.f.roots, set(),
             self.f.f.roots, set(), {self.f.f.assessor_id},
             self.f.roots, set(), {self.f.did},
             self.roots if roots is None else roots,
@@ -155,16 +155,8 @@ class OrganizationDelegationHistoryTests(unittest.TestCase):
                          "invalid-delegation-signature")
 
     def test_empty_history_denied(self):
-        result = mod.verify(
-            self.f.f.f.snapshots, self.f.f.f.records, self.f.f.envelope,
-            self.f.delegation, self.f.f.f.roots, set(), self.f.f.roots, set(),
-            {self.f.f.assessor_id}, self.f.roots, set(), {self.f.did},
-            self.roots, set(), {self.issuer_id},
-            mod.authority.identity.succession.digest(self.f.f.f.snapshots[0]),
-            mod.authority.identity.succession.record_digest(self.f.f.f.records[-1]),
-            2, 5, mod.record_digest(self.records[0]),
-            mod.record_digest(self.records[0]), 1, [])
-        self.assertFalse(result["delegation_history_valid"])
+        self.assertEqual(self.check(records=[], head=mod.GENESIS)["reason"],
+                         "invalid-status-history-length")
 
 
 if __name__ == "__main__":
