@@ -344,13 +344,8 @@ mod tests {
             registry_sequence: 4,
         };
         let payloads: &[&[u8]] = &[b"first", b"second"];
-        let valid = super::fingerprint_review_receipt(
-            &[previous, latest],
-            payloads,
-            &signed,
-            &key,
-            &floor,
-        );
+        let valid =
+            super::fingerprint_review_receipt(&[previous, latest], payloads, &signed, &key, &floor);
         assert!(valid.is_some());
         for invalid_previous in [
             RestartCheckpoint {
