@@ -11,7 +11,9 @@ use crate::orcheastra_payload::{
 };
 use crate::orcheastra_recovery::RecoveryFloor;
 use crate::orcheastra_restart::{RestartCheckpoint, RestartInspection};
-use crate::orcheastra_review_receipt::{revalidate_review_receipt, ReviewReceipt};
+use crate::orcheastra_review_receipt::{
+    fingerprint_review_receipt, revalidate_review_receipt, ReviewReceipt,
+};
 use crate::orcheastra_signed_anchor::{
     Ed25519Verifier, SignedAnchor, TrustedKey, MAX_KEY_ID_BYTES,
 };
@@ -257,11 +259,43 @@ pub fn inspect_audit_evidence_payload_integrity(
     RestartInspection::ReviewOnly
 }
 
+/// Matches all submitted receipt digests against original source bytes.
+///
+/// This is a bounded, deterministic check before external signature callbacks.
+/// It does not authenticate any receipt, source, public key, or custody root.
+#[must_use]
+pub fn inspect_audit_receipt_fingerprints(
+    receipts: &[ReviewReceipt],
+    evidence: &[RecoveryEvidence<'_>],
+) -> RestartInspection {
+    if inspect_audit_evidence_budget(evidence) != RestartInspection::ReviewOnly
+        || receipts.len() != evidence.len()
+    {
+        return RestartInspection::Deny;
+    }
+    for (receipt, source) in receipts.iter().zip(evidence.iter()) {
+        if fingerprint_review_receipt(
+            source.checkpoints,
+            source.payloads,
+            source.signed,
+            source.trusted_key,
+            source.floor,
+        )
+        .as_ref()
+            != Some(receipt)
+        {
+            return RestartInspection::Deny;
+        }
+    }
+    RestartInspection::ReviewOnly
+}
+
 /// Reviews audit-chain linkage and recomputes every corresponding receipt.
 ///
 /// Denies empty/mismatched evidence batches and any receipt that cannot be
 /// independently recomputed from its supplied snapshot bytes and context.
-/// Every snapshot chain is checked before the first signature-verifier call.
+/// Every snapshot chain and receipt fingerprint is checked before the first
+/// signature-verifier call.
 /// The verifier must be genuine and trusted before ReviewOnly has any evidential
 /// value. This method has no execution or signing side effects.
 #[must_use]
@@ -282,6 +316,7 @@ pub fn inspect_audit_evidence(
         || inspect_audit_receipt_source_binding(receipts, evidence) != RestartInspection::ReviewOnly
         || inspect_bound_audit_receipts(links, receipts, expected) != RestartInspection::ReviewOnly
         || inspect_audit_evidence_payload_integrity(evidence) != RestartInspection::ReviewOnly
+        || inspect_audit_receipt_fingerprints(receipts, evidence) != RestartInspection::ReviewOnly
     {
         return RestartInspection::Deny;
     }
@@ -340,8 +375,8 @@ mod tests {
     use super::{
         inspect_audit_evidence, inspect_audit_evidence_budget, inspect_audit_evidence_floors,
         inspect_audit_evidence_lineage, inspect_audit_evidence_payload_integrity,
-        inspect_audit_evidence_signers, inspect_audit_receipt_source_binding,
-        inspect_custodied_audit_evidence, RecoveryEvidence,
+        inspect_audit_evidence_signers, inspect_audit_receipt_fingerprints,
+        inspect_audit_receipt_source_binding, inspect_custodied_audit_evidence, RecoveryEvidence,
     };
     use crate::orcheastra_audit_chain::{audit_link_digest, AuditChainExpectation, AuditLink};
     use crate::orcheastra_audit_custody::{AuditCustodyWitness, CustodyVerdict};
@@ -559,6 +594,50 @@ mod tests {
             RestartInspection::ReviewOnly
         );
         assert_eq!(verifier.0.get(), 2);
+        assert_eq!(
+            inspect_audit_receipt_fingerprints(&receipts, &sources),
+            RestartInspection::ReviewOnly
+        );
+
+        // A late receipt hash mismatch must not invoke the verifier for the
+        // earlier, otherwise valid audit source.
+        verifier.0.set(0);
+        let altered_receipts = [
+            receipts[0],
+            ReviewReceipt {
+                digest: [4; 32],
+                ..receipts[1]
+            },
+        ];
+        let altered_link_digest =
+            audit_link_digest(11, &first_link, &altered_receipts[1].digest).unwrap_or([0; 32]);
+        let altered_links = [
+            links[0],
+            AuditLink {
+                receipt_digest: altered_receipts[1].digest,
+                link_digest: altered_link_digest,
+                ..links[1]
+            },
+        ];
+        let altered_expected = AuditChainExpectation {
+            final_digest: altered_link_digest,
+            ..expected
+        };
+        assert_eq!(
+            inspect_audit_receipt_fingerprints(&altered_receipts, &sources),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_audit_evidence(
+                &altered_links,
+                &altered_receipts,
+                &sources,
+                Some(&altered_expected),
+                &verifier,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(verifier.0.get(), 0);
 
         verifier.0.set(0);
         let corrupted_current: &[&[u8]] = &[b"SECOND"];
