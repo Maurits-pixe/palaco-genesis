@@ -340,8 +340,8 @@ mod tests {
     use super::{
         inspect_audit_evidence, inspect_audit_evidence_budget, inspect_audit_evidence_floors,
         inspect_audit_evidence_lineage, inspect_audit_evidence_payload_integrity,
-        inspect_audit_evidence_signers,
-        inspect_audit_receipt_source_binding, inspect_custodied_audit_evidence, RecoveryEvidence,
+        inspect_audit_evidence_signers, inspect_audit_receipt_source_binding,
+        inspect_custodied_audit_evidence, RecoveryEvidence,
     };
     use crate::orcheastra_audit_chain::{audit_link_digest, AuditChainExpectation, AuditLink};
     use crate::orcheastra_audit_custody::{AuditCustodyWitness, CustodyVerdict};
@@ -512,10 +512,9 @@ mod tests {
         assert_ne!(current_receipt.digest, [0; 32]);
         verifier.0.set(0);
         let receipts = [previous_receipt, current_receipt];
-        let first_link = audit_link_digest(10, &[9; 32], &receipts[0].digest)
-            .unwrap_or([0; 32]);
-        let second_link = audit_link_digest(11, &first_link, &receipts[1].digest)
-            .unwrap_or([0; 32]);
+        let first_link = audit_link_digest(10, &[9; 32], &receipts[0].digest).unwrap_or([0; 32]);
+        let second_link =
+            audit_link_digest(11, &first_link, &receipts[1].digest).unwrap_or([0; 32]);
         let links = [
             AuditLink {
                 sequence: 10,
@@ -584,7 +583,13 @@ mod tests {
             RestartInspection::Deny
         );
         assert_eq!(
-            inspect_audit_evidence(&links, &receipts, &invalid_current, Some(&expected), &verifier),
+            inspect_audit_evidence(
+                &links,
+                &receipts,
+                &invalid_current,
+                Some(&expected),
+                &verifier
+            ),
             RestartInspection::Deny
         );
         assert_eq!(verifier.0.get(), 0);
@@ -607,7 +612,13 @@ mod tests {
             },
         ];
         assert_eq!(
-            inspect_audit_evidence(&links, &receipts, &invalid_previous, Some(&expected), &verifier),
+            inspect_audit_evidence(
+                &links,
+                &receipts,
+                &invalid_previous,
+                Some(&expected),
+                &verifier
+            ),
             RestartInspection::Deny
         );
         assert_eq!(verifier.0.get(), 0);
