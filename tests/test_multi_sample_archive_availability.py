@@ -68,7 +68,7 @@ class MultiSampleArchiveAvailabilityTests(unittest.TestCase):
         self.assertEqual(mod.indices(self.seed,self.f.digest,3,2),self.selected)
 
     def test_independently_changed_seed_rejected(self):
-        self.assertEqual(self.check(seed="f"*64)["reason"],"multi-sample-index-mismatch")
+        self.assertEqual(self.check(seed="f"*64)["reason"],"multi-sample-nonce-mismatch")
 
     def test_insufficient_coverage(self):
         self.assertEqual(self.check(coverage=700000)["reason"],"insufficient-multi-sample-coverage")
