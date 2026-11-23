@@ -10,7 +10,9 @@ use crate::orcheastra_payload::{MAX_CHAIN_CHECKPOINTS, MAX_SNAPSHOT_BYTES};
 use crate::orcheastra_recovery::RecoveryFloor;
 use crate::orcheastra_restart::{RestartCheckpoint, RestartInspection};
 use crate::orcheastra_review_receipt::{revalidate_review_receipt, ReviewReceipt};
-use crate::orcheastra_signed_anchor::{Ed25519Verifier, SignedAnchor, TrustedKey, MAX_KEY_ID_BYTES};
+use crate::orcheastra_signed_anchor::{
+    Ed25519Verifier, SignedAnchor, TrustedKey, MAX_KEY_ID_BYTES,
+};
 
 /// Borrowed original evidence used for one audit receipt revalidation.
 ///
