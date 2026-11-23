@@ -77,7 +77,7 @@ class ArchiveSamplingEvidenceLedgerTests(unittest.TestCase):
     def test_tampered_index_denied(self):
         recorded=self.record()
         with sqlite3.connect(self.db) as conn:
-            conn.execute("DELETE FROM archive_sample_nonces LIMIT 1")
+            conn.execute("DELETE FROM archive_sample_nonces WHERE ordinal=0")
         self.assertEqual(self.inspect(recorded["head_hash"])["reason"],"sampling-ledger-integrity-failed")
 
     def test_wrong_stored_population_denied(self):
