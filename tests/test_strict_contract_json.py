@@ -352,6 +352,23 @@ class StrictContractJsonTests(unittest.TestCase):
         self.assertEqual(self.load_raw('{"mark":"' + chr(0xfeff) + '"}'),
                          {"mark": chr(0xfeff)})
 
+    def test_multibyte_utf8_exact_byte_limit_accepted(self):
+        prefix, suffix = '{"value":"', '"}'
+        remaining = MAX_DOCUMENT_BYTES - len(prefix.encode()) - len(suffix.encode())
+        value = "é" * (remaining // 2) + ("x" if remaining % 2 else "")
+        payload = prefix + value + suffix
+        self.assertEqual(len(payload.encode("utf-8")), MAX_DOCUMENT_BYTES)
+        self.assertEqual(len(self.load_raw(payload)["value"]), len(value))
+
+    def test_multibyte_utf8_one_byte_over_limit_rejected(self):
+        prefix, suffix = '{"value":"', '"}'
+        remaining = MAX_DOCUMENT_BYTES - len(prefix.encode()) - len(suffix.encode())
+        value = "é" * (remaining // 2) + ("x" if remaining % 2 else "")
+        payload = prefix + value + "x" + suffix
+        self.assertEqual(len(payload.encode("utf-8")), MAX_DOCUMENT_BYTES + 1)
+        with self.assertRaisesRegex(ValueError, "size limit"):
+            self.load_raw(payload)
+
     def test_utf8_byte_size_limit_counts_multibyte_characters(self):
         # The payload is short in code points but exceeds the byte budget.
         value = "é" * (MAX_DOCUMENT_BYTES // 2)
