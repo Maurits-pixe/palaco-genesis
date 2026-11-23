@@ -76,6 +76,8 @@ on:
       - 'tests/test_custody_ack_witness_quorum.py'
       - 'tools/custody_witness_registry.py'
       - 'tests/test_custody_witness_registry.py'
+      - 'tools/witness_registry_succession.py'
+      - 'tests/test_witness_registry_succession.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -153,6 +155,8 @@ on:
       - 'tests/test_custody_ack_witness_quorum.py'
       - 'tools/custody_witness_registry.py'
       - 'tests/test_custody_witness_registry.py'
+      - 'tools/witness_registry_succession.py'
+      - 'tests/test_witness_registry_succession.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
