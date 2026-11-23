@@ -149,14 +149,14 @@ assert.equal(digest(specialKeys), createHash('sha256')
 const multibyteValue = { symbol: String.fromCodePoint(0x1f680) };
 const multibytePayload = canonicalBytes(multibyteValue);
 assert.equal(multibytePayload.length, 17, 'canonical UTF-8 byte length');
-assert.equal(multibytePayload.toString('utf8').length, 14,
+assert.equal(multibytePayload.toString('utf8').length, 15,
              'UTF-16 string length must not be used for SHA-256 framing');
 const multibyteFrame = Buffer.from('0000000000000011', 'hex');
 const manuallyFramedDigest = createHash('sha256')
   .update(DOMAIN).update(multibyteFrame).update(multibytePayload).digest('hex');
 assert.equal(digest(multibyteValue), manuallyFramedDigest,
              'digest must use eight-byte big-endian UTF-8 byte length');
-const incorrectCodeUnitFrame = Buffer.from('000000000000000e', 'hex');
+const incorrectCodeUnitFrame = Buffer.from('000000000000000f', 'hex');
 assert.notEqual(digest(multibyteValue), createHash('sha256')
   .update(DOMAIN).update(incorrectCodeUnitFrame).update(multibytePayload).digest('hex'),
   'UTF-16 code-unit length must not be treated as byte length');
