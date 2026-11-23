@@ -94,6 +94,8 @@ on:
       - 'tests/test_signed_delegation_receipt_audit_anchor.py'
       - 'tools/delegation_receipt_archive.py'
       - 'tests/test_delegation_receipt_archive.py'
+      - 'tools/external_archive_custody_claim.py'
+      - 'tests/test_external_archive_custody_claim.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -189,6 +191,8 @@ on:
       - 'tests/test_signed_delegation_receipt_audit_anchor.py'
       - 'tools/delegation_receipt_archive.py'
       - 'tests/test_delegation_receipt_archive.py'
+      - 'tools/external_archive_custody_claim.py'
+      - 'tests/test_external_archive_custody_claim.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
