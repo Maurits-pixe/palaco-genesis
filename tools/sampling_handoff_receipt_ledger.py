@@ -153,6 +153,14 @@ def register(db,package,receipt,trust,expected_previous_head,
                              (nonce,number))
             except sqlite3.IntegrityError:
                 return deny("duplicate-handoff-package-or-nonce")
+            # Recheck the post-write state before committing: malicious
+            # SQLite triggers must never result in a successful receipt claim.
+            written=_scan(conn)
+            if (written is None or written["receipts"]!=number
+                or written["head_hash"]!=event
+                or nonce not in written["used_nonces"]):
+                conn.rollback()
+                return deny("handoff-receipt-ledger-postwrite-integrity-failed")
     except (sqlite3.Error,TypeError,ValueError,OverflowError,OSError):
         return deny("handoff-receipt-ledger-transaction-failed")
     return _out(recorded=True,state="pending-review",
