@@ -108,6 +108,8 @@ on:
       - 'tests/test_sampling_checkpoint_succession.py'
       - 'tools/sampling_succession_evidence_handoff.py'
       - 'tests/test_sampling_succession_evidence_handoff.py'
+      - 'tools/sampling_handoff_receipt_ledger.py'
+      - 'tests/test_sampling_handoff_receipt_ledger.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -217,6 +219,8 @@ on:
       - 'tests/test_sampling_checkpoint_succession.py'
       - 'tools/sampling_succession_evidence_handoff.py'
       - 'tests/test_sampling_succession_evidence_handoff.py'
+      - 'tools/sampling_handoff_receipt_ledger.py'
+      - 'tests/test_sampling_handoff_receipt_ledger.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
