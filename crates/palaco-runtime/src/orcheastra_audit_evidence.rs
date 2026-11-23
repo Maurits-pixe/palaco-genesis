@@ -6,7 +6,9 @@
 use crate::orcheastra_audit_chain::{AuditChainExpectation, AuditLink, MAX_AUDIT_LINKS};
 use crate::orcheastra_audit_custody::{inspect_custodied_audit_chain, AuditCustodyWitness};
 use crate::orcheastra_audit_receipts::inspect_bound_audit_receipts;
-use crate::orcheastra_payload::{MAX_CHAIN_CHECKPOINTS, MAX_SNAPSHOT_BYTES};
+use crate::orcheastra_payload::{
+    inspect_restart_chain_payloads, MAX_CHAIN_CHECKPOINTS, MAX_SNAPSHOT_BYTES,
+};
 use crate::orcheastra_recovery::RecoveryFloor;
 use crate::orcheastra_restart::{RestartCheckpoint, RestartInspection};
 use crate::orcheastra_review_receipt::{revalidate_review_receipt, ReviewReceipt};
@@ -231,10 +233,35 @@ pub fn inspect_audit_receipt_source_binding(
     RestartInspection::ReviewOnly
 }
 
+/// Recomputes all original snapshot chains before any signature callback.
+///
+/// Applies the combined evidence work budget first. This local integrity pass
+/// cannot authenticate signed anchors or custody and never grants authority.
+#[must_use]
+pub fn inspect_audit_evidence_payload_integrity(
+    evidence: &[RecoveryEvidence<'_>],
+) -> RestartInspection {
+    if inspect_audit_evidence_budget(evidence) != RestartInspection::ReviewOnly {
+        return RestartInspection::Deny;
+    }
+    for source in evidence {
+        if inspect_restart_chain_payloads(
+            source.checkpoints,
+            source.payloads,
+            Some(&source.signed.anchor),
+        ) != RestartInspection::ReviewOnly
+        {
+            return RestartInspection::Deny;
+        }
+    }
+    RestartInspection::ReviewOnly
+}
+
 /// Reviews audit-chain linkage and recomputes every corresponding receipt.
 ///
 /// Denies empty/mismatched evidence batches and any receipt that cannot be
 /// independently recomputed from its supplied snapshot bytes and context.
+/// Every snapshot chain is checked before the first signature-verifier call.
 /// The verifier must be genuine and trusted before ReviewOnly has any evidential
 /// value. This method has no execution or signing side effects.
 #[must_use]
@@ -254,6 +281,7 @@ pub fn inspect_audit_evidence(
         || inspect_audit_evidence_floors(evidence) != RestartInspection::ReviewOnly
         || inspect_audit_receipt_source_binding(receipts, evidence) != RestartInspection::ReviewOnly
         || inspect_bound_audit_receipts(links, receipts, expected) != RestartInspection::ReviewOnly
+        || inspect_audit_evidence_payload_integrity(evidence) != RestartInspection::ReviewOnly
     {
         return RestartInspection::Deny;
     }
@@ -311,7 +339,8 @@ pub fn inspect_custodied_audit_evidence(
 mod tests {
     use super::{
         inspect_audit_evidence, inspect_audit_evidence_budget, inspect_audit_evidence_floors,
-        inspect_audit_evidence_lineage, inspect_audit_evidence_signers,
+        inspect_audit_evidence_lineage, inspect_audit_evidence_payload_integrity,
+        inspect_audit_evidence_signers,
         inspect_audit_receipt_source_binding, inspect_custodied_audit_evidence, RecoveryEvidence,
     };
     use crate::orcheastra_audit_chain::{audit_link_digest, AuditChainExpectation, AuditLink};
@@ -338,6 +367,20 @@ mod tests {
             } else {
                 SignatureVerdict::Invalid
             }
+        }
+    }
+
+    // Counts external signature callbacks; accepts inputs for test wiring only.
+    struct CountingVerifier(std::cell::Cell<usize>);
+    impl Ed25519Verifier for CountingVerifier {
+        fn verify(
+            &self,
+            _public_key: &[u8; 32],
+            _message: &[u8],
+            _signature: &[u8; 64],
+        ) -> SignatureVerdict {
+            self.0.set(self.0.get() + 1);
+            SignatureVerdict::Valid
         }
     }
 
@@ -379,6 +422,195 @@ mod tests {
         fn verify_expectation(&self, _expectation: &AuditChainExpectation) -> CustodyVerdict {
             CustodyVerdict::Denied
         }
+    }
+
+    #[test]
+    fn all_source_payloads_precede_any_signature_callback() {
+        let first_digest = digest_snapshot(7, &[6; 32], b"first").unwrap_or([0; 32]);
+        let second_digest = digest_snapshot(8, &first_digest, b"second").unwrap_or([0; 32]);
+        let previous_checkpoints = [RestartCheckpoint {
+            sequence: 7,
+            predecessor_digest: [6; 32],
+            snapshot_digest: first_digest,
+            committed: true,
+            hold: false,
+            revoked: false,
+        }];
+        let current_checkpoints = [RestartCheckpoint {
+            sequence: 8,
+            predecessor_digest: first_digest,
+            snapshot_digest: second_digest,
+            committed: true,
+            hold: false,
+            revoked: false,
+        }];
+        let previous_signed = SignedAnchor {
+            key_id: "test-key",
+            public_key: [5; 32],
+            signature: [7; 64],
+            anchor: RestartAnchor {
+                sequence: 7,
+                predecessor_digest: [6; 32],
+                snapshot_digest: first_digest,
+                externally_verified: true,
+            },
+        };
+        let current_signed = SignedAnchor {
+            signature: [8; 64],
+            anchor: RestartAnchor {
+                sequence: 8,
+                predecessor_digest: first_digest,
+                snapshot_digest: second_digest,
+                externally_verified: true,
+            },
+            ..previous_signed.clone()
+        };
+        let key = TrustedKey {
+            key_id: "test-key",
+            public_key: [5; 32],
+            registry_sequence: 3,
+            first_sequence: 7,
+            last_sequence: 8,
+            revoked: false,
+        };
+        let previous_floor = RecoveryFloor {
+            checkpoint_sequence: 7,
+            registry_sequence: 3,
+        };
+        let current_floor = RecoveryFloor {
+            checkpoint_sequence: 8,
+            registry_sequence: 3,
+        };
+        let previous_payloads: &[&[u8]] = &[b"first"];
+        let current_payloads: &[&[u8]] = &[b"second"];
+        let verifier = CountingVerifier(std::cell::Cell::new(0));
+        let fallback = ReviewReceipt {
+            digest: [0; 32],
+            checkpoint_sequence: 0,
+            registry_sequence: 0,
+            checkpoint_count: 0,
+        };
+        let previous_receipt = review_receipt(
+            &previous_checkpoints,
+            previous_payloads,
+            Some(&previous_signed),
+            Some(&key),
+            Some(&previous_floor),
+            &verifier,
+        )
+        .unwrap_or(fallback);
+        let current_receipt = review_receipt(
+            &current_checkpoints,
+            current_payloads,
+            Some(&current_signed),
+            Some(&key),
+            Some(&current_floor),
+            &verifier,
+        )
+        .unwrap_or(fallback);
+        assert_ne!(previous_receipt.digest, [0; 32]);
+        assert_ne!(current_receipt.digest, [0; 32]);
+        verifier.0.set(0);
+        let receipts = [previous_receipt, current_receipt];
+        let first_link = audit_link_digest(10, &[9; 32], &receipts[0].digest)
+            .unwrap_or([0; 32]);
+        let second_link = audit_link_digest(11, &first_link, &receipts[1].digest)
+            .unwrap_or([0; 32]);
+        let links = [
+            AuditLink {
+                sequence: 10,
+                predecessor_digest: [9; 32],
+                receipt_digest: receipts[0].digest,
+                link_digest: first_link,
+            },
+            AuditLink {
+                sequence: 11,
+                predecessor_digest: first_link,
+                receipt_digest: receipts[1].digest,
+                link_digest: second_link,
+            },
+        ];
+        let expected = AuditChainExpectation {
+            first_sequence: 10,
+            predecessor_digest: [9; 32],
+            last_sequence: 11,
+            final_digest: second_link,
+        };
+        let previous_source = RecoveryEvidence {
+            checkpoints: &previous_checkpoints,
+            payloads: previous_payloads,
+            signed: &previous_signed,
+            trusted_key: &key,
+            floor: &previous_floor,
+        };
+        let current_source = RecoveryEvidence {
+            checkpoints: &current_checkpoints,
+            payloads: current_payloads,
+            signed: &current_signed,
+            trusted_key: &key,
+            floor: &current_floor,
+        };
+        let sources = [previous_source, current_source];
+        assert_eq!(
+            inspect_audit_evidence_payload_integrity(&sources),
+            RestartInspection::ReviewOnly
+        );
+        assert_eq!(
+            inspect_audit_evidence(&links, &receipts, &sources, Some(&expected), &verifier),
+            RestartInspection::ReviewOnly
+        );
+        assert_eq!(verifier.0.get(), 2);
+
+        verifier.0.set(0);
+        let corrupted_current: &[&[u8]] = &[b"SECOND"];
+        let invalid_current = [
+            RecoveryEvidence {
+                checkpoints: &previous_checkpoints,
+                payloads: previous_payloads,
+                signed: &previous_signed,
+                trusted_key: &key,
+                floor: &previous_floor,
+            },
+            RecoveryEvidence {
+                checkpoints: &current_checkpoints,
+                payloads: corrupted_current,
+                signed: &current_signed,
+                trusted_key: &key,
+                floor: &current_floor,
+            },
+        ];
+        assert_eq!(
+            inspect_audit_evidence_payload_integrity(&invalid_current),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_audit_evidence(&links, &receipts, &invalid_current, Some(&expected), &verifier),
+            RestartInspection::Deny
+        );
+        assert_eq!(verifier.0.get(), 0);
+
+        let corrupted_previous: &[&[u8]] = &[b"FIRST"];
+        let invalid_previous = [
+            RecoveryEvidence {
+                checkpoints: &previous_checkpoints,
+                payloads: corrupted_previous,
+                signed: &previous_signed,
+                trusted_key: &key,
+                floor: &previous_floor,
+            },
+            RecoveryEvidence {
+                checkpoints: &current_checkpoints,
+                payloads: current_payloads,
+                signed: &current_signed,
+                trusted_key: &key,
+                floor: &current_floor,
+            },
+        ];
+        assert_eq!(
+            inspect_audit_evidence(&links, &receipts, &invalid_previous, Some(&expected), &verifier),
+            RestartInspection::Deny
+        );
+        assert_eq!(verifier.0.get(), 0);
     }
 
     #[test]
