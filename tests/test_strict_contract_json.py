@@ -280,6 +280,43 @@ class StrictContractJsonTests(unittest.TestCase):
         parsed = self.load_raw('{"ratio":1e-300}')
         self.assertGreater(parsed["ratio"], 0.0)
 
+    def test_malformed_json_grammar_rejected(self):
+        candidates = (
+            '{"release_gate":"HOLD",}',
+            '{"release_gate":"HOLD" "authorization":"DENY"}',
+            '{"release_gate":/* comment */"HOLD"}',
+            '{"release_gate":\'HOLD\'}',
+            '{"release_gate":"HOLD"} {"authorization":"DENY"}',
+            '{"count":01}',
+            '{"count":+1}',
+            '{"count":1.}',
+            '{"count":.5}',
+            '{"count":0x10}',
+            '{"value":"\\\\x41"}',
+        )
+        for candidate in candidates:
+            with self.subTest(candidate=candidate):
+                with self.assertRaises(ValueError):
+                    self.load_raw(candidate)
+
+    def test_unescaped_control_character_rejected(self):
+        with self.assertRaises(ValueError):
+            self.load_raw('{"name":"one\\x00two"}')
+
+    def test_escaped_control_character_accepted(self):
+        self.assertEqual(self.load_raw(r'{"name":"one\\u0000two"}'),
+                         {"name": "one\\x00two"})
+
+    def test_bom_codepoint_inside_json_string_accepted(self):
+        self.assertEqual(self.load_raw('{"mark":"\\ufeff"}'),
+                         {"mark": "\\ufeff"})
+
+    def test_utf8_byte_size_limit_counts_multibyte_characters(self):
+        # The payload is short in code points but exceeds the byte budget.
+        value = "é" * (MAX_DOCUMENT_BYTES // 2)
+        with self.assertRaisesRegex(ValueError, "size limit"):
+            self.load_raw('{"value":"' + value + '"}')
+
     def test_truncated_json_rejected(self):
         with self.assertRaises(ValueError):
             self.load_raw('{"release_gate":"HOLD"')
