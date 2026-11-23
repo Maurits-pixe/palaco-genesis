@@ -5,7 +5,7 @@
 
 use sha2::{Digest, Sha256};
 
-use crate::orcheastra_payload::{MAX_CHAIN_CHECKPOINTS, MAX_SNAPSHOT_BYTES};
+use crate::orcheastra_payload::inspect_chain_payload_budget;
 use crate::orcheastra_recovery::{inspect_recovery, RecoveryFloor};
 use crate::orcheastra_restart::{RestartCheckpoint, RestartInspection};
 use crate::orcheastra_signed_anchor::{Ed25519Verifier, SignedAnchor, TrustedKey};
@@ -55,8 +55,8 @@ pub fn review_receipt(
 ///
 /// This function is for deterministic preflight only. Its output is NOT a
 /// signature, custody record, proof of recovery, or execution authorization.
-/// Inputs are bounded to the same maximum checkpoint count and snapshot size
-/// as the recovery payload verifier. Callers must separately verify full
+/// Inputs share the recovery verifier's checkpoint count, per-snapshot size,
+/// and cumulative eight-MiB work budget. Callers must separately verify full
 /// recovery evidence and cryptographic
 /// signatures before treating a matching receipt as eligible for review.
 #[must_use]
@@ -67,12 +67,8 @@ pub fn fingerprint_review_receipt(
     key: &TrustedKey<'_>,
     floor: &RecoveryFloor,
 ) -> Option<ReviewReceipt> {
-    if checkpoints.is_empty()
-        || checkpoints.len() > MAX_CHAIN_CHECKPOINTS
-        || checkpoints.len() != payloads.len()
-        || payloads
-            .iter()
-            .any(|payload| payload.len() > MAX_SNAPSHOT_BYTES)
+    if checkpoints.len() != payloads.len()
+        || inspect_chain_payload_budget(payloads) != RestartInspection::ReviewOnly
     {
         return None;
     }
@@ -217,6 +213,63 @@ mod tests {
         ) -> SignatureVerdict {
             SignatureVerdict::Invalid
         }
+    }
+
+    #[test]
+    fn fingerprint_rejects_aggregate_snapshot_over_budget() {
+        let snapshot = vec![4u8; crate::orcheastra_payload::MAX_SNAPSHOT_BYTES];
+        let payloads: Vec<&[u8]> = vec![snapshot.as_slice(); 9];
+        let checkpoints = vec![
+            RestartCheckpoint {
+                sequence: 5,
+                snapshot_digest: [7; 32],
+                predecessor_digest: [4; 32],
+                committed: true,
+                hold: false,
+                revoked: false,
+            };
+            9
+        ];
+        let signed = SignedAnchor {
+            key_id: "review-key",
+            public_key: [6; 32],
+            signature: [9; 64],
+            anchor: RestartAnchor {
+                sequence: 5,
+                snapshot_digest: [7; 32],
+                predecessor_digest: [4; 32],
+                externally_verified: true,
+            },
+        };
+        let key = TrustedKey {
+            key_id: "review-key",
+            public_key: [6; 32],
+            registry_sequence: 4,
+            first_sequence: 1,
+            last_sequence: 6,
+            revoked: false,
+        };
+        let floor = RecoveryFloor {
+            checkpoint_sequence: 5,
+            registry_sequence: 4,
+        };
+        assert_eq!(
+            super::fingerprint_review_receipt(&checkpoints, &payloads, &signed, &key, &floor),
+            None
+        );
+        let verifier = CountingVerifier(std::cell::Cell::new(0));
+        assert_eq!(
+            review_receipt(
+                &checkpoints,
+                &payloads,
+                Some(&signed),
+                Some(&key),
+                Some(&floor),
+                &verifier,
+            ),
+            None
+        );
+        assert_eq!(verifier.0.get(), 0);
     }
 
     #[test]
