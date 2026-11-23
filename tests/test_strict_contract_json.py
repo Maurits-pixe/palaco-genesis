@@ -375,6 +375,32 @@ class StrictContractJsonTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "size limit"):
             self.load_raw('{"value":"' + value + '"}')
 
+    def test_smallest_positive_subnormal_remains_nonzero(self):
+        parsed = self.load_raw('{"ratio":5e-324}')
+        self.assertGreater(parsed["ratio"], 0.0)
+
+    def test_smallest_negative_subnormal_remains_nonzero(self):
+        parsed = self.load_raw('{"ratio":-5e-324}')
+        self.assertLess(parsed["ratio"], 0.0)
+
+    def test_smaller_positive_subnormal_underflow_rejected(self):
+        with self.assertRaisesRegex(ValueError, "underflow"):
+            self.load_raw('{"ratio":1e-324}')
+
+    def test_smaller_negative_subnormal_underflow_rejected(self):
+        with self.assertRaisesRegex(ValueError, "underflow"):
+            self.load_raw('{"ratio":-1e-324}')
+
+    def test_finite_float_exponent_at_numeric_token_limit(self):
+        exponent = "0" * (MAX_NUMBER_TOKEN_CHARS - 3)
+        parsed = self.load_raw('{"ratio":1e+' + exponent + '}')
+        self.assertEqual(parsed["ratio"], 1.0)
+
+    def test_float_exponent_over_numeric_token_limit_rejected(self):
+        exponent = "0" * (MAX_NUMBER_TOKEN_CHARS - 2)
+        with self.assertRaisesRegex(ValueError, "numeric token exceeds length limit"):
+            self.load_raw('{"ratio":1e+' + exponent + '}')
+
     def test_truncated_json_rejected(self):
         with self.assertRaises(ValueError):
             self.load_raw('{"release_gate":"HOLD"')
