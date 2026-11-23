@@ -60,16 +60,20 @@ function encode(value, depth = 0, active = new WeakSet()) {
     if (own.length !== value.length) {
       throw new Error('sparse array or unsupported array property');
     }
+    const entries = [];
     for (let i = 0; i < value.length; i += 1) {
       const descriptor = Object.getOwnPropertyDescriptor(value, String(i));
       if (!descriptor) throw new Error('sparse array entry is not a JSON value');
       if (!Object.hasOwn(descriptor, 'value') || !descriptor.enumerable) {
         throw new Error('array accessor or hidden property is not JSON data');
       }
+      // Read the descriptor, not value[i] or value.map: inherited methods
+      // must never execute while verifying a canonical JSON digest.
+      entries.push(descriptor.value);
     }
     active.add(value);
     try {
-      return '[' + value.map((entry) => encode(entry, depth + 1, active)).join(',') + ']';
+      return '[' + entries.map((entry) => encode(entry, depth + 1, active)).join(',') + ']';
     } finally {
       active.delete(value);
     }
@@ -293,6 +297,32 @@ assert.throws(() => canonicalBytes([undefined]), /unsupported canonical JSON/,
               'undefined array elements cannot turn into null');
 assert.throws(() => canonicalBytes({ item: 1n }), /unsupported canonical JSON/,
               'BigInt is not a JSON numeric value');
+
+// Inherited array slots and overridden array methods are not trusted data.
+const arrayWithInheritedSlot = [, 1];
+const inheritedSlotPrototype = Object.create(Array.prototype);
+Object.defineProperty(inheritedSlotPrototype, '0', {
+  configurable: true, enumerable: true, value: 99,
+});
+Object.setPrototypeOf(arrayWithInheritedSlot, inheritedSlotPrototype);
+assert.throws(() => canonicalBytes(arrayWithInheritedSlot), /sparse array/,
+              'inherited index must not fill an absent own array entry');
+const arrayWithHostileMap = [0, 1];
+const hostileMapPrototype = Object.create(Array.prototype);
+hostileMapPrototype.map = () => { throw new Error('inherited map must not run'); };
+Object.setPrototypeOf(arrayWithHostileMap, hostileMapPrototype);
+assert.deepEqual(canonicalBytes(arrayWithHostileMap), Buffer.from('[0,1]', 'utf8'),
+                 'array encoding must not invoke inherited map methods');
+const hiddenIndexArray = [0];
+Object.defineProperty(hiddenIndexArray, '0', {
+  value: 0, enumerable: false, configurable: true,
+});
+assert.throws(() => canonicalBytes(hiddenIndexArray), /hidden property/,
+              'nonenumerable indexed array values must fail closed');
+const symbolArray = [0];
+symbolArray[Symbol('secret')] = 1;
+assert.throws(() => canonicalBytes(symbolArray), /unsupported array property/,
+              'symbol-named array properties must not be silently dropped');
 
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
