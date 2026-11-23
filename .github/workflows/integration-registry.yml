@@ -96,6 +96,8 @@ on:
       - 'tests/test_delegation_receipt_archive.py'
       - 'tools/external_archive_custody_claim.py'
       - 'tests/test_external_archive_custody_claim.py'
+      - 'tools/archive_content_availability.py'
+      - 'tests/test_archive_content_availability.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -193,6 +195,8 @@ on:
       - 'tests/test_delegation_receipt_archive.py'
       - 'tools/external_archive_custody_claim.py'
       - 'tests/test_external_archive_custody_claim.py'
+      - 'tools/archive_content_availability.py'
+      - 'tests/test_archive_content_availability.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
