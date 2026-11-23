@@ -1,6 +1,23 @@
-# PALACO Bluetooth Offline Transfer — v4.4 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v4.5 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v4.5 Windows diagnostic intake boundary
+
+- `windows_native_intake.py` accepts a strictly shaped Windows TPM identity,
+  32-byte challenge and response digest with explicit expected-device binding.
+  Its report uses a domain-separated SHA-256 diagnostic fingerprint.
+- `test_windows_native_intake.py` adds 16 fail-closed regression tests
+  covering wrong-device, challenge mismatch, cross-platform confusion,
+  malformed probes, zero response and unconditional HOLD.
+- **This is not a Windows service, authenticated IPC, TPM quote verification,
+  hardware attestation, rollback-resistant storage, or BLE delivery.**
+  Caller-provided challenges, identities and response digests can be forged.
+  All diagnostic output is **HOLD / DENY**. It cannot unlock, mutate, import,
+  release credentials or authorize deployments.
+- A future native Windows service must use a separately assessed privileged
+  trust boundary, measured service identity, authenticated local IPC, external
+  trust-root verification and genuine physical-device rollback tests.
 
 ## Safety boundary
 
