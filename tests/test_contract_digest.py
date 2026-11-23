@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from tools.contract_digest import MAX_NESTING_DEPTH, MAX_SAFE_INTEGER, canonical_bytes, digest_contract, digest_contract_file
+from tools.strict_contract_json import load_strict_json
 
 
 class ContractDigestTests(unittest.TestCase):
@@ -178,6 +179,24 @@ class ContractDigestTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "aliases.json"
             path.write_text(r'{"gate":"HOLD","g\u0061te":"GO"}', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
+                digest_contract_file(path)
+
+    def test_special_javascript_property_names_are_ordinary_json_keys(self):
+        source = '{"prototype":"HOLD","constructor":7,"__proto__":{"polluted":true}}'
+        expected = b'{"__proto__":{"polluted":true},"constructor":7,"prototype":"HOLD"}'
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "properties.json"
+            path.write_text(source, encoding="utf-8")
+            parsed = load_strict_json(path)
+            self.assertEqual(canonical_bytes(parsed), expected)
+            self.assertEqual(digest_contract_file(path), digest_contract(parsed))
+
+    def test_escaped_proto_alias_is_rejected_as_duplicate_member(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "proto-alias.json"
+            path.write_text('{"__proto__":1,"__pro' + chr(92) + 'u0074o__":2}',
+                            encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
                 digest_contract_file(path)
 
