@@ -207,7 +207,7 @@ class StrictContractJsonTests(unittest.TestCase):
             self.load_raw(document)
 
     def test_duplicate_null_escape_alias_key_rejected(self):
-        document = r'{"a\u0000b":"HOLD","a\u0000b":"GO"}'
+        document = r'{"a\u0000b":"HOLD","\u0061\u0000b":"GO"}'
         with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
             self.load_raw(document)
 
