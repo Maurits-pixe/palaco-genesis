@@ -32,3 +32,14 @@ All positive outcomes remain `pending-review`, with
 or automatic restoration.
 
 Test: `python3 -m unittest discover -s tests -p 'test_sampling_handoff_receipt_ledger.py' -v`.
+
+## Post-write integrity hardening (2026-11-23)
+
+After writing both tables inside the same `BEGIN IMMEDIATE` transaction,
+the ledger rescans the entire receipt chain and nonce index **before commit**.
+If the expected sequence, new head, nonce binding, or chain integrity is
+missing, the transaction is explicitly rolled back and the receipt is denied.
+Negative regression tests install SQLite triggers that delete inserted nonces
+or corrupt event hashes and verify no receipt rows survive. This detects
+some forms of in-transaction tampering; it does not make local SQLite
+storage tamper-proof or replace independently authenticated external pins.
