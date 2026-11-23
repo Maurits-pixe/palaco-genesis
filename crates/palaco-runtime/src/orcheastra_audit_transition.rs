@@ -434,8 +434,9 @@ mod tests {
     use super::{
         inspect_custodied_audit_transition, inspect_segment_signer_consistency,
         inspect_segment_snapshot_continuity, inspect_transition_evidence_budget,
-        inspect_transition_monotonicity, inspect_transition_signer_continuity,
-        inspect_transition_payload_integrity, inspect_transition_snapshot_link, AuditSegmentEvidence,
+        inspect_transition_monotonicity, inspect_transition_payload_integrity,
+        inspect_transition_signer_continuity, inspect_transition_snapshot_link,
+        AuditSegmentEvidence,
     };
     use crate::orcheastra_audit_chain::{
         audit_link_digest, AuditChainExpectation, AuditLink, MAX_AUDIT_LINKS,
