@@ -104,6 +104,8 @@ on:
       - 'tests/test_archive_sampling_evidence_ledger.py'
       - 'tools/signed_sampling_ledger_checkpoint.py'
       - 'tests/test_signed_sampling_ledger_checkpoint.py'
+      - 'tools/sampling_checkpoint_succession.py'
+      - 'tests/test_sampling_checkpoint_succession.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -209,6 +211,8 @@ on:
       - 'tests/test_archive_sampling_evidence_ledger.py'
       - 'tools/signed_sampling_ledger_checkpoint.py'
       - 'tests/test_signed_sampling_ledger_checkpoint.py'
+      - 'tools/sampling_checkpoint_succession.py'
+      - 'tests/test_sampling_checkpoint_succession.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
