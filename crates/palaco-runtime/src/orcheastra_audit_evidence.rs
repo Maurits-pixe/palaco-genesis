@@ -10,7 +10,7 @@ use crate::orcheastra_payload::{MAX_CHAIN_CHECKPOINTS, MAX_SNAPSHOT_BYTES};
 use crate::orcheastra_recovery::RecoveryFloor;
 use crate::orcheastra_restart::{RestartCheckpoint, RestartInspection};
 use crate::orcheastra_review_receipt::{revalidate_review_receipt, ReviewReceipt};
-use crate::orcheastra_signed_anchor::{Ed25519Verifier, SignedAnchor, TrustedKey};
+use crate::orcheastra_signed_anchor::{Ed25519Verifier, SignedAnchor, TrustedKey, MAX_KEY_ID_BYTES};
 
 /// Borrowed original evidence used for one audit receipt revalidation.
 ///
@@ -116,8 +116,9 @@ pub fn inspect_audit_evidence_lineage(evidence: &[RecoveryEvidence<'_>]) -> Rest
 /// Every original evidence bundle must reference the same key ID, public key,
 /// and authorized checkpoint interval. Key registry revisions may increase
 /// but cannot decrease; changes to key identity or validity window are denied
-/// pending an independently authenticated rotation policy. This is a local
-/// consistency gate, not proof of key provenance or genuine signatures.
+/// pending an independently authenticated rotation policy. Structurally
+/// invalid signatures or unsigned/unverified anchors are denied before receipt
+/// hashing. This is not proof of key provenance or genuine signatures.
 #[must_use]
 pub fn inspect_audit_evidence_signers(evidence: &[RecoveryEvidence<'_>]) -> RestartInspection {
     let Some(first) = evidence.first() else {
@@ -128,6 +129,7 @@ pub fn inspect_audit_evidence_signers(evidence: &[RecoveryEvidence<'_>]) -> Rest
     }
     let baseline = first.trusted_key;
     if baseline.key_id.is_empty()
+        || baseline.key_id.len() > MAX_KEY_ID_BYTES
         || baseline.public_key == [0; 32]
         || baseline.first_sequence == 0
         || baseline.first_sequence > baseline.last_sequence
@@ -146,6 +148,10 @@ pub fn inspect_audit_evidence_signers(evidence: &[RecoveryEvidence<'_>]) -> Rest
             || key.registry_sequence < last_registry
             || source.signed.key_id != key.key_id
             || source.signed.public_key != key.public_key
+            || source.signed.signature == [0; 64]
+            || !source.signed.anchor.externally_verified
+            || source.signed.anchor.snapshot_digest == [0; 32]
+            || source.signed.anchor.predecessor_digest == [0; 32]
             || source.signed.anchor.sequence < key.first_sequence
             || source.signed.anchor.sequence > key.last_sequence
         {
@@ -444,6 +450,70 @@ mod tests {
             inspect_audit_evidence(&links, &receipts, &evidence, Some(&expected), &verifier),
             RestartInspection::ReviewOnly
         );
+        let empty_signature = SignedAnchor {
+            signature: [0; 64],
+            ..signed.clone()
+        };
+        let invalid_signature = [RecoveryEvidence {
+            checkpoints: &checkpoints,
+            payloads,
+            signed: &empty_signature,
+            trusted_key: &trusted_key,
+            floor: &floor,
+        }];
+        assert_eq!(
+            inspect_audit_evidence_signers(&invalid_signature),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_audit_evidence(
+                &links,
+                &receipts,
+                &invalid_signature,
+                Some(&expected),
+                &verifier,
+            ),
+            RestartInspection::Deny
+        );
+        let unverified = SignedAnchor {
+            anchor: RestartAnchor {
+                externally_verified: false,
+                ..signed.anchor
+            },
+            ..signed.clone()
+        };
+        let unverified_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints,
+            payloads,
+            signed: &unverified,
+            trusted_key: &trusted_key,
+            floor: &floor,
+        }];
+        assert_eq!(
+            inspect_audit_evidence_signers(&unverified_evidence),
+            RestartInspection::Deny
+        );
+        let long_id = "x".repeat(crate::orcheastra_signed_anchor::MAX_KEY_ID_BYTES + 1);
+        let oversized_key = TrustedKey {
+            key_id: &long_id,
+            ..trusted_key.clone()
+        };
+        let oversized_signed = SignedAnchor {
+            key_id: &long_id,
+            ..signed.clone()
+        };
+        let oversized_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints,
+            payloads,
+            signed: &oversized_signed,
+            trusted_key: &oversized_key,
+            floor: &floor,
+        }];
+        assert_eq!(
+            inspect_audit_evidence_signers(&oversized_evidence),
+            RestartInspection::Deny
+        );
+
         assert_eq!(
             inspect_audit_evidence(&links, &receipts, &evidence, Some(&expected), &RejectAll),
             RestartInspection::Deny
