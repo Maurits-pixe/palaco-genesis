@@ -128,7 +128,8 @@ pub fn inspect_transition_snapshot_link(
 /// authenticated rotation policy is implemented. The key validity interval
 /// must also remain identical, so expanding, shrinking or shifting a key's
 /// allowed checkpoint window is denied until separately authenticated.
-/// Malformed signatures, verification flags, and anchors that do not exactly\n/// match their source's last checkpoint are denied.
+/// Malformed signatures, verification flags, and anchors that do not exactly
+/// match their source's last checkpoint are denied.
 /// Matching caller-provided keys are only a consistency check, not proof of
 /// key ownership or authenticity.
 #[must_use]
