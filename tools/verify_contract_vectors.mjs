@@ -100,6 +100,29 @@ assert.ok(canonicalBytes(nested).length > 0);
 nested = [nested];
 assert.throws(() => canonicalBytes(nested), /nesting depth/);
 
+// Additional independent edge checks. These intentionally do not rely on
+// Python-generated fixture hashes: the expected bytes are constructed here.
+const scalarSorted = { [String.fromCodePoint(0x1f680)]: 2, [String.fromCodePoint(0xe000)]: 1 };
+const sortedExpected = Buffer.concat([
+  Buffer.from('{"', 'utf8'), Buffer.from('ee8080', 'hex'),
+  Buffer.from('":1,"', 'utf8'), Buffer.from('f09f9a80', 'hex'),
+  Buffer.from('":2}', 'utf8'),
+]);
+assert.deepEqual(canonicalBytes(scalarSorted), sortedExpected,
+                 'astral keys must sort after U+E000 by Unicode code point');
+const astralText = { symbol: String.fromCodePoint(0x1f680) };
+assert.deepEqual(canonicalBytes(astralText),
+                 Buffer.from('7b2273796d626f6c223a22f09f9a80227d', 'hex'),
+                 'astral scalar must be UTF-8, not surrogate escape');
+const escapedAstral = JSON.parse('{"symbol":"' + String.fromCharCode(92) +
+                                 'ud83d' + String.fromCharCode(92) + 'ude80"}');
+assert.equal(digest(astralText), digest(escapedAstral),
+             'literal and escaped astral text must digest identically');
+const escapedControls = { control: String.fromCharCode(0, 10, 9) };
+assert.deepEqual(canonicalBytes(escapedControls),
+                 Buffer.from('7b22636f6e74726f6c223a225c75303030305c6e5c74227d', 'hex'),
+                 'NUL, newline and tab must use canonical JSON escapes');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
