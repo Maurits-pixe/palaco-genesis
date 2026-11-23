@@ -128,7 +128,7 @@ pub fn inspect_transition_snapshot_link(
 /// authenticated rotation policy is implemented. The key validity interval
 /// must also remain identical, so expanding, shrinking or shifting a key's
 /// allowed checkpoint window is denied until separately authenticated.
-/// Malformed signatures, anchor digests and verification flags are denied.
+/// Malformed signatures, verification flags, and anchors that do not exactly\n/// match their source's last checkpoint are denied.
 /// Matching caller-provided keys are only a consistency check, not proof of
 /// key ownership or authenticity.
 #[must_use]
@@ -139,6 +139,12 @@ pub fn inspect_transition_signer_continuity(
     let (Some(previous_source), Some(current_source)) =
         (previous.evidence.last(), current.evidence.first())
     else {
+        return RestartInspection::Deny;
+    };
+    let (Some(previous_last), Some(current_last)) = (
+        previous_source.checkpoints.last(),
+        current_source.checkpoints.last(),
+    ) else {
         return RestartInspection::Deny;
     };
     let previous_key = previous_source.trusted_key;
@@ -162,6 +168,12 @@ pub fn inspect_transition_signer_continuity(
         || current_source.signed.anchor.snapshot_digest == [0; 32]
         || previous_source.signed.anchor.predecessor_digest == [0; 32]
         || current_source.signed.anchor.predecessor_digest == [0; 32]
+        || previous_source.signed.anchor.sequence != previous_last.sequence
+        || previous_source.signed.anchor.snapshot_digest != previous_last.snapshot_digest
+        || previous_source.signed.anchor.predecessor_digest != previous_last.predecessor_digest
+        || current_source.signed.anchor.sequence != current_last.sequence
+        || current_source.signed.anchor.snapshot_digest != current_last.snapshot_digest
+        || current_source.signed.anchor.predecessor_digest != current_last.predecessor_digest
         || previous_key.first_sequence == 0
         || previous_key.first_sequence > previous_key.last_sequence
         || previous_key.first_sequence != current_key.first_sequence
@@ -181,7 +193,7 @@ pub fn inspect_transition_signer_continuity(
 /// Each receipt must have exactly one source evidence bundle. Every bundle
 /// must use the same key identity and validity window as the first, and each
 /// signed anchor must be bound to that key. Registry revisions may advance,
-/// but never roll back. Malformed signatures and anchor fields are rejected.
+/// but never roll back. Every anchor must match its final checkpoint exactly.
 /// This is not key or signature authentication.
 #[must_use]
 pub fn inspect_segment_signer_consistency(segment: &AuditSegmentEvidence<'_>) -> RestartInspection {
@@ -203,6 +215,9 @@ pub fn inspect_segment_signer_consistency(segment: &AuditSegmentEvidence<'_>) ->
 
     let mut prior_registry_sequence = 0;
     for source in segment.evidence {
+        let Some(last_checkpoint) = source.checkpoints.last() else {
+            return RestartInspection::Deny;
+        };
         let key = source.trusted_key;
         if key.revoked
             || key.key_id != baseline.key_id
@@ -217,6 +232,9 @@ pub fn inspect_segment_signer_consistency(segment: &AuditSegmentEvidence<'_>) ->
             || !source.signed.anchor.externally_verified
             || source.signed.anchor.snapshot_digest == [0; 32]
             || source.signed.anchor.predecessor_digest == [0; 32]
+            || source.signed.anchor.sequence != last_checkpoint.sequence
+            || source.signed.anchor.snapshot_digest != last_checkpoint.snapshot_digest
+            || source.signed.anchor.predecessor_digest != last_checkpoint.predecessor_digest
             || source.signed.anchor.sequence < key.first_sequence
             || source.signed.anchor.sequence > key.last_sequence
         {
@@ -1527,6 +1545,111 @@ mod tests {
         assert_eq!(
             inspect_transition_signer_continuity(&previous, &oversized_segment),
             RestartInspection::Deny
+        );
+        // Independently callable signer checks must bind anchors to the final
+        // source checkpoint even before full payload or signature validation.
+        let wrong_current_anchor = SignedAnchor {
+            anchor: RestartAnchor {
+                sequence: 7,
+                ..signed_current.anchor
+            },
+            ..signed_current.clone()
+        };
+        let wrong_current_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_current,
+            payloads: payloads_current,
+            signed: &wrong_current_anchor,
+            trusted_key: &key,
+            floor: &floor_current,
+        }];
+        let wrong_current_segment = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &wrong_current_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_segment_signer_consistency(&wrong_current_segment),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &wrong_current_segment),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_custodied_audit_transition(
+                &previous,
+                &wrong_current_segment,
+                Some(&never_called),
+                &verifier,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(never_called.0.get(), 0);
+
+        let wrong_previous_anchor = SignedAnchor {
+            anchor: RestartAnchor {
+                predecessor_digest: [3; 32],
+                ..signed_previous.anchor
+            },
+            ..signed_previous.clone()
+        };
+        let wrong_previous_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_previous,
+            payloads: payloads_previous,
+            signed: &wrong_previous_anchor,
+            trusted_key: &key,
+            floor: &floor_previous,
+        }];
+        let wrong_previous_segment = AuditSegmentEvidence {
+            links: &links_previous,
+            receipts: &receipts_previous,
+            evidence: &wrong_previous_evidence,
+            expected: &expected_previous,
+        };
+        assert_eq!(
+            inspect_segment_signer_consistency(&wrong_previous_segment),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_transition_signer_continuity(&wrong_previous_segment, &current),
+            RestartInspection::Deny
+        );
+        let wrong_snapshot_anchor = SignedAnchor {
+            anchor: RestartAnchor {
+                snapshot_digest: [3; 32],
+                ..signed_current.anchor
+            },
+            ..signed_current.clone()
+        };
+        let wrong_snapshot_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_current,
+            payloads: payloads_current,
+            signed: &wrong_snapshot_anchor,
+            trusted_key: &key,
+            floor: &floor_current,
+        }];
+        let wrong_snapshot_segment = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &wrong_snapshot_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_segment_signer_consistency(&wrong_snapshot_segment),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &wrong_snapshot_segment),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_segment_signer_consistency(&current),
+            RestartInspection::ReviewOnly
+        );
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &current),
+            RestartInspection::ReviewOnly
         );
         // Direct monotonicity review must reject impossible or zero counters.
         let missing_current_registry = [ReviewReceipt {
