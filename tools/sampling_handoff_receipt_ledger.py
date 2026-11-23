@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+"""Local atomic registry of signed sampling-succession handoff receipts.
+
+The only accepted disposition is received-for-independent-review.
+This SQLite store and local hash chain are NOT immutable or remote.
+A previously authenticated head/count pin is required for every append
+and read-only inspection. No authority or receipt issuance occurs.
+"""
+import hashlib
+import importlib.util
+import json
+import sqlite3
+from pathlib import Path
+
+_spec=importlib.util.spec_from_file_location(
+    "palaco_handoff_receipt_ledger_verifier",
+    Path(__file__).with_name("sampling_succession_evidence_handoff.py"))
+handoff=importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(handoff)
+
+DOMAIN=b"PALACO-SAMPLING-HANDOFF-RECEIPT-LEDGER-V1\x00"
+RECEIPT_DOMAIN=b"PALACO-SAMPLING-HANDOFF-RECEIPT-EVIDENCE-V1\x00"
+GENESIS="0"*64
+MAX_RECORDS=10000
+TRUST_KEYS={
+    "source_db","witness_roots","witness_organizations","revoked_witnesses",
+    "required_organizations","trusted_genesis","trusted_head",
+    "minimum_revision","trusted_ledger_head","minimum_ledger_batches",
+    "expected_recipient","expected_package_hash","expected_nonce",
+    "used_nonces","recipient_roots","allowed_recipients","revoked_recipients"
+}
+
+
+def _out(**values):
+    return {"release_gate":"HOLD","authorization_granted":False,
+            "automatic_restore":False,"recovery_approved":False,
+            "state":"quarantined",**values}
+
+
+def _digest(number,recipient,recipient_key,package_hash,nonce,
+            receipt_hash,previous):
+    raw=json.dumps([number,recipient,recipient_key,package_hash,nonce,
+                    receipt_hash,previous],separators=(",",":"),
+                   ensure_ascii=False,allow_nan=False).encode("utf-8")
+    return hashlib.sha256(DOMAIN+raw).hexdigest()
+
+
+def _path(db):
+    if not isinstance(db,(str,Path)) or str(db)==":memory:":
+        raise ValueError("persistent-handoff-receipt-ledger-required")
+    path=Path(db)
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise ValueError("invalid-handoff-receipt-ledger-target")
+    return path
+
+
+def _schema(conn):
+    conn.execute("""CREATE TABLE IF NOT EXISTS sampling_handoff_receipts(
+        sequence INTEGER PRIMARY KEY CHECK(sequence>0),
+        recipient_id TEXT NOT NULL,
+        recipient_key_id TEXT NOT NULL,
+        package_sha256 TEXT NOT NULL,
+        nonce_hex TEXT NOT NULL,
+        receipt_sha256 TEXT NOT NULL,
+        previous_hash TEXT NOT NULL,
+        event_hash TEXT NOT NULL,
+        UNIQUE(recipient_key_id,package_sha256))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS sampling_handoff_nonces(
+        nonce_hex TEXT PRIMARY KEY,
+        receipt_sequence INTEGER NOT NULL UNIQUE,
+        FOREIGN KEY(receipt_sequence) REFERENCES sampling_handoff_receipts(sequence))""")
+
+
+def _scan(conn):
+    rows=conn.execute("""SELECT sequence,recipient_id,recipient_key_id,
+         package_sha256,nonce_hex,receipt_sha256,previous_hash,event_hash
+         FROM sampling_handoff_receipts ORDER BY sequence LIMIT ?""",
+         (MAX_RECORDS+1,)).fetchall()
+    if len(rows)>MAX_RECORDS:return None
+    pins=conn.execute("""SELECT nonce_hex,receipt_sequence
+         FROM sampling_handoff_nonces""").fetchall()
+    preceding=GENESIS
+    expected=set()
+    recipients=set()
+    for number,row in enumerate(rows,1):
+        seq,recipient,key,package,nonce,receipt_hash,prior,digest=row
+        if (type(seq) is not int or seq!=number
+            or not isinstance(recipient,str) or not handoff.IDENT.fullmatch(recipient)
+            or any(not isinstance(x,str) or not handoff.HEX.fullmatch(x)
+                   for x in (key,package,nonce,receipt_hash,prior,digest))
+            or prior!=preceding or
+            digest!=_digest(seq,recipient,key,package,nonce,receipt_hash,prior)):
+            return None
+        expected.add((nonce,seq))
+        recipients.add((key,package))
+        preceding=digest
+    if len(expected)!=len(rows) or len(recipients)!=len(rows) or set(pins)!=expected:
+        return None
+    return {"receipts":len(rows),"head_hash":preceding,
+            "used_nonces":{item[0] for item in expected}}
+
+
+def register(db,package,receipt,trust,expected_previous_head,
+             minimum_existing_receipts):
+    def deny(reason):return _out(recorded=False,reason=reason)
+    if (not isinstance(expected_previous_head,str)
+        or not handoff.HEX.fullmatch(expected_previous_head)
+        or type(minimum_existing_receipts) is not int
+        or not 0<=minimum_existing_receipts<=MAX_RECORDS):
+        return deny("missing-independent-handoff-ledger-pin")
+    if not isinstance(trust,dict) or set(trust)!=TRUST_KEYS:
+        return deny("invalid-handoff-ledger-verification-policy")
+    try: path=_path(db)
+    except ValueError as exc:return deny(str(exc))
+    try:
+        with sqlite3.connect(path,timeout=5) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            _schema(conn)
+            state=_scan(conn)
+            if state is None:
+                return deny("handoff-receipt-ledger-integrity-failed")
+            if state["receipts"]<minimum_existing_receipts:
+                return deny("handoff-receipt-ledger-rollback")
+            if state["head_hash"]!=expected_previous_head:
+                return deny("handoff-receipt-ledger-head-mismatch")
+            if state["receipts"]>=MAX_RECORDS:
+                return deny("handoff-receipt-ledger-full")
+            nonce=trust["expected_nonce"]
+            if not isinstance(nonce,str) or not handoff.HEX.fullmatch(nonce):
+                return deny("invalid-handoff-nonce")
+            if nonce in state["used_nonces"]:
+                return deny("handoff-receipt-nonce-replayed")
+            if not isinstance(trust["used_nonces"],(set,frozenset)):
+                return deny("missing-independent-handoff-nonce-policy")
+            checked=handoff.verify_receipt(
+                db=trust["source_db"],
+                package=package,receipt=receipt,
+                **{key:value for key,value in trust.items() if key!="source_db"})
+            if not checked["receipt_valid"]:
+                return deny(checked["reason"])
+            key=checked["recipient_key_id"]
+            digest=checked["package_sha256"]
+            recipient=trust["expected_recipient"]
+            nonce=checked["receipt_nonce_hex"]
+            evidence=hashlib.sha256(
+                RECEIPT_DOMAIN+handoff.canonical(receipt)).hexdigest()
+            number=state["receipts"]+1
+            event=_digest(number,recipient,key,digest,nonce,evidence,state["head_hash"])
+            try:
+                conn.execute("INSERT INTO sampling_handoff_receipts VALUES(?,?,?,?,?,?,?,?)",
+                             (number,recipient,key,digest,nonce,evidence,state["head_hash"],event))
+                conn.execute("INSERT INTO sampling_handoff_nonces VALUES(?,?)",
+                             (nonce,number))
+            except sqlite3.IntegrityError:
+                return deny("duplicate-handoff-package-or-nonce")
+    except (sqlite3.Error,TypeError,ValueError,OverflowError,OSError):
+        return deny("handoff-receipt-ledger-transaction-failed")
+    return _out(recorded=True,state="pending-review",
+                reason="locally-indexed-handoff-receipt-no-storage-authority",
+                receipts=number,head_hash=event,
+                receipt_sha256=evidence)
+
+
+def inspect(db,expected_head,minimum_receipts):
+    def deny(reason):return _out(ledger_valid=False,reason=reason)
+    if (not isinstance(expected_head,str) or not handoff.HEX.fullmatch(expected_head)
+        or type(minimum_receipts) is not int
+        or not 1<=minimum_receipts<=MAX_RECORDS):
+        return deny("missing-independent-handoff-ledger-pin")
+    try:path=_path(db)
+    except ValueError as exc:return deny(str(exc))
+    if not path.is_file():return deny("missing-handoff-receipt-ledger")
+    try:
+        conn=sqlite3.connect(path.resolve().as_uri()+"?mode=ro",uri=True)
+        try:
+            conn.execute("BEGIN")
+            state=_scan(conn)
+            conn.commit()
+        finally:
+            conn.close()
+    except (sqlite3.Error,ValueError,TypeError,OSError):
+        return deny("unreadable-handoff-receipt-ledger")
+    if state is None:return deny("handoff-receipt-ledger-integrity-failed")
+    if state["receipts"]<minimum_receipts:return deny("handoff-receipt-ledger-rollback")
+    if state["head_hash"]!=expected_head:return deny("handoff-receipt-ledger-head-mismatch")
+    return _out(ledger_valid=True,state="pending-review",
+                reason="locally-verified-handoff-receipts-against-external-pin",
+                receipts=state["receipts"],head_hash=state["head_hash"])
