@@ -90,6 +90,8 @@ on:
       - 'tests/test_delegation_evidence_handoff.py'
       - 'tools/delegation_receipt_audit_chain.py'
       - 'tests/test_delegation_receipt_audit_chain.py'
+      - 'tools/signed_delegation_receipt_audit_anchor.py'
+      - 'tests/test_signed_delegation_receipt_audit_anchor.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -181,6 +183,8 @@ on:
       - 'tests/test_delegation_evidence_handoff.py'
       - 'tools/delegation_receipt_audit_chain.py'
       - 'tests/test_delegation_receipt_audit_chain.py'
+      - 'tools/signed_delegation_receipt_audit_anchor.py'
+      - 'tests/test_signed_delegation_receipt_audit_anchor.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
