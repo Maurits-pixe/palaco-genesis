@@ -123,6 +123,27 @@ assert.deepEqual(canonicalBytes(escapedControls),
                  Buffer.from('7b22636f6e74726f6c223a225c75303030305c6e5c74227d', 'hex'),
                  'NUL, newline and tab must use canonical JSON escapes');
 
+// JavaScript-reserved-looking member names must stay ordinary JSON data.
+// JSON.parse creates an own "__proto__" property; object literal shorthand
+// would have different semantics and is deliberately not used here.
+const specialKeys = JSON.parse(
+  '{"prototype":"HOLD","constructor":7,"__proto__":{"polluted":true}}'
+);
+const specialExpected = Buffer.from(
+  '{"__proto__":{"polluted":true},"constructor":7,"prototype":"HOLD"}', 'utf8'
+);
+assert.ok(Object.hasOwn(specialKeys, '__proto__'));
+assert.ok(Object.hasOwn(specialKeys, 'constructor'));
+assert.equal(Object.getPrototypeOf(specialKeys), Object.prototype);
+assert.equal(({}).polluted, undefined, 'no global prototype pollution');
+assert.deepEqual(canonicalBytes(specialKeys), specialExpected,
+                 'special names remain sorted JSON members');
+assert.equal(digest(specialKeys), createHash('sha256')
+  .update(DOMAIN)
+  .update(Buffer.from('0000000000000042', 'hex'))
+  .update(specialExpected).digest('hex'),
+  'special names must use ordinary domain-framed digest');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
