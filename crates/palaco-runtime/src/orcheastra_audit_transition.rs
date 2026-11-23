@@ -35,7 +35,8 @@ pub struct AuditSegmentEvidence<'a> {
 /// Each segment's own integrity validation is handled separately. This gate
 /// compares the final verified receipt and evidence of the preceding segment
 /// with the initial receipt and evidence of the next segment. No counter may
-/// decrease, and a checkpoint sequence must strictly advance.
+/// decrease, and a checkpoint sequence must strictly advance. Both sides must
+/// also carry nonzero, feasible floors and receipt-to-registry counters.
 #[must_use]
 pub fn inspect_transition_monotonicity(
     previous: &AuditSegmentEvidence<'_>,
@@ -59,14 +60,24 @@ pub fn inspect_transition_monotonicity(
     if previous_receipt.checkpoint_sequence == 0
         || current_receipt.checkpoint_sequence <= previous_receipt.checkpoint_sequence
         || previous_receipt.registry_sequence == 0
+        || current_receipt.registry_sequence == 0
         || current_receipt.registry_sequence < previous_receipt.registry_sequence
         || previous_source.floor.checkpoint_sequence == 0
+        || current_source.floor.checkpoint_sequence == 0
         || current_source.floor.checkpoint_sequence < previous_source.floor.checkpoint_sequence
         || previous_source.floor.registry_sequence == 0
+        || current_source.floor.registry_sequence == 0
         || current_source.floor.registry_sequence < previous_source.floor.registry_sequence
         || previous_source.trusted_key.registry_sequence == 0
+        || current_source.trusted_key.registry_sequence == 0
         || current_source.trusted_key.registry_sequence
             < previous_source.trusted_key.registry_sequence
+        || previous_source.floor.checkpoint_sequence > previous_receipt.checkpoint_sequence
+        || current_source.floor.checkpoint_sequence > current_receipt.checkpoint_sequence
+        || previous_source.floor.registry_sequence > previous_source.trusted_key.registry_sequence
+        || current_source.floor.registry_sequence > current_source.trusted_key.registry_sequence
+        || previous_receipt.registry_sequence != previous_source.trusted_key.registry_sequence
+        || current_receipt.registry_sequence != current_source.trusted_key.registry_sequence
     {
         return RestartInspection::Deny;
     }
@@ -1416,6 +1427,81 @@ mod tests {
         assert_eq!(
             inspect_transition_signer_continuity(&previous, &oversized_segment),
             RestartInspection::Deny
+        );
+        // Direct monotonicity review must reject impossible or zero counters.
+        let missing_current_registry = [ReviewReceipt {
+            registry_sequence: 0,
+            ..receipts_current[0]
+        }];
+        let missing_registry_segment = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &missing_current_registry,
+            evidence: &evidence_current,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_monotonicity(&previous, &missing_registry_segment),
+            RestartInspection::Deny
+        );
+        let impossible_current_floor = RecoveryFloor {
+            checkpoint_sequence: 9,
+            registry_sequence: 3,
+        };
+        let impossible_floor_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_current,
+            payloads: payloads_current,
+            signed: &signed_current,
+            trusted_key: &key,
+            floor: &impossible_current_floor,
+        }];
+        let impossible_floor_segment = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &impossible_floor_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_monotonicity(&previous, &impossible_floor_segment),
+            RestartInspection::Deny
+        );
+        let future_registry_floor = RecoveryFloor {
+            checkpoint_sequence: 8,
+            registry_sequence: 4,
+        };
+        let future_registry_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_current,
+            payloads: payloads_current,
+            signed: &signed_current,
+            trusted_key: &key,
+            floor: &future_registry_floor,
+        }];
+        let future_registry_segment = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &future_registry_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_monotonicity(&previous, &future_registry_segment),
+            RestartInspection::Deny
+        );
+        let inconsistent_receipt = [ReviewReceipt {
+            registry_sequence: 4,
+            ..receipts_current[0]
+        }];
+        let inconsistent_registry_segment = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &inconsistent_receipt,
+            evidence: &evidence_current,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_monotonicity(&previous, &inconsistent_registry_segment),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_transition_monotonicity(&previous, &current),
+            RestartInspection::ReviewOnly
         );
         let witness = TestWitness([expected_previous, expected_current]);
         assert_eq!(
