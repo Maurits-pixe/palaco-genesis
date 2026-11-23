@@ -78,7 +78,7 @@ class WindowsNativeIntakeTests(unittest.TestCase):
             self.inspect(probe="pretend-trusted")
 
     def test_zero_response_still_hold(self):
-        p = replace(self.probe(), response_digest=b"\\x00"*32)
+        p = replace(self.probe(), response_digest=bytes(32))
         d = self.inspect(probe=p)
         self.assertFalse(d["response_digest_present"])
         self.assertEqual(d["decision"], "HOLD")
