@@ -104,7 +104,7 @@ class ContractDigestTests(unittest.TestCase):
 
     def test_control_characters_canonicalize_as_json_escapes(self):
         value = {"control": chr(0) + chr(10) + chr(9)}
-        expected = b'{"control":"' + bytes.fromhex("5c7530303030") + b'\\\\n\\\\t"}'
+        expected = b'{"control":"' + bytes.fromhex("5c75303030305c6e5c74") + b'"}'
         self.assertEqual(canonical_bytes(value), expected)
 
     def test_escaped_and_literal_astral_json_have_same_digest(self):
