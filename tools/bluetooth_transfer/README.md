@@ -1,6 +1,14 @@
-# PALACO Bluetooth Offline Transfer — v4.5 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v4.6 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v4.6 Windows IPC inspection-only framing
+
+- `windows_native_ipc_contract.py`: bounded (1024-byte maximum), canonical ASCII JSON inspection request with strict field set, 32-byte namespace, device binding and challenge, and positive generation.
+- Rejects duplicate/unknown fields, unsupported operations, invalid identifiers, oversized frames and noncanonical serialization.
+- `test_windows_native_ipc_contract.py`: 20 negative/roundtrip regressions wired into Bluetooth CI.
+- This is **not a named-pipe server**, secure channel, caller identity verification, TPM attestation or replay defense. It processes no secrets and grants no authority. Freshness, IPC authentication, authorization, hardware custody and rollback proof remain independent native-service duties.
+- **GO-13 HOLD / authorization DENY**; no merge, deployment, imports or automatic recovery.
 
 ## v4.5 Windows diagnostic intake boundary
 
