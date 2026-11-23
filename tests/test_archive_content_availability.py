@@ -95,7 +95,7 @@ class ArchiveContentAvailabilityTests(unittest.TestCase):
         self.assertEqual(self.check(response=r)["reason"],"content-response-challenge-mismatch")
 
     def test_wrong_chunk_content_signed(self):
-        self.assertEqual(self.check(response=self.answer(self.challenge,b"xx"))["reason"],
+        self.assertEqual(self.check(response=self.answer(self.challenge,b"x"))["reason"],
                          "content-chunk-length-mismatch")
 
     def test_wrong_chunk_hash_signed(self):
