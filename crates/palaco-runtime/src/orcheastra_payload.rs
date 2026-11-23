@@ -71,11 +71,39 @@ pub fn inspect_restart_payload(
 
 /// Maximum chain length accepted in a single bounded inspection.
 pub const MAX_CHAIN_CHECKPOINTS: usize = 256;
+/// Maximum cumulative snapshot bytes accepted by one recovery chain (8 MiB).
+pub const MAX_CHAIN_PAYLOAD_BYTES: usize = 8 * MAX_SNAPSHOT_BYTES;
+
+/// Validates cumulative snapshot input size before any payload hashing.
+///
+/// Repeated references count separately because each occurrence is processed
+/// again. This is per-call work budgeting, not a global rate limit.
+#[must_use]
+pub fn inspect_chain_payload_budget(payloads: &[&[u8]]) -> RestartInspection {
+    if payloads.is_empty() || payloads.len() > MAX_CHAIN_CHECKPOINTS {
+        return RestartInspection::Deny;
+    }
+    let mut total_bytes = 0usize;
+    for payload in payloads {
+        if payload.len() > MAX_SNAPSHOT_BYTES {
+            return RestartInspection::Deny;
+        }
+        let Some(next) = total_bytes.checked_add(payload.len()) else {
+            return RestartInspection::Deny;
+        };
+        if next > MAX_CHAIN_PAYLOAD_BYTES {
+            return RestartInspection::Deny;
+        }
+        total_bytes = next;
+    }
+    RestartInspection::ReviewOnly
+}
 
 /// Checks the actual snapshot bytes of every checkpoint in an in-memory chain.
 ///
 /// Requires exactly one payload per checkpoint, rejects empty or oversized
-/// chains and validates each SHA-256 digest against its payload and context.
+/// chains, enforces the aggregate eight-MiB work budget, and validates each
+/// SHA-256 digest against its payload and context.
 /// The initial predecessor and the caller-provided anchor still require
 /// independent authentication outside this module. This never authorizes work.
 #[must_use]
@@ -87,6 +115,7 @@ pub fn inspect_restart_chain_payloads(
     if checkpoints.is_empty()
         || checkpoints.len() > MAX_CHAIN_CHECKPOINTS
         || checkpoints.len() != payloads.len()
+        || inspect_chain_payload_budget(payloads) != RestartInspection::ReviewOnly
         || inspect_restart_chain(checkpoints, anchor) != RestartInspection::ReviewOnly
     {
         return RestartInspection::Deny;
@@ -110,8 +139,8 @@ pub fn inspect_restart_chain_payloads(
 #[cfg(test)]
 mod tests {
     use super::{
-        digest_snapshot, inspect_restart_chain_payloads, inspect_restart_payload,
-        MAX_CHAIN_CHECKPOINTS, MAX_SNAPSHOT_BYTES,
+        digest_snapshot, inspect_chain_payload_budget, inspect_restart_chain_payloads,
+        inspect_restart_payload, MAX_CHAIN_CHECKPOINTS, MAX_CHAIN_PAYLOAD_BYTES, MAX_SNAPSHOT_BYTES,
     };
     use crate::orcheastra_restart::{RestartAnchor, RestartCheckpoint, RestartInspection};
 
@@ -267,6 +296,29 @@ mod tests {
         let payloads = vec![b"first".as_slice(); MAX_CHAIN_CHECKPOINTS + 1];
         assert_eq!(
             inspect_restart_chain_payloads(&repeated, &payloads, Some(&anchor)),
+            RestartInspection::Deny
+        );
+    }
+
+    #[test]
+    fn aggregate_payload_limit_rejects_repeated_buffers_before_hashing() {
+        let snapshot = vec![6u8; MAX_SNAPSHOT_BYTES];
+        let under_limit = vec![snapshot.as_slice(); 8];
+        assert_eq!(
+            inspect_chain_payload_budget(&under_limit),
+            RestartInspection::ReviewOnly
+        );
+        assert_eq!(under_limit.iter().map(|part| part.len()).sum::<usize>(), MAX_CHAIN_PAYLOAD_BYTES);
+
+        let over_limit = vec![snapshot.as_slice(); 9];
+        assert_eq!(
+            inspect_chain_payload_budget(&over_limit),
+            RestartInspection::Deny
+        );
+        let (checkpoints, anchor) = chain_fixture();
+        let repeated = vec![checkpoints[0]; 9];
+        assert_eq!(
+            inspect_restart_chain_payloads(&repeated, &over_limit, Some(&anchor)),
             RestartInspection::Deny
         );
     }
