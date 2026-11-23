@@ -53,18 +53,32 @@ function encode(value, depth = 0) {
   }
   if (Array.isArray(value)) {
     if (depth >= MAX_DEPTH) throw new Error('JSON nesting depth exceeds limit');
-    // Array.map skips holes; joining its output would silently emit invalid
-    // JSON such as "[,1]". JSON arrays must contain explicit values.
+    // Array.map skips holes; JSON stringification also loses extra names
+    // and symbol properties. Demand only explicit, enumerable data slots.
+    const own = Reflect.ownKeys(value).filter((key) => key !== 'length');
+    if (own.length !== value.length) {
+      throw new Error('sparse array or unsupported array property');
+    }
     for (let i = 0; i < value.length; i += 1) {
-      if (!Object.hasOwn(value, i)) {
-        throw new Error('sparse array entry is not a JSON value');
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(i));
+      if (!descriptor) throw new Error('sparse array entry is not a JSON value');
+      if (!Object.hasOwn(descriptor, 'value') || !descriptor.enumerable) {
+        throw new Error('array accessor or hidden property is not JSON data');
       }
     }
     return '[' + value.map((entry) => encode(entry, depth + 1)).join(',') + ']';
   }
   if (typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
     if (depth >= MAX_DEPTH) throw new Error('JSON nesting depth exceeds limit');
-    return '{' + Object.keys(value).sort(compareCodepoints).map((key) => {
+    const keys = Reflect.ownKeys(value);
+    for (const key of keys) {
+      if (typeof key !== 'string') throw new Error('symbol object key is not JSON data');
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !Object.hasOwn(descriptor, 'value') || !descriptor.enumerable) {
+        throw new Error('object accessor or hidden property is not JSON data');
+      }
+    }
+    return '{' + keys.sort(compareCodepoints).map((key) => {
       assertValidString(key);
       return JSON.stringify(key) + ':' + encode(value[key], depth + 1);
     }).join(',') + '}';
@@ -212,6 +226,36 @@ assert.deepEqual(canonicalBytes([null, 1]), Buffer.from('[null,1]', 'utf8'),
                  'an explicit null slot is valid JSON');
 assert.deepEqual(canonicalBytes([0, 1, 2]), Buffer.from('[0,1,2]', 'utf8'),
                  'fully populated arrays remain valid');
+
+// Reject JavaScript-only object shapes rather than silently dropping state
+// or executing getter functions while computing integrity digests.
+const symbolObject = { gate: 'HOLD' };
+symbolObject[Symbol('secret')] = 'GO';
+assert.throws(() => canonicalBytes(symbolObject), /symbol object key/,
+              'symbol-named data must not disappear from the digest');
+const getterObject = {};
+Object.defineProperty(getterObject, 'gate', {
+  enumerable: true, get() { throw new Error('getter must not run'); },
+});
+assert.throws(() => canonicalBytes(getterObject), /object accessor/,
+              'object getters must not run during canonicalization');
+const hiddenObject = {};
+Object.defineProperty(hiddenObject, 'hidden', { value: 1, enumerable: false });
+assert.throws(() => canonicalBytes(hiddenObject), /hidden property/,
+              'hidden named fields must not be silently ignored');
+const extraArray = [0, 1];
+extraArray.description = 'HOLD';
+assert.throws(() => canonicalBytes(extraArray), /unsupported array property/,
+              'extra array properties must not be silently ignored');
+const getterArray = [0];
+Object.defineProperty(getterArray, '0', {
+  enumerable: true, get() { throw new Error('array getter must not run'); },
+});
+assert.throws(() => canonicalBytes(getterArray), /array accessor/,
+              'array getters must not run during canonicalization');
+assert.deepEqual(canonicalBytes({ gate: 'HOLD', count: 1 }),
+                 Buffer.from('{"count":1,"gate":"HOLD"}', 'utf8'),
+                 'ordinary JSON objects remain valid');
 
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
