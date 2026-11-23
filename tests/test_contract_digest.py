@@ -1,4 +1,5 @@
 """Tests for the review-only PALACO-CJSON-v0 digest convention."""
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -53,6 +54,41 @@ class ContractDigestTests(unittest.TestCase):
 
     def test_compact_canonical_encoding(self):
         self.assertEqual(canonical_bytes({"b": 2, "a": 1}), b'{"a":1,"b":2}')
+
+    def test_digest_uses_domain_separator_and_eight_byte_length(self):
+        payload = b'{"gate":"HOLD"}'
+        expected = hashlib.sha256(
+            b"PALACO-CJSON-v0\\x00"
+            + len(payload).to_bytes(8, "big")
+            + payload
+        ).hexdigest()
+        self.assertEqual(digest_contract({"gate": "HOLD"}), expected)
+
+    def test_digest_differs_from_unframed_sha256(self):
+        payload = canonical_bytes({"gate": "HOLD"})
+        self.assertNotEqual(digest_contract({"gate": "HOLD"}),
+                            hashlib.sha256(payload).hexdigest())
+        self.assertNotEqual(
+            digest_contract({"gate": "HOLD"}),
+            hashlib.sha256(b"PALACO-CJSON-v0\\x00" + payload).hexdigest(),
+        )
+
+    def test_file_digest_ignores_whitespace_and_member_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "candidate.json"
+            path.write_text('  {"b":2, "a":{"y":true,"x":null}}\\n', encoding="utf-8")
+            first = digest_contract_file(path)
+            path.write_text('{"a":{"x":null,"y":true},"b":2}', encoding="utf-8")
+            self.assertEqual(first, digest_contract_file(path))
+            self.assertEqual(first, digest_contract({"a":{"x":None,"y":True},"b":2}))
+
+    def test_file_digest_detects_semantic_value_change(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "candidate.json"
+            path.write_text('{"release_gate":"HOLD"}', encoding="utf-8")
+            baseline = digest_contract_file(path)
+            path.write_text('{"release_gate":"DENY"}', encoding="utf-8")
+            self.assertNotEqual(baseline, digest_contract_file(path))
 
     def test_changes_change_digest(self):
         self.assertNotEqual(digest_contract({"release_gate": "HOLD"}),
