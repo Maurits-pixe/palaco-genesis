@@ -21,6 +21,11 @@ _spec = importlib.util.spec_from_file_location(
     Path(__file__).with_name("delegation_history_witness_checkpoint.py"))
 witness = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(witness)
+_audit_spec = importlib.util.spec_from_file_location(
+    "palaco_delegation_receipt_audit",
+    Path(__file__).with_name("delegation_receipt_audit_chain.py"))
+audit = importlib.util.module_from_spec(_audit_spec)
+_audit_spec.loader.exec_module(audit)
 
 DOMAIN = b"PALACO-DELEGATION-EVIDENCE-HANDOFF-V1\x00"
 RECEIPT_DOMAIN = b"PALACO-DELEGATION-EVIDENCE-RECEIPT-V1\x00"
@@ -224,10 +229,13 @@ def register_receipt(db, history_inputs, status_records, package, receipt,
             return _result(recorded=False, reason="receipt-replay" if existing[0] == stamp
                            else "receipt-id-conflict")
         try:
+            event = audit.append(conn, rid, key, expected_recipient,
+                                 expected_package_hash, stamp)
             conn.execute("INSERT INTO delegation_handoff_receipts VALUES(?,?,?,?,?)",
                          (rid, key, expected_recipient, expected_package_hash, stamp))
         except sqlite3.IntegrityError:
             conn.rollback()
             return _result(recorded=False, reason="duplicate-package-receipt")
     return _result(recorded=True, state="pending-review",
-                   reason="local-receipt-indexed-no-authority")
+                   reason="local-receipt-indexed-no-authority",
+                   entries=event["entries"], head_hash=event["head_hash"])
