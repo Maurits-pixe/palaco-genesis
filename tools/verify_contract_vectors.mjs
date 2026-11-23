@@ -144,6 +144,23 @@ assert.equal(digest(specialKeys), createHash('sha256')
   .update(specialExpected).digest('hex'),
   'special names must use ordinary domain-framed digest');
 
+// Frame length is the number of canonical UTF-8 bytes, not JavaScript
+// UTF-16 code units or Unicode scalar values (the astral emoji differs).
+const multibyteValue = { symbol: String.fromCodePoint(0x1f680) };
+const multibytePayload = canonicalBytes(multibyteValue);
+assert.equal(multibytePayload.length, 17, 'canonical UTF-8 byte length');
+assert.equal(multibytePayload.toString('utf8').length, 14,
+             'UTF-16 string length must not be used for SHA-256 framing');
+const multibyteFrame = Buffer.from('0000000000000011', 'hex');
+const manuallyFramedDigest = createHash('sha256')
+  .update(DOMAIN).update(multibyteFrame).update(multibytePayload).digest('hex');
+assert.equal(digest(multibyteValue), manuallyFramedDigest,
+             'digest must use eight-byte big-endian UTF-8 byte length');
+const incorrectCodeUnitFrame = Buffer.from('000000000000000e', 'hex');
+assert.notEqual(digest(multibyteValue), createHash('sha256')
+  .update(DOMAIN).update(incorrectCodeUnitFrame).update(multibytePayload).digest('hex'),
+  'UTF-16 code-unit length must not be treated as byte length');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
