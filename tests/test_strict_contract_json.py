@@ -292,7 +292,7 @@ class StrictContractJsonTests(unittest.TestCase):
             '{"count":1.}',
             '{"count":.5}',
             '{"count":0x10}',
-            '{"value":"\\\\x41"}',
+            r'{"value":"\x41"}',
         )
         for candidate in candidates:
             with self.subTest(candidate=candidate):
