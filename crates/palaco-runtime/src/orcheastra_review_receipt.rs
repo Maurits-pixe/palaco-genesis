@@ -8,7 +8,9 @@ use sha2::{Digest, Sha256};
 use crate::orcheastra_payload::inspect_chain_payload_budget;
 use crate::orcheastra_recovery::{inspect_recovery, RecoveryFloor};
 use crate::orcheastra_restart::{RestartCheckpoint, RestartInspection};
-use crate::orcheastra_signed_anchor::{Ed25519Verifier, SignedAnchor, TrustedKey};
+use crate::orcheastra_signed_anchor::{
+    Ed25519Verifier, SignedAnchor, TrustedKey, MAX_KEY_ID_BYTES,
+};
 
 const RECEIPT_DOMAIN: &[u8] = b"PALACO-ORCHEASTRA-RECOVERY-REVIEW-RECEIPT-V1\0";
 
@@ -57,8 +59,9 @@ pub fn review_receipt(
 /// signature, custody record, proof of recovery, or execution authorization.
 /// Inputs share the recovery verifier's checkpoint count, per-snapshot size,
 /// and cumulative eight-MiB work budget. Callers must separately verify full
-/// recovery evidence and cryptographic
-/// signatures before treating a matching receipt as eligible for review.
+/// recovery evidence and cryptographic signatures before treating a matching
+/// receipt as eligible for review. Key identifiers are limited to 128 bytes,
+/// and signed-anchor, registry and floor fields must be structurally consistent.
 #[must_use]
 pub fn fingerprint_review_receipt(
     checkpoints: &[RestartCheckpoint],
@@ -67,8 +70,29 @@ pub fn fingerprint_review_receipt(
     key: &TrustedKey<'_>,
     floor: &RecoveryFloor,
 ) -> Option<ReviewReceipt> {
+    let last = checkpoints.last()?;
     if checkpoints.len() != payloads.len()
         || inspect_chain_payload_budget(payloads) != RestartInspection::ReviewOnly
+        || key.key_id.is_empty()
+        || key.key_id.len() > MAX_KEY_ID_BYTES
+        || signed.key_id != key.key_id
+        || signed.public_key != key.public_key
+        || key.public_key == [0; 32]
+        || signed.signature == [0; 64]
+        || key.revoked
+        || key.registry_sequence == 0
+        || key.first_sequence == 0
+        || key.first_sequence > key.last_sequence
+        || signed.anchor.sequence < key.first_sequence
+        || signed.anchor.sequence > key.last_sequence
+        || signed.anchor.sequence != last.sequence
+        || signed.anchor.snapshot_digest != last.snapshot_digest
+        || signed.anchor.predecessor_digest != last.predecessor_digest
+        || !signed.anchor.externally_verified
+        || floor.checkpoint_sequence == 0
+        || floor.registry_sequence == 0
+        || floor.checkpoint_sequence > last.sequence
+        || floor.registry_sequence > key.registry_sequence
     {
         return None;
     }
@@ -170,6 +194,7 @@ mod tests {
     use crate::orcheastra_restart::{RestartAnchor, RestartCheckpoint};
     use crate::orcheastra_signed_anchor::{
         anchor_message_v2, Ed25519Verifier, SignatureVerdict, SignedAnchor, TrustedKey,
+        MAX_KEY_ID_BYTES,
     };
 
     /// Deliberately unauthenticated test-only byte equality checker.
@@ -372,6 +397,82 @@ mod tests {
                     &verifier,
                 ),
                 crate::orcheastra_restart::RestartInspection::Deny
+            );
+            assert_eq!(verifier.0.get(), 0);
+
+            // The unauthenticated direct fingerprint API must refuse oversized
+            // key identifiers and mismatched key/anchor identity before hashing.
+            let long_id = "x".repeat(MAX_KEY_ID_BYTES + 1);
+            let long_key = TrustedKey {
+                key_id: &long_id,
+                ..key.clone()
+            };
+            let long_signed = SignedAnchor {
+                key_id: &long_id,
+                ..signed.clone()
+            };
+            assert_eq!(
+                super::fingerprint_review_receipt(
+                    &checkpoints, payloads, &long_signed, &long_key, &floor,
+                ),
+                None
+            );
+            assert_eq!(
+                revalidate_review_receipt(
+                    Some(&receipt),
+                    &checkpoints,
+                    payloads,
+                    Some(&long_signed),
+                    Some(&long_key),
+                    Some(&floor),
+                    &verifier,
+                ),
+                crate::orcheastra_restart::RestartInspection::Deny
+            );
+            assert_eq!(verifier.0.get(), 0);
+
+            let swapped_key = TrustedKey {
+                public_key: [8; 32],
+                ..key.clone()
+            };
+            assert_eq!(
+                super::fingerprint_review_receipt(
+                    &checkpoints, payloads, &signed, &swapped_key, &floor,
+                ),
+                None
+            );
+            let empty_signature = SignedAnchor {
+                signature: [0; 64],
+                ..signed.clone()
+            };
+            assert_eq!(
+                super::fingerprint_review_receipt(
+                    &checkpoints, payloads, &empty_signature, &key, &floor,
+                ),
+                None
+            );
+            let changed_anchor = SignedAnchor {
+                anchor: RestartAnchor {
+                    snapshot_digest: [8; 32],
+                    ..signed.anchor
+                },
+                ..signed.clone()
+            };
+            assert_eq!(
+                super::fingerprint_review_receipt(
+                    &checkpoints, payloads, &changed_anchor, &key, &floor,
+                ),
+                None
+            );
+            let future_floor = RecoveryFloor {
+                checkpoint_sequence: 6,
+                ..floor
+            };
+            assert_eq!(
+                super::fingerprint_review_receipt(
+                    &checkpoints, payloads, &signed, &key, &future_floor,
+                ),
+                None
             );
             assert_eq!(verifier.0.get(), 0);
         }
