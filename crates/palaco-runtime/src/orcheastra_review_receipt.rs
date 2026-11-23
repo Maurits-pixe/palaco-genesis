@@ -47,6 +47,26 @@ pub fn review_receipt(
     let signed = signed?;
     let key = trusted_key?;
     let floor = floor?;
+    fingerprint_review_receipt(checkpoints, payloads, signed, key, floor)
+}
+
+/// Computes a review fingerprint without trusting or verifying its input.
+///
+/// This function is for deterministic preflight only. Its output is NOT a
+/// signature, custody record, proof of recovery, or execution authorization.
+/// Callers must separately verify full recovery evidence and cryptographic
+/// signatures before treating a matching receipt as eligible for review.
+#[must_use]
+pub fn fingerprint_review_receipt(
+    checkpoints: &[RestartCheckpoint],
+    payloads: &[&[u8]],
+    signed: &SignedAnchor<'_>,
+    key: &TrustedKey<'_>,
+    floor: &RecoveryFloor,
+) -> Option<ReviewReceipt> {
+    if checkpoints.is_empty() || checkpoints.len() != payloads.len() {
+        return None;
+    }
     let count = u64::try_from(checkpoints.len()).ok()?;
     let key_id_len = u64::try_from(key.key_id.len()).ok()?;
 
