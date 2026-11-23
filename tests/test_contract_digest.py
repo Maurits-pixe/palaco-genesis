@@ -65,6 +65,24 @@ class ContractDigestTests(unittest.TestCase):
         ).hexdigest()
         self.assertEqual(digest_contract({"gate": "HOLD"}), expected)
 
+    def test_multibyte_utf8_framing_counts_bytes_not_characters(self):
+        obj = {"symbol": chr(0x1f680)}
+        canonical = canonical_bytes(obj)
+        self.assertEqual(len(canonical), 17)
+        self.assertEqual(len(canonical.decode("utf-8")), 14)
+        expected = hashlib.sha256(
+            b"PALACO-CJSON-v0" + bytes.fromhex("00")
+            + bytes.fromhex("0000000000000011")
+            + canonical
+        ).hexdigest()
+        wrong_character_length = hashlib.sha256(
+            b"PALACO-CJSON-v0" + bytes.fromhex("00")
+            + bytes.fromhex("000000000000000e")
+            + canonical
+        ).hexdigest()
+        self.assertEqual(digest_contract(obj), expected)
+        self.assertNotEqual(digest_contract(obj), wrong_character_length)
+
     def test_digest_differs_from_unframed_sha256(self):
         payload = canonical_bytes({"gate": "HOLD"})
         self.assertNotEqual(digest_contract({"gate": "HOLD"}),
