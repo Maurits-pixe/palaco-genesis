@@ -218,6 +218,36 @@ class ContractDigestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
                 digest_contract_file(path)
 
+    def test_integer_negative_zero_matches_zero_digest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "negative-zero.json"
+            path.write_text('{"counter":-0}', encoding="utf-8")
+            self.assertEqual(digest_contract_file(path), digest_contract({"counter": 0}))
+            path.write_text('{"counter":0}', encoding="utf-8")
+            self.assertEqual(digest_contract_file(path), digest_contract({"counter": 0}))
+
+    def test_decimal_negative_zero_rejected_by_digest_profile(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "decimal-negative-zero.json"
+            path.write_text('{"counter":-0.0}', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "unsupported"):
+                digest_contract_file(path)
+
+    def test_exponent_zero_rejected_by_digest_profile(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "exponent-zero.json"
+            path.write_text('{"counter":0e999}', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "unsupported"):
+                digest_contract_file(path)
+
+    def test_reordered_negative_integer_members_digest_identically(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "integers.json"
+            path.write_text('{"b":-9007199254740991,"a":0}', encoding="utf-8")
+            first = digest_contract_file(path)
+            path.write_text('{"a":-0,"b":-9007199254740991}', encoding="utf-8")
+            self.assertEqual(digest_contract_file(path), first)
+
     def test_file_digest_matches_in_memory_digest(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "candidate.json"
