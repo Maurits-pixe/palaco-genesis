@@ -102,7 +102,7 @@ class SamplingSuccessionEvidenceHandoffTests(unittest.TestCase):
     def test_changed_package_records(self):
         altered=copy.deepcopy(self.package)
         altered["records"][0]["record"]["checkpoint"]["latest_manifest_sha256"]="f"*64
-        self.assertEqual(self.check(package=altered)["reason"],"handoff-package-pin-mismatch")
+        self.assertEqual(self.check(package=altered)["reason"],"invalid-handoff-package")
 
     def test_missing_package_record(self):
         altered=copy.deepcopy(self.package)
