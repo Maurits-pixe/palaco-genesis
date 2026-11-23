@@ -161,6 +161,23 @@ assert.notEqual(digest(multibyteValue), createHash('sha256')
   .update(DOMAIN).update(incorrectCodeUnitFrame).update(multibytePayload).digest('hex'),
   'UTF-16 code-unit length must not be treated as byte length');
 
+// The canonical digest is value-based: integer -0 and 0 both encode as 0.
+// This is for trusted parsed values only; JSON.parse loses decimal syntax,
+// so Python's strict file reader separately checks decimal/exponent tokens.
+const negativeZero = JSON.parse('{"counter":-0}');
+const positiveZero = JSON.parse('{"counter":0}');
+assert.ok(Object.is(negativeZero.counter, -0),
+          'fixture retains the JavaScript negative-zero value');
+assert.equal(canonicalBytes(negativeZero).toString('utf8'), '{"counter":0}');
+assert.equal(digest(negativeZero), digest(positiveZero),
+             'integer negative zero and zero must have matching digests');
+assert.equal(canonicalBytes({ counter: 0 }).toString('utf8'), '{"counter":0}');
+assert.throws(() => canonicalBytes({ counter: -0.5 }), /non-integer/,
+              'nonintegral negative decimals cannot enter the digest');
+assert.deepEqual(canonicalBytes({ b: -Number.MAX_SAFE_INTEGER, a: -0 }),
+                 Buffer.from('{"a":0,"b":-9007199254740991}', 'utf8'),
+                 'safe negative boundary and zero are encoded deterministically');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
