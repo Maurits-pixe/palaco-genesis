@@ -119,10 +119,13 @@ def verify(snapshots, records, signed_identity, signed_delegation,
         return deny("invalid-delegation-signature-format")
     try:
         signature = base64.b64decode(encoded, validate=True)
-        if len(signature) != 64:
-            return deny("invalid-delegation-signature-format")
+    except (ValueError, base64.binascii.Error):
+        return deny("invalid-delegation-signature-format")
+    if len(signature) != 64:
+        return deny("invalid-delegation-signature-format")
+    try:
         Ed25519PublicKey.from_public_bytes(public).verify(signature, DOMAIN + serialized)
-    except (InvalidSignature, ValueError, base64.binascii.Error):
+    except (InvalidSignature, ValueError):
         return deny("invalid-delegation-signature")
     return {**_result(), "delegation_valid": True, "state": "pending-review",
             "reason": "authenticated-limited-assessor-delegation-claim-only",
