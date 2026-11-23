@@ -90,6 +90,32 @@ class ContractDigestTests(unittest.TestCase):
             path.write_text('{"release_gate":"DENY"}', encoding="utf-8")
             self.assertNotEqual(baseline, digest_contract_file(path))
 
+    def test_unicode_key_order_uses_codepoints_not_utf16_units(self):
+        # U+E000 sorts before U+1F680 by code point, unlike UTF-16 order.
+        obj = {chr(0x1f680): 2, chr(0xe000): 1}
+        expected = ('{"' + chr(0xe000) + '":1,"' + chr(0x1f680) + '":2}').encode("utf-8")
+        self.assertEqual(canonical_bytes(obj), expected)
+
+    def test_astral_unicode_uses_literal_four_byte_utf8(self):
+        value = {"symbol": chr(0x1f680)}
+        canonical = canonical_bytes(value)
+        self.assertEqual(canonical, b'{"symbol":"' + bytes.fromhex("f09f9a80") + b'"}')
+        self.assertNotIn(b"\\\\ud83d", canonical)
+
+    def test_control_characters_canonicalize_as_json_escapes(self):
+        value = {"control": chr(0) + chr(10) + chr(9)}
+        expected = b'{"control":"' + bytes.fromhex("5c7530303030") + b'\\\\n\\\\t"}'
+        self.assertEqual(canonical_bytes(value), expected)
+
+    def test_escaped_and_literal_astral_json_have_same_digest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "astral.json"
+            path.write_text('{"symbol":"' + chr(0x1f680) + '"}', encoding="utf-8")
+            literal = digest_contract_file(path)
+            path.write_text('{"symbol":"' + chr(92) + 'ud83d' + chr(92) + 'ude80"}',
+                            encoding="utf-8")
+            self.assertEqual(literal, digest_contract_file(path))
+
     def test_changes_change_digest(self):
         self.assertNotEqual(digest_contract({"release_gate": "HOLD"}),
                             digest_contract({"release_gate": "GO"}))
