@@ -140,7 +140,8 @@ pub fn inspect_restart_chain_payloads(
 mod tests {
     use super::{
         digest_snapshot, inspect_chain_payload_budget, inspect_restart_chain_payloads,
-        inspect_restart_payload, MAX_CHAIN_CHECKPOINTS, MAX_CHAIN_PAYLOAD_BYTES, MAX_SNAPSHOT_BYTES,
+        inspect_restart_payload, MAX_CHAIN_CHECKPOINTS, MAX_CHAIN_PAYLOAD_BYTES,
+        MAX_SNAPSHOT_BYTES,
     };
     use crate::orcheastra_restart::{RestartAnchor, RestartCheckpoint, RestartInspection};
 
@@ -308,7 +309,10 @@ mod tests {
             inspect_chain_payload_budget(&under_limit),
             RestartInspection::ReviewOnly
         );
-        assert_eq!(under_limit.iter().map(|part| part.len()).sum::<usize>(), MAX_CHAIN_PAYLOAD_BYTES);
+        assert_eq!(
+            under_limit.iter().map(|part| part.len()).sum::<usize>(),
+            MAX_CHAIN_PAYLOAD_BYTES
+        );
 
         let over_limit = vec![snapshot.as_slice(); 9];
         assert_eq!(
