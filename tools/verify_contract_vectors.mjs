@@ -82,18 +82,22 @@ function encode(value, depth = 0, active = new WeakSet()) {
     if (active.has(value)) throw new Error('cyclic JSON reference');
     if (depth >= MAX_DEPTH) throw new Error('JSON nesting depth exceeds limit');
     const keys = Reflect.ownKeys(value);
+    const entries = [];
     for (const key of keys) {
       if (typeof key !== 'string') throw new Error('symbol object key is not JSON data');
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (!descriptor || !Object.hasOwn(descriptor, 'value') || !descriptor.enumerable) {
         throw new Error('object accessor or hidden property is not JSON data');
       }
+      // Capture validated data once. A second value[key] read can invoke
+      // an in-memory Proxy get trap or observe a changed property.
+      entries.push([key, descriptor.value]);
     }
     active.add(value);
     try {
-      return '{' + keys.sort(compareCodepoints).map((key) => {
+      return '{' + entries.sort(([left], [right]) => compareCodepoints(left, right)).map(([key, entry]) => {
         assertValidString(key);
-        return JSON.stringify(key) + ':' + encode(value[key], depth + 1, active);
+        return JSON.stringify(key) + ':' + encode(entry, depth + 1, active);
       }).join(',') + '}';
     } finally {
       active.delete(value);
@@ -323,6 +327,21 @@ const symbolArray = [0];
 symbolArray[Symbol('secret')] = 1;
 assert.throws(() => canonicalBytes(symbolArray), /unsupported array property/,
               'symbol-named array properties must not be silently dropped');
+
+// Object serialization must not issue a second property read after
+// validating the descriptor: Proxy get traps may execute arbitrary code.
+const proxyData = new Proxy({ gate: 'HOLD', count: 1 }, {
+  get() { throw new Error('object get trap must not execute'); },
+});
+assert.deepEqual(canonicalBytes(proxyData),
+                 Buffer.from('{"count":1,"gate":"HOLD"}', 'utf8'),
+                 'own data descriptors are sufficient to encode a JSON object');
+const proxyNested = new Proxy({ child: [0, { gate: 'HOLD' }] }, {
+  get() { throw new Error('nested object get trap must not execute'); },
+});
+assert.deepEqual(canonicalBytes(proxyNested),
+                 Buffer.from('{"child":[0,{"gate":"HOLD"}]}', 'utf8'),
+                 'nested data encoding does not read top-level properties twice');
 
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
