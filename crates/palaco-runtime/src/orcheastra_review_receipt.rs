@@ -168,7 +168,7 @@ pub fn revalidate_review_receipt(
 
 #[cfg(test)]
 mod tests {
-    use super::{revalidate_review_receipt, review_receipt};
+    use super::{revalidate_review_receipt, review_receipt, ReviewReceipt};
     use crate::orcheastra_payload::digest_snapshot;
     use crate::orcheastra_recovery::RecoveryFloor;
     use crate::orcheastra_restart::{RestartAnchor, RestartCheckpoint};
