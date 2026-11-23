@@ -178,6 +178,19 @@ assert.deepEqual(canonicalBytes({ b: -Number.MAX_SAFE_INTEGER, a: -0 }),
                  Buffer.from('{"a":0,"b":-9007199254740991}', 'utf8'),
                  'safe negative boundary and zero are encoded deterministically');
 
+// Arrays retain order, and JSON types are never conflated in the digest.
+assert.notEqual(digest({ items: ['HOLD', 'DENY', 0] }),
+                digest({ items: ['DENY', 'HOLD', 0] }),
+                'array reordering changes the canonical digest');
+assert.equal(canonicalBytes({ flag: true }).toString('utf8'), '{"flag":true}');
+assert.equal(canonicalBytes({ flag: 1 }).toString('utf8'), '{"flag":1}');
+assert.notEqual(digest({ flag: true }), digest({ flag: 1 }),
+                'boolean true is not integer one');
+assert.notEqual(digest({ flag: false }), digest({ flag: 0 }),
+                'boolean false is not integer zero');
+assert.notEqual(digest({ value: null }), digest({}),
+                'null-valued member is not an omitted member');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
