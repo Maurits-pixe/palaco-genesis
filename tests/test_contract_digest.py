@@ -248,6 +248,32 @@ class ContractDigestTests(unittest.TestCase):
             path.write_text('{"a":-0,"b":-9007199254740991}', encoding="utf-8")
             self.assertEqual(digest_contract_file(path), first)
 
+    def test_array_order_changes_digest(self):
+        first = {"items": ["HOLD", "DENY", 0]}
+        second = {"items": ["DENY", "HOLD", 0]}
+        self.assertNotEqual(canonical_bytes(first), canonical_bytes(second))
+        self.assertNotEqual(digest_contract(first), digest_contract(second))
+
+    def test_boolean_and_integer_values_have_distinct_digests(self):
+        self.assertEqual(canonical_bytes({"flag": True}), b'{"flag":true}')
+        self.assertEqual(canonical_bytes({"flag": 1}), b'{"flag":1}')
+        self.assertNotEqual(digest_contract({"flag": True}),
+                            digest_contract({"flag": 1}))
+        self.assertNotEqual(digest_contract({"flag": False}),
+                            digest_contract({"flag": 0}))
+
+    def test_null_and_missing_member_have_distinct_digests(self):
+        self.assertNotEqual(digest_contract({"value": None}), digest_contract({}))
+        self.assertEqual(canonical_bytes({"value": None}), b'{"value":null}')
+
+    def test_file_digest_preserves_array_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ordered.json"
+            path.write_text('{"items":[0,1,2]}', encoding="utf-8")
+            first = digest_contract_file(path)
+            path.write_text('{"items":[2,1,0]}', encoding="utf-8")
+            self.assertNotEqual(first, digest_contract_file(path))
+
     def test_file_digest_matches_in_memory_digest(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "candidate.json"
