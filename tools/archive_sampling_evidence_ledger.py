@@ -34,10 +34,10 @@ def _out(**fields):
             "recorded":False,"state":"quarantined",**fields}
 
 
-def _hash(seq,manifest_hash,seed_hex,indices_json,nonce_json,
+def _hash(seq,manifest_hash,seed_hex,population,indices_json,nonce_json,
           evidence_hash,previous):
     return hashlib.sha256(DOMAIN+_json(
-        [seq,manifest_hash,seed_hex,indices_json,nonce_json,
+        [seq,manifest_hash,seed_hex,population,indices_json,nonce_json,
          evidence_hash,previous])).hexdigest()
 
 
@@ -46,6 +46,7 @@ def _schema(conn):
         sequence INTEGER PRIMARY KEY CHECK(sequence>0),
         manifest_sha256 TEXT NOT NULL,
         seed_hex TEXT NOT NULL,
+        population INTEGER NOT NULL,
         indices_json TEXT NOT NULL,
         nonce_json TEXT NOT NULL,
         evidence_sha256 TEXT NOT NULL,
@@ -61,7 +62,7 @@ def _schema(conn):
 
 
 def _scan(conn):
-    rows=conn.execute("""SELECT sequence,manifest_sha256,seed_hex,
+    rows=conn.execute("""SELECT sequence,manifest_sha256,seed_hex,population,
         indices_json,nonce_json,evidence_sha256,previous_hash,event_hash
         FROM archive_sample_batches ORDER BY sequence LIMIT ?""",
         (MAX_BATCHES+1,)).fetchall()
@@ -72,10 +73,11 @@ def _scan(conn):
     expected=set()
     previous=GENESIS
     for seq,row in enumerate(rows,1):
-        num,manifest,seed,indices_raw,nonces_raw,evidence,prior,digest=row
+        num,manifest,seed,population,indices_raw,nonces_raw,evidence,prior,digest=row
         if (type(num) is not int or num!=seq
             or any(not isinstance(x,str) or not sampling.single.HEX.fullmatch(x)
                    for x in (manifest,seed,evidence,prior,digest))
+            or type(population) is not int or not 1<=population<=sampling.single.MAX_CHUNKS
             or prior!=previous):
             return None
         try:
@@ -91,14 +93,12 @@ def _scan(conn):
                    for n in nonces)
             or len(set(nonces))!=len(nonces)):
             return None
-        if chosen!=sampling.indices(seed,manifest,max(chosen)+1,len(chosen)):
-            # Selection depends on the full population; store it in an
-            # independently verified event below. Here check nonce derivation.
-            pass
+        if chosen!=sampling.indices(seed,manifest,population,len(chosen)):
+            return None
         if any(n!=sampling.nonce(seed,manifest,i) for i,n in enumerate(nonces)):
             return None
         expected.update((nonce,seq,i) for i,nonce in enumerate(nonces))
-        if digest!=_hash(seq,manifest,seed,indices_raw,nonces_raw,evidence,prior):
+        if digest!=_hash(seq,manifest,seed,population,indices_raw,nonces_raw,evidence,prior):
             return None
         previous=digest
     if len(expected)!=sum(len(json.loads(row[4])) for row in rows):
@@ -155,11 +155,11 @@ def record(db,manifest,manifest_pin,archive_head,seed,count,min_coverage,
             seq=state["batches"]+1
             index_json=_json(chosen).decode()
             nonce_json=_json(nonces).decode()
-            event=_hash(seq,manifest_pin,seed,index_json,nonce_json,evidence,
+            event=_hash(seq,manifest_pin,seed,len(manifest["chunk_sha256"]),index_json,nonce_json,evidence,
                         state["head_hash"])
-            conn.execute("INSERT INTO archive_sample_batches VALUES(?,?,?,?,?,?,?,?)",
-                         (seq,manifest_pin,seed,index_json,nonce_json,
-                          evidence,state["head_hash"],event))
+            conn.execute("INSERT INTO archive_sample_batches VALUES(?,?,?,?,?,?,?,?,?)",
+                         (seq,manifest_pin,seed,len(manifest["chunk_sha256"]),
+                          index_json,nonce_json,evidence,state["head_hash"],event))
             for ordinal,nonce in enumerate(nonces):
                 conn.execute("INSERT INTO archive_sample_nonces VALUES(?,?,?)",
                              (nonce,seq,ordinal))
