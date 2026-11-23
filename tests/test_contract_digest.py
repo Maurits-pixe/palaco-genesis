@@ -58,7 +58,7 @@ class ContractDigestTests(unittest.TestCase):
     def test_digest_uses_domain_separator_and_eight_byte_length(self):
         payload = b'{"gate":"HOLD"}'
         expected = hashlib.sha256(
-            b"PALACO-CJSON-v0\\x00"
+            b"PALACO-CJSON-v0" + bytes.fromhex("00")
             + len(payload).to_bytes(8, "big")
             + payload
         ).hexdigest()
@@ -70,13 +70,13 @@ class ContractDigestTests(unittest.TestCase):
                             hashlib.sha256(payload).hexdigest())
         self.assertNotEqual(
             digest_contract({"gate": "HOLD"}),
-            hashlib.sha256(b"PALACO-CJSON-v0\\x00" + payload).hexdigest(),
+            b"PALACO-CJSON-v0" + bytes.fromhex("00")
         )
 
     def test_file_digest_ignores_whitespace_and_member_order(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "candidate.json"
-            path.write_text('  {"b":2, "a":{"y":true,"x":null}}\\n', encoding="utf-8")
+            path.write_text('  {"b":2, "a":{"y":true,"x":null}}' + chr(10), encoding="utf-8")
             first = digest_contract_file(path)
             path.write_text('{"a":{"x":null,"y":true},"b":2}', encoding="utf-8")
             self.assertEqual(first, digest_contract_file(path))
