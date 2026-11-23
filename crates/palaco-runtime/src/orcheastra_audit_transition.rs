@@ -4,7 +4,7 @@
 //! therefore require independent trust validation beyond this crate.
 //! ReviewOnly is never permission to recover or execute.
 
-use crate::orcheastra_audit_chain::{AuditChainExpectation, AuditLink};
+use crate::orcheastra_audit_chain::{AuditChainExpectation, AuditLink, MAX_AUDIT_LINKS};
 use crate::orcheastra_audit_continuity::inspect_audit_continuity;
 use crate::orcheastra_audit_custody::AuditCustodyWitness;
 use crate::orcheastra_audit_evidence::{
@@ -267,11 +267,15 @@ pub fn inspect_segment_snapshot_continuity(
 pub const MAX_TRANSITION_PAYLOAD_BYTES: usize = 8 * MAX_SNAPSHOT_BYTES;
 /// Upper bound on cumulative checkpoints for one two-segment review.
 pub const MAX_TRANSITION_CHECKPOINTS: usize = 1024;
+/// Upper bound on cumulative audit links across both transition segments.
+pub const MAX_TRANSITION_AUDIT_LINKS: usize = MAX_AUDIT_LINKS;
 
 /// Rejects oversized audit evidence before signature or snapshot hashing.
 ///
 /// Counts every occurrence, including repeated borrowed payload buffers, since
-/// each occurrence would otherwise be hashed again. All additions are checked.
+/// each occurrence would otherwise be hashed again. The combined number of
+/// audit links is bounded and each link must have one receipt and source.
+/// All additions are checked.
 /// These are per-call limits, not global concurrency or API rate limits.
 #[must_use]
 pub fn inspect_transition_evidence_budget(
@@ -280,10 +284,21 @@ pub fn inspect_transition_evidence_budget(
 ) -> RestartInspection {
     let mut total_bytes = 0usize;
     let mut total_checkpoints = 0usize;
+    let mut total_links = 0usize;
     for segment in [previous, current] {
-        if segment.evidence.is_empty() || segment.evidence.len() != segment.receipts.len() {
+        if segment.evidence.is_empty()
+            || segment.evidence.len() != segment.receipts.len()
+            || segment.links.len() != segment.receipts.len()
+        {
             return RestartInspection::Deny;
         }
+        let Some(links) = total_links.checked_add(segment.links.len()) else {
+            return RestartInspection::Deny;
+        };
+        if links > MAX_TRANSITION_AUDIT_LINKS {
+            return RestartInspection::Deny;
+        }
+        total_links = links;
         for source in segment.evidence {
             if source.checkpoints.is_empty()
                 || source.checkpoints.len() > MAX_CHAIN_CHECKPOINTS
@@ -389,7 +404,9 @@ mod tests {
         inspect_transition_monotonicity, inspect_transition_signer_continuity,
         inspect_transition_snapshot_link, AuditSegmentEvidence,
     };
-    use crate::orcheastra_audit_chain::{audit_link_digest, AuditChainExpectation, AuditLink};
+    use crate::orcheastra_audit_chain::{
+        audit_link_digest, AuditChainExpectation, AuditLink, MAX_AUDIT_LINKS,
+    };
     use crate::orcheastra_audit_custody::{AuditCustodyWitness, CustodyVerdict};
     use crate::orcheastra_audit_evidence::RecoveryEvidence;
     use crate::orcheastra_payload::digest_snapshot;
@@ -1177,6 +1194,42 @@ mod tests {
         assert_eq!(
             inspect_transition_evidence_budget(&previous, &excessive_current),
             RestartInspection::Deny
+        );
+        // A combined two-segment review must never exceed the audit-link budget.
+        let oversized_links = vec![links_previous[0]; MAX_AUDIT_LINKS];
+        let oversized_receipts = vec![receipts_previous[0]; MAX_AUDIT_LINKS];
+        let oversized_sources: Vec<RecoveryEvidence<'_>> = (0..MAX_AUDIT_LINKS)
+            .map(|_| RecoveryEvidence {
+                checkpoints: &checkpoints_previous,
+                payloads: payloads_previous,
+                signed: &signed_previous,
+                trusted_key: &key,
+                floor: &floor_previous,
+            })
+            .collect();
+        let oversized_previous = AuditSegmentEvidence {
+            links: &oversized_links,
+            receipts: &oversized_receipts,
+            evidence: &oversized_sources,
+            expected: &expected_previous,
+        };
+        assert_eq!(
+            inspect_transition_evidence_budget(&oversized_previous, &current),
+            RestartInspection::Deny
+        );
+        let mismatched_links = AuditSegmentEvidence {
+            links: &[],
+            receipts: &receipts_previous,
+            evidence: &evidence_previous,
+            expected: &expected_previous,
+        };
+        assert_eq!(
+            inspect_transition_evidence_budget(&mismatched_links, &current),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_transition_evidence_budget(&previous, &current),
+            RestartInspection::ReviewOnly
         );
         let missing_payloads = [RecoveryEvidence {
             checkpoints: &checkpoints_current,
