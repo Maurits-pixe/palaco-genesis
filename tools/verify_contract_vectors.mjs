@@ -37,7 +37,7 @@ function assertValidString(s) {
   }
 }
 
-function encode(value, depth = 0) {
+function encode(value, depth = 0, active = new WeakSet()) {
   if (value === null) return 'null';
   if (value === true) return 'true';
   if (value === false) return 'false';
@@ -52,6 +52,7 @@ function encode(value, depth = 0) {
     return JSON.stringify(value);
   }
   if (Array.isArray(value)) {
+    if (active.has(value)) throw new Error('cyclic JSON reference');
     if (depth >= MAX_DEPTH) throw new Error('JSON nesting depth exceeds limit');
     // Array.map skips holes; JSON stringification also loses extra names
     // and symbol properties. Demand only explicit, enumerable data slots.
@@ -66,9 +67,15 @@ function encode(value, depth = 0) {
         throw new Error('array accessor or hidden property is not JSON data');
       }
     }
-    return '[' + value.map((entry) => encode(entry, depth + 1)).join(',') + ']';
+    active.add(value);
+    try {
+      return '[' + value.map((entry) => encode(entry, depth + 1, active)).join(',') + ']';
+    } finally {
+      active.delete(value);
+    }
   }
   if (typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+    if (active.has(value)) throw new Error('cyclic JSON reference');
     if (depth >= MAX_DEPTH) throw new Error('JSON nesting depth exceeds limit');
     const keys = Reflect.ownKeys(value);
     for (const key of keys) {
@@ -78,10 +85,15 @@ function encode(value, depth = 0) {
         throw new Error('object accessor or hidden property is not JSON data');
       }
     }
-    return '{' + keys.sort(compareCodepoints).map((key) => {
-      assertValidString(key);
-      return JSON.stringify(key) + ':' + encode(value[key], depth + 1);
-    }).join(',') + '}';
+    active.add(value);
+    try {
+      return '{' + keys.sort(compareCodepoints).map((key) => {
+        assertValidString(key);
+        return JSON.stringify(key) + ':' + encode(value[key], depth + 1, active);
+      }).join(',') + '}';
+    } finally {
+      active.delete(value);
+    }
   }
   throw new Error('unsupported canonical JSON value type');
 }
@@ -256,6 +268,31 @@ assert.throws(() => canonicalBytes(getterArray), /array accessor/,
 assert.deepEqual(canonicalBytes({ gate: 'HOLD', count: 1 }),
                  Buffer.from('{"count":1,"gate":"HOLD"}', 'utf8'),
                  'ordinary JSON objects remain valid');
+
+// Reject cycles explicitly, but permit ordinary acyclic sharing: a
+// shared child is serialized by value in each position.
+const selfReferentialObject = {};
+selfReferentialObject.self = selfReferentialObject;
+assert.throws(() => canonicalBytes(selfReferentialObject), /cyclic JSON reference/,
+              'direct object cycles fail closed');
+const selfReferentialArray = [];
+selfReferentialArray.push(selfReferentialArray);
+assert.throws(() => canonicalBytes(selfReferentialArray), /cyclic JSON reference/,
+              'array cycles fail closed');
+const objectArrayCycle = { child: [] };
+objectArrayCycle.child.push(objectArrayCycle);
+assert.throws(() => canonicalBytes(objectArrayCycle), /cyclic JSON reference/,
+              'mixed object-array cycles fail closed');
+const sharedChild = { gate: 'HOLD' };
+assert.deepEqual(canonicalBytes([sharedChild, sharedChild]),
+                 Buffer.from('[{"gate":"HOLD"},{"gate":"HOLD"}]', 'utf8'),
+                 'acyclic shared references are encoded by value');
+assert.throws(() => canonicalBytes({ item: undefined }), /unsupported canonical JSON/,
+              'undefined object values cannot silently disappear');
+assert.throws(() => canonicalBytes([undefined]), /unsupported canonical JSON/,
+              'undefined array elements cannot turn into null');
+assert.throws(() => canonicalBytes({ item: 1n }), /unsupported canonical JSON/,
+              'BigInt is not a JSON numeric value');
 
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
