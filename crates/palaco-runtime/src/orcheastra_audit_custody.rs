@@ -54,7 +54,8 @@ pub fn custody_expectation_digest(expected: &AuditChainExpectation) -> Option<[u
 /// Requires an external custody witness AND a complete valid audit hash chain.
 ///
 /// Denies when the witness is missing, the witness declines, the external
-/// expectation is malformed, or the chain differs. A positive result is
+/// expectation is malformed, or the chain differs. The complete local chain
+/// is checked before invoking the external witness. A positive result is
 /// ReviewOnly; it must not be converted into an authorization decision.
 #[must_use]
 pub fn inspect_custodied_audit_chain(
@@ -65,9 +66,10 @@ pub fn inspect_custodied_audit_chain(
     let (Some(expected), Some(witness)) = (expected, witness) else {
         return RestartInspection::Deny;
     };
+    // Reject malformed local chains before invoking an external witness.
     if custody_expectation_digest(expected).is_none()
-        || witness.verify_expectation(expected) != CustodyVerdict::Verified
         || inspect_audit_chain(links, Some(expected)) != RestartInspection::ReviewOnly
+        || witness.verify_expectation(expected) != CustodyVerdict::Verified
     {
         return RestartInspection::Deny;
     }
@@ -92,6 +94,15 @@ mod tests {
             } else {
                 CustodyVerdict::Denied
             }
+        }
+    }
+
+    // Tracks external custody invocations without locks or panics.
+    struct CountingWitness(std::cell::Cell<usize>);
+    impl AuditCustodyWitness for CountingWitness {
+        fn verify_expectation(&self, _expectation: &AuditChainExpectation) -> CustodyVerdict {
+            self.0.set(self.0.get() + 1);
+            CustodyVerdict::Verified
         }
     }
 
@@ -126,6 +137,40 @@ mod tests {
             inspect_custodied_audit_chain(&links, Some(&expected), Some(&TestWitness(expected))),
             RestartInspection::ReviewOnly
         );
+    }
+
+    #[test]
+    fn invalid_local_chains_do_not_invoke_external_custody() {
+        let (links, expected) = fixture();
+        let witness = CountingWitness(std::cell::Cell::new(0));
+        assert_eq!(
+            inspect_custodied_audit_chain(&links, Some(&expected), Some(&witness)),
+            RestartInspection::ReviewOnly
+        );
+        assert_eq!(witness.0.get(), 1);
+
+        witness.0.set(0);
+        let mut changed_links = links.clone();
+        changed_links[0].receipt_digest[0] ^= 1;
+        assert_eq!(
+            inspect_custodied_audit_chain(&changed_links, Some(&expected), Some(&witness)),
+            RestartInspection::Deny
+        );
+        assert_eq!(witness.0.get(), 0);
+
+        let mut changed_expected = expected;
+        changed_expected.final_digest[0] ^= 1;
+        assert_eq!(
+            inspect_custodied_audit_chain(&links, Some(&changed_expected), Some(&witness)),
+            RestartInspection::Deny
+        );
+        assert_eq!(witness.0.get(), 0);
+
+        assert_eq!(
+            inspect_custodied_audit_chain(&[], Some(&expected), Some(&witness)),
+            RestartInspection::Deny
+        );
+        assert_eq!(witness.0.get(), 0);
     }
 
     #[test]
