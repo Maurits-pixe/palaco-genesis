@@ -5,6 +5,7 @@
 
 use sha2::{Digest, Sha256};
 
+use crate::orcheastra_payload::{MAX_CHAIN_CHECKPOINTS, MAX_SNAPSHOT_BYTES};
 use crate::orcheastra_recovery::{inspect_recovery, RecoveryFloor};
 use crate::orcheastra_restart::{RestartCheckpoint, RestartInspection};
 use crate::orcheastra_signed_anchor::{Ed25519Verifier, SignedAnchor, TrustedKey};
@@ -54,7 +55,9 @@ pub fn review_receipt(
 ///
 /// This function is for deterministic preflight only. Its output is NOT a
 /// signature, custody record, proof of recovery, or execution authorization.
-/// Callers must separately verify full recovery evidence and cryptographic
+/// Inputs are bounded to the same maximum checkpoint count and snapshot size
+/// as the recovery payload verifier. Callers must separately verify full
+/// recovery evidence and cryptographic
 /// signatures before treating a matching receipt as eligible for review.
 #[must_use]
 pub fn fingerprint_review_receipt(
@@ -64,7 +67,11 @@ pub fn fingerprint_review_receipt(
     key: &TrustedKey<'_>,
     floor: &RecoveryFloor,
 ) -> Option<ReviewReceipt> {
-    if checkpoints.is_empty() || checkpoints.len() != payloads.len() {
+    if checkpoints.is_empty()
+        || checkpoints.len() > MAX_CHAIN_CHECKPOINTS
+        || checkpoints.len() != payloads.len()
+        || payloads.iter().any(|payload| payload.len() > MAX_SNAPSHOT_BYTES)
+    {
         return None;
     }
     let count = u64::try_from(checkpoints.len()).ok()?;
@@ -115,7 +122,9 @@ pub fn fingerprint_review_receipt(
 ///
 /// The entire evidence set and verifier are re-evaluated: a caller cannot
 /// validate a receipt merely by repeating its digest. Any mismatch or absent
-/// input yields DENY. This comparison does not authenticate the expected
+/// input yields DENY. Deterministic fingerprint mismatch is rejected before
+/// invoking the external verifier; matching input still requires complete
+/// recovery and signature validation. This does not authenticate the expected
 /// receipt or its storage, and never authorizes execution.
 #[must_use]
 pub fn revalidate_review_receipt(
@@ -127,15 +136,29 @@ pub fn revalidate_review_receipt(
     floor: Option<&RecoveryFloor>,
     verifier: &impl Ed25519Verifier,
 ) -> RestartInspection {
-    let Some(expected) = expected else {
-        return RestartInspection::Deny;
-    };
-    let Some(recomputed) =
-        review_receipt(checkpoints, payloads, signed, trusted_key, floor, verifier)
+    let (Some(expected), Some(signed), Some(key), Some(floor)) =
+        (expected, signed, trusted_key, floor)
     else {
         return RestartInspection::Deny;
     };
-    if expected != &recomputed {
+    // A mismatching caller-provided fingerprint must not invoke the external
+    // signature verifier. This comparison never replaces full recovery review.
+    if fingerprint_review_receipt(checkpoints, payloads, signed, key, floor).as_ref()
+        != Some(expected)
+    {
+        return RestartInspection::Deny;
+    }
+    if review_receipt(
+        checkpoints,
+        payloads,
+        Some(signed),
+        Some(key),
+        Some(floor),
+        verifier,
+    )
+    .as_ref()
+        != Some(expected)
+    {
         return RestartInspection::Deny;
     }
     RestartInspection::ReviewOnly
@@ -168,6 +191,20 @@ mod tests {
         }
     }
 
+    // Only counts calls; a Valid result here is not Ed25519 verification.
+    struct CountingVerifier(std::cell::Cell<usize>);
+    impl Ed25519Verifier for CountingVerifier {
+        fn verify(
+            &self,
+            _public_key: &[u8; 32],
+            _message: &[u8],
+            _signature: &[u8; 64],
+        ) -> SignatureVerdict {
+            self.0.set(self.0.get() + 1);
+            SignatureVerdict::Valid
+        }
+    }
+
     struct RejectAll;
     impl Ed25519Verifier for RejectAll {
         fn verify(
@@ -177,6 +214,111 @@ mod tests {
             _signature: &[u8; 64],
         ) -> SignatureVerdict {
             SignatureVerdict::Invalid
+        }
+    }
+
+    #[test]
+    fn altered_receipt_is_denied_before_external_verifier() {
+        let snapshot = digest_snapshot(5, &[4; 32], b"payload").unwrap_or([0; 32]);
+        let checkpoints = [RestartCheckpoint {
+            sequence: 5,
+            snapshot_digest: snapshot,
+            predecessor_digest: [4; 32],
+            committed: true,
+            hold: false,
+            revoked: false,
+        }];
+        let signed = SignedAnchor {
+            key_id: "review-key",
+            public_key: [6; 32],
+            signature: [9; 64],
+            anchor: RestartAnchor {
+                sequence: 5,
+                snapshot_digest: snapshot,
+                predecessor_digest: [4; 32],
+                externally_verified: true,
+            },
+        };
+        let key = TrustedKey {
+            key_id: "review-key",
+            public_key: [6; 32],
+            registry_sequence: 4,
+            first_sequence: 1,
+            last_sequence: 6,
+            revoked: false,
+        };
+        let floor = RecoveryFloor {
+            checkpoint_sequence: 5,
+            registry_sequence: 4,
+        };
+        let verifier = CountingVerifier(std::cell::Cell::new(0));
+        let payloads: &[&[u8]] = &[b"payload"];
+        let receipt = review_receipt(
+            &checkpoints,
+            payloads,
+            Some(&signed),
+            Some(&key),
+            Some(&floor),
+            &verifier,
+        );
+        assert!(receipt.is_some());
+        verifier.0.set(0);
+        if let Some(receipt) = receipt {
+            for corrupted in [
+                ReviewReceipt {
+                    digest: [3; 32],
+                    ..receipt
+                },
+                ReviewReceipt {
+                    checkpoint_count: receipt.checkpoint_count + 1,
+                    ..receipt
+                },
+                ReviewReceipt {
+                    registry_sequence: receipt.registry_sequence + 1,
+                    ..receipt
+                },
+            ] {
+                assert_eq!(
+                    revalidate_review_receipt(
+                        Some(&corrupted),
+                        &checkpoints,
+                        payloads,
+                        Some(&signed),
+                        Some(&key),
+                        Some(&floor),
+                        &verifier,
+                    ),
+                    crate::orcheastra_restart::RestartInspection::Deny
+                );
+                assert_eq!(verifier.0.get(), 0);
+            }
+            assert_eq!(
+                revalidate_review_receipt(
+                    Some(&receipt),
+                    &checkpoints,
+                    payloads,
+                    Some(&signed),
+                    Some(&key),
+                    Some(&floor),
+                    &verifier,
+                ),
+                crate::orcheastra_restart::RestartInspection::ReviewOnly
+            );
+            assert_eq!(verifier.0.get(), 1);
+            verifier.0.set(0);
+            assert_eq!(
+                revalidate_review_receipt(
+                    Some(&receipt),
+                    &checkpoints,
+                    &[b"PAYLOAD"],
+                    Some(&signed),
+                    Some(&key),
+                    Some(&floor),
+                    &verifier,
+                ),
+                crate::orcheastra_restart::RestartInspection::Deny
+            );
+            assert_eq!(verifier.0.get(), 0);
         }
     }
 
