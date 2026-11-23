@@ -70,7 +70,9 @@ pub fn fingerprint_review_receipt(
     if checkpoints.is_empty()
         || checkpoints.len() > MAX_CHAIN_CHECKPOINTS
         || checkpoints.len() != payloads.len()
-        || payloads.iter().any(|payload| payload.len() > MAX_SNAPSHOT_BYTES)
+        || payloads
+            .iter()
+            .any(|payload| payload.len() > MAX_SNAPSHOT_BYTES)
     {
         return None;
     }
