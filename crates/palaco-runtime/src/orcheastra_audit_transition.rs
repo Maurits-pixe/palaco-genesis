@@ -387,6 +387,7 @@ mod tests {
     use crate::orcheastra_review_receipt::{review_receipt, ReviewReceipt};
     use crate::orcheastra_signed_anchor::{
         anchor_message_v2, Ed25519Verifier, SignatureVerdict, SignedAnchor, TrustedKey,
+        MAX_KEY_ID_BYTES,
     };
 
     // These adapters only test wiring. Neither is a trusted implementation.
