@@ -119,8 +119,8 @@ pub fn inspect_audit_evidence_lineage(evidence: &[RecoveryEvidence<'_>]) -> Rest
 /// and authorized checkpoint interval. Key registry revisions may increase
 /// but cannot decrease; changes to key identity or validity window are denied
 /// pending an independently authenticated rotation policy. Structurally
-/// invalid signatures or unsigned/unverified anchors are denied before receipt
-/// hashing. This is not proof of key provenance or genuine signatures.
+/// invalid signatures, unverified anchors, or an anchor not matching the
+/// source's final checkpoint are denied before receipt hashing. This is not proof of key provenance or genuine signatures.
 #[must_use]
 pub fn inspect_audit_evidence_signers(evidence: &[RecoveryEvidence<'_>]) -> RestartInspection {
     let Some(first) = evidence.first() else {
@@ -141,6 +141,9 @@ pub fn inspect_audit_evidence_signers(evidence: &[RecoveryEvidence<'_>]) -> Rest
     let mut last_registry = 0;
     for source in evidence {
         let key = source.trusted_key;
+        let Some(last_checkpoint) = source.checkpoints.last() else {
+            return RestartInspection::Deny;
+        };
         if key.revoked
             || key.key_id != baseline.key_id
             || key.public_key != baseline.public_key
@@ -154,6 +157,9 @@ pub fn inspect_audit_evidence_signers(evidence: &[RecoveryEvidence<'_>]) -> Rest
             || !source.signed.anchor.externally_verified
             || source.signed.anchor.snapshot_digest == [0; 32]
             || source.signed.anchor.predecessor_digest == [0; 32]
+            || source.signed.anchor.sequence != last_checkpoint.sequence
+            || source.signed.anchor.snapshot_digest != last_checkpoint.snapshot_digest
+            || source.signed.anchor.predecessor_digest != last_checkpoint.predecessor_digest
             || source.signed.anchor.sequence < key.first_sequence
             || source.signed.anchor.sequence > key.last_sequence
         {
@@ -722,10 +728,19 @@ mod tests {
             revoked: false,
         }];
         let following_payloads: &[&[u8]] = &[b"next"];
+        let following_signed = SignedAnchor {
+            anchor: RestartAnchor {
+                sequence: 8,
+                predecessor_digest: snapshot,
+                snapshot_digest: next_snapshot,
+                externally_verified: true,
+            },
+            ..signed.clone()
+        };
         let following = RecoveryEvidence {
             checkpoints: &following_checkpoint,
             payloads: following_payloads,
-            signed: &signed,
+            signed: &following_signed,
             trusted_key: &trusted_key,
             floor: &floor,
         };
@@ -747,6 +762,61 @@ mod tests {
             inspect_audit_evidence_signers(&contiguous),
             RestartInspection::ReviewOnly
         );
+        let wrong_anchor_sequence = SignedAnchor {
+            anchor: RestartAnchor {
+                sequence: 9,
+                ..signed.anchor
+            },
+            ..signed.clone()
+        };
+        let wrong_sequence_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints,
+            payloads,
+            signed: &wrong_anchor_sequence,
+            trusted_key: &trusted_key,
+            floor: &floor,
+        }];
+        assert_eq!(
+            inspect_audit_evidence_signers(&wrong_sequence_evidence),
+            RestartInspection::Deny
+        );
+        let wrong_anchor_snapshot = SignedAnchor {
+            anchor: RestartAnchor {
+                snapshot_digest: [7; 32],
+                ..signed.anchor
+            },
+            ..signed.clone()
+        };
+        let wrong_snapshot_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints,
+            payloads,
+            signed: &wrong_anchor_snapshot,
+            trusted_key: &trusted_key,
+            floor: &floor,
+        }];
+        assert_eq!(
+            inspect_audit_evidence_signers(&wrong_snapshot_evidence),
+            RestartInspection::Deny
+        );
+        let wrong_anchor_predecessor = SignedAnchor {
+            anchor: RestartAnchor {
+                predecessor_digest: [7; 32],
+                ..signed.anchor
+            },
+            ..signed.clone()
+        };
+        let wrong_predecessor_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints,
+            payloads,
+            signed: &wrong_anchor_predecessor,
+            trusted_key: &trusted_key,
+            floor: &floor,
+        }];
+        assert_eq!(
+            inspect_audit_evidence_signers(&wrong_predecessor_evidence),
+            RestartInspection::Deny
+        );
+
         let swapped_key = TrustedKey {
             key_id: "swapped",
             public_key: trusted_key.public_key,
