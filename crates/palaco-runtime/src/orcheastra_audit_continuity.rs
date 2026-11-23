@@ -4,7 +4,7 @@
 //! expectations must be authenticated by a separately trusted, rollback-safe
 //! witness. ReviewOnly never grants execution or publishing rights.
 
-use crate::orcheastra_audit_chain::{AuditChainExpectation, AuditLink};
+use crate::orcheastra_audit_chain::{inspect_audit_chain, AuditChainExpectation, AuditLink};
 use crate::orcheastra_audit_custody::{inspect_custodied_audit_chain, AuditCustodyWitness};
 use crate::orcheastra_restart::RestartInspection;
 
@@ -12,6 +12,7 @@ use crate::orcheastra_restart::RestartInspection;
 ///
 /// Requires contiguous sequence numbers, an exact predecessor-to-head match,
 /// and successful independent witness checks on both segment expectations.
+/// Both local audit chains are validated before calling either external witness.
 /// No caller-supplied witness implementation is trusted merely by this API.
 /// The function does not create, store, or authorize audit records.
 #[must_use]
@@ -30,8 +31,11 @@ pub fn inspect_audit_continuity(
     let Some(next_sequence) = previous.last_sequence.checked_add(1) else {
         return RestartInspection::Deny;
     };
+    // Validate both complete local chains before either external witness call.
     if current.first_sequence != next_sequence
         || current.predecessor_digest != previous.final_digest
+        || inspect_audit_chain(previous_links, Some(previous)) != RestartInspection::ReviewOnly
+        || inspect_audit_chain(current_links, Some(current)) != RestartInspection::ReviewOnly
         || inspect_custodied_audit_chain(previous_links, Some(previous), Some(witness))
             != RestartInspection::ReviewOnly
         || inspect_custodied_audit_chain(current_links, Some(current), Some(witness))
@@ -59,6 +63,15 @@ mod tests {
             } else {
                 CustodyVerdict::Denied
             }
+        }
+    }
+
+    // Counts potentially side-effecting custody calls without locks or panic.
+    struct CountingWitness(std::cell::Cell<usize>);
+    impl AuditCustodyWitness for CountingWitness {
+        fn verify_expectation(&self, _expected: &AuditChainExpectation) -> CustodyVerdict {
+            self.0.set(self.0.get() + 1);
+            CustodyVerdict::Verified
         }
     }
 
@@ -117,6 +130,52 @@ mod tests {
             ),
             RestartInspection::ReviewOnly
         );
+    }
+
+    #[test]
+    fn both_chains_preflight_before_any_external_witness() {
+        let (prev_links, prev, next_links, next) = fixture();
+        let witness = CountingWitness(std::cell::Cell::new(0));
+        assert_eq!(
+            inspect_audit_continuity(
+                &prev_links,
+                Some(&prev),
+                &next_links,
+                Some(&next),
+                Some(&witness),
+            ),
+            RestartInspection::ReviewOnly
+        );
+        assert_eq!(witness.0.get(), 2);
+
+        witness.0.set(0);
+        let mut tampered_current = next_links;
+        tampered_current[0].receipt_digest[0] ^= 1;
+        assert_eq!(
+            inspect_audit_continuity(
+                &prev_links,
+                Some(&prev),
+                &tampered_current,
+                Some(&next),
+                Some(&witness),
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(witness.0.get(), 0);
+
+        let mut tampered_previous = prev_links;
+        tampered_previous[0].link_digest[0] ^= 1;
+        assert_eq!(
+            inspect_audit_continuity(
+                &tampered_previous,
+                Some(&prev),
+                &next_links,
+                Some(&next),
+                Some(&witness),
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(witness.0.get(), 0);
     }
 
     #[test]
