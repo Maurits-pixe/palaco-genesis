@@ -115,6 +115,7 @@ pub fn anchor_message_v2(anchor: &RestartAnchor, key: &TrustedKey<'_>) -> Option
 ///
 /// The pinned registry must come from a trusted, rollback-protected source.
 /// Passing these structs from an untrusted caller provides no authentication.
+/// Structurally empty signatures are denied before an external verifier call.
 /// A positive outcome is still review-only, never execution authorization.
 #[must_use]
 pub fn inspect_signed_anchor(
@@ -128,6 +129,7 @@ pub fn inspect_signed_anchor(
 
     if signed.key_id.is_empty()
         || signed.key_id.len() > MAX_KEY_ID_BYTES
+        || signed.signature == [0; 64]
         || key.key_id != signed.key_id
         || key.public_key != signed.public_key
         || key.public_key == [0; 32]
@@ -176,6 +178,20 @@ mod tests {
         }
     }
 
+    // Test-only callback counter. It does not perform cryptographic verification.
+    struct CountingVerifier(std::cell::Cell<usize>);
+    impl Ed25519Verifier for CountingVerifier {
+        fn verify(
+            &self,
+            _public_key: &[u8; 32],
+            _message: &[u8],
+            _signature: &[u8; 64],
+        ) -> SignatureVerdict {
+            self.0.set(self.0.get() + 1);
+            SignatureVerdict::Valid
+        }
+    }
+
     fn fixture() -> (SignedAnchor<'static>, TrustedKey<'static>) {
         (
             SignedAnchor {
@@ -198,6 +214,58 @@ mod tests {
                 revoked: false,
             },
         )
+    }
+
+    #[test]
+    fn malformed_signature_and_key_context_precede_verifier_call() {
+        let (signed, key) = fixture();
+        let verifier = CountingVerifier(std::cell::Cell::new(0));
+        let zero_signature = SignedAnchor {
+            signature: [0; 64],
+            ..signed.clone()
+        };
+        assert_eq!(
+            inspect_signed_anchor(Some(&zero_signature), Some(&key), &verifier),
+            RestartInspection::Deny
+        );
+        assert_eq!(verifier.0.get(), 0);
+
+        let empty_key_id = SignedAnchor {
+            key_id: "",
+            ..signed.clone()
+        };
+        assert_eq!(
+            inspect_signed_anchor(Some(&empty_key_id), Some(&key), &verifier),
+            RestartInspection::Deny
+        );
+        assert_eq!(verifier.0.get(), 0);
+
+        let mut invalid_registry = key.clone();
+        invalid_registry.registry_sequence = 0;
+        assert_eq!(
+            inspect_signed_anchor(Some(&signed), Some(&invalid_registry), &verifier),
+            RestartInspection::Deny
+        );
+        assert_eq!(verifier.0.get(), 0);
+
+        let unverified_anchor = SignedAnchor {
+            anchor: RestartAnchor {
+                externally_verified: false,
+                ..signed.anchor
+            },
+            ..signed.clone()
+        };
+        assert_eq!(
+            inspect_signed_anchor(Some(&unverified_anchor), Some(&key), &verifier),
+            RestartInspection::Deny
+        );
+        assert_eq!(verifier.0.get(), 0);
+
+        assert_eq!(
+            inspect_signed_anchor(Some(&signed), Some(&key), &verifier),
+            RestartInspection::ReviewOnly
+        );
+        assert_eq!(verifier.0.get(), 1);
     }
 
     #[test]
