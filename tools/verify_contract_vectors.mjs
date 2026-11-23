@@ -53,6 +53,13 @@ function encode(value, depth = 0) {
   }
   if (Array.isArray(value)) {
     if (depth >= MAX_DEPTH) throw new Error('JSON nesting depth exceeds limit');
+    // Array.map skips holes; joining its output would silently emit invalid
+    // JSON such as "[,1]". JSON arrays must contain explicit values.
+    for (let i = 0; i < value.length; i += 1) {
+      if (!Object.hasOwn(value, i)) {
+        throw new Error('sparse array entry is not a JSON value');
+      }
+    }
     return '[' + value.map((entry) => encode(entry, depth + 1)).join(',') + ']';
   }
   if (typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
@@ -190,6 +197,21 @@ assert.notEqual(digest({ flag: false }), digest({ flag: 0 }),
                 'boolean false is not integer zero');
 assert.notEqual(digest({ value: null }), digest({}),
                 'null-valued member is not an omitted member');
+
+// In-memory JavaScript sparse arrays cannot be represented as canonical
+// JSON values; inherited indexed properties cannot fill a missing own slot.
+const arrayWithHole = new Array(2);
+arrayWithHole[1] = 1;
+assert.throws(() => canonicalBytes(arrayWithHole), /sparse array/,
+              'a missing first array entry must fail closed');
+assert.throws(() => canonicalBytes([0, , 2]), /sparse array/,
+              'an interior hole must fail closed');
+assert.throws(() => canonicalBytes([[,]]), /sparse array/,
+              'a nested array hole must fail closed');
+assert.deepEqual(canonicalBytes([null, 1]), Buffer.from('[null,1]', 'utf8'),
+                 'an explicit null slot is valid JSON');
+assert.deepEqual(canonicalBytes([0, 1, 2]), Buffer.from('[0,1,2]', 'utf8'),
+                 'fully populated arrays remain valid');
 
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
