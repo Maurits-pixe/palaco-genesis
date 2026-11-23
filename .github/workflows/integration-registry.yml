@@ -78,6 +78,8 @@ on:
       - 'tests/test_custody_witness_registry.py'
       - 'tools/witness_registry_succession.py'
       - 'tests/test_witness_registry_succession.py'
+      - 'tools/organization_identity_evidence.py'
+      - 'tests/test_organization_identity_evidence.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -157,6 +159,8 @@ on:
       - 'tests/test_custody_witness_registry.py'
       - 'tools/witness_registry_succession.py'
       - 'tests/test_witness_registry_succession.py'
+      - 'tools/organization_identity_evidence.py'
+      - 'tests/test_organization_identity_evidence.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
