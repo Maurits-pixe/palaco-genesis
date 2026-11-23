@@ -1,6 +1,14 @@
-# PALACO Bluetooth Offline Transfer — v4.7 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v4.8 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v4.8 Windows privileged-service admission evidence inventory
+
+- `windows_service_admission.py` correlates existing Windows IPC/native diagnostic data with an eight-control external review inventory covering service SID, named-pipe DACL, OS caller token verification, impersonation boundary, binary integrity, least privilege, session replay protection and TPM trust root.
+- `test_windows_service_admission.py` adds 20 regression scenarios and is part of Bluetooth CI.
+- No actual service executable, named-pipe transport, Windows token authentication, TPM operations or physical-device tests are included. Reports describing external review claims are **not authenticated evidence** or operational capabilities.
+- All results remain **GO-13 HOLD / authorization DENY**, including complete externally asserted reviews.
+- A native Windows implementation must establish its own privilege boundary, verify peer tokens, reject untrusted clients, and undergo independent TPM/rollback testing before any security assurance claim.
 
 ## v4.7 Windows IPC/native probe correlation (diagnostic only)
 
