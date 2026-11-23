@@ -82,6 +82,8 @@ on:
       - 'tests/test_organization_identity_evidence.py'
       - 'tools/organization_authority_evidence.py'
       - 'tests/test_organization_authority_evidence.py'
+      - 'tools/organization_delegation_history.py'
+      - 'tests/test_organization_delegation_history.py'
       - '.github/workflows/integration-registry.yml'
   push:
     branches: [main]
@@ -165,6 +167,8 @@ on:
       - 'tests/test_organization_identity_evidence.py'
       - 'tools/organization_authority_evidence.py'
       - 'tests/test_organization_authority_evidence.py'
+      - 'tools/organization_delegation_history.py'
+      - 'tests/test_organization_delegation_history.py'
       - '.github/workflows/integration-registry.yml'
   workflow_dispatch:
 
