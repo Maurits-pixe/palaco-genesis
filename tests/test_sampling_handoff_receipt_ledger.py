@@ -64,6 +64,40 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
         self.assertFalse(result["authorization_granted"])
         return result
 
+    def test_trigger_deleting_inserted_nonce_rolls_back(self):
+        with sqlite3.connect(self.db) as conn:
+            mod._schema(conn)
+            conn.execute("""CREATE TRIGGER suppress_nonce AFTER INSERT
+                ON sampling_handoff_nonces BEGIN
+                DELETE FROM sampling_handoff_nonces
+                WHERE nonce_hex=NEW.nonce_hex;
+                END""")
+        result=self.record()
+        self.assertFalse(result["recorded"])
+        self.assertEqual(result["reason"],
+                         "handoff-receipt-ledger-postwrite-integrity-failed")
+        with sqlite3.connect(self.db) as conn:
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM sampling_handoff_receipts").fetchone()[0],0)
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM sampling_handoff_nonces").fetchone()[0],0)
+
+    def test_trigger_corrupting_inserted_event_rolls_back(self):
+        with sqlite3.connect(self.db) as conn:
+            mod._schema(conn)
+            conn.execute("""CREATE TRIGGER alter_event AFTER INSERT
+                ON sampling_handoff_receipts BEGIN
+                UPDATE sampling_handoff_receipts SET event_hash=printf('%064d',0)
+                WHERE sequence=NEW.sequence;
+                END""")
+        result=self.record()
+        self.assertFalse(result["recorded"])
+        self.assertEqual(result["reason"],
+                         "handoff-receipt-ledger-postwrite-integrity-failed")
+        with sqlite3.connect(self.db) as conn:
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM sampling_handoff_receipts").fetchone()[0],0)
+
     def test_registered_pending_only(self):
         first=self.record()
         self.assertTrue(first["recorded"])
