@@ -35,7 +35,7 @@ class ExternalArchiveCustodyClaimTests(unittest.TestCase):
         use=self.f.custodian if signer is None else signer
         key=self.f.key
         body={"challenge":copy.deepcopy(challenge),"custodian_key_id":key,
-              "custody_claim":mod.CLAIM}
+              "custody_claim":mod.CLAIM,"signature_b64":""}
         msg=mod.canonical_response(body)
         body["signature_b64"]=base64.b64encode(use.sign(mod.DOMAIN+msg)).decode()
         return body
