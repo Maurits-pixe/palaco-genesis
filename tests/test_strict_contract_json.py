@@ -201,6 +201,27 @@ class StrictContractJsonTests(unittest.TestCase):
             {"release_gate": "HOLD", "edges": [{"runtime_enabled": False}]},
         )
 
+    def test_duplicate_surrogate_pair_alias_key_rejected(self):
+        document = r'{"\ud83d\ude80":"HOLD","🚀":"GO"}'
+        with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
+            self.load_raw(document)
+
+    def test_duplicate_null_escape_alias_key_rejected(self):
+        document = r'{"a\u0000b":"HOLD","a\u0000b":"GO"}'
+        with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
+            self.load_raw(document)
+
+    def test_distinct_astral_unicode_keys_accepted(self):
+        document = r'{"\ud83d\ude80":"HOLD","\ud83d\ude81":"DENY"}'
+        self.assertEqual(self.load_raw(document), {"🚀": "HOLD", "🚁": "DENY"})
+
+    def test_escaped_delimiters_do_not_bypass_depth_guard(self):
+        document = '{"text":"' + r'\"[{}]\"' + '","nested":[' + (
+            "[" * MAX_NESTING_DEPTH
+        ) + "0" + ("]" * MAX_NESTING_DEPTH) + ']}'
+        with self.assertRaisesRegex(ValueError, "nesting depth"):
+            self.load_raw(document)
+
     def test_duplicate_top_level_rejected(self):
         with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
             self.load_raw('{"release_gate":"HOLD","release_gate":"GO"}')
