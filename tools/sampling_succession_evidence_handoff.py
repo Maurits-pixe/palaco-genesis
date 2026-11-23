@@ -157,9 +157,9 @@ def verify_receipt(db,package,receipt,witness_roots,witness_organizations,
     key=receipt["recipient_key_id"]
     if not isinstance(key,str) or not HEX.fullmatch(key):
         return deny("invalid-handoff-recipient-key")
+    if key in witness_organizations:return deny("handoff-witness-recipient-key-collision")
     if key in revoked_recipients:return deny("handoff-recipient-revoked")
     if key not in allowed_recipients:return deny("handoff-recipient-not-allowed")
-    if key in witness_organizations:return deny("handoff-witness-recipient-key-collision")
     pub=recipient_roots.get(key)
     if not isinstance(pub,bytes) or len(pub)!=32 or hashlib.sha256(pub).hexdigest()!=key:
         return deny("untrusted-handoff-recipient")
