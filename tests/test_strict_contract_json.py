@@ -301,15 +301,15 @@ class StrictContractJsonTests(unittest.TestCase):
 
     def test_unescaped_control_character_rejected(self):
         with self.assertRaises(ValueError):
-            self.load_raw('{"name":"one\\x00two"}')
+            self.load_raw('{"name":"one' + chr(0) + 'two"}')
 
     def test_escaped_control_character_accepted(self):
-        self.assertEqual(self.load_raw(r'{"name":"one\\u0000two"}'),
-                         {"name": "one\\x00two"})
+        self.assertEqual(self.load_raw(r'{"name":"one\u0000two"}'),
+                         {"name": "one" + chr(0) + "two"})
 
     def test_bom_codepoint_inside_json_string_accepted(self):
-        self.assertEqual(self.load_raw('{"mark":"\\ufeff"}'),
-                         {"mark": "\\ufeff"})
+        self.assertEqual(self.load_raw('{"mark":"' + chr(0xfeff) + '"}'),
+                         {"mark": chr(0xfeff)})
 
     def test_utf8_byte_size_limit_counts_multibyte_characters(self):
         # The payload is short in code points but exceeds the byte budget.
