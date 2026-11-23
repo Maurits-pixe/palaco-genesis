@@ -16,7 +16,7 @@ use crate::orcheastra_audit_receipts::inspect_bound_audit_receipts;
 use crate::orcheastra_payload::{MAX_CHAIN_CHECKPOINTS, MAX_SNAPSHOT_BYTES};
 use crate::orcheastra_restart::RestartInspection;
 use crate::orcheastra_review_receipt::ReviewReceipt;
-use crate::orcheastra_signed_anchor::Ed25519Verifier;
+use crate::orcheastra_signed_anchor::{Ed25519Verifier, MAX_KEY_ID_BYTES};
 
 /// Borrowed complete input for reviewing one audit segment.
 pub struct AuditSegmentEvidence<'a> {
@@ -115,6 +115,7 @@ pub fn inspect_transition_snapshot_link(
 /// authenticated rotation policy is implemented. The key validity interval
 /// must also remain identical, so expanding, shrinking or shifting a key's
 /// allowed checkpoint window is denied until separately authenticated.
+/// Malformed signatures, anchor digests and verification flags are denied.
 /// Matching caller-provided keys are only a consistency check, not proof of
 /// key ownership or authenticity.
 #[must_use]
@@ -132,6 +133,7 @@ pub fn inspect_transition_signer_continuity(
     if previous_key.revoked
         || current_key.revoked
         || previous_key.key_id.is_empty()
+        || previous_key.key_id.len() > MAX_KEY_ID_BYTES
         || previous_key.key_id != current_key.key_id
         || previous_key.public_key == [0; 32]
         || previous_key.public_key != current_key.public_key
@@ -139,6 +141,14 @@ pub fn inspect_transition_signer_continuity(
         || current_source.signed.key_id != current_key.key_id
         || previous_source.signed.public_key != previous_key.public_key
         || current_source.signed.public_key != current_key.public_key
+        || previous_source.signed.signature == [0; 64]
+        || current_source.signed.signature == [0; 64]
+        || !previous_source.signed.anchor.externally_verified
+        || !current_source.signed.anchor.externally_verified
+        || previous_source.signed.anchor.snapshot_digest == [0; 32]
+        || current_source.signed.anchor.snapshot_digest == [0; 32]
+        || previous_source.signed.anchor.predecessor_digest == [0; 32]
+        || current_source.signed.anchor.predecessor_digest == [0; 32]
         || previous_key.first_sequence == 0
         || previous_key.first_sequence > previous_key.last_sequence
         || previous_key.first_sequence != current_key.first_sequence
@@ -158,7 +168,8 @@ pub fn inspect_transition_signer_continuity(
 /// Each receipt must have exactly one source evidence bundle. Every bundle
 /// must use the same key identity and validity window as the first, and each
 /// signed anchor must be bound to that key. Registry revisions may advance,
-/// but never roll back. This is not key or signature authentication.
+/// but never roll back. Malformed signatures and anchor fields are rejected.
+/// This is not key or signature authentication.
 #[must_use]
 pub fn inspect_segment_signer_consistency(segment: &AuditSegmentEvidence<'_>) -> RestartInspection {
     let Some(first) = segment.evidence.first() else {
@@ -169,6 +180,7 @@ pub fn inspect_segment_signer_consistency(segment: &AuditSegmentEvidence<'_>) ->
     }
     let baseline = first.trusted_key;
     if baseline.key_id.is_empty()
+        || baseline.key_id.len() > MAX_KEY_ID_BYTES
         || baseline.public_key == [0; 32]
         || baseline.first_sequence == 0
         || baseline.first_sequence > baseline.last_sequence
@@ -188,6 +200,10 @@ pub fn inspect_segment_signer_consistency(segment: &AuditSegmentEvidence<'_>) ->
             || key.registry_sequence < prior_registry_sequence
             || source.signed.key_id != key.key_id
             || source.signed.public_key != key.public_key
+            || source.signed.signature == [0; 64]
+            || !source.signed.anchor.externally_verified
+            || source.signed.anchor.snapshot_digest == [0; 32]
+            || source.signed.anchor.predecessor_digest == [0; 32]
             || source.signed.anchor.sequence < key.first_sequence
             || source.signed.anchor.sequence > key.last_sequence
         {
@@ -1303,6 +1319,103 @@ mod tests {
             RestartInspection::Deny
         );
         assert_eq!(never_called.0.get(), 0);
+        // Direct signer entrypoints also fail closed on malformed anchors.
+        let zero_signature = SignedAnchor {
+            signature: [0; 64],
+            ..signed_current.clone()
+        };
+        let zero_signature_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_current,
+            payloads: payloads_current,
+            signed: &zero_signature,
+            trusted_key: &key,
+            floor: &floor_current,
+        }];
+        let malformed_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &zero_signature_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_segment_signer_consistency(&malformed_current),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &malformed_current),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_custodied_audit_transition(
+                &previous,
+                &malformed_current,
+                Some(&never_called),
+                &verifier,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(never_called.0.get(), 0);
+
+        let invalid_anchor = SignedAnchor {
+            anchor: RestartAnchor {
+                externally_verified: false,
+                ..signed_previous.anchor
+            },
+            ..signed_previous.clone()
+        };
+        let invalid_anchor_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_previous,
+            payloads: payloads_previous,
+            signed: &invalid_anchor,
+            trusted_key: &key,
+            floor: &floor_previous,
+        }];
+        let malformed_previous = AuditSegmentEvidence {
+            links: &links_previous,
+            receipts: &receipts_previous,
+            evidence: &invalid_anchor_evidence,
+            expected: &expected_previous,
+        };
+        assert_eq!(
+            inspect_segment_signer_consistency(&malformed_previous),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_transition_signer_continuity(&malformed_previous, &current),
+            RestartInspection::Deny
+        );
+        assert_eq!(never_called.0.get(), 0);
+
+        let long_key_id = "x".repeat(MAX_KEY_ID_BYTES + 1);
+        let oversized_key = TrustedKey {
+            key_id: &long_key_id,
+            ..key.clone()
+        };
+        let oversized_signed = SignedAnchor {
+            key_id: &long_key_id,
+            ..signed_current.clone()
+        };
+        let oversized_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_current,
+            payloads: payloads_current,
+            signed: &oversized_signed,
+            trusted_key: &oversized_key,
+            floor: &floor_current,
+        }];
+        let oversized_segment = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &oversized_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_segment_signer_consistency(&oversized_segment),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &oversized_segment),
+            RestartInspection::Deny
+        );
         let witness = TestWitness([expected_previous, expected_current]);
         assert_eq!(
             inspect_custodied_audit_transition(&previous, &current, Some(&witness), &verifier),
