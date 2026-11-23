@@ -70,7 +70,7 @@ class ContractDigestTests(unittest.TestCase):
                             hashlib.sha256(payload).hexdigest())
         self.assertNotEqual(
             digest_contract({"gate": "HOLD"}),
-            b"PALACO-CJSON-v0" + bytes.fromhex("00")
+            hashlib.sha256(b"PALACO-CJSON-v0" + bytes.fromhex("00") + payload).hexdigest(),
         )
 
     def test_file_digest_ignores_whitespace_and_member_order(self):
