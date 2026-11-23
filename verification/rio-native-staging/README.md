@@ -14,7 +14,7 @@ npm ci --prefix native-staging --ignore-scripts --no-audit --no-fund
 npm run test:ci
 ```
 
-`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer/lifecycle/handover/key-and-registry/cancellation/reporting/controller/history checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v307.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
+`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer/lifecycle/handover/key-and-registry/cancellation/reporting/controller/history/service checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v308.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
 
 ## Source continuity and status
 
@@ -469,4 +469,59 @@ Installation receipts and completed-attempt records include `previousCompletedAt
 
 Twelve contract cases cover explicit initial null, invalid/stale/future markers, unchanged-generation cancellation/failure, busy duplicates, multiple completed attempts, unadmitted commands, later generations, completion barriers, controller binding, final-continuation cancellation and unchanged issuer/verifier use. Six new native scenarios reuse one original route with selected One PostgreSQL columns: initial success, full retirement, cancellation plus cached-command refusal, actual PostgreSQL query error 42P01 plus stale-marker refusal, successful retry from a fresh observation, and close completion retaining its admitted predecessor. Stale native commands perform zero registry lookups and do not create results. SQL/Ed25519 are real and are not intercepted; the key and reviewer session retain their original active values.
 
-`test:ci` uses `run-ci-v307.mjs`, requires all six history-admission records alongside preserved suites and writes `evidence/CI-RESULT-v307.json`. AI review: TRIAS separates observed operation context from authority; ORACLE requires refusal after actual cancellation/SQL failure while generation remains unchanged; MENTOR requires a fresh explicit observation before retry. These are three lenses applied by one assistant, not independent approvals. Synthetic authentication, original One SQL-function limits, software-key isolation limits and unverified remote TLS remain unchanged. Acceptance HOLD; authorization NONE.
+The preserved `run-ci-v307.mjs` requires all six history-admission records alongside earlier suites and writes `evidence/CI-RESULT-v307.json`. AI review: TRIAS separates observed operation context from authority; ORACLE requires refusal after actual cancellation/SQL failure while generation remains unchanged; MENTOR requires a fresh explicit observation before retry. These are three lenses applied by one assistant, not independent approvals. Synthetic authentication, original One SQL-function limits, software-key isolation limits and unverified remote TLS remain unchanged. Acceptance HOLD; authorization NONE.
+
+## One inspection service with separate host control (v308)
+
+`createRioOneInspectionServiceV308` assembles the v307 signer controller, v298 statement issuer, v296 signed source, v295 One reader and original v269 inspection route in one asynchronous construction. A trusted host previously had to connect these components manually. The new factory returns a frozen inspection port and a separate frozen signer-control port without exposing raw signing or session-statement callbacks. Earlier modules and their public APIs remain unchanged.
+
+```js
+const service = await createRioOneInspectionServiceV308({
+  tenantRef, allowedOrigin, issuerKey, privateSigningKey,
+  readIssuerKeyState, readAuthenticatedOneSession, acquireOneReadConnection,
+  receiptServices, now,
+  limits: {requestTimeoutMs: 5000, maxConcurrentInspections: 2, maxConcurrentSignatures: 2},
+});
+// Pass only this port to the host's existing inspection HTTP adapter.
+const response = await service.inspection.handle(request);
+
+// Keep this separate port inside trusted host administration.
+const control = service.signerControl;
+const observed = control.getStatus();
+const retired = control.retireGeneration({
+  controllerId: observed.controllerId, expectedGeneration: observed.generation,
+});
+if (retired !== null) {
+  await retired;
+  const current = control.getStatus();
+  await control.installReplacement({
+    controllerId: current.controllerId,
+    expectedGeneration: current.generation,
+    expectedLastCompletedAttemptId: current.lastCompletedAttemptId,
+    privateSigningKey: replacementHandle,
+  });
+}
+await control.close(); // Stops this signer; not a whole-host or connection-pool shutdown.
+```
+
+| Configuration / port | Contract |
+| --- | --- |
+| issuerKey | Exact issuerId, keyId, publicKeyPem and spkiSha256; copied before asynchronous work |
+| receiptServices | Exact keyPins, readInspectionPolicy, readOriginalRevocationRequest, confirmCurrentRevocation and queryVerificationKeys; independent receipt pins remain required |
+| limits | Exact requestTimeoutMs, maxConcurrentInspections and maxConcurrentSignatures |
+| readAuthenticatedOneSession | Mandatory trusted server authentication callback for an already authenticated session; no login fallback |
+| readIssuerKeyState | One captured callback shared by issuer, verifier and signer, including replacement |
+| inspection | handle, path, purpose and HOLD/NONE; no signer administration or raw signature method |
+| signerControl | getStatus, getLastAttemptResult, retireGeneration, installReplacement, cancelReplacement and close, plus HOLD/NONE |
+
+The root configuration and named nested records require exact own enumerable data fields. Getters, extra fields and sparse/accessor pin arrays are refused without evaluating those accessors. Receipt pins are a dense array of 1–32 exact keyId/algorithm/spkiSha256 records. Public scope, key descriptions, pin records, callbacks and limits are captured synchronously before the first await. Later caller mutation does not redirect the assembled service. The host-provided private key remains a software handle with the earlier isolation limitations; copying configuration provides no key isolation or protection against malicious host code.
+
+Static issuer/route validation runs before any register or authentication callback. Only after structural validation does construction await the existing actual private/public correspondence proof and two bounded registry observations. A failed initial assessment rejects construction without returning a partial service. Construction does not authenticate a user, issue a session, start a listener or run receipt policy/One-reader SQL.
+
+The service's replacement command is narrower than the standalone v307 controller: exactly controllerId, expectedGeneration, expectedLastCompletedAttemptId and privateSigningKey. It cannot select another readIssuerKeyState callback; the factory injects its original shared callback. Caller scope, completion observation and retirement barriers still apply. A different registry configuration requires a separately assembled service. Cancellation acknowledges a request and waits for actual provider/crypto settlement under the preserved controller rules; it does not forcibly cancel that work.
+
+`signerControl.close()` closes the signer controller only. It does not close the inspection route, stop upstream authentication/registry callbacks, drain every HTTP operation or dispose host-owned database connections. A later authenticated inspection is refused when signing is unavailable, while earlier route deadlines and in-flight limits retain their original behavior. The host still owns HTTP admission, whole-service shutdown, authentication, provider cancellation policy and pool lifecycle. The two returned JavaScript ports help the host distribute references deliberately; they do not establish an operating-system security boundary or implement management authentication.
+
+Twelve contract tests cover frozen ports, exact configuration, missing authentication dependency, separated source/receipt pins, accessor refusal, absent authenticated session refusal, origin/path guards, snapshots during pending initialization, fixed-registry replacement, revoked initial registry, observed-context cancellation/retry and signer-scoped close. Six native scenarios exercise the single constructor through real Ed25519 and selected One PostgreSQL columns: missing existing authentication, complete receipt inspection, cancellation, stale/alternate-registry refusal without registry work, fresh same-port replacement and signer-only close with unchanged session/key authority. Authentication in that fixture is a synthetic server binding, not a real One identity provider. The existing v242 unsigned-domain limitation is unchanged.
+
+`test:ci` now uses `run-ci-v308.mjs`, requires six new service records alongside every preserved suite and writes `evidence/CI-RESULT-v308.json`. AI review through three lenses by one assistant: TRIAS keeps inspection and trusted control references distinct without claiming authority; ORACLE requires the complete SQL/crypto chain and rejects alternate registry injection; MENTOR requires an explicit host authentication dependency and documents signer-only shutdown. These are not independent approvals. Real One authentication, original One functions, remote TLS, production key custody and release acceptance remain unverified. Acceptance HOLD; authorization NONE; productionReady false.
