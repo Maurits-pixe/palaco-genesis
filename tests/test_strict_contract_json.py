@@ -270,6 +270,18 @@ class StrictContractJsonTests(unittest.TestCase):
         self.assertEqual(self.load_raw('{"zero":0,"signed":-0}'),
                          {"zero": 0, "signed": 0})
 
+    def test_safe_integer_boundary_in_deeply_nested_array(self):
+        document = "[" * MAX_NESTING_DEPTH + "9007199254740991" + "]" * MAX_NESTING_DEPTH
+        parsed = self.load_raw(document)
+        for _ in range(MAX_NESTING_DEPTH):
+            parsed = parsed[0]
+        self.assertEqual(parsed, 9007199254740991)
+
+    def test_unsafe_integer_denied_inside_deeply_nested_array(self):
+        document = "[" * MAX_NESTING_DEPTH + "9007199254740992" + "]" * MAX_NESTING_DEPTH
+        with self.assertRaisesRegex(ValueError, "safe range"):
+            self.load_raw(document)
+
     def test_overlong_float_token_rejected(self):
         token = "1." + "0" * MAX_NUMBER_TOKEN_CHARS
         with self.assertRaisesRegex(ValueError, "numeric token exceeds length limit"):
