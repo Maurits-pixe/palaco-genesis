@@ -84,6 +84,41 @@ class ContractDigestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
                 digest_contract_file(path)
 
+    def test_file_digest_rejects_finite_decimal_even_when_parser_accepts_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "fraction.json"
+            path.write_text('{"value":1.25}', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "unsupported"):
+                digest_contract_file(path)
+
+    def test_file_digest_rejects_nonzero_decimal_underflow(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "underflow.json"
+            path.write_text('{"value":1e-999}', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "underflow"):
+                digest_contract_file(path)
+
+    def test_file_digest_rejects_utf8_bom(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "bom.json"
+            path.write_bytes(bytes.fromhex("efbbbf") + b'{"gate":"HOLD"}')
+            with self.assertRaisesRegex(ValueError, "byte-order mark"):
+                digest_contract_file(path)
+
+    def test_file_digest_rejects_decomposed_unicode_text(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "decomposed.json"
+            path.write_text('{"name":"e' + chr(0x301) + '"}', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "non-NFC"):
+                digest_contract_file(path)
+
+    def test_file_digest_rejects_escaped_duplicate_members(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "aliases.json"
+            path.write_text(r'{"gate":"HOLD","g\u0061te":"GO"}', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
+                digest_contract_file(path)
+
     def test_file_digest_matches_in_memory_digest(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "candidate.json"
