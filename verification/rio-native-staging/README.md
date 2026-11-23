@@ -14,7 +14,7 @@ npm ci --prefix native-staging --ignore-scripts --no-audit --no-fund
 npm run test:ci
 ```
 
-`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer/lifecycle/handover/key-and-registry/cancellation/reporting/controller/history/service checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v308.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
+`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer/lifecycle/handover/key-and-registry/cancellation/reporting/controller/history/service/draining checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v309.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
 
 ## Source continuity and status
 
@@ -524,4 +524,42 @@ The service's replacement command is narrower than the standalone v307 controlle
 
 Twelve contract tests cover frozen ports, exact configuration, missing authentication dependency, separated source/receipt pins, accessor refusal, absent authenticated session refusal, origin/path guards, snapshots during pending initialization, fixed-registry replacement, revoked initial registry, observed-context cancellation/retry and signer-scoped close. Six native scenarios exercise the single constructor through real Ed25519 and selected One PostgreSQL columns: missing existing authentication, complete receipt inspection, cancellation, stale/alternate-registry refusal without registry work, fresh same-port replacement and signer-only close with unchanged session/key authority. Authentication in that fixture is a synthetic server binding, not a real One identity provider. The existing v242 unsigned-domain limitation is unchanged.
 
-`test:ci` now uses `run-ci-v308.mjs`, requires six new service records alongside every preserved suite and writes `evidence/CI-RESULT-v308.json`. AI review through three lenses by one assistant: TRIAS keeps inspection and trusted control references distinct without claiming authority; ORACLE requires the complete SQL/crypto chain and rejects alternate registry injection; MENTOR requires an explicit host authentication dependency and documents signer-only shutdown. These are not independent approvals. Real One authentication, original One functions, remote TLS, production key custody and release acceptance remain unverified. Acceptance HOLD; authorization NONE; productionReady false.
+The preserved `run-ci-v308.mjs` requires six service records alongside earlier suites and writes `evidence/CI-RESULT-v308.json`. AI review through three lenses by one assistant: TRIAS keeps inspection and trusted control references distinct without claiming authority; ORACLE requires the complete SQL/crypto chain and rejects alternate registry injection; MENTOR requires an explicit host authentication dependency and documents signer-only shutdown. These are not independent approvals. Real One authentication, original One functions, remote TLS, production key custody and release acceptance remain unverified. Acceptance HOLD; authorization NONE; productionReady false.
+
+## Terminal service admission and real-work completion (v309)
+
+An HTTP timeout or client abort can return a response while an inspection provider is still running. Awaiting only the HTTP handler, or closing only the signer, therefore cannot establish that the assembled inspection service has finished its work. `createRioManagedInspectionServiceV309` combines the existing source/issuer/One reader/signer with a drainable route derived from v269. It returns an inspection port and a trusted control port. The original v269 route and v308 factory remain unchanged.
+
+```js
+const service = await createRioManagedInspectionServiceV309(trustedConfiguration);
+// Same exact configuration contract as v308, including all three explicit limits.
+const response = await service.inspection.handle(request);
+
+const status = service.control.getStatus();
+// Signer management uses the nested status.signer controller/generation/history fields.
+// Keep service.control inside trusted host administration.
+const completion = service.control.close();
+// Admission is already blocked here. Repeated close() returns this same promise.
+const completed = await completion;
+// completed.state === 'CLOSED'; tracked inspection/signing work has settled.
+```
+
+| Service state | Admission and completion |
+| --- | --- |
+| OPEN | Original origin, input, capacity, authentication, SQL and crypto controls apply; explicit signer management is available |
+| DRAINING | New inspection requests receive no-store 503 INSPECTION_SERVICE_CLOSING before body reads or providers; new retirement/replacement/cancellation commands return null |
+| CLOSED | Terminal; route jobs, tracked body-reader cancellation callbacks and signer completion have settled; new work remains refused |
+
+`control.close()` synchronously blocks route admission, requests signer close and waits for both real completion barriers. The route counts execution jobs until they actually settle, including adapter authentication, SQL callbacks and connection-release work. A previously returned 504/408 does not remove its running job from that barrier. Body-reader cancellation promises are counted separately until settlement, even when the pending read has already ended. The route status exposes both counts, and the service status reports inFlightInspections, readerCancellationsInFlight, inspectionCapacity and the nested signer status. Status objects and the completion result are frozen and retain HOLD/NONE.
+
+Close starts signer shutdown immediately. An admitted inspection may therefore fail as signing becomes unavailable; this is not a guarantee that admitted requests complete successfully. Results returned from a still-running handler after closing begins are minimized 503 responses, including a late otherwise-successful inspection. A response already returned to its caller is not retracted. The service does not force SQL, registry, authentication, stream or crypto operations to terminate. Existing jobs may continue callbacks while draining. A nonreturning provider or cancellation callback keeps completion pending; there is no artificial deadline that marks it CLOSED.
+
+Unresolved body-reader cancellation also occupies admission capacity while OPEN, preventing repeated timed-out streams from accumulating unlimited cancellation callbacks. Admission uses the sum of route jobs and pending cancellations; while both are active for one request this is deliberately conservative. Deadline timers and abort listeners are detached before a settled route job releases the drain barrier, so later client aborts cannot start cancellation work after terminal completion.
+
+The managed control port exposes getStatus, getLastAttemptResult, retireGeneration, installReplacement, cancelReplacement and close. Its signer commands retain the v308 narrow replacement contract and shared registry, using controller/generation/completion values from getStatus().signer. Closing prevents further management admission and asks an already pending replacement to withhold installation under the existing v307 close semantics. Service completion waits for that admitted assessment even if no inspection request is running. The signer controller's own CLOSED flag is terminal admission state; the managed service remains DRAINING until the controller's actual completion promise and route barrier resolve.
+
+This barrier covers the assembled service's tracked work. It does not stop a host's HTTP listener, dispose an externally owned connection pool, cancel work the host starts independently, revoke sessions/keys, destroy private keys or establish operating-system isolation. The host should stop its listener and dispose host-owned pools around the completed service barrier as appropriate. Real One authentication remains an explicit external dependency, not a service implemented here. The separate source/receipt pins, initial real key/registry assessment, no raw signing methods and static-before-provider configuration checks are preserved.
+
+Twelve focused tests cover crypto success, frozen/structural state, idle terminal close, late result withholding, provider timeout/abort, asynchronous stream cancellation, multiple admitted jobs, provider failure, invalid service configuration, post-close provider/management refusal and pending replacement assessment. Six native scenarios exercise the managed constructor through real SQL/Ed25519, same-port replacement, a returned HTTP deadline while a One connection release callback is deliberately held, refusal of new provider work, release followed by completion, and a held SQL registry assessment with withheld replacement. The release/registry barriers control callback scheduling; SQL and crypto are not simulated or intercepted. Fixture authentication is synthetic and tables cover selected One column contracts, not original One functions.
+
+`test:ci` uses `run-ci-v309.mjs`, requires six managed-service records and all preserved suites, and writes `evidence/CI-RESULT-v309.json`. AI review through three lenses applied by one assistant: TRIAS keeps terminal admission separate from authority or revocation; ORACLE requires actual connection/provider settlement after a returned timeout and retains the separate cancellation barrier; MENTOR provides one idempotent close promise with observable pending counts and explicit host ownership of listener/pool disposal. These are not independent approvals. Original receipt-domain limits, software-key isolation limits and unverified production authentication/TLS remain. Acceptance HOLD; authorization NONE; productionReady false.
