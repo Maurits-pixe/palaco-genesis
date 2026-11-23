@@ -26,6 +26,8 @@ pub struct RecoveryFloor {
 /// Fails closed when the external custody floor is missing, either sequence
 /// falls below its floor, the signed anchor fails the verifier, or any of the
 /// supplied checkpoint payloads fail the integrity/chain checks.
+/// Payload integrity and recovery floors are validated before calling the
+/// external signature verifier; ReviewOnly still grants no authority.
 ///
 /// This method has no authority to execute, commit, sign, or publish data.
 #[must_use]
@@ -45,9 +47,9 @@ pub fn inspect_recovery(
         || floor.registry_sequence == 0
         || signed.anchor.sequence < floor.checkpoint_sequence
         || key.registry_sequence < floor.registry_sequence
-        || inspect_signed_anchor(Some(signed), Some(key), verifier) != RestartInspection::ReviewOnly
         || inspect_restart_chain_payloads(checkpoints, payloads, Some(&signed.anchor))
             != RestartInspection::ReviewOnly
+        || inspect_signed_anchor(Some(signed), Some(key), verifier) != RestartInspection::ReviewOnly
     {
         return RestartInspection::Deny;
     }
@@ -78,6 +80,20 @@ mod tests {
             } else {
                 SignatureVerdict::Invalid
             }
+        }
+    }
+
+    // A verifier may be an external adapter: count calls without panic or locks.
+    struct CountingVerifier(std::cell::Cell<usize>);
+    impl Ed25519Verifier for CountingVerifier {
+        fn verify(
+            &self,
+            _public_key: &[u8; 32],
+            _message: &[u8],
+            _signature: &[u8; 64],
+        ) -> SignatureVerdict {
+            self.0.set(self.0.get() + 1);
+            SignatureVerdict::Valid
         }
     }
 
@@ -160,6 +176,64 @@ mod tests {
             ),
             RestartInspection::ReviewOnly
         );
+    }
+
+    #[test]
+    fn invalid_payload_or_floor_does_not_invoke_external_verifier() {
+        let (checkpoints, signed, key, floor) = fixture();
+        let verifier = CountingVerifier(std::cell::Cell::new(0));
+        assert_eq!(
+            inspect_recovery(
+                &checkpoints,
+                &[b"FIRST", b"second"],
+                Some(&signed),
+                Some(&key),
+                Some(&floor),
+                &verifier,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(verifier.0.get(), 0);
+        assert_eq!(
+            inspect_recovery(
+                &checkpoints,
+                &[b"first"],
+                Some(&signed),
+                Some(&key),
+                Some(&floor),
+                &verifier,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(verifier.0.get(), 0);
+        let invalid_floor = RecoveryFloor {
+            checkpoint_sequence: 11,
+            registry_sequence: 4,
+        };
+        assert_eq!(
+            inspect_recovery(
+                &checkpoints,
+                &[b"first", b"second"],
+                Some(&signed),
+                Some(&key),
+                Some(&invalid_floor),
+                &verifier,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(verifier.0.get(), 0);
+        assert_eq!(
+            inspect_recovery(
+                &checkpoints,
+                &[b"first", b"second"],
+                Some(&signed),
+                Some(&key),
+                Some(&floor),
+                &verifier,
+            ),
+            RestartInspection::ReviewOnly
+        );
+        assert_eq!(verifier.0.get(), 1);
     }
 
     #[test]
