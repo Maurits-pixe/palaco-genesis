@@ -413,7 +413,11 @@ mod tests {
             };
             assert_eq!(
                 super::fingerprint_review_receipt(
-                    &checkpoints, payloads, &long_signed, &long_key, &floor,
+                    &checkpoints,
+                    payloads,
+                    &long_signed,
+                    &long_key,
+                    &floor,
                 ),
                 None
             );
@@ -437,7 +441,11 @@ mod tests {
             };
             assert_eq!(
                 super::fingerprint_review_receipt(
-                    &checkpoints, payloads, &signed, &swapped_key, &floor,
+                    &checkpoints,
+                    payloads,
+                    &signed,
+                    &swapped_key,
+                    &floor,
                 ),
                 None
             );
@@ -447,7 +455,11 @@ mod tests {
             };
             assert_eq!(
                 super::fingerprint_review_receipt(
-                    &checkpoints, payloads, &empty_signature, &key, &floor,
+                    &checkpoints,
+                    payloads,
+                    &empty_signature,
+                    &key,
+                    &floor,
                 ),
                 None
             );
@@ -460,7 +472,11 @@ mod tests {
             };
             assert_eq!(
                 super::fingerprint_review_receipt(
-                    &checkpoints, payloads, &changed_anchor, &key, &floor,
+                    &checkpoints,
+                    payloads,
+                    &changed_anchor,
+                    &key,
+                    &floor,
                 ),
                 None
             );
@@ -470,7 +486,11 @@ mod tests {
             };
             assert_eq!(
                 super::fingerprint_review_receipt(
-                    &checkpoints, payloads, &signed, &key, &future_floor,
+                    &checkpoints,
+                    payloads,
+                    &signed,
+                    &key,
+                    &future_floor,
                 ),
                 None
             );
