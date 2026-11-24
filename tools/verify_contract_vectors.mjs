@@ -456,6 +456,30 @@ const objectBeyondNodeLimit = Object.fromEntries(
 assert.throws(() => canonicalBytes(objectBeyondNodeLimit), /node budget/,
               'a 50,000-member object requires 100,001 node visits');
 
+// Validate canonical key bytes before inspecting property descriptors.
+const hugeKey = 'k'.repeat(MAX_CANONICAL_BYTES);
+const deferredDescriptor = new Proxy({ [hugeKey]: 0 }, {
+  getOwnPropertyDescriptor() {
+    throw new Error('descriptor must not be consulted after key budget denial');
+  },
+});
+assert.throws(() => canonicalBytes(deferredDescriptor), /byte budget/,
+              'oversized key is denied before descriptor collection');
+const newlineKey = String.fromCharCode(10).repeat(MAX_CANONICAL_BYTES / 2);
+assert.throws(() => canonicalBytes({ [newlineKey]: 0 }), /byte budget/,
+              'escaped key growth counts actual serialized bytes');
+const decomposedKey = 'e' + String.fromCharCode(0x301);
+const invalidUnicodeKey = new Proxy({ [decomposedKey]: 0 }, {
+  getOwnPropertyDescriptor() {
+    throw new Error('descriptor must not be consulted for invalid key');
+  },
+});
+assert.throws(() => canonicalBytes(invalidUnicodeKey), /non-NFC/,
+              'non-NFC object keys are rejected before descriptor reads');
+assert.deepEqual(canonicalBytes({ [String.fromCharCode(10)]: 0 }),
+                 Buffer.from('7b225c6e223a307d', 'hex'),
+                 'small escaped object key retains pinned canonical bytes');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
