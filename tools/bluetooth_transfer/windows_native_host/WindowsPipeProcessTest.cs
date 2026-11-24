@@ -23,6 +23,7 @@ internal static class WindowsPipeProcessTest
         try
         {
             using (Process server = StartHost())
+            try
             {
                 stage = "first separate-process inspection";
                 if (!await SendValidWithStartupRetry(limit.Token))
@@ -39,14 +40,21 @@ internal static class WindowsPipeProcessTest
                 if (!await WindowsPipeIntegrationTest.SendAsync(
                         WindowsPipeIntegrationTest.MakeInspectFrame(), true, limit.Token))
                     return Failed(stage);
+            }
+            finally
+            {
                 StopHost(server);
             }
 
             using (Process restarted = StartHost())
+            try
             {
                 stage = "inspection after host process restart";
                 if (!await SendValidWithStartupRetry(limit.Token))
                     return Failed(stage);
+            }
+            finally
+            {
                 StopHost(restarted);
             }
             Console.WriteLine("Windows separate-process IPC PASS (disconnect, timeout, restart; HOLD/DENY)");
