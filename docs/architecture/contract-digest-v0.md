@@ -56,7 +56,9 @@ bounded strict JSON reader before encoding.
   **1 MiB of canonical UTF-8 output**. Shared acyclic subtrees remain valid,
   but their repeated occurrences count independently against the budget.
   This prevents compact shared-object DAGs from expanding exponentially into
-  very large digest inputs. The byte budget applies to the encoded output,
+  very large digest inputs. Both implementations count each object key **and**
+  its corresponding value as separate visits, and preflight direct collection
+  fanout before allocating large traversal snapshots. The byte budget applies to the encoded output,
   including escaped JSON characters; it is separate from the strict file
   reader's 1 MiB *input* bound. These are review-only resource limits and do
   not grant authorization or assert complete adversarial resource isolation.
