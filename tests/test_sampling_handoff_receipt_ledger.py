@@ -702,7 +702,11 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
         self.assertEqual(evidence["right_delta_sha256"],right_delta_pin)
         self.assertNotEqual(evidence["left_event_hash"],
                             evidence["right_event_hash"])
-        self.assertEqual(len(result["fork_evidence_sha256"]),64)
+        body=json.dumps(evidence,sort_keys=True,separators=(",",":"),
+                        ensure_ascii=False,allow_nan=False).encode("utf-8")
+        commitment=hashlib.sha256(
+            b"PALACO-SAMPLING-HANDOFF-FORK-EVIDENCE-V1\x00"+body).hexdigest()
+        self.assertEqual(result["fork_evidence_sha256"],commitment)
         self.assertEqual(result["state"],"quarantined")
         self.assertEqual(result["release_gate"],"HOLD")
         self.assertFalse(result["authorization_granted"])
