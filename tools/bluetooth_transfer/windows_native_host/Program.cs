@@ -1,4 +1,4 @@
-// PALACO Bluetooth Windows native host prototype v5.0.
+// PALACO Bluetooth Windows native host prototype v5.1.
 // This is a Windows-only user-session console host, NOT an installed Windows
 // service, privileged endpoint, TPM driver, authenticated service, or BLE stack.
 // Every IPC request is denied. Never use this as a production security boundary.
@@ -51,11 +51,9 @@ internal static class Program
     {
         while (!cancellation.IsCancellationRequested)
         {
-            // CurrentUserOnly is restrictive for a user-session prototype, but it
-            // does NOT authenticate service identity or support a multi-user service.
-            using var pipe = new NamedPipeServerStream(
-                PipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
-                PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+            // Explicit same-account DACL. NOT caller authentication or a
+            // reviewed service SID. Failure to create the pipe is fail-closed.
+            using var pipe = WindowsPipeSecurity.CreateDiagnosticPipe();
             try
             {
                 await pipe.WaitForConnectionAsync(cancellation);
