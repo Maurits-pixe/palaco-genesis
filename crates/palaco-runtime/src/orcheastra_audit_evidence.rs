@@ -217,8 +217,10 @@ pub fn inspect_audit_evidence_floors(evidence: &[RecoveryEvidence<'_>]) -> Resta
 /// Checks receipt metadata against the exact original source bundle.
 ///
 /// Rejects untrusted receipt counts or counters that do not match the
-/// checkpoint sequence, signed anchor and key registry. This cheap preflight
-/// does not recompute receipt digests, verify signatures or establish custody.
+/// checkpoint sequence, signed anchor and key registry. Each source must
+/// contain the matching number of payload records and an internally valid,
+/// committed checkpoint chain bound to the signed anchor. This cheap preflight
+/// does not hash payloads, verify signatures or establish custody.
 #[must_use]
 pub fn inspect_audit_receipt_source_binding(
     receipts: &[ReviewReceipt],
@@ -231,6 +233,15 @@ pub fn inspect_audit_receipt_source_binding(
         let Some(last) = source.checkpoints.last() else {
             return RestartInspection::Deny;
         };
+        // Direct receipt-source binding must not accept an internally broken
+        // source chain, an unverified final anchor or missing payload records.
+        if source.checkpoints.len() != source.payloads.len()
+            || source.checkpoints.len() > MAX_CHAIN_CHECKPOINTS
+            || inspect_restart_chain(source.checkpoints, Some(&source.signed.anchor))
+                != RestartInspection::ReviewOnly
+        {
+            return RestartInspection::Deny;
+        }
         if receipt.checkpoint_count != source.checkpoints.len()
             || receipt.checkpoint_sequence != last.sequence
             || receipt.checkpoint_sequence != source.signed.anchor.sequence
@@ -1485,6 +1496,65 @@ mod tests {
             inspect_audit_receipt_source_binding(&receipts, &evidence),
             RestartInspection::ReviewOnly
         );
+        // The standalone metadata gate cannot accept an uncommitted,
+        // revoked, or internally unlinked checkpoint source.
+        for invalid_checkpoint in [
+            RestartCheckpoint {
+                hold: true,
+                ..checkpoints[0]
+            },
+            RestartCheckpoint {
+                revoked: true,
+                ..checkpoints[0]
+            },
+            RestartCheckpoint {
+                committed: false,
+                ..checkpoints[0]
+            },
+        ] {
+            let invalid_checkpoints = [invalid_checkpoint];
+            let invalid_source = [RecoveryEvidence {
+                checkpoints: &invalid_checkpoints,
+                payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            }];
+            assert_eq!(
+                inspect_audit_receipt_source_binding(&receipts, &invalid_source),
+                RestartInspection::Deny
+            );
+        }
+        let missing_payloads = [RecoveryEvidence {
+            checkpoints: &checkpoints,
+            payloads: &[],
+            signed: &signed,
+            trusted_key: &trusted_key,
+            floor: &floor,
+        }];
+        assert_eq!(
+            inspect_audit_receipt_source_binding(&receipts, &missing_payloads),
+            RestartInspection::Deny
+        );
+        let mismatched_anchor = SignedAnchor {
+            anchor: RestartAnchor {
+                snapshot_digest: [8; 32],
+                ..signed.anchor
+            },
+            ..signed.clone()
+        };
+        let mismatched_source = [RecoveryEvidence {
+            checkpoints: &checkpoints,
+            payloads,
+            signed: &mismatched_anchor,
+            trusted_key: &trusted_key,
+            floor: &floor,
+        }];
+        assert_eq!(
+            inspect_audit_receipt_source_binding(&receipts, &mismatched_source),
+            RestartInspection::Deny
+        );
+
         let wrong_count_receipt = [ReviewReceipt {
             checkpoint_count: receipts[0].checkpoint_count + 1,
             ..receipts[0]
