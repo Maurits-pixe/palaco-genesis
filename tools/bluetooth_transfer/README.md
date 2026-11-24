@@ -1,6 +1,28 @@
-# PALACO Bluetooth Offline Transfer — v5.7 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v5.8 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v5.8 SCM runtime health and non-System client isolation (DRAFT / HOLD)
+
+- `WindowsScmClientDenialTest.cs` performs an actual named-pipe connection
+  attempt **while the diagnostic SCM service runs under LocalSystem**.
+  The Windows CI runner's non-System token must receive Windows
+  `ACCESS_DENIED`. An absent endpoint, timeout or generic I/O error is
+  **inconclusive and fails the test**; simply receiving the fixed HOLD/DENY
+  reply is not sufficient for this isolation test.
+- The temporary hosted-runner SCM test observes that the configured diagnostic
+  named pipe exists, the SCM process ID remains stable and the service remains
+  Running before attempting cross-account access. It repeats these checks for
+  two start/stop cycles, then deletes the test service in `finally`.
+- The new `--ipc-scm-client-denial-test` command is a test-only probe with
+  no BLE, TPM, import or authorization capability. The service still grants
+  no release authority and never modifies checkpoints.
+- **Limits:** this checks service process and pipe presence only at specific
+  instants, not continuous supervision, client-role authorization, hardware
+  attestation or production reliability. SCM service and LocalSystem pipe
+  isolation are verified only on disposable GitHub-hosted Windows runners.
+- GO-13 HOLD / authorization DENY; no merge, production install, deployment
+  or publication.
 
 ## v5.7 Ephemeral Windows SCM service SID and lifecycle test (DRAFT / HOLD)
 
