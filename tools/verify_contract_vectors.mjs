@@ -664,6 +664,32 @@ try {
 assert.deepEqual(unicodeBytesAfterMonkeypatch, sortedExpected,
                  'Unicode scalar sorting remains deterministic after intrinsic mutation');
 
+// Accessing Proxy array.length through ordinary value.length may execute
+// untrusted code. Canonicalization must use the own data descriptor instead.
+const arrayWithHostileLengthGet = new Proxy([0, 1], {
+  get(target, property) {
+    throw new Error('ordinary array property read forbidden: ' + String(property));
+  },
+});
+assert.deepEqual(canonicalBytes(arrayWithHostileLengthGet),
+                 Buffer.from('[0,1]', 'utf8'),
+                 'array serialization must not read Proxy length through get trap');
+assert.deepEqual(canonicalBytes({ nested: arrayWithHostileLengthGet }),
+                 Buffer.from('{"nested":[0,1]}', 'utf8'),
+                 'nested Proxy array must not invoke ordinary property reads');
+const extraArrayPropertyProxy = new Proxy([0, 1], {
+  get(target, property) {
+    throw new Error('array property get trap must not execute');
+  },
+});
+Object.defineProperty(extraArrayPropertyProxy, 'hidden', {
+  value: 'surprise', enumerable: false,
+});
+assert.throws(() => canonicalBytes(extraArrayPropertyProxy), /sparse array or unsupported array property/,
+              'additional own array properties are denied from own-key snapshots');
+assert.deepEqual(canonicalBytes([]), Buffer.from('[]', 'utf8'),
+                 'empty standard arrays remain valid under descriptor-length capture');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
