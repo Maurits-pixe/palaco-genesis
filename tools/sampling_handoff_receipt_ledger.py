@@ -380,3 +380,80 @@ def export_review_manifest(db,expected_head,minimum_receipts):
     return _out(manifest_exported=True,state="pending-review",
                 reason="local-review-manifest-not-independent-custody",
                 manifest=manifest,manifest_sha256=digest)
+
+
+MANIFEST_FIELDS={"schema_version","receipt_count","head_hash","entries"}
+MANIFEST_ENTRY_FIELDS={"sequence","recipient_id","recipient_key_id",
+    "package_sha256","receipt_nonce_hex","receipt_sha256",
+    "previous_hash","event_hash"}
+
+
+def verify_review_manifest(manifest,expected_manifest_sha256,
+                           expected_head,minimum_receipts):
+    """Offline validation of a reviewer manifest against independent pins.
+
+    No database or network access. The caller must authenticate the pins.
+    """
+    def deny(reason):return _out(manifest_valid=False,reason=reason)
+    if (not all(isinstance(value,str) and handoff.HEX.fullmatch(value)
+                for value in (expected_manifest_sha256,expected_head))
+        or type(minimum_receipts) is not int
+        or not 1<=minimum_receipts<=MAX_RECORDS):
+        return deny("missing-independent-manifest-pins")
+    if not isinstance(manifest,dict) or set(manifest)!=MANIFEST_FIELDS:
+        return deny("invalid-review-manifest-schema")
+    if (manifest["schema_version"]!="0.1.0"
+        or type(manifest["receipt_count"]) is not int
+        or not 1<=manifest["receipt_count"]<=MAX_RECORDS
+        or not isinstance(manifest["entries"],list)
+        or len(manifest["entries"])!=manifest["receipt_count"]
+        or not isinstance(manifest["head_hash"],str)
+        or not handoff.HEX.fullmatch(manifest["head_hash"])):
+        return deny("invalid-review-manifest-schema")
+    if manifest["receipt_count"]<minimum_receipts:
+        return deny("review-manifest-rollback")
+    if manifest["head_hash"]!=expected_head:
+        return deny("review-manifest-head-mismatch")
+    previous=GENESIS
+    nonces=set()
+    package_bindings=set()
+    for sequence,entry in enumerate(manifest["entries"],1):
+        if not isinstance(entry,dict) or set(entry)!=MANIFEST_ENTRY_FIELDS:
+            return deny("invalid-review-manifest-entry")
+        if (type(entry["sequence"]) is not int
+            or entry["sequence"]!=sequence
+            or not isinstance(entry["recipient_id"],str)
+            or not handoff.IDENT.fullmatch(entry["recipient_id"])):
+            return deny("invalid-review-manifest-entry")
+        fields=("recipient_key_id","package_sha256","receipt_nonce_hex",
+                "receipt_sha256","previous_hash","event_hash")
+        if any(not isinstance(entry[field],str)
+               or not handoff.HEX.fullmatch(entry[field]) for field in fields):
+            return deny("invalid-review-manifest-entry")
+        nonce=entry["receipt_nonce_hex"]
+        binding=(entry["recipient_key_id"],entry["package_sha256"])
+        if (entry["previous_hash"]!=previous
+            or nonce in nonces or binding in package_bindings
+            or entry["event_hash"]!=_digest(
+                sequence,entry["recipient_id"],entry["recipient_key_id"],
+                entry["package_sha256"],nonce,entry["receipt_sha256"],
+                previous)):
+            return deny("review-manifest-chain-invalid")
+        nonces.add(nonce)
+        package_bindings.add(binding)
+        previous=entry["event_hash"]
+    if previous!=expected_head:
+        return deny("review-manifest-chain-head-mismatch")
+    try:
+        computed=hashlib.sha256(
+            MANIFEST_DOMAIN+json.dumps(manifest,sort_keys=True,
+            separators=(",",":"),ensure_ascii=False,allow_nan=False
+            ).encode("utf-8")).hexdigest()
+    except (TypeError,ValueError,OverflowError,UnicodeError):
+        return deny("invalid-review-manifest-encoding")
+    if computed!=expected_manifest_sha256:
+        return deny("review-manifest-digest-mismatch")
+    return _out(manifest_valid=True,state="pending-review",
+                reason="offline-manifest-matches-independent-pins-not-custody",
+                receipts=manifest["receipt_count"],head_hash=expected_head,
+                manifest_sha256=computed)
