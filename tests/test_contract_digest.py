@@ -390,6 +390,18 @@ class ContractDigestTests(unittest.TestCase):
         encoded = canonical_bytes({"v": chr(0x1f680) * 100})
         self.assertEqual(len(encoded), 408)
 
+    def test_array_node_budget_exact_boundary(self):
+        # Root array plus 99,999 elements is exactly 100,000 visits.
+        self.assertEqual(len(canonical_bytes([0] * 99_999)), 199_999)
+        with self.assertRaisesRegex(ValueError, "node budget"):
+            canonical_bytes([0] * 100_000)
+
+    def test_object_keys_and_values_count_against_node_budget(self):
+        # Root + 2 visits per member: 49,999 is below the 100,000 cap.
+        self.assertTrue(canonical_bytes({str(i): 0 for i in range(49_999)}))
+        with self.assertRaisesRegex(ValueError, "node budget"):
+            canonical_bytes({str(i): 0 for i in range(50_000)})
+
     def test_file_digest_matches_in_memory_digest(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "candidate.json"
