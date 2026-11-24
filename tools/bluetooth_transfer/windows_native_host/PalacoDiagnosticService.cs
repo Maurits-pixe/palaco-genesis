@@ -37,6 +37,24 @@ internal sealed class PalacoDiagnosticService : ServiceBase
         }
         _stop = new CancellationTokenSource();
         _serverTask = Task.Run(() => Program.RunServerAsync(_stop.Token));
+        WindowsWorkerSupervisor.Observe(_serverTask, _stop.Token, code =>
+        {
+            // Fixed incident category only; no request payload, token or SID logged.
+            Console.Error.WriteLine("PALACO-BT-SERVICE-INCIDENT:" + code
+                + ":HOLD:DENY");
+            try
+            {
+                // Unexpected worker exit must not leave SCM RUNNING without a
+                // listener. No automatic worker restart is performed.
+                Stop();
+            }
+            catch (Exception)
+            {
+                // If SCM cannot stop, terminate rather than remain apparently
+                // healthy with a dead diagnostic worker.
+                Environment.FailFast("PALACO-BT-SERVICE-INCIDENT:SCM_STOP_FAILED:HOLD:DENY");
+            }
+        });
     }
 
     protected override void OnStop() => StopWorker();
