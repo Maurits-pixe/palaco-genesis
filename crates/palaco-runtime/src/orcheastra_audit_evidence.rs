@@ -10,7 +10,7 @@ use crate::orcheastra_payload::{
     inspect_restart_chain_payloads, MAX_CHAIN_CHECKPOINTS, MAX_SNAPSHOT_BYTES,
 };
 use crate::orcheastra_recovery::RecoveryFloor;
-use crate::orcheastra_restart::{RestartCheckpoint, RestartInspection};
+use crate::orcheastra_restart::{inspect_restart_chain, RestartCheckpoint, RestartInspection};
 use crate::orcheastra_review_receipt::{
     fingerprint_review_receipt, revalidate_review_receipt, ReviewReceipt,
 };
@@ -84,17 +84,24 @@ pub fn inspect_audit_evidence_budget(evidence: &[RecoveryEvidence<'_>]) -> Resta
 
 /// Requires contiguous original snapshot lineage across audit receipts.
 ///
-/// Each individual receipt is revalidated by the caller. This additional
-/// boundary prevents adjacent, individually valid evidence bundles from
-/// representing disconnected, overlapping or replayed checkpoint chains.
+/// Every source's full checkpoint chain must be consecutive, committed,
+/// unblocked and bound to its final signed anchor. This additional boundary
+/// prevents adjacent evidence bundles from representing disconnected,
+/// overlapping or replayed checkpoint chains even when called directly.
 /// A matching hash is only consistency, not authenticated provenance.
 #[must_use]
 pub fn inspect_audit_evidence_lineage(evidence: &[RecoveryEvidence<'_>]) -> RestartInspection {
     if evidence.is_empty() || evidence.len() > MAX_AUDIT_LINKS {
         return RestartInspection::Deny;
     }
+    // Each borrowed source must itself be a complete, unblocked, contiguous
+    // checkpoint chain, not merely expose plausible boundary checkpoints.
     for source in evidence {
-        if source.checkpoints.is_empty() {
+        if source.checkpoints.is_empty()
+            || source.checkpoints.len() > MAX_CHAIN_CHECKPOINTS
+            || inspect_restart_chain(source.checkpoints, Some(&source.signed.anchor))
+                != RestartInspection::ReviewOnly
+        {
             return RestartInspection::Deny;
         }
     }
@@ -1084,6 +1091,77 @@ mod tests {
             inspect_audit_evidence_signers(&contiguous),
             RestartInspection::ReviewOnly
         );
+        // A standalone lineage inspection must also reject invalid internal
+        // checkpoint status and disconnected links inside a source bundle.
+        let interrupted_checkpoint = [RestartCheckpoint {
+            hold: true,
+            ..checkpoints[0]
+        }];
+        let interrupted = [RecoveryEvidence {
+            checkpoints: &interrupted_checkpoint,
+            payloads,
+            signed: &signed,
+            trusted_key: &trusted_key,
+            floor: &floor,
+        }];
+        assert_eq!(
+            inspect_audit_evidence_lineage(&interrupted),
+            RestartInspection::Deny
+        );
+        let internal_broken = [
+            checkpoints[0],
+            RestartCheckpoint {
+                sequence: 8,
+                predecessor_digest: [4; 32],
+                snapshot_digest: next_snapshot,
+                committed: true,
+                hold: false,
+                revoked: false,
+            },
+        ];
+        let broken_source = [RecoveryEvidence {
+            checkpoints: &internal_broken,
+            payloads: &[b"original", b"next"],
+            signed: &following_signed,
+            trusted_key: &trusted_key,
+            floor: &floor,
+        }];
+        assert_eq!(
+            inspect_audit_evidence_lineage(&broken_source),
+            RestartInspection::Deny
+        );
+        let internal_gap = [
+            checkpoints[0],
+            RestartCheckpoint {
+                sequence: 9,
+                predecessor_digest: snapshot,
+                snapshot_digest: next_snapshot,
+                committed: true,
+                hold: false,
+                revoked: false,
+            },
+        ];
+        let gap_anchor = SignedAnchor {
+            anchor: RestartAnchor {
+                sequence: 9,
+                predecessor_digest: snapshot,
+                snapshot_digest: next_snapshot,
+                externally_verified: true,
+            },
+            ..following_signed.clone()
+        };
+        let gapped_source = [RecoveryEvidence {
+            checkpoints: &internal_gap,
+            payloads: &[b"original", b"next"],
+            signed: &gap_anchor,
+            trusted_key: &trusted_key,
+            floor: &floor,
+        }];
+        assert_eq!(
+            inspect_audit_evidence_lineage(&gapped_source),
+            RestartInspection::Deny
+        );
+
         let wrong_anchor_sequence = SignedAnchor {
             anchor: RestartAnchor {
                 sequence: 9,
