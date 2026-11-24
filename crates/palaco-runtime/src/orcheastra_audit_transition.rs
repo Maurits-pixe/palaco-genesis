@@ -10,7 +10,7 @@ use crate::orcheastra_audit_custody::AuditCustodyWitness;
 use crate::orcheastra_audit_evidence::{
     inspect_audit_evidence, inspect_audit_evidence_budget, inspect_audit_evidence_floors,
     inspect_audit_evidence_lineage, inspect_audit_evidence_signers,
-    inspect_audit_receipt_source_binding, RecoveryEvidence,
+    inspect_audit_receipt_fingerprints, inspect_audit_receipt_source_binding, RecoveryEvidence,
 };
 use crate::orcheastra_audit_receipts::inspect_bound_audit_receipts;
 use crate::orcheastra_payload::{
@@ -389,8 +389,9 @@ pub fn inspect_transition_payload_integrity(
 ///
 /// Checks both source-evidence batches as well as the exact transition between
 /// independently witnessed audit endpoints. Every rejection remains Deny.
-/// Complete bounded snapshot integrity on both sides precedes any external
-/// signature-verifier calls; full source revalidation then precedes custody.
+/// Complete bounded snapshot and receipt-fingerprint integrity on both sides
+/// precedes any external signature-verifier call; full source revalidation
+/// then precedes custody.
 /// No external custody implementation or Ed25519 algorithm is provided here.
 #[must_use]
 pub fn inspect_custodied_audit_transition(
@@ -425,6 +426,10 @@ pub fn inspect_custodied_audit_transition(
         || inspect_transition_snapshot_link(previous, current) != RestartInspection::ReviewOnly
         || inspect_transition_signer_continuity(previous, current) != RestartInspection::ReviewOnly
         || inspect_transition_payload_integrity(previous, current) != RestartInspection::ReviewOnly
+        || inspect_audit_receipt_fingerprints(previous.receipts, previous.evidence)
+            != RestartInspection::ReviewOnly
+        || inspect_audit_receipt_fingerprints(current.receipts, current.evidence)
+            != RestartInspection::ReviewOnly
         || inspect_audit_evidence(
             previous.links,
             previous.receipts,
@@ -1734,6 +1739,52 @@ mod tests {
             inspect_transition_signer_continuity(&previous, &current),
             RestartInspection::ReviewOnly
         );
+        // A forged receipt in the second segment can be recomposed into a
+        // locally valid audit link and expectation, but it must not cause even
+        // the first segment's external signature verifier to be called.
+        let falsified_receipts = [ReviewReceipt {
+            digest: [13; 32],
+            ..receipts_current[0]
+        }];
+        let falsified_link_digest =
+            audit_link_digest(11, &digest_previous, &falsified_receipts[0].digest)
+                .unwrap_or([0; 32]);
+        let falsified_links = [AuditLink {
+            receipt_digest: falsified_receipts[0].digest,
+            link_digest: falsified_link_digest,
+            ..links_current[0]
+        }];
+        let falsified_expectation = AuditChainExpectation {
+            final_digest: falsified_link_digest,
+            ..expected_current
+        };
+        let falsified_current = AuditSegmentEvidence {
+            links: &falsified_links,
+            receipts: &falsified_receipts,
+            evidence: &evidence_current,
+            expected: &falsified_expectation,
+        };
+        assert_eq!(
+            inspect_bound_audit_receipts(
+                falsified_current.links,
+                falsified_current.receipts,
+                Some(falsified_current.expected)
+            ),
+            RestartInspection::ReviewOnly
+        );
+        let zero_verifier = CountingVerifier(std::cell::Cell::new(0));
+        assert_eq!(
+            inspect_custodied_audit_transition(
+                &previous,
+                &falsified_current,
+                Some(&never_called),
+                &zero_verifier,
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(zero_verifier.0.get(), 0);
+        assert_eq!(never_called.0.get(), 0);
+
         // Direct monotonicity review must reject impossible or zero counters.
         let missing_current_registry = [ReviewReceipt {
             registry_sequence: 0,
