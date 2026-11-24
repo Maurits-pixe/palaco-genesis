@@ -321,3 +321,23 @@ not an instruction to merge, select a branch or release quarantine.
 Conflict outcomes remain `state=quarantined` and
 `authorization_granted=False`. External authentication and durable
 custody remain separate obligations; GO-13 HOLD stays enforced.
+
+## Independent offline fork-evidence reverification (2026-11-24)
+
+`verify_review_fork_evidence` takes the independently authenticated
+prior-manifest and two competing delta pin sets, along with the recorded
+fork-evidence object and a separately authenticated fork-evidence
+SHA-256 commitment. It fully re-verifies both delta branches, recomputes
+the earliest divergence, compares the entire evidence record against
+the freshly derived result, and checks the domain-separated commitment.
+No SQLite database or network access is required.
+
+Four regressions exercise successful independent offline reverification,
+tampered evidence, missing or incorrect evidence pins, corrupted branch
+anchors, and the case where branches no longer conflict. Invalid inputs
+return explicit failure without selecting a canonical branch.
+
+Even a successfully reverified conflict stays `quarantined`,
+`authorization_granted=False`, and `release_gate=HOLD`. This is an
+integrity check against authenticated external pins, **not** an external
+witness signature or independent custody certificate. GO-13 HOLD remains.
