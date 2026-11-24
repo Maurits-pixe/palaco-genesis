@@ -9,9 +9,11 @@ internal sealed class PalacoDiagnosticService : ServiceBase
 {
     private CancellationTokenSource? _stop;
     private Task? _serverTask;
+    private readonly bool _ciFaultInjection;
 
-    public PalacoDiagnosticService()
+    public PalacoDiagnosticService(bool ciFaultInjection = false)
     {
+        _ciFaultInjection = ciFaultInjection;
         ServiceName = "PALACO-BT-Diagnostic-HOLD";
         CanStop = true;
         CanPauseAndContinue = false;
@@ -36,12 +38,38 @@ internal sealed class PalacoDiagnosticService : ServiceBase
                 throw new InvalidOperationException("Windows pipe ACL unavailable: HOLD");
         }
         _stop = new CancellationTokenSource();
-        _serverTask = Task.Run(() => Program.RunServerAsync(_stop.Token));
+        if (_ciFaultInjection)
+        {
+            // Fault injection is explicitly gated to this disposable SCM test
+            // and runs after SCM startup; it never executes an authorization.
+            _serverTask = Task.Run(async () =>
+            {
+                await Task.Delay(1500, _stop.Token);
+                throw new InvalidOperationException("PALACO synthetic CI worker fault");
+            });
+        }
+        else
+        {
+            _serverTask = Task.Run(() => Program.RunServerAsync(_stop.Token));
+        }
         WindowsWorkerSupervisor.Observe(_serverTask, _stop.Token, code =>
         {
             // Fixed incident category only; no request payload, token or SID logged.
             Console.Error.WriteLine("PALACO-BT-SERVICE-INCIDENT:" + code
                 + ":HOLD:DENY");
+            if (_ciFaultInjection)
+            {
+                // Evidence is CI-only. An I/O failure must never hide the
+                // fault or permit an apparently healthy service.
+                try
+                {
+                    WindowsCiIncidentEvidence.Record(code);
+                }
+                catch (Exception)
+                {
+                    Environment.FailFast("PALACO-BT-SERVICE-INCIDENT:EVIDENCE_WRITE_FAILED:HOLD:DENY");
+                }
+            }
             try
             {
                 // Unexpected worker exit must not leave SCM RUNNING without a
