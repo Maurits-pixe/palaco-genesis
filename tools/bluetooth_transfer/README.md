@@ -1,6 +1,32 @@
-# PALACO Bluetooth Offline Transfer — v6.2 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v6.3 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v6.3 CI witness root pin, key rotation and multi-entry continuity (DRAFT / HOLD)
+
+- `witness_continuity_v63.py` validates a **caller-supplied pinned
+  Ed25519 root public key** rather than deriving trust from the
+  ledger itself. A signing-key change is represented by an explicit
+  `rotate` event signed by the previously active key. Entries always
+  bind their sequence, previous hash, active signer ID and fixed HOLD/DENY.
+- The SQLite ledger now supports multiple incident and rotation events,
+  unique incident hashes, contiguous sequence checks and hash-chain
+  validation. Tests reject wrong roots, stale signing keys, repeated
+  incidents, missing intermediate events and modified rotation records.
+- The external checkpoint is supplied **by the test caller** and contains
+  the expected sequence/head/root identity. A truncated ledger is refused
+  relative to that independently retained checkpoint. The test invokes
+  this continuity check against the actual SCM-fault evidence, using
+  synthetic additional evidence encodings for distinct test events.
+- **Trust limitations:** the CI root is ephemeral, not externally audited,
+  hardware-protected or independently pinned by PALACO production
+  governance. Local checkpoint files can be replaced alongside the
+  ledger; jointly replacing the DB, public key and checkpoint defeats
+  this model. Rotation does not authenticate the original unsigned C#
+  incident. This demonstrates deterministic CI chain verification, **not**
+  persistent externally anchored rollback resistance.
+- GO-13 HOLD / authorization DENY. Draft PR only; no merge, publication,
+  production installation or deployment.
 
 ## v6.2 Ephemeral Ed25519 verifier receipt and SQLite replay chain (DRAFT / HOLD)
 
