@@ -1,4 +1,4 @@
-// PALACO Bluetooth Windows native host prototype v5.4.
+// PALACO Bluetooth Windows native host prototype v5.5.
 // This is a Windows-only user-session console host, NOT an installed Windows
 // service, privileged endpoint, TPM driver, authenticated service, or BLE stack.
 // Every IPC request is denied. Never use this as a production security boundary.
@@ -25,6 +25,8 @@ internal static class Program
             return await WindowsPipeIntegrationTest.RunAsync() ? 0 : 1;
         if (args.Length == 1 && args[0] == "--ipc-process-test")
             return await WindowsPipeProcessTest.RunAsync() ? 0 : 1;
+        if (args.Length == 1 && args[0] == "--ipc-child-client-test")
+            return await WindowsPipeProcessTest.RunChildClientAsync();
 
         if (args.Length != 1 || !OperatingSystem.IsWindows())
         {
