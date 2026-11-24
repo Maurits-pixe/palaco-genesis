@@ -156,6 +156,10 @@ def register(db,package,receipt,trust,expected_previous_head,
                 conn.execute("INSERT INTO sampling_handoff_nonces VALUES(?,?)",
                              (nonce,number))
             except sqlite3.IntegrityError:
+                # Returning normally from a sqlite3 connection context
+                # commits any earlier successful statement. The receipt
+                # insert MUST be undone if the nonce insert fails.
+                conn.rollback()
                 return deny("duplicate-handoff-package-or-nonce")
             # Recheck the post-write state before committing: malicious
             # SQLite triggers must never result in a successful receipt claim.
