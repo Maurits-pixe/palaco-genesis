@@ -109,9 +109,9 @@ pub fn inspect_transition_monotonicity(
 
 /// Requires an exact snapshot hash-chain junction between two audit segments.
 ///
-/// Both source chains are checked separately by the composite review function.
-/// This boundary additionally rejects missing checkpoint records, skipped or
-/// replayed checkpoint sequences, and an incorrect snapshot predecessor.
+/// This standalone boundary checks both complete source checkpoint chains
+/// against their claimed final anchors before comparing their junction.
+/// It also rejects skipped, replayed or mislinked junction checkpoints.
 /// Hash consistency is not independent source authentication.
 #[must_use]
 pub fn inspect_transition_snapshot_link(
@@ -129,6 +129,19 @@ pub fn inspect_transition_snapshot_link(
     ) else {
         return RestartInspection::Deny;
     };
+    // A valid boundary is insufficient when either original source has a
+    // blocked, revoked, or disconnected checkpoint inside its own chain.
+    if previous_source.checkpoints.len() > MAX_CHAIN_CHECKPOINTS
+        || current_source.checkpoints.len() > MAX_CHAIN_CHECKPOINTS
+        || inspect_restart_chain(
+            previous_source.checkpoints,
+            Some(&previous_source.signed.anchor),
+        ) != RestartInspection::ReviewOnly
+        || inspect_restart_chain(current_source.checkpoints, Some(&current_source.signed.anchor))
+            != RestartInspection::ReviewOnly
+    {
+        return RestartInspection::Deny;
+    }
     let Some(next_sequence) = previous_checkpoint.sequence.checked_add(1) else {
         return RestartInspection::Deny;
     };
@@ -839,6 +852,77 @@ mod tests {
         assert_eq!(
             inspect_transition_snapshot_link(&previous, &wrong_current),
             RestartInspection::Deny
+        );
+        // The direct junction guard must not accept an otherwise correct
+        // junction if either source contains invalid internal checkpoints.
+        let prior_internal = [
+            RestartCheckpoint {
+                sequence: 6,
+                predecessor_digest: [5; 32],
+                snapshot_digest: [6; 32],
+                committed: true,
+                hold: true,
+                revoked: false,
+            },
+            checkpoints_previous[0],
+        ];
+        let prior_internal_evidence = [RecoveryEvidence {
+            checkpoints: &prior_internal,
+            payloads: &[b"older", b"first"],
+            signed: &signed_previous,
+            trusted_key: &key,
+            floor: &floor_previous,
+        }];
+        let blocked_previous = AuditSegmentEvidence {
+            links: &links_previous,
+            receipts: &receipts_previous,
+            evidence: &prior_internal_evidence,
+            expected: &expected_previous,
+        };
+        assert_eq!(
+            inspect_transition_snapshot_link(&blocked_previous, &current),
+            RestartInspection::Deny
+        );
+        let current_internal = [
+            checkpoints_current[0],
+            RestartCheckpoint {
+                sequence: 9,
+                predecessor_digest: second,
+                snapshot_digest: [9; 32],
+                committed: true,
+                hold: false,
+                revoked: true,
+            },
+        ];
+        let extended_anchor = SignedAnchor {
+            anchor: RestartAnchor {
+                sequence: 9,
+                predecessor_digest: second,
+                snapshot_digest: [9; 32],
+                externally_verified: true,
+            },
+            ..signed_current.clone()
+        };
+        let current_internal_evidence = [RecoveryEvidence {
+            checkpoints: &current_internal,
+            payloads: &[b"second", b"later"],
+            signed: &extended_anchor,
+            trusted_key: &key,
+            floor: &floor_current,
+        }];
+        let revoked_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &current_internal_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_snapshot_link(&previous, &revoked_current),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_transition_snapshot_link(&previous, &current),
+            RestartInspection::ReviewOnly
         );
         let empty_source = [RecoveryEvidence {
             checkpoints: &[],
