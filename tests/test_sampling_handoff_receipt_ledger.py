@@ -695,6 +695,14 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
             right,right_delta_pin,new_head,right_manifest_pin,1)
         self.assertTrue(result["assessment_valid"])
         self.assertTrue(result["fork_detected"])
+        evidence=result["fork_evidence"]
+        self.assertEqual(evidence["first_divergent_sequence"],2)
+        self.assertEqual(evidence["previous_head"],head)
+        self.assertEqual(evidence["left_delta_sha256"],left_delta_pin)
+        self.assertEqual(evidence["right_delta_sha256"],right_delta_pin)
+        self.assertNotEqual(evidence["left_event_hash"],
+                            evidence["right_event_hash"])
+        self.assertEqual(len(result["fork_evidence_sha256"]),64)
         self.assertEqual(result["state"],"quarantined")
         self.assertEqual(result["release_gate"],"HOLD")
         self.assertFalse(result["authorization_granted"])
@@ -708,6 +716,8 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
             delta,delta_pin,left_head,manifest_pin,1)
         self.assertTrue(result["assessment_valid"])
         self.assertFalse(result["fork_detected"])
+        self.assertNotIn("fork_evidence",result)
+        self.assertNotIn("fork_evidence_sha256",result)
         self.assertEqual(result["state"],"pending-review")
 
     def test_offline_fork_assessment_denies_invalid_right_pin(self):
