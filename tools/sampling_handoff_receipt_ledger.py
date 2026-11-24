@@ -71,7 +71,35 @@ def _schema(conn):
         FOREIGN KEY(receipt_sequence) REFERENCES sampling_handoff_receipts(sequence))""")
 
 
+def _schema_valid(conn):
+    """Reject schema drift, including removed uniqueness or FK constraints."""
+    expected={
+        "sampling_handoff_receipts": """CREATE TABLE sampling_handoff_receipts(
+        sequence INTEGER PRIMARY KEY CHECK(sequence>0),
+        recipient_id TEXT NOT NULL,
+        recipient_key_id TEXT NOT NULL,
+        package_sha256 TEXT NOT NULL,
+        nonce_hex TEXT NOT NULL,
+        receipt_sha256 TEXT NOT NULL,
+        previous_hash TEXT NOT NULL,
+        event_hash TEXT NOT NULL,
+        UNIQUE(recipient_key_id,package_sha256))""",
+        "sampling_handoff_nonces": """CREATE TABLE sampling_handoff_nonces(
+        nonce_hex TEXT PRIMARY KEY,
+        receipt_sequence INTEGER NOT NULL UNIQUE,
+        FOREIGN KEY(receipt_sequence) REFERENCES sampling_handoff_receipts(sequence))"""
+    }
+    actual=dict(conn.execute(
+        "SELECT name,sql FROM sqlite_master WHERE type='table' "
+        "AND name IN (?,?)",tuple(expected)).fetchall())
+    return (set(actual)==set(expected)
+            and all(isinstance(actual[name],str)
+                    and "".join(actual[name].split())=="".join(sql.split())
+                    for name,sql in expected.items()))
+
+
 def _scan(conn):
+    if not _schema_valid(conn):return None
     rows=conn.execute("""SELECT sequence,recipient_id,recipient_key_id,
          package_sha256,nonce_hex,receipt_sha256,previous_hash,event_hash
          FROM sampling_handoff_receipts ORDER BY sequence LIMIT ?""",
