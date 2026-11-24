@@ -670,6 +670,81 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
         self.assertFalse(result["delta_valid"])
         self.assertEqual(result["reason"],"current-review-manifest-chain-invalid")
 
+    def _fork_pins(self,previous,delta):
+        full={"schema_version":"0.1.0","receipt_count":delta["current_receipts"],
+              "head_hash":delta["current_head"],
+              "entries":previous["entries"]+delta["entries"]}
+        return mod._delta_hash(delta),self._independently_pinned_manifest(full)
+
+    def test_offline_fork_assessment_detects_distinct_valid_successors(self):
+        previous,sha,head,created,left_head=self._delta_fixture()
+        left=created["delta"]
+        left_delta_pin,left_manifest_pin=self._fork_pins(previous,left)
+        right=copy.deepcopy(left)
+        right["entries"][0]["package_sha256"]="a"*64
+        new_head=mod._digest(2,right["entries"][0]["recipient_id"],
+            right["entries"][0]["recipient_key_id"],"a"*64,
+            right["entries"][0]["receipt_nonce_hex"],
+            right["entries"][0]["receipt_sha256"],head)
+        right["entries"][0]["event_hash"]=new_head
+        right["current_head"]=new_head
+        right_delta_pin,right_manifest_pin=self._fork_pins(previous,right)
+        self.db.unlink()
+        result=mod.assess_review_delta_fork(
+            previous,sha,head,left,left_delta_pin,left_head,left_manifest_pin,
+            right,right_delta_pin,new_head,right_manifest_pin,1)
+        self.assertTrue(result["assessment_valid"])
+        self.assertTrue(result["fork_detected"])
+        self.assertEqual(result["state"],"quarantined")
+        self.assertEqual(result["release_gate"],"HOLD")
+        self.assertFalse(result["authorization_granted"])
+
+    def test_offline_fork_assessment_accepts_identical_successors(self):
+        previous,sha,head,created,left_head=self._delta_fixture()
+        delta=created["delta"]
+        delta_pin,manifest_pin=self._fork_pins(previous,delta)
+        result=mod.assess_review_delta_fork(
+            previous,sha,head,delta,delta_pin,left_head,manifest_pin,
+            delta,delta_pin,left_head,manifest_pin,1)
+        self.assertTrue(result["assessment_valid"])
+        self.assertFalse(result["fork_detected"])
+        self.assertEqual(result["state"],"pending-review")
+
+    def test_offline_fork_assessment_denies_invalid_right_pin(self):
+        previous,sha,head,created,left_head=self._delta_fixture()
+        delta=created["delta"]
+        delta_pin,manifest_pin=self._fork_pins(previous,delta)
+        result=mod.assess_review_delta_fork(
+            previous,sha,head,delta,delta_pin,left_head,manifest_pin,
+            delta,delta_pin,left_head,"f"*64,1)
+        self.assertFalse(result["assessment_valid"])
+        self.assertFalse(result["fork_detected"])
+        self.assertEqual(result["reason"],
+                         "right-current-review-manifest-pin-mismatch")
+        self.assertFalse(result["authorization_granted"])
+
+    def test_offline_fork_assessment_accepts_prefix_extension(self):
+        previous,sha,head,created,left_head=self._delta_fixture()
+        left=created["delta"]
+        left_pin,left_manifest_pin=self._fork_pins(previous,left)
+        right=copy.deepcopy(left)
+        entry=right["entries"][0]
+        head3=mod._digest(3,entry["recipient_id"],entry["recipient_key_id"],
+                          "b"*64,"c"*64,entry["receipt_sha256"],left_head)
+        right["entries"].append(dict(entry,sequence=3,
+            package_sha256="b"*64,receipt_nonce_hex="c"*64,
+            previous_hash=left_head,event_hash=head3))
+        right["current_receipts"]=3
+        right["current_head"]=head3
+        right_pin,right_manifest_pin=self._fork_pins(previous,right)
+        result=mod.assess_review_delta_fork(
+            previous,sha,head,left,left_pin,left_head,left_manifest_pin,
+            right,right_pin,head3,right_manifest_pin,1)
+        self.assertTrue(result["assessment_valid"])
+        self.assertFalse(result["fork_detected"])
+        self.assertEqual(result["shorter_receipts"],2)
+        self.assertEqual(result["longer_receipts"],3)
+
     def test_registered_pending_only(self):
         first=self.record()
         self.assertTrue(first["recorded"])
