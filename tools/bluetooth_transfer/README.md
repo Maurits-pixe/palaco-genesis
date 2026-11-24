@@ -1,6 +1,31 @@
-# PALACO Bluetooth Offline Transfer — v6.3 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v6.4 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v6.4 Independent CI checkpoint witness verification (DRAFT / HOLD)
+
+- `witness_anchor_v64.py` creates a **separate Ed25519 witness
+  signature** over a snapshot comprising the verified SQLite ledger
+  sequence, hash-chain head, original witness-root ID and fixed HOLD/DENY.
+  Its verifier accepts the trusted witness PUBLIC key as a separate input;
+  it never derives authority from a key embedded in the mutable database
+  or checkpoint. The signed checkpoint is exclusively created and fsynced.
+- `test_witness_anchor_v64.py` covers valid verification, a substituted
+  trusted witness key, tampered or missing checkpoint, untrusted signatures,
+  repeated JSON keys, non-overwritable checkpoint and joint tampering.
+  The real Windows SCM-fault CI case also runs a three-entry chain and
+  then rewrites **both ledger and checkpoint** without the witness private
+  key; verification must fail.
+- **Security boundary:** the independent key is still an *ephemeral CI
+  fixture*, not a PALACO-approved trust authority, an externally hosted
+  witness, TPM-backed identity, protected long-term key store, trusted
+  timestamp or persistent off-machine checkpoint. This demonstration
+  rejects joint data tampering only while the externally supplied witness
+  PUBLIC key remains trustworthy. An attacker controlling both key
+  provisioning and the data can forge a fresh history.
+- Evidence producer remains unsigned. No hardware BLE, rollback attestation,
+  authorization or production release is claimed.
+- GO-13 HOLD / authorization DENY; Draft PR, no merge or deployment.
 
 ## v6.3 CI witness root pin, key rotation and multi-entry continuity (DRAFT / HOLD)
 
