@@ -301,3 +301,23 @@ prefix extension. External anchors remain caller-supplied and must
 be authenticated independently. A fork assessment does not establish
 physical custody, independent archiving, or permission to reconcile
 a conflict automatically. GO-13 HOLD / authorization DENY.
+
+## Deterministic fork conflict evidence (2026-11-24)
+
+For two individually valid, independently pinned delta histories that
+diverge at the same receipt position, the fork assessor now returns a
+strictly informational `fork_evidence` object. It records the earliest
+conflicting sequence, both event hashes, previous head and manifest
+commitment, both delta SHA-256 commitments, both current manifest
+commitments, and both branch heads. The canonical JSON object is hashed
+with the domain-separated prefix
+`PALACO-SAMPLING-HANDOFF-FORK-EVIDENCE-V1\x00`.
+Reviewers can independently recompute this evidence commitment.
+Regression assertions cover the divergence index, independent pins,
+commitment recomputation, and absence of evidence on identical branches.
+
+The evidence is **not** a signed independent witness statement and is
+not an instruction to merge, select a branch or release quarantine.
+Conflict outcomes remain `state=quarantined` and
+`authorization_granted=False`. External authentication and durable
+custody remain separate obligations; GO-13 HOLD stays enforced.
