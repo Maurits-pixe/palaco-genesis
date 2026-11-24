@@ -688,3 +688,44 @@ def assess_review_delta_fork(previous_manifest,previous_sha256,previous_head,
                                      right["current_receipts"]),
                 longer_receipts=max(left["current_receipts"],
                                     right["current_receipts"]))
+
+
+FORK_EVIDENCE_DOMAIN=b"PALACO-SAMPLING-HANDOFF-FORK-EVIDENCE-V1\x00"
+
+
+def verify_review_fork_evidence(
+        previous_manifest,previous_sha256,previous_head,
+        left_delta,left_delta_sha256,left_head,left_manifest_sha256,
+        right_delta,right_delta_sha256,right_head,right_manifest_sha256,
+        minimum_previous_receipts,evidence,expected_evidence_sha256):
+    """Independently recompute a pinned conflict assessment; never release it.
+
+    Reverification is offline. The evidence SHA-256 and all manifest/delta
+    pins must originate from authenticated external review channels.
+    """
+    def deny(reason):return _out(fork_evidence_valid=False,
+                                 fork_detected=False,reason=reason)
+    if (not isinstance(expected_evidence_sha256,str)
+        or not handoff.HEX.fullmatch(expected_evidence_sha256)):
+        return deny("missing-independent-fork-evidence-pin")
+    assessment=assess_review_delta_fork(
+        previous_manifest,previous_sha256,previous_head,
+        left_delta,left_delta_sha256,left_head,left_manifest_sha256,
+        right_delta,right_delta_sha256,right_head,right_manifest_sha256,
+        minimum_previous_receipts)
+    if not assessment["assessment_valid"]:
+        return deny("fork-assessment-"+assessment["reason"])
+    if not assessment["fork_detected"]:
+        return deny("no-conflicting-review-delta-branches")
+    if not isinstance(evidence,dict) or evidence!=assessment["fork_evidence"]:
+        return deny("fork-evidence-does-not-match-verified-branches")
+    encoded=json.dumps(assessment["fork_evidence"],sort_keys=True,
+                       separators=(",",":"),ensure_ascii=False,
+                       allow_nan=False).encode("utf-8")
+    computed=hashlib.sha256(FORK_EVIDENCE_DOMAIN+encoded).hexdigest()
+    if computed!=expected_evidence_sha256:
+        return deny("fork-evidence-pin-mismatch")
+    return _out(fork_evidence_valid=True,fork_detected=True,
+                reason="reverified-conflicting-branches-remain-quarantined",
+                fork_evidence_sha256=computed,
+                first_divergent_sequence=evidence["first_divergent_sequence"])
