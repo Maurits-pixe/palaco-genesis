@@ -10,6 +10,7 @@ $bin = Join-Path (Resolve-Path ".").Path "$project/bin/Release/net8.0-windows"
 $exe = Join-Path $bin "Palaco.Bluetooth.NativeHost.exe"
 $marker = Join-Path $bin "palaco-ci-fault.marker"
 $evidence = Join-Path $bin "palaco-ci-incident.json"
+$receipt = Join-Path $bin "palaco-ci-incident-receipt.txt"
 $created = $false
 $markerCreated = $false
 
@@ -21,7 +22,8 @@ function Sc([string[]]$Arguments) {
 }
 try {
     if (-not (Test-Path -LiteralPath $exe)) { throw "Missing diagnostic executable" }
-    if ((Test-Path -LiteralPath $marker) -or (Test-Path -LiteralPath $evidence)) {
+    if ((Test-Path -LiteralPath $marker) -or (Test-Path -LiteralPath $evidence) -or
+        (Test-Path -LiteralPath $receipt)) {
         throw "Refusing stale CI marker or evidence"
     }
     if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
@@ -74,6 +76,17 @@ try {
     if ($record.canonical_sha256 -cne $expected) {
         throw "Incident evidence checksum invalid"
     }
+    # Different process / implementation verifies original C# evidence as
+    # strict JSON, enforces one-time local receipt and rejects replay.
+    $verifier = "tools/bluetooth_transfer/verify_scm_ci_incident.py"
+    python $verifier --evidence $evidence --receipt $receipt
+    if ($LASTEXITCODE -ne 0) { throw "Independent CI incident verification failed" }
+    python $verifier --evidence $evidence --receipt $receipt
+    if ($LASTEXITCODE -eq 0) { throw "Replay of incident was accepted" }
+    if (-not (Test-Path -LiteralPath $receipt)) {
+        throw "Independent receipt missing"
+    }
+    Write-Output "Independent CI incident verification PASS (original validated, replay denied; unsigned)"
     Write-Output "Windows SCM injected worker failure PASS (STOPPED, no restart, fixed HOLD/DENY evidence, SHA-256 verified)"
 }
 finally {
@@ -89,5 +102,8 @@ finally {
     if ($markerCreated) { Remove-Item -LiteralPath $marker -Force -ErrorAction Stop }
     if (Test-Path -LiteralPath $evidence) {
         Remove-Item -LiteralPath $evidence -Force -ErrorAction Stop
+    }
+    if (Test-Path -LiteralPath $receipt) {
+        Remove-Item -LiteralPath $receipt -Force -ErrorAction Stop
     }
 }
