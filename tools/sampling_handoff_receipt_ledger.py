@@ -493,3 +493,101 @@ def verify_manifest_succession(previous_manifest,previous_sha256,
                 previous_receipts=count,
                 current_receipts=current_manifest["receipt_count"],
                 head_hash=current_head)
+
+
+DELTA_DOMAIN=b"PALACO-SAMPLING-HANDOFF-MANIFEST-DELTA-V1\x00"
+DELTA_FIELDS={"schema_version","previous_head","previous_receipts",
+              "current_head","current_receipts","entries"}
+
+
+def _manifest_hash(manifest):
+    return hashlib.sha256(
+        MANIFEST_DOMAIN+json.dumps(manifest,sort_keys=True,
+        separators=(",",":"),ensure_ascii=False,allow_nan=False
+        ).encode("utf-8")).hexdigest()
+
+
+def _delta_hash(delta):
+    return hashlib.sha256(
+        DELTA_DOMAIN+json.dumps(delta,sort_keys=True,
+        separators=(",",":"),ensure_ascii=False,allow_nan=False
+        ).encode("utf-8")).hexdigest()
+
+
+def create_review_delta(previous_manifest,previous_sha256,previous_head,
+                        current_manifest,current_sha256,current_head,
+                        minimum_previous_receipts):
+    """Build a compact review-only append from two fully pinned manifests."""
+    def deny(reason):return _out(delta_created=False,reason=reason)
+    check=verify_manifest_succession(
+        previous_manifest,previous_sha256,previous_head,
+        current_manifest,current_sha256,current_head,minimum_previous_receipts)
+    if not check["succession_valid"]:return deny(check["reason"])
+    prior=previous_manifest["receipt_count"]
+    delta={"schema_version":"0.1.0","previous_head":previous_head,
+           "previous_receipts":prior,"current_head":current_head,
+           "current_receipts":current_manifest["receipt_count"],
+           "entries":current_manifest["entries"][prior:]}
+    return _out(delta_created=True,state="pending-review",
+                reason="pinned-review-delta-not-custody",
+                delta=delta,delta_sha256=_delta_hash(delta))
+
+
+def verify_review_delta(previous_manifest,previous_sha256,previous_head,
+                        delta,expected_delta_sha256,expected_current_head,
+                        minimum_previous_receipts):
+    """Verify an independently pinned append without the full new manifest.
+
+    Requires the independently authenticated previous manifest and both
+    external delta/current-head pins. This does not verify signatures.
+    """
+    def deny(reason):return _out(delta_valid=False,reason=reason)
+    prior=verify_review_manifest(previous_manifest,previous_sha256,
+                                 previous_head,minimum_previous_receipts)
+    if not prior["manifest_valid"]:return deny("previous-"+prior["reason"])
+    if (not isinstance(expected_delta_sha256,str)
+        or not handoff.HEX.fullmatch(expected_delta_sha256)
+        or not isinstance(expected_current_head,str)
+        or not handoff.HEX.fullmatch(expected_current_head)):
+        return deny("missing-independent-delta-pins")
+    if not isinstance(delta,dict) or set(delta)!=DELTA_FIELDS:
+        return deny("invalid-review-delta-schema")
+    count=previous_manifest["receipt_count"]
+    if (delta["schema_version"]!="0.1.0"
+        or type(delta["previous_receipts"]) is not int
+        or type(delta["current_receipts"]) is not int
+        or delta["previous_receipts"]!=count
+        or not count<=delta["current_receipts"]<=MAX_RECORDS
+        or not isinstance(delta["entries"],list)
+        or len(delta["entries"])!=delta["current_receipts"]-count
+        or delta["previous_head"]!=previous_head
+        or delta["current_head"]!=expected_current_head):
+        return deny("invalid-review-delta-schema-or-pins")
+    # Bound the entry list and reject nested/unexpected data before hashing.
+    for entry in delta["entries"]:
+        if (not isinstance(entry,dict)
+            or set(entry)!=MANIFEST_ENTRY_FIELDS):
+            return deny("invalid-review-delta-entry")
+    try:computed=_delta_hash(delta)
+    except (TypeError,ValueError,OverflowError,UnicodeError):
+        return deny("invalid-review-delta-encoding")
+    if computed!=expected_delta_sha256:
+        return deny("review-delta-digest-mismatch")
+    current={"schema_version":"0.1.0",
+             "receipt_count":delta["current_receipts"],
+             "head_hash":expected_current_head,
+             "entries":previous_manifest["entries"]+delta["entries"]}
+    try:current_sha256=_manifest_hash(current)
+    except (TypeError,ValueError,OverflowError,UnicodeError):
+        return deny("invalid-review-delta-encoding")
+    checked=verify_manifest_succession(
+        previous_manifest,previous_sha256,previous_head,
+        current,current_sha256,expected_current_head,minimum_previous_receipts)
+    if not checked["succession_valid"]:return deny(checked["reason"])
+    return _out(delta_valid=True,state="pending-review",
+                reason="offline-pinned-manifest-delta-not-custody",
+                previous_receipts=count,
+                current_receipts=delta["current_receipts"],
+                head_hash=expected_current_head,
+                current_manifest_sha256=current_sha256,
+                delta_sha256=computed)
