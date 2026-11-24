@@ -438,6 +438,22 @@ for (let i = 0; i < 18; i += 1) {
 assert.throws(() => canonicalBytes(sharedObjectDAG), /budget/,
               'shared object DAGs must share node and byte budgets');
 
+// The full node budget includes object *keys* as well as their values.
+assert.equal(canonicalBytes(Array(99_999).fill(0)).length, 199_999,
+             'exact 100,000 visits including the array root are permitted');
+assert.throws(() => canonicalBytes(Array(100_000).fill(0)), /node budget/,
+              'collection fanout above the visit budget is rejected early');
+const objectAtNodeLimit = Object.fromEntries(
+  Array.from({ length: 49_999 }, (_, i) => [String(i), 0])
+);
+assert.ok(canonicalBytes(objectAtNodeLimit).length > 0,
+          'one root and 49,999 key/value pairs fit the node budget');
+const objectBeyondNodeLimit = Object.fromEntries(
+  Array.from({ length: 50_000 }, (_, i) => [String(i), 0])
+);
+assert.throws(() => canonicalBytes(objectBeyondNodeLimit), /node budget/,
+              'a 50,000-member object requires 100,001 node visits');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
