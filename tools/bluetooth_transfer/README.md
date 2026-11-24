@@ -1,6 +1,23 @@
-# PALACO Bluetooth Offline Transfer — v5.2 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v5.3 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v5.3 Windows local named-pipe integration on CI
+
+- `windows_native_host/WindowsPipeIntegrationTest.cs` starts the actual
+  Windows diagnostic listener in-process on a Windows runner and connects a
+  same-account client through `NamedPipeClientStream`. It checks a valid
+  inspection gets only fixed **HOLD/DENY**, that an unsupported operation and
+  an oversized length prefix are rejected without a response, and that a
+  subsequent fresh connection is still denied.
+- `--ipc-integration-test` runs this bounded Windows-only exercise; the
+  dedicated `windows-latest` CI job executes it after building and the
+  existing self-test.
+- **Not covered:** a service installed by SCM, distinct Windows users,
+  actual dedicated client roles, privilege boundaries, service restarts,
+  hostile parallel processes, TPM devices, real BLE transport or Android.
+  Same-account diagnostics do not imply production caller authorization.
+  All execution and publication remain **GO-13 HOLD / DENY**.
 
 ## v5.2 Windows client token and service-SID verification gates
 
