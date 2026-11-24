@@ -85,7 +85,7 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
     return encoded;
   }
   if (typeof value === 'string') {
-    assertValidintrinsicStringConverter(value);
+    assertValidString(value);
     if (Buffer.byteLength(value, 'utf8') > MAX_CANONICAL_BYTES) {
       throw new Error('canonical JSON byte budget exceeded');
     }
