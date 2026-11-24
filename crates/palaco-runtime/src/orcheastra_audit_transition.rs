@@ -128,6 +128,8 @@ pub fn inspect_transition_snapshot_link(
 /// authenticated rotation policy is implemented. The key validity interval
 /// must also remain identical, so expanding, shrinking or shifting a key's
 /// allowed checkpoint window is denied until separately authenticated.
+/// Both registry revisions must be nonzero and never regress across the
+/// transition, even when this guard is called without the composite review.
 /// Malformed signatures, verification flags, and anchors that do not exactly
 /// match their source's last checkpoint are denied.
 /// Matching caller-provided keys are only a consistency check, not proof of
@@ -157,6 +159,9 @@ pub fn inspect_transition_signer_continuity(
         || previous_key.key_id != current_key.key_id
         || previous_key.public_key == [0; 32]
         || previous_key.public_key != current_key.public_key
+        || previous_key.registry_sequence == 0
+        || current_key.registry_sequence == 0
+        || current_key.registry_sequence < previous_key.registry_sequence
         || previous_source.signed.key_id != previous_key.key_id
         || current_source.signed.key_id != current_key.key_id
         || previous_source.signed.public_key != previous_key.public_key
@@ -1646,6 +1651,83 @@ mod tests {
         );
         assert_eq!(
             inspect_segment_signer_consistency(&current),
+            RestartInspection::ReviewOnly
+        );
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &current),
+            RestartInspection::ReviewOnly
+        );
+        // Standalone signer continuity must reject zero and decreasing key
+        // revisions without relying on a separate monotonicity review.
+        let zero_registry_key = TrustedKey {
+            registry_sequence: 0,
+            ..key.clone()
+        };
+        let zero_registry_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_current,
+            payloads: payloads_current,
+            signed: &signed_current,
+            trusted_key: &zero_registry_key,
+            floor: &floor_current,
+        }];
+        let zero_registry_segment = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &zero_registry_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &zero_registry_segment),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_segment_signer_consistency(&zero_registry_segment),
+            RestartInspection::Deny
+        );
+        let older_registry_key = TrustedKey {
+            registry_sequence: 2,
+            ..key.clone()
+        };
+        let older_registry_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_current,
+            payloads: payloads_current,
+            signed: &signed_current,
+            trusted_key: &older_registry_key,
+            floor: &floor_current,
+        }];
+        let older_registry_segment = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &older_registry_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_segment_signer_consistency(&older_registry_segment),
+            RestartInspection::ReviewOnly
+        );
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &older_registry_segment),
+            RestartInspection::Deny
+        );
+        let newer_registry_key = TrustedKey {
+            registry_sequence: 4,
+            ..key.clone()
+        };
+        let newer_registry_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_current,
+            payloads: payloads_current,
+            signed: &signed_current,
+            trusted_key: &newer_registry_key,
+            floor: &floor_current,
+        }];
+        let newer_registry_segment = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &newer_registry_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &newer_registry_segment),
             RestartInspection::ReviewOnly
         );
         assert_eq!(
