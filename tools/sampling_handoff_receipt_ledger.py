@@ -198,3 +198,47 @@ def inspect(db,expected_head,minimum_receipts):
     return _out(ledger_valid=True,state="pending-review",
                 reason="locally-verified-handoff-receipts-against-external-pin",
                 receipts=state["receipts"],head_hash=state["head_hash"])
+
+
+def inspect_entry(db,expected_head,minimum_receipts,sequence):
+    """Read-only inspection of one locally indexed receipt against a pinned chain.
+
+    Returned metadata is a ledger claim, not proof of physical delivery.
+    """
+    def deny(reason):return _out(entry_valid=False,reason=reason)
+    if (not isinstance(expected_head,str) or not handoff.HEX.fullmatch(expected_head)
+        or type(minimum_receipts) is not int
+        or not 1<=minimum_receipts<=MAX_RECORDS
+        or type(sequence) is not int or not 1<=sequence<=MAX_RECORDS):
+        return deny("invalid-independent-handoff-entry-policy")
+    try:path=_path(db)
+    except ValueError as exc:return deny(str(exc))
+    if not path.is_file():return deny("missing-handoff-receipt-ledger")
+    try:
+        conn=sqlite3.connect(path.resolve().as_uri()+"?mode=ro",uri=True)
+        try:
+            conn.execute("BEGIN")
+            state=_scan(conn)
+            row=conn.execute("""SELECT recipient_id,recipient_key_id,
+                package_sha256,nonce_hex,receipt_sha256,previous_hash,event_hash
+                FROM sampling_handoff_receipts WHERE sequence=?""",
+                (sequence,)).fetchone() if state is not None else None
+            conn.commit()
+        finally:
+            conn.close()
+    except (sqlite3.Error,ValueError,TypeError,OSError):
+        return deny("unreadable-handoff-receipt-ledger")
+    if state is None:return deny("handoff-receipt-ledger-integrity-failed")
+    if state["receipts"]<minimum_receipts:
+        return deny("handoff-receipt-ledger-rollback")
+    if state["head_hash"]!=expected_head:
+        return deny("handoff-receipt-ledger-head-mismatch")
+    if row is None:return deny("handoff-receipt-entry-not-found")
+    recipient,key,package,nonce,receipt_hash,previous,event=row
+    return _out(entry_valid=True,state="pending-review",
+                reason="locally-verified-handoff-entry-not-delivery-proof",
+                sequence=sequence,receipts=state["receipts"],
+                head_hash=state["head_hash"],recipient_id=recipient,
+                recipient_key_id=key,package_sha256=package,
+                receipt_nonce_hex=nonce,receipt_sha256=receipt_hash,
+                previous_hash=previous,event_hash=event)
