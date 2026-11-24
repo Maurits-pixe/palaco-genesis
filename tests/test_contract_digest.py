@@ -274,6 +274,32 @@ class ContractDigestTests(unittest.TestCase):
             path.write_text('{"items":[2,1,0]}', encoding="utf-8")
             self.assertNotEqual(first, digest_contract_file(path))
 
+    def test_rejects_direct_python_object_cycle(self):
+        obj = {}
+        obj["self"] = obj
+        with self.assertRaisesRegex(ValueError, "cyclic JSON reference"):
+            canonical_bytes(obj)
+
+    def test_rejects_direct_python_array_cycle(self):
+        values = []
+        values.append(values)
+        with self.assertRaisesRegex(ValueError, "cyclic JSON reference"):
+            canonical_bytes(values)
+
+    def test_rejects_mixed_object_array_cycle(self):
+        obj = {"child": []}
+        obj["child"].append(obj)
+        with self.assertRaisesRegex(ValueError, "cyclic JSON reference"):
+            digest_contract(obj)
+
+    def test_accepts_shared_acyclic_subtree(self):
+        child = {"gate": "HOLD"}
+        value = [child, child]
+        expected = b'[{"gate":"HOLD"},{"gate":"HOLD"}]'
+        self.assertEqual(canonical_bytes(value), expected)
+        self.assertEqual(digest_contract(value),
+                         digest_contract([{"gate": "HOLD"}, {"gate": "HOLD"}]))
+
     def test_file_digest_matches_in_memory_digest(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "candidate.json"
