@@ -56,3 +56,18 @@ index on both read-only inspection and subsequent registration.
 This provides a bounded database read; it is **not** a storage-size quota,
 external nonce authority, or protection from every SQLite resource
 exhaustion vector. GO-13 remains HOLD and all authorization is denied.
+
+## Individuele read-only ontvangstinspectie (2026-11-24)
+
+`inspect_entry(db, expected_head, minimum_receipts, sequence)`
+opens SQLite in read-only mode and verifies the **entire** local receipt
+chain plus nonce index within one database read transaction before exposing
+the requested record metadata. Both an independently authenticated exact
+head hash and minimum entry count are mandatory. Nonexistent or invalid
+sequence numbers, chain manipulation and rollback fail closed.
+
+The response provides the recipient, signing-key identifier, package hash,
+receipt nonce, receipt digest, previous event hash and event hash for
+independent forensic comparison. It does **not** expose source documents,
+validate off-device delivery, grant storage custody or authorize anything.
+All successful lookups remain `pending-review`, `HOLD`, and DENY.
