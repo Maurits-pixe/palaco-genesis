@@ -586,6 +586,37 @@ assert.equal(digest({ z: [2, 1], a: { y: true, x: null } }),
              digest({ a: { x: null, y: true }, z: [2, 1] }),
              'deterministic digest remains independent of object insertion order');
 
+// Later global monkeypatches must not redirect the reference encoder's
+// JSON quoting or own-property validation. Restore every builtin reliably.
+const intrinsicMutationTargets = [
+  [JSON, 'stringify'],
+  [Reflect, 'ownKeys'],
+  [Object, 'getPrototypeOf'],
+  [Object, 'getOwnPropertyDescriptor'],
+  [Object, 'hasOwn'],
+  [Array, 'isArray'],
+];
+const originalIntrinsicMethods = intrinsicMutationTargets.map(([owner, name]) =>
+  [owner, name, owner[name]]
+);
+let bytesWithMutatedIntrinsics;
+try {
+  for (const [owner, name] of intrinsicMutationTargets) {
+    owner[name] = () => { throw new Error('mutated intrinsic must never execute'); };
+  }
+  bytesWithMutatedIntrinsics = canonicalBytes({ z: [1, null], a: 'HOLD' });
+} finally {
+  for (const [owner, name, original] of originalIntrinsicMethods) {
+    owner[name] = original;
+  }
+}
+assert.deepEqual(bytesWithMutatedIntrinsics,
+                 Buffer.from('{"a":"HOLD","z":[1,null]}', 'utf8'),
+                 'canonical output unaffected by late global intrinsic mutation');
+assert.equal(digest({ z: [1, null], a: 'HOLD' }),
+             digest({ a: 'HOLD', z: [1, null] }),
+             'deterministic digest continues after restoring global functions');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
