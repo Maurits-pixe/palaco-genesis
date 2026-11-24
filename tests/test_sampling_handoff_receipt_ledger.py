@@ -64,6 +64,27 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
         self.assertFalse(result["authorization_granted"])
         return result
 
+    def test_nonce_integrity_failure_rolls_back_prior_receipt_insert(self):
+        # BEFORE INSERT failure on the second table previously returned
+        # normally from sqlite3's context manager and committed row one.
+        with sqlite3.connect(self.db) as conn:
+            mod._schema(conn)
+            conn.execute("""CREATE TRIGGER abort_nonce BEFORE INSERT
+                ON sampling_handoff_nonces BEGIN
+                SELECT RAISE(ABORT, 'injected nonce insert rejection');
+                END""")
+        result=self.record()
+        self.assertFalse(result["recorded"])
+        self.assertEqual(result["reason"],"duplicate-handoff-package-or-nonce")
+        with sqlite3.connect(self.db) as conn:
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM sampling_handoff_receipts").fetchone()[0],0)
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM sampling_handoff_nonces").fetchone()[0],0)
+        # The failed attempt must not change the externally anchored genesis.
+        self.assertEqual(mod._scan(sqlite3.connect(self.db))["head_hash"],
+                         mod.GENESIS)
+
     def test_trigger_deleting_inserted_nonce_rolls_back(self):
         with sqlite3.connect(self.db) as conn:
             mod._schema(conn)
