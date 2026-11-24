@@ -693,6 +693,32 @@ assert.throws(() => canonicalBytes(extraArrayPropertyProxy), /sparse array or un
 assert.deepEqual(canonicalBytes([]), Buffer.from('[]', 'utf8'),
                  'empty standard arrays remain valid under descriptor-length capture');
 
+// Late changes to number and length-related global helpers must not
+// let unsafe numbers pass or alter canonical index/number serialization.
+const savedNumericIntrinsics = {
+  String: globalThis.String,
+  safeInteger: Number.isSafeInteger,
+  max: Math.max,
+};
+let numericBytesAfterMutation;
+try {
+  globalThis.String = () => { throw new Error('mutated String converter executed'); };
+  Number.isSafeInteger = () => { throw new Error('mutated safe-integer check executed'); };
+  Math.max = () => { throw new Error('mutated max helper executed'); };
+  numericBytesAfterMutation = canonicalBytes({ items: [0, -1, 9007199254740991] });
+  assert.throws(() => canonicalBytes({ n: Number.MAX_SAFE_INTEGER + 1 }),
+                /safe range/, 'out-of-range number stays rejected');
+  assert.throws(() => canonicalBytes({ n: 0.5 }),
+                /non-integer/, 'fractional number stays rejected');
+} finally {
+  globalThis.String = savedNumericIntrinsics.String;
+  Number.isSafeInteger = savedNumericIntrinsics.safeInteger;
+  Math.max = savedNumericIntrinsics.max;
+}
+assert.deepEqual(numericBytesAfterMutation,
+                 Buffer.from('{"items":[0,-1,9007199254740991]}', 'utf8'),
+                 'numeric serialization and indexed arrays survive late global mutations');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
