@@ -22,23 +22,33 @@ const intrinsicGetPrototypeOf = Object.getPrototypeOf;
 const intrinsicGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
 const intrinsicHasOwn = Object.hasOwn;
 const intrinsicArrayIsArray = Array.isArray;
+const intrinsicNormalize = String.prototype.normalize;
+const intrinsicCharCodeAt = String.prototype.charCodeAt;
+const intrinsicCodePointAt = String.prototype.codePointAt;
 
-
+// Compare Unicode scalar values directly, without Array.from or mutable
+// string prototype methods consulted after initialization.
 function compareCodepoints(a, b) {
-  const aa = Array.from(a, (ch) => ch.codePointAt(0));
-  const bb = Array.from(b, (ch) => ch.codePointAt(0));
-  for (let i = 0; i < Math.min(aa.length, bb.length); i += 1) {
-    if (aa[i] !== bb[i]) return aa[i] < bb[i] ? -1 : 1;
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    const left = intrinsicCodePointAt.call(a, i);
+    const right = intrinsicCodePointAt.call(b, j);
+    if (left !== right) return left < right ? -1 : 1;
+    i += left > 0xffff ? 2 : 1;
+    j += right > 0xffff ? 2 : 1;
   }
-  return Math.sign(aa.length - bb.length);
+  if (i < a.length) return 1;
+  if (j < b.length) return -1;
+  return 0;
 }
 
 function assertValidString(s) {
-  if (s.normalize('NFC') !== s) throw new Error('non-NFC Unicode text');
+  if (intrinsicNormalize.call(s, 'NFC') !== s) throw new Error('non-NFC Unicode text');
   for (let i = 0; i < s.length; i += 1) {
-    const code = s.charCodeAt(i);
+    const code = intrinsicCharCodeAt.call(s, i);
     if (code >= 0xd800 && code <= 0xdbff) {
-      const next = s.charCodeAt(i + 1);
+      const next = intrinsicCharCodeAt.call(s, i + 1);
       if (!(next >= 0xdc00 && next <= 0xdfff)) {
         throw new Error('unpaired Unicode surrogate');
       }
