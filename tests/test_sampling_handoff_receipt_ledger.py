@@ -305,6 +305,33 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
         self.assertEqual(result["reason"],
                          "handoff-entry-changed-during-verification")
 
+    def test_sqlite_storage_checks_pass_for_valid_receipt(self):
+        first=self.record()
+        with sqlite3.connect(self.db) as conn:
+            self.assertTrue(mod._storage_integrity_ok(conn))
+        self.assertTrue(self.inspect(first["head_hash"])["ledger_valid"])
+
+    def test_sqlite_foreign_key_orphan_rejected(self):
+        first=self.record()
+        with sqlite3.connect(self.db) as conn:
+            # SQLite enforcement is disabled for this tampering connection.
+            conn.execute("UPDATE sampling_handoff_nonces SET "
+                         "receipt_sequence=99999")
+            self.assertFalse(mod._storage_integrity_ok(conn))
+        self.assertEqual(self.inspect(first["head_hash"])["reason"],
+                         "handoff-receipt-ledger-integrity-failed")
+        self.assertEqual(self.record(head=first["head_hash"],floor=1)["reason"],
+                         "handoff-receipt-ledger-integrity-failed")
+
+    def test_storage_integrity_failure_fails_closed(self):
+        first=self.record()
+        with patch.object(mod,"_storage_integrity_ok",return_value=False):
+            self.assertEqual(self.inspect(first["head_hash"])["reason"],
+                             "handoff-receipt-ledger-integrity-failed")
+            self.assertEqual(self.record(head=first["head_hash"],floor=1)["reason"],
+                             "handoff-receipt-ledger-integrity-failed")
+        self.assertTrue(self.inspect(first["head_hash"])["ledger_valid"])
+
     def test_registered_pending_only(self):
         first=self.record()
         self.assertTrue(first["recorded"])
