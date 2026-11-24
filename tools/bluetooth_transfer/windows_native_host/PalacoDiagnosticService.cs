@@ -1,4 +1,4 @@
-// SCM-compatible Windows Service entry point. DRAFT/HOLD: DO NOT INSTALL.
+// SCM-compatible Windows Service entry point. DRAFT/HOLD: NEVER INSTALL IN PRODUCTION.
 // No TPM, credentials, authority, import, or replay-resistant native state.
 // A named-pipe user boundary is not proof of an authorized caller.
 using System.ServiceProcess;
@@ -28,6 +28,13 @@ internal sealed class PalacoDiagnosticService : ServiceBase
         // No installation or service SID provisioning is done by this program.
         if (!WindowsClientIdentityGate.HasExpectedServiceSid())
             throw new InvalidOperationException("Unverified Windows service SID: HOLD");
+        // A synchronous startup preflight prevents SCM from reporting RUNNING
+        // when the protected pipe ACL cannot even be constructed.
+        using (var preflight = WindowsPipeSecurity.CreateDiagnosticPipe())
+        {
+            if (preflight is null)
+                throw new InvalidOperationException("Windows pipe ACL unavailable: HOLD");
+        }
         _stop = new CancellationTokenSource();
         _serverTask = Task.Run(() => Program.RunServerAsync(_stop.Token));
     }
