@@ -148,3 +148,19 @@ A `quick_check(1)` is limited diagnostic coverage, **not** a complete
 filesystem, hardware, or independent archive integrity guarantee.
 The existing chain, external pins, nonces, signed evidence and release
 controls remain mandatory. Authorization DENY, GO-13 HOLD.
+
+## Active SQLite foreign-key enforcement (2026-11-24)
+
+Registration now explicitly enables `PRAGMA foreign_keys=ON` on each
+new writer connection **before** `BEGIN IMMEDIATE`, then checks that
+SQLite reports enforcement as enabled. A missing capability is denied
+before any table write. The existing read-only foreign-key check remains
+in place to detect damage already present on disk.
+
+A negative regression test installs a trigger that attempts to add a
+nonce pointing to a nonexistent receipt during an otherwise valid
+registration. The foreign-key violation must abort the transaction;
+both tables must remain empty and the genesis head unchanged. This
+enforces local referential integrity at write time but does not make
+SQLite immutable or replace authenticated external ledger anchors.
+GO-13 HOLD and authorization DENY remain mandatory.
