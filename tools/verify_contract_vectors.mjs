@@ -28,6 +28,9 @@ const intrinsicCodePointAt = String.prototype.codePointAt;
 const intrinsicStringConverter = String;
 const intrinsicNumberIsSafeInteger = Number.isSafeInteger;
 const intrinsicMathMax = Math.max;
+const intrinsicBufferByteLength = Buffer.byteLength;
+const intrinsicBufferFrom = Buffer.from;
+const intrinsicBufferAlloc = Buffer.alloc;
 
 // Compare Unicode scalar values directly, without Array.from or mutable
 // string prototype methods consulted after initialization.
@@ -81,16 +84,16 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
       throw new Error('integer outside interoperable safe range or non-integer');
     }
     const encoded = intrinsicStringConverter(value);
-    charge(Buffer.byteLength(encoded, 'utf8'));
+    charge(intrinsicBufferByteLength(encoded, 'utf8'));
     return encoded;
   }
   if (typeof value === 'string') {
     assertValidString(value);
-    if (Buffer.byteLength(value, 'utf8') > MAX_CANONICAL_BYTES) {
+    if (intrinsicBufferByteLength(value, 'utf8') > MAX_CANONICAL_BYTES) {
       throw new Error('canonical JSON byte budget exceeded');
     }
     const encoded = intrinsicJSONStringify(value);
-    charge(Buffer.byteLength(encoded, 'utf8'));
+    charge(intrinsicBufferByteLength(encoded, 'utf8'));
     return encoded;
   }
   if (intrinsicArrayIsArray(value)) {
@@ -163,7 +166,7 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
       if (typeof key !== 'string') throw new Error('symbol object key is not JSON data');
       assertValidString(key);
       const encodedKey = intrinsicJSONStringify(key);
-      charge(Buffer.byteLength(encodedKey, 'utf8') + 1);
+      charge(intrinsicBufferByteLength(encodedKey, 'utf8') + 1);
       encodedKeys.push([key, encodedKey]);
     }
     const entries = [];
@@ -194,7 +197,7 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
 }
 
 function canonicalBytes(value) {
-  const payload = Buffer.from(encode(value), 'utf8');
+  const payload = intrinsicBufferFrom(encode(value), 'utf8');
   if (payload.length > MAX_CANONICAL_BYTES) {
     throw new Error('canonical JSON byte budget exceeded');
   }
@@ -203,7 +206,7 @@ function canonicalBytes(value) {
 
 function digest(value) {
   const payload = canonicalBytes(value);
-  const length = Buffer.alloc(8);
+  const length = intrinsicBufferAlloc(8);
   length.writeBigUInt64BE(BigInt(payload.length));
   return createHash('sha256').update(DOMAIN).update(length).update(payload).digest('hex');
 }
