@@ -306,6 +306,11 @@ def verify_entry_evidence(db,package,receipt,trust,expected_head,
         or trust["expected_recipient"]!=entry["recipient_id"]
         or evidence!=entry["receipt_sha256"]):
         return deny("handoff-entry-evidence-mismatch")
+    # Signature/history verification can take time; do not return a success
+    # against a ledger snapshot that changed while it was being checked.
+    refreshed=inspect_entry(db,expected_head,minimum_receipts,sequence)
+    if not refreshed["entry_valid"] or refreshed!=entry:
+        return deny("handoff-entry-changed-during-verification")
     return _out(evidence_valid=True,state="pending-review",
                 reason="reverified-signed-receipt-matches-pinned-local-entry",
                 sequence=sequence,head_hash=entry["head_hash"],
