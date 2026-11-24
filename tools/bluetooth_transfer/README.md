@@ -1,6 +1,35 @@
-# PALACO Bluetooth Offline Transfer — v6.1 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v6.2 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v6.2 Ephemeral Ed25519 verifier receipt and SQLite replay chain (DRAFT / HOLD)
+
+- `witness_scm_ci_incident.py` re-verifies the original C# SCM worker
+  fault incident via the strict Python parser, then issues a **signed
+  verifier receipt** under a freshly generated in-memory Ed25519 key.
+  The receipt binds incident SHA-256, sequence 1, genesis predecessor,
+  fixed HOLD/DENY and an entry hash. A separate public-key file allows
+  verification and negative signature-key substitution tests.
+- The witness saves one entry in a SQLite database with unique incident
+  and entry hashes; a read-only verifier checks the signed receipt,
+  contiguous sequence and previous-hash link. Existing DB, receipt or
+  public key files cause admission to fail closed; no silent overwrite.
+  A duplicate `attest` invocation must be rejected.
+- `test_witness_scm_ci_incident.py` covers tampering, missing files,
+  replacement public keys, receipt mutations, deleted entries and broken
+  hash chains. GitHub Actions runs the tests under Python and validates
+  the actual Windows SCM fault record with the independent witness,
+  including refusal of a duplicate.
+- **Trust limitation:** the verifier generates its own disposable signing
+  key. It does **not** authenticate the C# producer or provide an
+  independently pinned trust root. This is a *single-entry,
+  run-local* SQLite ledger; deleting the ledger and key can reset replay
+  history, and no hardware-backed monotonic counter or external
+  witness has been established. Signed verifier receipts are **not**
+  signed producer incidents, trusted timestamps, durable global
+  anti-rollback guarantees or release authority.
+- GO-13 HOLD / authorization DENY, Draft PR only; no production
+  installation, publication, deployment or merge.
 
 ## v6.1 Independent CI incident validation and local replay rejection (DRAFT / HOLD)
 
