@@ -4,7 +4,9 @@
 //! expectations must be authenticated by a separately trusted, rollback-safe
 //! witness. ReviewOnly never grants execution or publishing rights.
 
-use crate::orcheastra_audit_chain::{inspect_audit_chain, AuditChainExpectation, AuditLink};
+use crate::orcheastra_audit_chain::{
+    inspect_audit_chain, AuditChainExpectation, AuditLink, MAX_AUDIT_LINKS,
+};
 use crate::orcheastra_audit_custody::{inspect_custodied_audit_chain, AuditCustodyWitness};
 use crate::orcheastra_restart::RestartInspection;
 
@@ -12,7 +14,9 @@ use crate::orcheastra_restart::RestartInspection;
 ///
 /// Requires contiguous sequence numbers, an exact predecessor-to-head match,
 /// and successful independent witness checks on both segment expectations.
-/// Both local audit chains are validated before calling either external witness.
+/// A combined maximum of 256 audit links applies across both segments, even
+/// if each is individually within its limit. Both local audit chains are
+/// validated before calling either external witness.
 /// No caller-supplied witness implementation is trusted merely by this API.
 /// The function does not create, store, or authorize audit records.
 #[must_use]
@@ -28,6 +32,17 @@ pub fn inspect_audit_continuity(
     else {
         return RestartInspection::Deny;
     };
+    // Share the composite transition's cumulative link budget even when
+    // this standalone custody gate is invoked directly.
+    let Some(total_links) = previous_links.len().checked_add(current_links.len()) else {
+        return RestartInspection::Deny;
+    };
+    if previous_links.is_empty()
+        || current_links.is_empty()
+        || total_links > MAX_AUDIT_LINKS
+    {
+        return RestartInspection::Deny;
+    }
     let Some(next_sequence) = previous.last_sequence.checked_add(1) else {
         return RestartInspection::Deny;
     };
@@ -176,6 +191,72 @@ mod tests {
             RestartInspection::Deny
         );
         assert_eq!(witness.0.get(), 0);
+    }
+
+    #[test]
+    fn cumulative_link_budget_is_enforced_before_custody_callbacks() {
+        let build_segment = |first_sequence: u64, count: usize, initial: [u8; 32]| {
+            let mut links = Vec::new();
+            let mut predecessor = initial;
+            for index in 0..count {
+                let sequence = first_sequence + u64::try_from(index).unwrap_or(0);
+                let digest = audit_link_digest(sequence, &predecessor, &[7; 32])
+                    .unwrap_or([0; 32]);
+                links.push(AuditLink {
+                    sequence,
+                    predecessor_digest: predecessor,
+                    receipt_digest: [7; 32],
+                    link_digest: digest,
+                });
+                predecessor = digest;
+            }
+            let expected = AuditChainExpectation {
+                first_sequence,
+                predecessor_digest: initial,
+                last_sequence: first_sequence + u64::try_from(count).unwrap_or(0) - 1,
+                final_digest: predecessor,
+            };
+            (links, expected)
+        };
+        let (previous_links, previous_expected) = build_segment(10, 128, [9; 32]);
+        let (current_links, current_expected) =
+            build_segment(138, 128, previous_expected.final_digest);
+        let witness = CountingWitness(std::cell::Cell::new(0));
+        assert_eq!(
+            inspect_audit_continuity(
+                &previous_links,
+                Some(&previous_expected),
+                &current_links,
+                Some(&current_expected),
+                Some(&witness),
+            ),
+            RestartInspection::ReviewOnly
+        );
+        assert_eq!(witness.0.get(), 2);
+
+        witness.0.set(0);
+        let (over_limit_links, over_limit_expected) =
+            build_segment(138, 129, previous_expected.final_digest);
+        assert_eq!(
+            inspect_audit_continuity(
+                &previous_links,
+                Some(&previous_expected),
+                &over_limit_links,
+                Some(&over_limit_expected),
+                Some(&witness),
+            ),
+            RestartInspection::Deny
+        );
+        assert_eq!(witness.0.get(), 0);
+        // Individual segment inspections still accept both full chains; it
+        // is specifically the combined transition budget that rejects them.
+        assert_eq!(
+            crate::orcheastra_audit_chain::inspect_audit_chain(
+                &over_limit_links,
+                Some(&over_limit_expected),
+            ),
+            RestartInspection::ReviewOnly
+        );
     }
 
     #[test]
