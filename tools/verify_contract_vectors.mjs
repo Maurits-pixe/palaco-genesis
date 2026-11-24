@@ -11,6 +11,8 @@ const fixturePath = new URL('../verification/contract-digest-v0-vectors.json', i
 const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
 const DOMAIN = Buffer.from('PALACO-CJSON-v0\0', 'utf8');
 const MAX_DEPTH = 64;
+// Capture the sorter before any test can modify shared Array.prototype.
+const intrinsicArraySort = Array.prototype.sort;
 const MAX_CANONICAL_NODES = 100_000;
 const MAX_CANONICAL_BYTES = 1024 * 1024;
 
@@ -83,8 +85,8 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
     }
     // Array.map skips holes; JSON stringification also loses extra names
     // and symbol properties. Demand only explicit, enumerable data slots.
-    const own = Reflect.ownKeys(value).filter((key) => key !== 'length');
-    if (own.length !== value.length) {
+    const ownKeys = Reflect.ownKeys(value);
+    if (ownKeys.length !== value.length + 1 || !ownKeys.includes('length')) {
       throw new Error('sparse array or unsupported array property');
     }
     const entries = [];
@@ -101,7 +103,12 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
     charge(2 + Math.max(0, entries.length - 1));
     active.add(value);
     try {
-      return '[' + entries.map((entry) => encode(entry, depth + 1, active, budget)).join(',') + ']';
+      let result = '[';
+      for (let i = 0; i < entries.length; i += 1) {
+        if (i !== 0) result += ',';
+        result += encode(entries[i], depth + 1, active, budget);
+      }
+      return result + ']';
     } finally {
       active.delete(value);
     }
@@ -142,9 +149,14 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
     }
     active.add(value);
     try {
-      return '{' + entries.sort(([left], [right]) => compareCodepoints(left, right)).map(([, encodedKey, entry]) => {
-        return encodedKey + ':' + encode(entry, depth + 1, active, budget);
-      }).join(',') + '}';
+      intrinsicArraySort.call(entries, ([left], [right]) => compareCodepoints(left, right));
+      let result = '{';
+      for (let i = 0; i < entries.length; i += 1) {
+        if (i !== 0) result += ',';
+        const [, encodedKey, entry] = entries[i];
+        result += encodedKey + ':' + encode(entry, depth + 1, active, budget);
+      }
+      return result + '}';
     } finally {
       active.delete(value);
     }
