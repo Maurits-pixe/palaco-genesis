@@ -21,6 +21,8 @@ MAX_NESTING_DEPTH = 64
 
 def canonical_bytes(value):
     """Return sorted, compact UTF-8 JSON bytes for a restricted value set."""
+    # Accept exact built-in JSON types only; subclasses can override traversal
+    # and disagree with json.dumps about which members are actually encoded.
     # Track ancestors, not all visited containers: shared acyclic subtrees
     # remain valid and are encoded by value wherever they occur.
     active = set()
@@ -36,21 +38,21 @@ def canonical_bytes(value):
             if abs(item) > MAX_SAFE_INTEGER:
                 raise ValueError("integer outside interoperable safe range")
             continue
-        if isinstance(item, str):
+        if type(item) is str:
             if unicodedata.normalize("NFC", item) != item:
                 raise ValueError("non-NFC Unicode text")
             if any(0xD800 <= ord(ch) <= 0xDFFF for ch in item):
                 raise ValueError("unpaired Unicode surrogate")
-        elif isinstance(item, (list, dict)):
+        elif type(item) in (list, dict):
             if id(item) in active:
                 raise ValueError("cyclic JSON reference")
             if depth >= MAX_NESTING_DEPTH:
                 raise ValueError("JSON nesting depth exceeds limit")
-            if isinstance(item, dict) and any(not isinstance(key, str) for key in item):
+            if type(item) is dict and any(type(key) is not str for key in item):
                 raise ValueError("object keys must be strings")
             active.add(id(item))
             stack.append((item, depth, True))
-            if isinstance(item, dict):
+            if type(item) is dict:
                 stack.extend((key, depth + 1, False) for key in item.keys())
                 stack.extend((child, depth + 1, False) for child in item.values())
             else:
