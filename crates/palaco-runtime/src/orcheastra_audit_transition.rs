@@ -37,8 +37,9 @@ pub struct AuditSegmentEvidence<'a> {
 /// Each segment's own integrity validation is handled separately. This gate
 /// compares the final verified receipt and evidence of the preceding segment
 /// with the initial receipt and evidence of the next segment. The checkpoint
-/// intervals must meet exactly without gaps or overlaps; counters cannot
-/// decrease. Both sides must carry nonzero, feasible floors and registry values.
+/// intervals must meet exactly without gaps or overlaps; both complete
+/// checkpoint histories and their predecessor hash junction are validated.
+/// Counters cannot decrease, and floors and registry values must be feasible.
 #[must_use]
 pub fn inspect_transition_monotonicity(
     previous: &AuditSegmentEvidence<'_>,
@@ -75,6 +76,28 @@ pub fn inspect_transition_monotonicity(
         || current_receipt.checkpoint_sequence != current_last.sequence
         || previous_receipt.checkpoint_sequence != previous_source.signed.anchor.sequence
         || current_receipt.checkpoint_sequence != current_source.signed.anchor.sequence
+    {
+        return RestartInspection::Deny;
+    }
+
+    // Receipt counters can agree even when original checkpoint histories
+    // contain a blocked record or an invalid cross-source predecessor hash.
+    let Some(current_first) = current_source.checkpoints.first() else {
+        return RestartInspection::Deny;
+    };
+    let Some(next_sequence) = previous_last.sequence.checked_add(1) else {
+        return RestartInspection::Deny;
+    };
+    if inspect_restart_chain(
+        previous_source.checkpoints,
+        Some(&previous_source.signed.anchor),
+    ) != RestartInspection::ReviewOnly
+        || inspect_restart_chain(
+            current_source.checkpoints,
+            Some(&current_source.signed.anchor),
+        ) != RestartInspection::ReviewOnly
+        || current_first.sequence != next_sequence
+        || current_first.predecessor_digest != previous_last.snapshot_digest
     {
         return RestartInspection::Deny;
     }
@@ -831,6 +854,61 @@ mod tests {
         };
         assert_eq!(
             inspect_transition_monotonicity(&previous, &mismatched_current),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_transition_monotonicity(&previous, &current),
+            RestartInspection::ReviewOnly
+        );
+        // Matching receipt counters are insufficient if the checkpoint
+        // predecessor hash at the boundary is not the previous source tip.
+        let disconnected_checkpoint = [RestartCheckpoint {
+            predecessor_digest: [8; 32],
+            ..checkpoints_current[0]
+        }];
+        let disconnected_anchor = SignedAnchor {
+            anchor: RestartAnchor {
+                predecessor_digest: [8; 32],
+                ..signed_current.anchor
+            },
+            ..signed_current.clone()
+        };
+        let disconnected_evidence = [RecoveryEvidence {
+            checkpoints: &disconnected_checkpoint,
+            payloads: payloads_current,
+            signed: &disconnected_anchor,
+            trusted_key: &key,
+            floor: &floor_current,
+        }];
+        let disconnected_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &disconnected_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_monotonicity(&previous, &disconnected_current),
+            RestartInspection::Deny
+        );
+        let blocked_previous_checkpoint = [RestartCheckpoint {
+            hold: true,
+            ..checkpoints_previous[0]
+        }];
+        let blocked_previous_evidence = [RecoveryEvidence {
+            checkpoints: &blocked_previous_checkpoint,
+            payloads: payloads_previous,
+            signed: &signed_previous,
+            trusted_key: &key,
+            floor: &floor_previous,
+        }];
+        let blocked_previous = AuditSegmentEvidence {
+            links: &links_previous,
+            receipts: &receipts_previous,
+            evidence: &blocked_previous_evidence,
+            expected: &expected_previous,
+        };
+        assert_eq!(
+            inspect_transition_monotonicity(&blocked_previous, &current),
             RestartInspection::Deny
         );
         assert_eq!(
