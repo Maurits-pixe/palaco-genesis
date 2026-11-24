@@ -631,6 +631,45 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
             previous,sha,head,altered,created["delta_sha256"],
             current_head,1)["reason"],"invalid-review-delta-schema")
 
+    def test_strict_delta_requires_independent_current_manifest_pin(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        delta=created["delta"]
+        reconstructed={"schema_version":"0.1.0",
+                       "receipt_count":delta["current_receipts"],
+                       "head_hash":current_head,
+                       "entries":previous["entries"]+delta["entries"]}
+        independent_sha=self._independently_pinned_manifest(reconstructed)
+        self.db.unlink()
+        result=mod.verify_review_delta_with_manifest_pin(
+            previous,sha,head,delta,created["delta_sha256"],
+            current_head,independent_sha,1)
+        self.assertTrue(result["delta_valid"])
+        self.assertEqual(result["current_manifest_sha256"],independent_sha)
+        self.assertEqual(result["release_gate"],"HOLD")
+        self.assertFalse(result["authorization_granted"])
+
+    def test_strict_delta_rejects_wrong_or_missing_manifest_pin(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        for pin,expected in (("f"*64,"current-review-manifest-pin-mismatch"),
+                             (None,"missing-independent-current-manifest-pin"),
+                             (True,"missing-independent-current-manifest-pin")):
+            with self.subTest(pin=pin):
+                result=mod.verify_review_delta_with_manifest_pin(
+                    previous,sha,head,created["delta"],created["delta_sha256"],
+                    current_head,pin,1)
+                self.assertFalse(result["delta_valid"])
+                self.assertEqual(result["reason"],expected)
+
+    def test_strict_delta_preserves_underlying_chain_failure(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        changed=copy.deepcopy(created["delta"])
+        changed["entries"][0]["previous_hash"]=mod.GENESIS
+        result=mod.verify_review_delta_with_manifest_pin(
+            previous,sha,head,changed,mod._delta_hash(changed),
+            current_head,"a"*64,1)
+        self.assertFalse(result["delta_valid"])
+        self.assertEqual(result["reason"],"current-review-manifest-chain-invalid")
+
     def test_registered_pending_only(self):
         first=self.record()
         self.assertTrue(first["recorded"])
