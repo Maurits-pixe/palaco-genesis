@@ -173,6 +173,7 @@ internal static class Program
                 ok = false;
             }
         }
+        ok = ok && WindowsPipeAclAudit.RunOfflineSelfTests();
         ok = ok
             && WindowsClientIdentityGate.MatchesExpectedAccount("S-1-5-21-11", "S-1-5-21-11")
             && !WindowsClientIdentityGate.MatchesExpectedAccount("S-1-5-21-11", "S-1-5-21-12")
