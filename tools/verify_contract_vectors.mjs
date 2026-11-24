@@ -627,6 +627,35 @@ assert.equal(digest({ z: [1, null], a: 'HOLD' }),
              digest({ a: 'HOLD', z: [1, null] }),
              'deterministic digest continues after restoring global functions');
 
+// Later mutations to Unicode primitives must not relax NFC validation
+// or change scalar-value ordering between BMP and astral object keys.
+const originalUnicodeMethods = [
+  [String.prototype, 'normalize', String.prototype.normalize],
+  [String.prototype, 'charCodeAt', String.prototype.charCodeAt],
+  [String.prototype, 'codePointAt', String.prototype.codePointAt],
+  [Array, 'from', Array.from],
+];
+let unicodeBytesAfterMonkeypatch;
+try {
+  for (const [owner, name] of originalUnicodeMethods) {
+    owner[name] = () => { throw new Error('mutable Unicode helper executed'); };
+  }
+  unicodeBytesAfterMonkeypatch = canonicalBytes({
+    [String.fromCodePoint(0x1f680)]: 2,
+    [String.fromCodePoint(0xe000)]: 1,
+  });
+  assert.throws(() => canonicalBytes({ invalid: 'e' + String.fromCharCode(0x301) }),
+                /non-NFC/, 'NFC validation remains active after prototype mutation');
+  assert.throws(() => canonicalBytes({ invalid: String.fromCharCode(0xd800) }),
+                /surrogate/, 'surrogate checks remain active after prototype mutation');
+} finally {
+  for (const [owner, name, original] of originalUnicodeMethods) {
+    owner[name] = original;
+  }
+}
+assert.deepEqual(unicodeBytesAfterMonkeypatch, sortedExpected,
+                 'Unicode scalar sorting remains deterministic after intrinsic mutation');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
