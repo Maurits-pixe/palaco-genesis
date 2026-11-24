@@ -343,6 +343,36 @@ assert.deepEqual(canonicalBytes(proxyNested),
                  Buffer.from('{"child":[0,{"gate":"HOLD"}]}', 'utf8'),
                  'nested data encoding does not read top-level properties twice');
 
+// Non-JSON JavaScript objects must not be silently converted by
+// JSON.stringify's special-case serialization or dropped as empty objects.
+for (const [name, candidate] of [
+  ['Date', new Date('2026-01-01T00:00:00Z')],
+  ['Map', new Map([['gate', 'HOLD']])],
+  ['Set', new Set([1])],
+  ['RegExp', /HOLD/],
+  ['Uint8Array', new Uint8Array([1, 2])],
+  ['boxed Number', new Number(1)],
+  ['boxed String', new String('HOLD')],
+  ['boxed Boolean', new Boolean(false)],
+]) {
+  assert.throws(() => canonicalBytes(candidate), /unsupported canonical JSON/,
+                name + ' must not be coerced into canonical JSON');
+}
+assert.throws(() => canonicalBytes({ value: Number.NaN }), /safe range/,
+              'NaN must never enter a digest');
+assert.throws(() => canonicalBytes({ value: Number.POSITIVE_INFINITY }), /safe range/,
+              'Infinity must never enter a digest');
+assert.throws(() => canonicalBytes({ value: Number.NEGATIVE_INFINITY }), /safe range/,
+              'negative Infinity must never enter a digest');
+assert.throws(() => canonicalBytes({ value: Number.MAX_SAFE_INTEGER + 1 }), /safe range/,
+              'unsafe integers must never enter a digest');
+assert.deepEqual(canonicalBytes({ value: Number.MAX_SAFE_INTEGER }),
+                 Buffer.from('{"value":9007199254740991}', 'utf8'),
+                 'positive interoperable safe integer remains supported');
+assert.deepEqual(canonicalBytes({ value: -Number.MAX_SAFE_INTEGER }),
+                 Buffer.from('{"value":-9007199254740991}', 'utf8'),
+                 'negative interoperable safe integer remains supported');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
