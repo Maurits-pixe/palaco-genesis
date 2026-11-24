@@ -1,6 +1,14 @@
-# PALACO Bluetooth Offline Transfer — v4.8 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v4.9 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v4.9 Windows-only named-pipe diagnostic host (prototype)
+
+- `windows_native_host/Palaco.Bluetooth.NativeHost.csproj` and `Program.cs` add a .NET 8 Windows-only console executable with a local named-pipe listener, `PipeOptions.CurrentUserOnly` and a 1,024-byte request cap. It parses inspection-only field shapes; the reply is always a fixed **HOLD/DENY**.
+- No key material, filesystem mutation, BLE traffic, TPM access, credentials or authorization actions are implemented. The host cannot perform an import, checkpoint advance or recovery.
+- A `windows-latest` GitHub Actions job builds it and runs offline parser/denial self-checks without accessing hardware.
+- **Critical**: this is **not** an installed Windows Service, privileged process, authenticated cross-user RPC endpoint or production security boundary. `CurrentUserOnly` restricts user-session pipe access but does not establish service authenticity, verify caller authorization or provide hardware-backed anti-rollback. The parser's accepted JSON is not authentication; an accepted request still receives DENY.
+- Future implementation requires Windows Service Control Manager integration, service SID configuration, explicit named-pipe ACL review, token impersonation/verification with minimal rights, independently verified TPM attestation and physical-device tests.
 
 ## v4.8 Windows privileged-service admission evidence inventory
 
