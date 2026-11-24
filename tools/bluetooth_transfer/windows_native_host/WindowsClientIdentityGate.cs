@@ -49,7 +49,7 @@ internal static class WindowsClientIdentityGate
             bool matches = false;
             pipe.RunAsClient(() =>
             {
-                using WindowsIdentity client = WindowsIdentity.GetCurrent(true);
+                using WindowsIdentity? client = WindowsIdentity.GetCurrent(true);
                 string? actual = client?.User?.Value;
                 matches = MatchesExpectedAccount(expected, actual);
             });
