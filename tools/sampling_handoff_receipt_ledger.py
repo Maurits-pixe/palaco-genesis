@@ -98,8 +98,14 @@ def _schema_valid(conn):
                     for name,sql in expected.items()))
 
 
+def _storage_integrity_ok(conn):
+    """Check SQLite structure and foreign-key consistency, without writes."""
+    return (conn.execute("PRAGMA quick_check(1)").fetchone()==("ok",)
+            and conn.execute("PRAGMA foreign_key_check").fetchone() is None)
+
+
 def _scan(conn):
-    if not _schema_valid(conn):return None
+    if not _schema_valid(conn) or not _storage_integrity_ok(conn):return None
     rows=conn.execute("""SELECT sequence,recipient_id,recipient_key_id,
          package_sha256,nonce_hex,receipt_sha256,previous_hash,event_hash
          FROM sampling_handoff_receipts ORDER BY sequence LIMIT ?""",
