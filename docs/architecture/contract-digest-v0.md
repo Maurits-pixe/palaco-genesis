@@ -25,6 +25,12 @@ bounded strict JSON reader before encoding.
 - Both Python and Node.js canonicalizers enforce at most **64 levels** of
   array/object nesting, including for in-memory objects; a 65th level fails.
 - Non-NFC Unicode strings are **rejected**, not silently normalized.
+- The independent Node verifier pins string normalization, surrogate and
+  Unicode code-point helpers at initialization. Scalar-key ordering is
+  performed without `Array.from`; later monkeypatches of mutable
+  `String.prototype` helpers do not alter these canonicalization rules.
+  This does not protect against tampering *before* verifier initialization.
+
 - The bounded Python contract reader also rejects **nonzero decimal values
   that underflow to floating-point zero** (for example `1e-999`).
   Genuine zeros such as `0e-999` and signed zero are still accepted.
