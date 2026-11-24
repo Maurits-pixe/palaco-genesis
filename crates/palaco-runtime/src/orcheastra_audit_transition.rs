@@ -59,6 +59,26 @@ pub fn inspect_transition_monotonicity(
         return RestartInspection::Deny;
     };
 
+    // The direct gate must bind both receipts to the actual source chains.
+    // Otherwise forged receipt counts and endpoints can appear contiguous.
+    let (Some(previous_last), Some(current_last)) = (
+        previous_source.checkpoints.last(),
+        current_source.checkpoints.last(),
+    ) else {
+        return RestartInspection::Deny;
+    };
+    if previous_source.checkpoints.len() != previous_receipt.checkpoint_count
+        || current_source.checkpoints.len() != current_receipt.checkpoint_count
+        || previous_source.checkpoints.len() != previous_source.payloads.len()
+        || current_source.checkpoints.len() != current_source.payloads.len()
+        || previous_receipt.checkpoint_sequence != previous_last.sequence
+        || current_receipt.checkpoint_sequence != current_last.sequence
+        || previous_receipt.checkpoint_sequence != previous_source.signed.anchor.sequence
+        || current_receipt.checkpoint_sequence != current_source.signed.anchor.sequence
+    {
+        return RestartInspection::Deny;
+    }
+
     // A strictly increasing end sequence alone does not rule out a gap or
     // overlapping checkpoints. The next receipt must begin at prior_end + 1.
     let Some(current_count) = u64::try_from(current_receipt.checkpoint_count).ok() else {
@@ -748,6 +768,71 @@ mod tests {
             evidence: &evidence_current,
             expected: &expected_current,
         };
+        assert_eq!(
+            inspect_transition_monotonicity(&previous, &current),
+            RestartInspection::ReviewOnly
+        );
+        // Receipt counters and endpoints must match the source checkpoints,
+        // not merely form a plausible interval with the adjacent receipt.
+        let forged_previous_receipt = [ReviewReceipt {
+            checkpoint_count: 2,
+            ..receipts_previous[0]
+        }];
+        let forged_previous = AuditSegmentEvidence {
+            links: &links_previous,
+            receipts: &forged_previous_receipt,
+            evidence: &evidence_previous,
+            expected: &expected_previous,
+        };
+        assert_eq!(
+            inspect_transition_monotonicity(&forged_previous, &current),
+            RestartInspection::Deny
+        );
+        let forged_current_checkpoint = [RestartCheckpoint {
+            sequence: 9,
+            ..checkpoints_current[0]
+        }];
+        let forged_current_evidence = [RecoveryEvidence {
+            checkpoints: &forged_current_checkpoint,
+            payloads: payloads_current,
+            signed: &signed_current,
+            trusted_key: &key,
+            floor: &floor_current,
+        }];
+        let forged_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &forged_current_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_monotonicity(&previous, &forged_current),
+            RestartInspection::Deny
+        );
+        let mismatched_anchor = SignedAnchor {
+            anchor: RestartAnchor {
+                sequence: 9,
+                ..signed_current.anchor
+            },
+            ..signed_current.clone()
+        };
+        let mismatched_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_current,
+            payloads: payloads_current,
+            signed: &mismatched_anchor,
+            trusted_key: &key,
+            floor: &floor_current,
+        }];
+        let mismatched_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &mismatched_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_monotonicity(&previous, &mismatched_current),
+            RestartInspection::Deny
+        );
         assert_eq!(
             inspect_transition_monotonicity(&previous, &current),
             RestartInspection::ReviewOnly
