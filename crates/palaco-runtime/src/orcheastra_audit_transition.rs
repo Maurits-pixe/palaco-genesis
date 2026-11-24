@@ -67,7 +67,9 @@ pub fn inspect_transition_monotonicity(
     let Some(previous_count) = u64::try_from(previous_receipt.checkpoint_count).ok() else {
         return RestartInspection::Deny;
     };
-    let Some(current_predecessor) = current_receipt.checkpoint_sequence.checked_sub(current_count)
+    let Some(current_predecessor) = current_receipt
+        .checkpoint_sequence
+        .checked_sub(current_count)
     else {
         return RestartInspection::Deny;
     };
