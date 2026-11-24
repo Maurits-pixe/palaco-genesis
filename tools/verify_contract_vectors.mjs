@@ -114,12 +114,19 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
     // A key may itself expand greatly when escaped. Validate and charge
     // its canonical bytes before collecting or serializing object values.
     charge(2 + Math.max(0, keys.length - 1));
-    const entries = [];
+    // Two passes: validate ALL keys and their byte cost before consulting
+    // ANY data descriptor. A malformed later key must fail before an earlier
+    // descriptor can trigger an untrusted Proxy inspection trap.
+    const encodedKeys = [];
     for (const key of keys) {
       if (typeof key !== 'string') throw new Error('symbol object key is not JSON data');
       assertValidString(key);
       const encodedKey = JSON.stringify(key);
       charge(Buffer.byteLength(encodedKey, 'utf8') + 1);
+      encodedKeys.push([key, encodedKey]);
+    }
+    const entries = [];
+    for (const [key, encodedKey] of encodedKeys) {
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (!descriptor || !Object.hasOwn(descriptor, 'value') || !descriptor.enumerable) {
         throw new Error('object accessor or hidden property is not JSON data');
