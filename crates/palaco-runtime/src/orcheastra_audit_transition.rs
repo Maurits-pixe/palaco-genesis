@@ -72,9 +72,9 @@ pub fn inspect_transition_monotonicity(
         return RestartInspection::Deny;
     };
     if previous_count == 0
-        || previous_count > u64::from(MAX_CHAIN_CHECKPOINTS as u32)
+        || previous_receipt.checkpoint_count > MAX_CHAIN_CHECKPOINTS
         || current_count == 0
-        || current_count > u64::from(MAX_CHAIN_CHECKPOINTS as u32)
+        || current_receipt.checkpoint_count > MAX_CHAIN_CHECKPOINTS
         || previous_receipt.checkpoint_sequence < previous_count
         || current_predecessor != previous_receipt.checkpoint_sequence
         || previous_receipt.checkpoint_sequence == 0
