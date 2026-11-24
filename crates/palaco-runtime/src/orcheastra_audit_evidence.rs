@@ -1210,10 +1210,7 @@ mod tests {
             },
         ];
         assert_eq!(
-            inspect_audit_receipt_source_binding(
-                &[receipts[0], receipts[0]],
-                &replay_evidence,
-            ),
+            inspect_audit_receipt_source_binding(&[receipts[0], receipts[0]], &replay_evidence,),
             RestartInspection::Deny
         );
 
