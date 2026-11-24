@@ -29,13 +29,13 @@ try {
     }
     # The installed image is local to this disposable CI runner and remains
     # explicitly configured for manual start, no network/BLE/TPM capability.
-    $binary = '\"' + $exe + '\" --service'
-    Invoke-Sc @("create", $serviceName, "binPath=", $binary, "start=", "demand", "obj=", "LocalSystem")
+    $binary = '"' + $exe + '" --service'
+    Invoke-Sc -arguments @("create", $serviceName, "binPath=", $binary, "start=", "demand", "obj=", "LocalSystem")
     $created = $true
-    Invoke-Sc @("sidtype", $serviceName, "unrestricted")
+    Invoke-Sc -arguments @("sidtype", $serviceName, "unrestricted")
 
     foreach ($cycle in 1..2) {
-        Invoke-Sc @("start", $serviceName)
+        Invoke-Sc -arguments @("start", $serviceName)
         Await-ServiceStatus "Running" 15
         $state = Get-CimInstance Win32_Service -Filter "Name='$serviceName'"
         if ($null -eq $state -or $state.ProcessId -le 0 -or $state.StartMode -ne "Manual") {
@@ -43,7 +43,7 @@ try {
         }
         # No ALLOW path is exercised. This tests SCM state, not true hardware
         # attestation or client token policy under the service account.
-        Invoke-Sc @("stop", $serviceName)
+        Invoke-Sc -arguments @("stop", $serviceName)
         Await-ServiceStatus "Stopped" 15
     }
     Write-Output "Windows SCM lifecycle PASS (ephemeral runner; SID enabled; two start/stop cycles; HOLD/DENY)"
