@@ -111,24 +111,26 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
       throw new Error('canonical JSON node budget exceeded');
     }
     budget.nodes += keys.length;
+    // A key may itself expand greatly when escaped. Validate and charge
+    // its canonical bytes before collecting or serializing object values.
+    charge(2 + Math.max(0, keys.length - 1));
     const entries = [];
     for (const key of keys) {
       if (typeof key !== 'string') throw new Error('symbol object key is not JSON data');
+      assertValidString(key);
+      const encodedKey = JSON.stringify(key);
+      charge(Buffer.byteLength(encodedKey, 'utf8') + 1);
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (!descriptor || !Object.hasOwn(descriptor, 'value') || !descriptor.enumerable) {
         throw new Error('object accessor or hidden property is not JSON data');
       }
-      // Capture validated data once. A second value[key] read can invoke
-      // an in-memory Proxy get trap or observe a changed property.
-      entries.push([key, descriptor.value]);
+      // Snapshot only validated data descriptors; no subsequent property
+      // reads are necessary, even if the supplied object is a Proxy.
+      entries.push([key, encodedKey, descriptor.value]);
     }
-    charge(2 + Math.max(0, entries.length - 1));
     active.add(value);
     try {
-      return '{' + entries.sort(([left], [right]) => compareCodepoints(left, right)).map(([key, entry]) => {
-        assertValidString(key);
-        const encodedKey = JSON.stringify(key);
-        charge(Buffer.byteLength(encodedKey, 'utf8') + 1);
+      return '{' + entries.sort(([left], [right]) => compareCodepoints(left, right)).map(([, encodedKey, entry]) => {
         return encodedKey + ':' + encode(entry, depth + 1, active, budget);
       }).join(',') + '}';
     } finally {
