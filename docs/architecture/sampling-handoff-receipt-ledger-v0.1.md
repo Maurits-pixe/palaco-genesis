@@ -218,3 +218,25 @@ of the original receipt or independent custody attestation. The
 caller must authenticate the three pins through a separate trust
 process. This verifier does not connect to SQLite, sign anything,
 grant access or change GO-13 HOLD / authorization DENY.
+
+## Offline append-only manifest succession (2026-11-24)
+
+`verify_manifest_succession(previous_manifest, previous_sha256,
+previous_head, current_manifest, current_sha256, current_head,
+minimum_previous_receipts)` verifies each manifest independently,
+using separately authenticated full-manifest SHA-256 and exact ledger
+head pins. It then requires the complete prior entry list to be the
+exact prefix of the current list. Equal snapshots are allowed but
+explicitly reported as having no new receipts; a genuine extension
+must link its first appended record to the previous head.
+
+This detects rewritten prior entries, truncated histories, incorrect
+independent pins and invalid new hash-chain links. Regression tests
+exercise equal snapshots, genuine append-only growth, rewritten history,
+pin mismatches and rollback. Constructed fixtures represent *ledger
+consistency*, not newly issued signed receipts.
+
+The verifier performs no database access, writes, signing or network
+operations. External pin authenticity and receipt-signature validation
+remain separate responsibilities. Every positive result is
+`pending-review`; GO-13 HOLD and authorization DENY remain in effect.
