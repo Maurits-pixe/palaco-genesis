@@ -133,3 +133,18 @@ This narrows a time-of-check/time-of-use window but does **not** provide
 a continuous lock across databases or remote sources: another change may
 occur after the final inspection. The caller must retain authenticated
 external pins and enforce custody decisions independently. GO-13 HOLD.
+
+## SQLite structural and reference integrity (2026-11-24)
+
+The common ledger scan now requires SQLite `PRAGMA quick_check(1)`
+to report `ok` and `PRAGMA foreign_key_check` to return no violations,
+after the schema contract has been validated and before checking the
+SHA-256 event chain. Both read-only inspection and transaction-bound
+registration fail closed on storage corruption or orphaned nonce links.
+Regression tests cover clean storage, a deliberately orphaned nonce
+reference, and a simulated failing storage integrity check.
+
+A `quick_check(1)` is limited diagnostic coverage, **not** a complete
+filesystem, hardware, or independent archive integrity guarantee.
+The existing chain, external pins, nonces, signed evidence and release
+controls remain mandatory. Authorization DENY, GO-13 HOLD.
