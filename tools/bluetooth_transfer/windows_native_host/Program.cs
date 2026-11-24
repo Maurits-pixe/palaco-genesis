@@ -149,6 +149,18 @@ internal static class Program
             && !IsInspectOnlyFrame(Encoding.ASCII.GetBytes("{}"))
             && Deny.AsSpan().SequenceEqual(Encoding.ASCII.GetBytes(
                 "{\"protocol\":\"PALACO-BT-WIN-HOST-V1\",\"decision\":\"HOLD\",\"authorization\":\"DENY\",\"native_security_verified\":false}\n"));
+        if (ok && OperatingSystem.IsWindows())
+        {
+            try
+            {
+                using var restrictedPipe = WindowsPipeSecurity.CreateDiagnosticPipe();
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException
+                                           or System.Security.SecurityException)
+            {
+                ok = false;
+            }
+        }
         Console.WriteLine(ok ? "Windows host self-checks PASS (no hardware tests)" :
                                "Windows host self-checks FAIL");
         return ok;
