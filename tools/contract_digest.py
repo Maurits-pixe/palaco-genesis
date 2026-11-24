@@ -17,6 +17,8 @@ except ModuleNotFoundError:
 DOMAIN = b"PALACO-CJSON-v0\x00"
 MAX_SAFE_INTEGER = (1 << 53) - 1
 MAX_NESTING_DEPTH = 64
+MAX_CANONICAL_NODES = 100_000
+MAX_CANONICAL_BYTES = 1024 * 1024
 
 
 def canonical_bytes(value):
@@ -26,12 +28,16 @@ def canonical_bytes(value):
     # Track ancestors, not all visited containers: shared acyclic subtrees
     # remain valid and are encoded by value wherever they occur.
     active = set()
+    visited = 0
     stack = [(value, 0, False)]
     while stack:
         item, depth, leaving = stack.pop()
         if leaving:
             active.remove(id(item))
             continue
+        visited += 1
+        if visited > MAX_CANONICAL_NODES:
+            raise ValueError("canonical JSON node budget exceeded")
         if item is None or item is True or item is False:
             continue
         if type(item) is int:
@@ -39,6 +45,8 @@ def canonical_bytes(value):
                 raise ValueError("integer outside interoperable safe range")
             continue
         if type(item) is str:
+            if len(item.encode("utf-8", errors="surrogatepass")) > MAX_CANONICAL_BYTES:
+                raise ValueError("canonical JSON byte budget exceeded")
             if unicodedata.normalize("NFC", item) != item:
                 raise ValueError("non-NFC Unicode text")
             if any(0xD800 <= ord(ch) <= 0xDFFF for ch in item):
@@ -59,10 +67,13 @@ def canonical_bytes(value):
                 stack.extend((child, depth + 1, False) for child in item)
         else:
             raise ValueError("unsupported canonical JSON value type")
-    return json.dumps(
+    payload = json.dumps(
         value, ensure_ascii=False, allow_nan=False,
         separators=(",", ":"), sort_keys=True,
     ).encode("utf-8")
+    if len(payload) > MAX_CANONICAL_BYTES:
+        raise ValueError("canonical JSON byte budget exceeded")
+    return payload
 
 
 def digest_contract(value):
