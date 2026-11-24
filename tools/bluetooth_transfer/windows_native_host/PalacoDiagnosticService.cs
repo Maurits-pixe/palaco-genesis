@@ -24,6 +24,10 @@ internal sealed class PalacoDiagnosticService : ServiceBase
         // Startup never issues privileges and never enables transfers.
         if (_stop is not null)
             throw new InvalidOperationException("Service already started");
+        // Fail closed if SCM has not provisioned the expected service SID.
+        // No installation or service SID provisioning is done by this program.
+        if (!WindowsClientIdentityGate.HasExpectedServiceSid())
+            throw new InvalidOperationException("Unverified Windows service SID: HOLD");
         _stop = new CancellationTokenSource();
         _serverTask = Task.Run(() => Program.RunServerAsync(_stop.Token));
     }
