@@ -240,3 +240,23 @@ The verifier performs no database access, writes, signing or network
 operations. External pin authenticity and receipt-signature validation
 remain separate responsibilities. Every positive result is
 `pending-review`; GO-13 HOLD and authorization DENY remain in effect.
+
+## Offline append-only delta proof (2026-11-24)
+
+`create_review_delta` verifies two fully pinned manifests, then produces
+a compact `0.1.0` delta containing only appended receipt entries,
+prior/current receipt counts and prior/current ledger heads, protected
+by a domain-separated SHA-256 digest. `verify_review_delta` accepts the
+independently authenticated *previous manifest*, its digest/head, the
+delta and independently authenticated delta digest/current head. It
+reconstructs the current history offline and reuses the strict manifest
+and succession verifiers. Count mismatches, unknown fields, modified
+delta data, invalid hash links and replayed nonce/key-package pairs
+are denied. A zero-length append is allowed but grants no authority.
+
+This reduces transport size but does not authenticate the original
+receipt signatures or establish actual delivery, possession or legal
+custody. Neither the delta digest nor the head pins are signed by this
+module. Reviewers must authenticate and durably retain pins through
+a separate trust channel; all positive results remain pending-review,
+GO-13 HOLD and authorization DENY.
