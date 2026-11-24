@@ -552,6 +552,32 @@ assert.deepEqual(canonicalBytes([0, { gate: 'HOLD' }]),
                  Buffer.from('[0,{"gate":"HOLD"}]', 'utf8'),
                  'standard plain arrays remain canonical');
 
+// The reference encoder must not delegate canonical array/object traversal
+// to mutable Array.prototype.map/filter/sort methods.
+const originalMethods = {
+  map: Array.prototype.map,
+  filter: Array.prototype.filter,
+  sort: Array.prototype.sort,
+};
+let encodedWithAlteredMethods;
+try {
+  const forbidden = () => { throw new Error('mutable Array.prototype method invoked'); };
+  Array.prototype.map = forbidden;
+  Array.prototype.filter = forbidden;
+  Array.prototype.sort = forbidden;
+  encodedWithAlteredMethods = canonicalBytes({ z: [2, 1], a: { y: true, x: null } });
+} finally {
+  Array.prototype.map = originalMethods.map;
+  Array.prototype.filter = originalMethods.filter;
+  Array.prototype.sort = originalMethods.sort;
+}
+assert.deepEqual(encodedWithAlteredMethods,
+                 Buffer.from('{"a":{"x":null,"y":true},"z":[2,1]}', 'utf8'),
+                 'canonical bytes unaffected by post-initialization prototype method overrides');
+assert.equal(digest({ z: [2, 1], a: { y: true, x: null } }),
+             digest({ a: { x: null, y: true }, z: [2, 1] }),
+             'deterministic digest remains independent of object insertion order');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
