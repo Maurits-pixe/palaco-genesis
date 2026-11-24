@@ -1,6 +1,7 @@
 // Read-only DACL inspection for the diagnostic named-pipe security object.
 // This audits the intended account-only rule, not cross-account OS enforcement.
 // No privilege elevation, service provisioning, import, or TPM operations.
+using System.IO.Pipes;
 using System.Security.AccessControl;
 using System.Security.Principal;
 
