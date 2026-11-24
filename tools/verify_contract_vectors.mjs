@@ -386,6 +386,19 @@ assert.deepEqual(canonicalBytes({ value: -Number.MAX_SAFE_INTEGER }),
                  Buffer.from('{"value":-9007199254740991}', 'utf8'),
                  'negative interoperable safe integer remains supported');
 
+// A compact shared DAG must not expand into unbounded serialized output.
+let expansion = [0];
+for (let i = 0; i < 18; i += 1) expansion = [expansion, expansion];
+assert.throws(() => canonicalBytes(expansion), /node budget/,
+              'exponential shared DAG must fail within the traversal budget');
+assert.throws(() => canonicalBytes({ value: 'x'.repeat(MAX_CANONICAL_BYTES) }),
+              /byte budget/,
+              'oversized UTF-8 output must fail closed');
+let smallShared = [0];
+for (let i = 0; i < 8; i += 1) smallShared = [smallShared, smallShared];
+assert.ok(canonicalBytes(smallShared).length > 0,
+          'small acyclic shared DAG remains supported');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
