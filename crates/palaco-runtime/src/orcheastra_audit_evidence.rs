@@ -131,7 +131,9 @@ pub fn inspect_audit_evidence_lineage(evidence: &[RecoveryEvidence<'_>]) -> Rest
 /// but cannot decrease; changes to key identity or validity window are denied
 /// pending an independently authenticated rotation policy. Structurally
 /// invalid signatures, unverified anchors, or an anchor not matching the
-/// source's final checkpoint are denied before receipt hashing. This is not proof of key provenance or genuine signatures.
+/// source's final checkpoint are denied before receipt hashing. Each complete
+/// checkpoint chain must be structurally valid against its claimed anchor.
+/// This is not proof of key provenance or genuine signatures.
 #[must_use]
 pub fn inspect_audit_evidence_signers(evidence: &[RecoveryEvidence<'_>]) -> RestartInspection {
     let Some(first) = evidence.first() else {
@@ -155,7 +157,12 @@ pub fn inspect_audit_evidence_signers(evidence: &[RecoveryEvidence<'_>]) -> Rest
         let Some(last_checkpoint) = source.checkpoints.last() else {
             return RestartInspection::Deny;
         };
-        if key.revoked
+        // A matching signer and final anchor cannot legitimize a source
+        // containing blocked, revoked, uncommitted or disconnected checkpoints.
+        if source.checkpoints.len() > MAX_CHAIN_CHECKPOINTS
+            || inspect_restart_chain(source.checkpoints, Some(&source.signed.anchor))
+                != RestartInspection::ReviewOnly
+            || key.revoked
             || key.key_id != baseline.key_id
             || key.public_key != baseline.public_key
             || key.first_sequence != baseline.first_sequence
@@ -1136,6 +1143,33 @@ mod tests {
             inspect_audit_evidence_lineage(&interrupted),
             RestartInspection::Deny
         );
+        assert_eq!(
+            inspect_audit_evidence_signers(&interrupted),
+            RestartInspection::Deny
+        );
+        for invalid_checkpoint in [
+            RestartCheckpoint {
+                revoked: true,
+                ..checkpoints[0]
+            },
+            RestartCheckpoint {
+                committed: false,
+                ..checkpoints[0]
+            },
+        ] {
+            let invalid_checkpoints = [invalid_checkpoint];
+            let invalid_source = [RecoveryEvidence {
+                checkpoints: &invalid_checkpoints,
+                payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            }];
+            assert_eq!(
+                inspect_audit_evidence_signers(&invalid_source),
+                RestartInspection::Deny
+            );
+        }
         let internal_broken = [
             checkpoints[0],
             RestartCheckpoint {
@@ -1156,6 +1190,10 @@ mod tests {
         }];
         assert_eq!(
             inspect_audit_evidence_lineage(&broken_source),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_audit_evidence_signers(&broken_source),
             RestartInspection::Deny
         );
         let internal_gap = [
