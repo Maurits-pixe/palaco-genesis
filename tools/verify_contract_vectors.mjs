@@ -25,6 +25,9 @@ const intrinsicArrayIsArray = Array.isArray;
 const intrinsicNormalize = String.prototype.normalize;
 const intrinsicCharCodeAt = String.prototype.charCodeAt;
 const intrinsicCodePointAt = String.prototype.codePointAt;
+const intrinsicStringConverter = String;
+const intrinsicNumberIsSafeInteger = Number.isSafeInteger;
+const intrinsicMathMax = Math.max;
 
 // Compare Unicode scalar values directly, without Array.from or mutable
 // string prototype methods consulted after initialization.
@@ -74,15 +77,15 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
   if (value === true) { charge(4); return 'true'; }
   if (value === false) { charge(5); return 'false'; }
   if (typeof value === 'number') {
-    if (!Number.isSafeInteger(value)) {
+    if (!intrinsicNumberIsSafeInteger(value)) {
       throw new Error('integer outside interoperable safe range or non-integer');
     }
-    const encoded = String(value);
+    const encoded = intrinsicStringConverter(value);
     charge(Buffer.byteLength(encoded, 'utf8'));
     return encoded;
   }
   if (typeof value === 'string') {
-    assertValidString(value);
+    assertValidintrinsicStringConverter(value);
     if (Buffer.byteLength(value, 'utf8') > MAX_CANONICAL_BYTES) {
       throw new Error('canonical JSON byte budget exceeded');
     }
@@ -102,7 +105,7 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
     // a Proxy may trap ordinary property gets, including repeated length reads.
     const lengthDescriptor = intrinsicGetOwnPropertyDescriptor(value, 'length');
     if (!lengthDescriptor || !intrinsicHasOwn(lengthDescriptor, 'value') ||
-        !Number.isSafeInteger(lengthDescriptor.value) || lengthDescriptor.value < 0) {
+        !intrinsicNumberIsSafeInteger(lengthDescriptor.value) || lengthDescriptor.value < 0) {
       throw new Error('invalid array length descriptor');
     }
     const length = lengthDescriptor.value;
@@ -117,7 +120,7 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
     }
     const entries = [];
     for (let i = 0; i < length; i += 1) {
-      const descriptor = intrinsicGetOwnPropertyDescriptor(value, String(i));
+      const descriptor = intrinsicGetOwnPropertyDescriptor(value, intrinsicStringConverter(i));
       if (!descriptor) throw new Error('sparse array entry is not a JSON value');
       if (!intrinsicHasOwn(descriptor, 'value') || !descriptor.enumerable) {
         throw new Error('array accessor or hidden property is not JSON data');
@@ -126,7 +129,7 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
       // must never execute while verifying a canonical JSON digest.
       entries.push(descriptor.value);
     }
-    charge(2 + Math.max(0, entries.length - 1));
+    charge(2 + intrinsicMathMax(0, entries.length - 1));
     active.add(value);
     try {
       let result = '[';
@@ -151,7 +154,7 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
     budget.nodes += keys.length;
     // A key may itself expand greatly when escaped. Validate and charge
     // its canonical bytes before collecting or serializing object values.
-    charge(2 + Math.max(0, keys.length - 1));
+    charge(2 + intrinsicMathMax(0, keys.length - 1));
     // Two passes: validate ALL keys and their byte cost before consulting
     // ANY data descriptor. A malformed later key must fail before an earlier
     // descriptor can trigger an untrusted Proxy inspection trap.
