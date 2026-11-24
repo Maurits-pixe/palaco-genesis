@@ -1,4 +1,4 @@
-// PALACO Bluetooth Windows native host prototype v5.9.
+// PALACO Bluetooth Windows native host prototype v6.0.
 // This is a Windows-only user-session console host, NOT an installed Windows
 // service, privileged endpoint, TPM driver, authenticated service, or BLE stack.
 // Every IPC request is denied. Never use this as a production security boundary.
@@ -42,6 +42,15 @@ internal static class Program
         if (args[0] == "--service")
         {
             ServiceBase.Run(new PalacoDiagnosticService());
+            return 0;
+        }
+        if (args[0] == "--service-ci-fault")
+        {
+            // A CI-only on-disk marker AND the Windows SCM service SID check
+            // in OnStart are required. Neither path provides an ALLOW mode.
+            if (!WindowsCiIncidentEvidence.MarkerPresent())
+                return 2;
+            ServiceBase.Run(new PalacoDiagnosticService(ciFaultInjection: true));
             return 0;
         }
         if (args[0] != "--serve")
