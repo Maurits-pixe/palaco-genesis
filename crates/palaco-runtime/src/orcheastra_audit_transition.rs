@@ -234,7 +234,8 @@ pub fn inspect_transition_signer_continuity(
 /// Each receipt must have exactly one source evidence bundle. Every bundle
 /// must use the same key identity and validity window as the first, and each
 /// signed anchor must be bound to that key. Registry revisions may advance,
-/// but never roll back. Every anchor must match its final checkpoint exactly.
+/// but never roll back. Every source's complete checkpoint chain must be
+/// structurally valid and match its final claimed signed anchor.
 /// This is not key or signature authentication.
 #[must_use]
 pub fn inspect_segment_signer_consistency(segment: &AuditSegmentEvidence<'_>) -> RestartInspection {
@@ -260,7 +261,12 @@ pub fn inspect_segment_signer_consistency(segment: &AuditSegmentEvidence<'_>) ->
             return RestartInspection::Deny;
         };
         let key = source.trusted_key;
-        if key.revoked
+        // A matching key and final anchor do not make an internally blocked,
+        // revoked, uncommitted or broken checkpoint chain reviewable.
+        if source.checkpoints.len() > MAX_CHAIN_CHECKPOINTS
+            || inspect_restart_chain(source.checkpoints, Some(&source.signed.anchor))
+                != RestartInspection::ReviewOnly
+            || key.revoked
             || key.key_id != baseline.key_id
             || key.public_key != baseline.public_key
             || key.first_sequence != baseline.first_sequence
@@ -817,6 +823,10 @@ mod tests {
             inspect_transition_snapshot_link(&previous, &current),
             RestartInspection::ReviewOnly
         );
+        assert_eq!(
+            inspect_segment_signer_consistency(&previous),
+            RestartInspection::ReviewOnly
+        );
         let mut gap_checkpoints = checkpoints_current;
         gap_checkpoints[0].sequence = 9;
         let gap_evidence = [RecoveryEvidence {
@@ -885,6 +895,10 @@ mod tests {
             inspect_transition_snapshot_link(&blocked_previous, &current),
             RestartInspection::Deny
         );
+        assert_eq!(
+            inspect_segment_signer_consistency(&blocked_previous),
+            RestartInspection::Deny
+        );
         let current_internal = [
             checkpoints_current[0],
             RestartCheckpoint {
@@ -920,6 +934,10 @@ mod tests {
         };
         assert_eq!(
             inspect_transition_snapshot_link(&previous, &revoked_current),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_segment_signer_consistency(&revoked_current),
             RestartInspection::Deny
         );
         assert_eq!(
