@@ -300,6 +300,36 @@ class ContractDigestTests(unittest.TestCase):
         self.assertEqual(digest_contract(value),
                          digest_contract([{"gate": "HOLD"}, {"gate": "HOLD"}]))
 
+    def test_rejects_custom_dict_subclass(self):
+        class CustomDict(dict):
+            def values(self):
+                raise AssertionError("custom values() must not execute")
+        with self.assertRaisesRegex(ValueError, "unsupported canonical JSON"):
+            canonical_bytes(CustomDict({"gate": "HOLD"}))
+
+    def test_rejects_custom_list_subclass(self):
+        class CustomList(list):
+            def __iter__(self):
+                raise AssertionError("custom iterator must not execute")
+        with self.assertRaisesRegex(ValueError, "unsupported canonical JSON"):
+            canonical_bytes(CustomList([1, 2]))
+
+    def test_rejects_custom_string_subclass(self):
+        class CustomString(str):
+            pass
+        with self.assertRaisesRegex(ValueError, "unsupported canonical JSON"):
+            canonical_bytes({"gate": CustomString("HOLD")})
+
+    def test_rejects_string_subclass_as_object_key(self):
+        class CustomKey(str):
+            pass
+        with self.assertRaisesRegex(ValueError, "keys must be strings"):
+            canonical_bytes({CustomKey("gate"): "HOLD"})
+
+    def test_plain_json_values_still_canonicalize(self):
+        self.assertEqual(canonical_bytes({"items": [True, None, 0, "HOLD"]}),
+                         b'{"items":[true,null,0,"HOLD"]}')
+
     def test_file_digest_matches_in_memory_digest(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "candidate.json"
