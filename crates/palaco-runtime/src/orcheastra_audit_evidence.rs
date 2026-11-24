@@ -237,9 +237,9 @@ pub fn inspect_audit_evidence_floors(evidence: &[RecoveryEvidence<'_>]) -> Resta
 /// checkpoint sequence, signed anchor and key registry. Each source must
 /// contain the matching number of payload records and an internally valid,
 /// committed checkpoint chain bound to the signed anchor. This cheap preflight
-/// also enforces the standalone signer and recovery-floor preflights to reject
-/// revoked/mismatched signer metadata, rollback and impossible floors. It does
-/// not hash payloads, verify signatures or establish custody.
+/// also enforces signer, recovery-floor, and cross-source checkpoint lineage
+/// preflights: individually valid sources must meet without gaps or replay.
+/// It does not hash payloads, verify signatures or establish custody.
 #[must_use]
 pub fn inspect_audit_receipt_source_binding(
     receipts: &[ReviewReceipt],
@@ -250,6 +250,7 @@ pub fn inspect_audit_receipt_source_binding(
         || evidence.len() != receipts.len()
         || inspect_audit_evidence_signers(evidence) != RestartInspection::ReviewOnly
         || inspect_audit_evidence_floors(evidence) != RestartInspection::ReviewOnly
+        || inspect_audit_evidence_lineage(evidence) != RestartInspection::ReviewOnly
     {
         return RestartInspection::Deny;
     }
@@ -1126,6 +1127,96 @@ mod tests {
             inspect_audit_evidence_signers(&contiguous),
             RestartInspection::ReviewOnly
         );
+        let following_receipt = ReviewReceipt {
+            checkpoint_sequence: following_checkpoint[0].sequence,
+            checkpoint_count: following_checkpoint.len(),
+            registry_sequence: trusted_key.registry_sequence,
+            ..receipts[0]
+        };
+        let linked_receipts = [receipts[0], following_receipt];
+        assert_eq!(
+            inspect_audit_receipt_source_binding(&linked_receipts, &contiguous),
+            RestartInspection::ReviewOnly
+        );
+        // Both bundles and their receipt metadata can be valid individually
+        // while the two checkpoint histories fail to join.
+        let gap_digest = digest_snapshot(9, &snapshot, b"gap").unwrap_or([0; 32]);
+        let gap_checkpoint = [RestartCheckpoint {
+            sequence: 9,
+            predecessor_digest: snapshot,
+            snapshot_digest: gap_digest,
+            committed: true,
+            hold: false,
+            revoked: false,
+        }];
+        let gap_signed = SignedAnchor {
+            anchor: RestartAnchor {
+                sequence: 9,
+                predecessor_digest: snapshot,
+                snapshot_digest: gap_digest,
+                externally_verified: true,
+            },
+            ..signed.clone()
+        };
+        let gap_evidence = [
+            RecoveryEvidence {
+                checkpoints: &checkpoints,
+                payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            },
+            RecoveryEvidence {
+                checkpoints: &gap_checkpoint,
+                payloads: &[b"gap"],
+                signed: &gap_signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            },
+        ];
+        let gap_receipts = [
+            receipts[0],
+            ReviewReceipt {
+                checkpoint_sequence: 9,
+                ..following_receipt
+            },
+        ];
+        assert_eq!(
+            inspect_audit_evidence_signers(&gap_evidence),
+            RestartInspection::ReviewOnly
+        );
+        assert_eq!(
+            inspect_audit_evidence_floors(&gap_evidence),
+            RestartInspection::ReviewOnly
+        );
+        assert_eq!(
+            inspect_audit_receipt_source_binding(&gap_receipts, &gap_evidence),
+            RestartInspection::Deny
+        );
+        let replay_evidence = [
+            RecoveryEvidence {
+                checkpoints: &checkpoints,
+                payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            },
+            RecoveryEvidence {
+                checkpoints: &checkpoints,
+                payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            },
+        ];
+        assert_eq!(
+            inspect_audit_receipt_source_binding(
+                &[receipts[0], receipts[0]],
+                &replay_evidence,
+            ),
+            RestartInspection::Deny
+        );
+
         // A standalone lineage inspection must also reject invalid internal
         // checkpoint status and disconnected links inside a source bundle.
         let interrupted_checkpoint = [RestartCheckpoint {
