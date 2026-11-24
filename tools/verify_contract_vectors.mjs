@@ -11,6 +11,8 @@ const fixturePath = new URL('../verification/contract-digest-v0-vectors.json', i
 const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
 const DOMAIN = Buffer.from('PALACO-CJSON-v0\0', 'utf8');
 const MAX_DEPTH = 64;
+const MAX_CANONICAL_NODES = 100_000;
+const MAX_CANONICAL_BYTES = 1024 * 1024;
 
 function compareCodepoints(a, b) {
   const aa = Array.from(a, (ch) => ch.codePointAt(0));
@@ -37,7 +39,11 @@ function assertValidString(s) {
   }
 }
 
-function encode(value, depth = 0, active = new WeakSet()) {
+function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0 }) {
+  budget.nodes += 1;
+  if (budget.nodes > MAX_CANONICAL_NODES) {
+    throw new Error('canonical JSON node budget exceeded');
+  }
   if (value === null) return 'null';
   if (value === true) return 'true';
   if (value === false) return 'false';
@@ -49,6 +55,9 @@ function encode(value, depth = 0, active = new WeakSet()) {
   }
   if (typeof value === 'string') {
     assertValidString(value);
+    if (Buffer.byteLength(value, 'utf8') > MAX_CANONICAL_BYTES) {
+      throw new Error('canonical JSON byte budget exceeded');
+    }
     return JSON.stringify(value);
   }
   if (Array.isArray(value)) {
@@ -73,7 +82,7 @@ function encode(value, depth = 0, active = new WeakSet()) {
     }
     active.add(value);
     try {
-      return '[' + entries.map((entry) => encode(entry, depth + 1, active)).join(',') + ']';
+      return '[' + entries.map((entry) => encode(entry, depth + 1, active, budget)).join(',') + ']';
     } finally {
       active.delete(value);
     }
@@ -107,7 +116,11 @@ function encode(value, depth = 0, active = new WeakSet()) {
 }
 
 function canonicalBytes(value) {
-  return Buffer.from(encode(value), 'utf8');
+  const payload = Buffer.from(encode(value), 'utf8');
+  if (payload.length > MAX_CANONICAL_BYTES) {
+    throw new Error('canonical JSON byte budget exceeded');
+  }
+  return payload;
 }
 
 function digest(value) {
