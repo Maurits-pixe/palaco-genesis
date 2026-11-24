@@ -181,3 +181,21 @@ behavior for a deliberately CHECK-violating row. The stronger SQLite
 check may increase inspection and registration latency; it cannot
 establish external immutability, physical delivery or custody. Every
 positive outcome remains pending-review and GO-13 HOLD.
+
+## Read-only review manifest export (2026-11-24)
+
+`export_review_manifest(db, expected_head, minimum_receipts)` opens a
+read-only SQLite transaction, rechecks the complete ledger chain, schema,
+indexes and nonce bindings, and enforces the independent head/count pin.
+It returns a bounded ordered list of receipt metadata, the head hash,
+record count, and a domain-separated SHA-256 commitment over canonical
+JSON. The export is for independent comparison and may be stored
+externally by a reviewer, but **is not signed or externally anchored by
+this module**. It does not include original delivery content or private
+signing material.
+
+A missing store, untrusted head, historical rollback or altered record
+fails closed. Manifest integrity proves only agreement with the supplied
+authenticated anchor at the time of the SQLite read transaction.
+Revalidation against independently retained anchors remains necessary;
+export does not confer custody, possession or authority. GO-13 HOLD.
