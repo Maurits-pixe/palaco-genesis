@@ -51,6 +51,15 @@ bounded strict JSON reader before encoding.
   are rejected. Booleans, null, arrays and objects are supported. Integers are
   permitted only in the inclusive safe range **-9007199254740991 through
   9007199254740991** (±(2^53−1)); values outside this range are rejected.
+- Both reference canonicalizers now enforce an **in-memory expansion budget**:
+  at most **100,000 visited JSON values** (including object keys), and at most
+  **1 MiB of canonical UTF-8 output**. Shared acyclic subtrees remain valid,
+  but their repeated occurrences count independently against the budget.
+  This prevents compact shared-object DAGs from expanding exponentially into
+  very large digest inputs. The byte budget applies to the encoded output,
+  including escaped JSON characters; it is separate from the strict file
+  reader's 1 MiB *input* bound. These are review-only resource limits and do
+  not grant authorization or assert complete adversarial resource isolation.
 - The digest is SHA-256 over `b"PALACO-CJSON-v0\\x00"`, an eight-byte
   big-endian payload length, and the encoded payload.
 
