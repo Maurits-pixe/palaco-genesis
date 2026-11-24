@@ -1,6 +1,26 @@
-# PALACO Bluetooth Offline Transfer — v5.3 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v5.4 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v5.4 Windows diagnostic IPC separate-process resilience (DRAFT / HOLD)
+
+- `windows_native_host/WindowsPipeProcessTest.cs` launches the existing deny-only
+  `--serve` diagnostic executable as a separate Windows process. The test
+  connects with a same-account `NamedPipeClientStream`, abandons an incomplete
+  framed request, waits beyond the host's five-second read deadline, and checks
+  that valid requests after each interruption still receive only **HOLD/DENY**.
+- The host process is terminated by the CI harness and started anew; the
+  post-restart request must also receive only **HOLD/DENY**. Child process
+  cleanup runs even if a test scenario fails.
+- `--ipc-process-test` is a Windows-only, CI-specific mode and is invoked by
+  the existing `windows-latest` workflow. It must never install or
+  auto-start a Windows service; process spawning is isolated to the test mode.
+- The separate-process test uses the **same Windows account** for host and
+  client. It does not establish cross-account isolation, service-SID
+  provisioning, independent token authority, TPM guarantees, hardware
+  rollback resistance or working BLE transfers.
+- All outcomes remain **GO-13 HOLD / authorization DENY**. No merge,
+  installation, deployment, publication or automatic import.
 
 ## v5.3 Windows local named-pipe integration on CI
 
