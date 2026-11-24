@@ -1,4 +1,4 @@
-// PALACO Bluetooth Windows native host prototype v5.1.
+// PALACO Bluetooth Windows native host prototype v5.2.
 // This is a Windows-only user-session console host, NOT an installed Windows
 // service, privileged endpoint, TPM driver, authenticated service, or BLE stack.
 // Every IPC request is denied. Never use this as a production security boundary.
@@ -57,6 +57,9 @@ internal static class Program
             try
             {
                 await pipe.WaitForConnectionAsync(cancellation);
+                // Fail closed before reading any untrusted request bytes.
+                if (!WindowsClientIdentityGate.IsExpectedSameAccountClient(pipe))
+                    continue;
                 using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
                 deadline.CancelAfter(TimeSpan.FromSeconds(5));
                 await ReadRequestSafely(pipe, deadline.Token);
@@ -161,6 +164,12 @@ internal static class Program
                 ok = false;
             }
         }
+        ok = ok
+            && WindowsClientIdentityGate.MatchesExpectedAccount("S-1-5-21-11", "S-1-5-21-11")
+            && !WindowsClientIdentityGate.MatchesExpectedAccount("S-1-5-21-11", "S-1-5-21-12")
+            && !WindowsClientIdentityGate.MatchesExpectedAccount("", "S-1-5-21-11")
+            && !WindowsClientIdentityGate.MatchesExpectedAccount("S-1-5-21-11", null)
+            && !WindowsClientIdentityGate.MatchesExpectedAccount("malformed", "malformed");
         Console.WriteLine(ok ? "Windows host self-checks PASS (no hardware tests)" :
                                "Windows host self-checks FAIL");
         return ok;
