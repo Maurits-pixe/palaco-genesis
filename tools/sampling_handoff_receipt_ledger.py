@@ -152,6 +152,11 @@ def register(db,package,receipt,trust,expected_previous_head,
     except ValueError as exc:return deny(str(exc))
     try:
         with sqlite3.connect(path,timeout=5) as conn:
+            # SQLite disables FK enforcement by default on many connections.
+            # Enable it before BEGIN: setting it inside a transaction is inert.
+            conn.execute("PRAGMA foreign_keys=ON")
+            if conn.execute("PRAGMA foreign_keys").fetchone()!=(1,):
+                return deny("handoff-receipt-foreign-keys-unavailable")
             conn.execute("BEGIN IMMEDIATE")
             _schema(conn)
             state=_scan(conn)
