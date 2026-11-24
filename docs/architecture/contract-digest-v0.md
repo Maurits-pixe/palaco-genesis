@@ -15,6 +15,13 @@ bounded strict JSON reader before encoding.
   array/object delimiters and unterminated strings, ignoring delimiters inside
   quoted JSON strings. The standard JSON decoder still performs full grammar
   validation; the structural guard is not an independent JSON parser.
+- In-memory canonicalization accepts only ordinary JSON-compatible container
+  shapes. Python requires exact built-in `dict` and `list` types (and exact
+  `str` keys/values), while Node.js accepts plain objects with
+  `Object.prototype` and arrays with the standard `Array.prototype`.
+  Custom JavaScript Array subclasses and altered array prototypes fail closed.
+  This is an interoperability and review-time validation rule, not a claim
+  that arbitrary JavaScript Proxy input is sandboxed.
 - Both Python and Node.js canonicalizers enforce at most **64 levels** of
   array/object nesting, including for in-memory objects; a 65th level fails.
 - Non-NFC Unicode strings are **rejected**, not silently normalized.
