@@ -555,6 +555,82 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
             manifest,exported["manifest_sha256"],recorded["head_hash"],2)["reason"],
             "previous-review-manifest-rollback")
 
+    def _delta_fixture(self):
+        recorded=self.record()
+        original=mod.export_review_manifest(self.db,recorded["head_hash"],1)
+        previous=original["manifest"]
+        current=copy.deepcopy(previous)
+        first=current["entries"][0]
+        nonce="e"*64
+        package="f"*64
+        digest=mod._digest(2,first["recipient_id"],first["recipient_key_id"],
+                           package,nonce,first["receipt_sha256"],
+                           recorded["head_hash"])
+        current["entries"].append(dict(first,sequence=2,
+            package_sha256=package,receipt_nonce_hex=nonce,
+            previous_hash=recorded["head_hash"],event_hash=digest))
+        current["receipt_count"]=2
+        current["head_hash"]=digest
+        next_sha=self._independently_pinned_manifest(current)
+        created=mod.create_review_delta(
+            previous,original["manifest_sha256"],recorded["head_hash"],
+            current,next_sha,digest,1)
+        self.assertTrue(created["delta_created"])
+        return previous,original["manifest_sha256"],recorded["head_hash"],created,digest
+
+    def test_offline_delta_accepts_valid_append_without_database(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        self.db.unlink()
+        result=mod.verify_review_delta(
+            previous,sha,head,created["delta"],created["delta_sha256"],
+            current_head,1)
+        self.assertTrue(result["delta_valid"])
+        self.assertEqual(result["previous_receipts"],1)
+        self.assertEqual(result["current_receipts"],2)
+        self.assertEqual(result["release_gate"],"HOLD")
+        self.assertFalse(result["authorization_granted"])
+
+    def test_offline_delta_rejects_changed_record_with_original_pin(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        changed=copy.deepcopy(created["delta"])
+        changed["entries"][0]["receipt_sha256"]="f"*64
+        result=mod.verify_review_delta(
+            previous,sha,head,changed,created["delta_sha256"],
+            current_head,1)
+        self.assertFalse(result["delta_valid"])
+        self.assertEqual(result["reason"],"review-delta-digest-mismatch")
+
+    def test_offline_delta_rejects_rehashed_but_broken_chain(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        changed=copy.deepcopy(created["delta"])
+        changed["entries"][0]["previous_hash"]=mod.GENESIS
+        result=mod.verify_review_delta(
+            previous,sha,head,changed,mod._delta_hash(changed),current_head,1)
+        self.assertFalse(result["delta_valid"])
+        self.assertEqual(result["reason"],"review-manifest-chain-invalid")
+
+    def test_offline_delta_rejects_mismatched_counts_and_pins(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        altered=copy.deepcopy(created["delta"])
+        altered["previous_receipts"]=0
+        self.assertEqual(mod.verify_review_delta(
+            previous,sha,head,altered,mod._delta_hash(altered),
+            current_head,1)["reason"],"invalid-review-delta-schema-or-pins")
+        self.assertEqual(mod.verify_review_delta(
+            previous,sha,head,created["delta"],"f"*64,
+            current_head,1)["reason"],"review-delta-digest-mismatch")
+        self.assertEqual(mod.verify_review_delta(
+            previous,sha,head,created["delta"],created["delta_sha256"],
+            "f"*64,1)["reason"],"invalid-review-delta-schema-or-pins")
+
+    def test_offline_delta_rejects_unexpected_authority_field(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        altered=copy.deepcopy(created["delta"])
+        altered["authorization_granted"]=True
+        self.assertEqual(mod.verify_review_delta(
+            previous,sha,head,altered,created["delta_sha256"],
+            current_head,1)["reason"],"invalid-review-delta-schema")
+
     def test_registered_pending_only(self):
         first=self.record()
         self.assertTrue(first["recorded"])
