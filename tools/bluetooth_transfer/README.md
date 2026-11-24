@@ -1,6 +1,28 @@
-# PALACO Bluetooth Offline Transfer — v5.5 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v5.6 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v5.6 Real Windows cross-account named-pipe rejection (DRAFT / HOLD)
+
+- `windows_native_host/WindowsCrossAccountTest.cs` uses Windows
+  `LogonUserW` to obtain an actual token for a **different local Windows
+  account**. It attempts to open the same protected diagnostic pipe under
+  that impersonated token. **A successful connection fails the test** even
+  if the service would only answer HOLD/DENY.
+- `test_cross_account.ps1` creates a temporary non-admin local account
+  on a disposable GitHub-hosted Windows runner, generates a random password
+  and passes the temporary credentials to the test process through environment
+  variables. Its `finally` block deletes the account and clears the
+  variables. No credential value is printed or committed.
+- The same-account baseline before and after the negative access attempt
+  still must receive fixed HOLD/DENY. The dedicated Windows CI step is
+  separate from all the existing local integration, process and ACL tests.
+- **Limits:** ephemeral GitHub-hosted Windows account isolation only.
+  This is not a test of an installed SCM service, the specific service
+  SID, a production multi-account deployment, hardware TPM, BLE transfer,
+  or rollback resistance. No PALACO installation or release occurs.
+- **GO-13 HOLD / authorization DENY.** PR remains Draft, no merge,
+  production installation, publication or deployment.
 
 ## v5.5 Windows separate-client process and ACL negative-path audit (DRAFT / HOLD)
 
