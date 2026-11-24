@@ -759,6 +759,79 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
         self.assertEqual(result["shorter_receipts"],2)
         self.assertEqual(result["longer_receipts"],3)
 
+    def _verified_fork_fixture(self):
+        previous,sha,head,created,left_head=self._delta_fixture()
+        left=created["delta"]
+        left_delta_pin,left_manifest_pin=self._fork_pins(previous,left)
+        right=copy.deepcopy(left)
+        right["entries"][0]["package_sha256"]="a"*64
+        right_head=mod._digest(2,right["entries"][0]["recipient_id"],
+            right["entries"][0]["recipient_key_id"],"a"*64,
+            right["entries"][0]["receipt_nonce_hex"],
+            right["entries"][0]["receipt_sha256"],head)
+        right["entries"][0]["event_hash"]=right_head
+        right["current_head"]=right_head
+        right_delta_pin,right_manifest_pin=self._fork_pins(previous,right)
+        arguments=(previous,sha,head,left,left_delta_pin,left_head,
+                   left_manifest_pin,right,right_delta_pin,right_head,
+                   right_manifest_pin,1)
+        assessed=mod.assess_review_delta_fork(*arguments)
+        self.assertTrue(assessed["fork_detected"])
+        return arguments,assessed
+
+    def test_offline_fork_evidence_reverification_without_database(self):
+        arguments,assessed=self._verified_fork_fixture()
+        self.db.unlink()
+        result=mod.verify_review_fork_evidence(
+            *arguments,assessed["fork_evidence"],assessed["fork_evidence_sha256"])
+        self.assertTrue(result["fork_evidence_valid"])
+        self.assertTrue(result["fork_detected"])
+        self.assertEqual(result["first_divergent_sequence"],2)
+        self.assertEqual(result["state"],"quarantined")
+        self.assertFalse(result["authorization_granted"])
+        self.assertEqual(result["release_gate"],"HOLD")
+
+    def test_offline_fork_evidence_rejects_tampered_or_wrong_pin(self):
+        arguments,assessed=self._verified_fork_fixture()
+        evidence=copy.deepcopy(assessed["fork_evidence"])
+        evidence["first_divergent_sequence"]=3
+        result=mod.verify_review_fork_evidence(
+            *arguments,evidence,assessed["fork_evidence_sha256"])
+        self.assertFalse(result["fork_evidence_valid"])
+        self.assertEqual(result["reason"],
+                         "fork-evidence-does-not-match-verified-branches")
+        result=mod.verify_review_fork_evidence(
+            *arguments,assessed["fork_evidence"],"f"*64)
+        self.assertFalse(result["fork_evidence_valid"])
+        self.assertEqual(result["reason"],"fork-evidence-pin-mismatch")
+        result=mod.verify_review_fork_evidence(
+            *arguments,assessed["fork_evidence"],None)
+        self.assertEqual(result["reason"],"missing-independent-fork-evidence-pin")
+
+    def test_offline_fork_evidence_rejects_invalid_branch_anchor(self):
+        arguments,assessed=self._verified_fork_fixture()
+        altered=list(arguments)
+        altered[10]="f"*64
+        result=mod.verify_review_fork_evidence(
+            *altered,assessed["fork_evidence"],assessed["fork_evidence_sha256"])
+        self.assertFalse(result["fork_evidence_valid"])
+        self.assertEqual(result["reason"],
+                         "fork-assessment-right-current-review-manifest-pin-mismatch")
+        self.assertFalse(result["authorization_granted"])
+
+    def test_offline_fork_evidence_rejects_nonconflicting_branches(self):
+        arguments,assessed=self._verified_fork_fixture()
+        altered=list(arguments)
+        altered[7]=altered[3]
+        altered[8]=altered[4]
+        altered[9]=altered[5]
+        altered[10]=altered[6]
+        result=mod.verify_review_fork_evidence(
+            *altered,assessed["fork_evidence"],assessed["fork_evidence_sha256"])
+        self.assertFalse(result["fork_evidence_valid"])
+        self.assertEqual(result["reason"],"no-conflicting-review-delta-branches")
+        self.assertFalse(result["fork_detected"])
+
     def test_registered_pending_only(self):
         first=self.record()
         self.assertTrue(first["recorded"])
