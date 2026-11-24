@@ -2,6 +2,9 @@
 # Creates a deny-only diagnostic SCM service and deletes it in finally.
 # NEVER use on a developer, customer or production Windows machine.
 $ErrorActionPreference = "Stop"
+if ($env:GITHUB_ACTIONS -ne "true" -or $env:RUNNER_ENVIRONMENT -ne "github-hosted") {
+    throw "SCM lifecycle probe is restricted to disposable GitHub-hosted runners"
+}
 $serviceName = "PALACO-BT-Diagnostic-HOLD"
 $project = "tools/bluetooth_transfer/windows_native_host"
 $exe = Join-Path (Resolve-Path ".").Path "$project/bin/Release/net8.0-windows/Palaco.Bluetooth.NativeHost.exe"
