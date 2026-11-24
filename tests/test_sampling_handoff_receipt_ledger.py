@@ -119,6 +119,46 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
         self.assertEqual(self.record(head=first["head_hash"],floor=1)["reason"],
                          "handoff-receipt-ledger-integrity-failed")
 
+    def test_entry_inspection_requires_valid_independent_head(self):
+        first=self.record()
+        result=mod.inspect_entry(self.db,first["head_hash"],1,1)
+        self.assertTrue(result["entry_valid"])
+        self.assertEqual(result["state"],"pending-review")
+        self.assertEqual(result["package_sha256"],self.f.digest)
+        self.assertEqual(result["receipt_nonce_hex"],self.f.nonce)
+        self.assertEqual(result["event_hash"],first["head_hash"])
+        self.assertFalse(result["authorization_granted"])
+        self.assertEqual(mod.inspect_entry(self.db,"f"*64,1,1)["reason"],
+                         "handoff-receipt-ledger-head-mismatch")
+
+    def test_entry_inspection_rejects_invalid_sequence(self):
+        first=self.record()
+        for index in (True,0,-1,"1",mod.MAX_RECORDS+1):
+            with self.subTest(index=index):
+                self.assertEqual(
+                    mod.inspect_entry(self.db,first["head_hash"],1,index)["reason"],
+                    "invalid-independent-handoff-entry-policy")
+        self.assertEqual(
+            mod.inspect_entry(self.db,first["head_hash"],1,2)["reason"],
+            "handoff-receipt-entry-not-found")
+
+    def test_entry_inspection_detects_tampering_and_rollback(self):
+        first=self.record()
+        self.assertEqual(
+            mod.inspect_entry(self.db,first["head_hash"],2,1)["reason"],
+            "handoff-receipt-ledger-rollback")
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("UPDATE sampling_handoff_receipts SET receipt_sha256=?",
+                         ("f"*64,))
+        self.assertEqual(
+            mod.inspect_entry(self.db,first["head_hash"],1,1)["reason"],
+            "handoff-receipt-ledger-integrity-failed")
+
+    def test_entry_inspection_does_not_create_missing_database(self):
+        self.assertEqual(mod.inspect_entry(self.db,"f"*64,1,1)["reason"],
+                         "missing-handoff-receipt-ledger")
+        self.assertFalse(self.db.exists())
+
     def test_registered_pending_only(self):
         first=self.record()
         self.assertTrue(first["recorded"])
