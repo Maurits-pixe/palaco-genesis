@@ -1,6 +1,14 @@
-# PALACO Bluetooth Offline Transfer — v5.4 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v5.5 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v5.5 Windows separate-client process and ACL negative-path audit (DRAFT / HOLD)
+
+- `WindowsPipeProcessTest.cs` now starts a **separate diagnostic client executable process** in addition to the separate host process. The client uses `--ipc-child-client-test` exclusively for Windows CI and checks the fixed HOLD/DENY response. Both processes still run under the **same Windows account**.
+- `WindowsPipeAclAudit.cs` checks that the diagnostic pipe ACL is protected and contains precisely one explicit account-SID allow rule with read/write but without permissions to change security or create pipe instances. It rejects broad FullControl, world access, inherited permissions and multiple rules.
+- `WindowsPipeSecurity.cs` now fails closed if the constructed ACL does not satisfy this restrictive audit; `--self-test` runs negative ACL regressions. Existing Windows CI build, IPC integration and interrupted/restarted separate-process tests remain enabled.
+- **No live second-account or lower-privilege client rejection has been proven.** Same-account SID matching, local DACL review and process separation cannot establish unique caller roles or privileged SCM service authorization. No physical TPM, rollback, Android KeyMint or BLE hardware proof is provided.
+- **GO-13 HOLD / authorization DENY**; PR stays Draft; no merge, installation, publication or deployment.
 
 ## v5.4 Windows diagnostic IPC separate-process resilience (DRAFT / HOLD)
 
