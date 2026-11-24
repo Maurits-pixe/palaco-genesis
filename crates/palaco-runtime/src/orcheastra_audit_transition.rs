@@ -36,9 +36,9 @@ pub struct AuditSegmentEvidence<'a> {
 ///
 /// Each segment's own integrity validation is handled separately. This gate
 /// compares the final verified receipt and evidence of the preceding segment
-/// with the initial receipt and evidence of the next segment. No counter may
-/// decrease, and a checkpoint sequence must strictly advance. Both sides must
-/// also carry nonzero, feasible floors and receipt-to-registry counters.
+/// with the initial receipt and evidence of the next segment. The checkpoint
+/// intervals must meet exactly without gaps or overlaps; counters cannot
+/// decrease. Both sides must carry nonzero, feasible floors and registry values.
 #[must_use]
 pub fn inspect_transition_monotonicity(
     previous: &AuditSegmentEvidence<'_>,
@@ -59,7 +59,25 @@ pub fn inspect_transition_monotonicity(
         return RestartInspection::Deny;
     };
 
-    if previous_receipt.checkpoint_sequence == 0
+    // A strictly increasing end sequence alone does not rule out a gap or
+    // overlapping checkpoints. The next receipt must begin at prior_end + 1.
+    let Some(current_count) = u64::try_from(current_receipt.checkpoint_count).ok() else {
+        return RestartInspection::Deny;
+    };
+    let Some(previous_count) = u64::try_from(previous_receipt.checkpoint_count).ok() else {
+        return RestartInspection::Deny;
+    };
+    let Some(current_predecessor) = current_receipt.checkpoint_sequence.checked_sub(current_count)
+    else {
+        return RestartInspection::Deny;
+    };
+    if previous_count == 0
+        || previous_count > u64::from(MAX_CHAIN_CHECKPOINTS as u32)
+        || current_count == 0
+        || current_count > u64::from(MAX_CHAIN_CHECKPOINTS as u32)
+        || previous_receipt.checkpoint_sequence < previous_count
+        || current_predecessor != previous_receipt.checkpoint_sequence
+        || previous_receipt.checkpoint_sequence == 0
         || current_receipt.checkpoint_sequence <= previous_receipt.checkpoint_sequence
         || previous_receipt.registry_sequence == 0
         || current_receipt.registry_sequence == 0
@@ -1786,6 +1804,54 @@ mod tests {
         assert_eq!(zero_verifier.0.get(), 0);
         assert_eq!(never_called.0.get(), 0);
 
+        // A standalone monotonicity check must deny receipt intervals that
+        // overlap or skip checkpoint sequences, even when end numbers rise.
+        let overlap_receipt = [ReviewReceipt {
+            checkpoint_count: 2,
+            ..receipts_current[0]
+        }];
+        let overlap_segment = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &overlap_receipt,
+            evidence: &evidence_current,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_monotonicity(&previous, &overlap_segment),
+            RestartInspection::Deny
+        );
+        let gap_receipt = [ReviewReceipt {
+            checkpoint_sequence: receipts_current[0].checkpoint_sequence + 1,
+            ..receipts_current[0]
+        }];
+        let gap_segment = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &gap_receipt,
+            evidence: &evidence_current,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_monotonicity(&previous, &gap_segment),
+            RestartInspection::Deny
+        );
+        let impossible_receipt = [ReviewReceipt {
+            checkpoint_count: 0,
+            ..receipts_current[0]
+        }];
+        let impossible_segment = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &impossible_receipt,
+            evidence: &evidence_current,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_monotonicity(&previous, &impossible_segment),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_transition_monotonicity(&previous, &current),
+            RestartInspection::ReviewOnly
+        );
         // Direct monotonicity review must reject impossible or zero counters.
         let missing_current_registry = [ReviewReceipt {
             registry_sequence: 0,
