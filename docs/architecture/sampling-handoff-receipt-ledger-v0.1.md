@@ -43,3 +43,16 @@ Negative regression tests install SQLite triggers that delete inserted nonces
 or corrupt event hashes and verify no receipt rows survive. This detects
 some forms of in-transaction tampering; it does not make local SQLite
 storage tamper-proof or replace independently authenticated external pins.
+
+## Bounded nonce-index integrity scan (2026-11-24)
+
+Both the receipt history and its nonce index are read with a strict
+`MAX_RECORDS + 1` query limit. An index exceeding `MAX_RECORDS`
+fails closed before the index set is materialized. The full expected
+nonce/sequence mapping must still exactly match the bounded receipt
+chain. Regression tests cover an extraneous nonce and an oversized
+index on both read-only inspection and subsequent registration.
+
+This provides a bounded database read; it is **not** a storage-size quota,
+external nonce authority, or protection from every SQLite resource
+exhaustion vector. GO-13 remains HOLD and all authorization is denied.
