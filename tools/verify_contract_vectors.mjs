@@ -15,6 +15,14 @@ const MAX_DEPTH = 64;
 const intrinsicArraySort = Array.prototype.sort;
 const MAX_CANONICAL_NODES = 100_000;
 const MAX_CANONICAL_BYTES = 1024 * 1024;
+ // Capture review-verifier intrinsics before later mutable globals can change.
+const intrinsicJSONStringify = JSON.stringify;
+const intrinsicOwnKeys = Reflect.ownKeys;
+const intrinsicGetPrototypeOf = Object.getPrototypeOf;
+const intrinsicGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+const intrinsicHasOwn = Object.hasOwn;
+const intrinsicArrayIsArray = Array.isArray;
+
 
 function compareCodepoints(a, b) {
   const aa = Array.from(a, (ch) => ch.codePointAt(0));
@@ -68,14 +76,14 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
     if (Buffer.byteLength(value, 'utf8') > MAX_CANONICAL_BYTES) {
       throw new Error('canonical JSON byte budget exceeded');
     }
-    const encoded = JSON.stringify(value);
+    const encoded = intrinsicJSONStringify(value);
     charge(Buffer.byteLength(encoded, 'utf8'));
     return encoded;
   }
-  if (Array.isArray(value)) {
+  if (intrinsicArrayIsArray(value)) {
     // Only a native array with the standard prototype represents a JSON
     // array. Custom array prototypes can carry executable behavior.
-    if (Object.getPrototypeOf(value) !== Array.prototype) {
+    if (intrinsicGetPrototypeOf(value) !== Array.prototype) {
       throw new Error('unsupported array prototype');
     }
     if (active.has(value)) throw new Error('cyclic JSON reference');
@@ -85,15 +93,15 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
     }
     // Array.map skips holes; JSON stringification also loses extra names
     // and symbol properties. Demand only explicit, enumerable data slots.
-    const ownKeys = Reflect.ownKeys(value);
+    const ownKeys = intrinsicOwnKeys(value);
     if (ownKeys.length !== value.length + 1 || !ownKeys.includes('length')) {
       throw new Error('sparse array or unsupported array property');
     }
     const entries = [];
     for (let i = 0; i < value.length; i += 1) {
-      const descriptor = Object.getOwnPropertyDescriptor(value, String(i));
+      const descriptor = intrinsicGetOwnPropertyDescriptor(value, String(i));
       if (!descriptor) throw new Error('sparse array entry is not a JSON value');
-      if (!Object.hasOwn(descriptor, 'value') || !descriptor.enumerable) {
+      if (!intrinsicHasOwn(descriptor, 'value') || !descriptor.enumerable) {
         throw new Error('array accessor or hidden property is not JSON data');
       }
       // Read the descriptor, not value[i] or value.map: inherited methods
@@ -113,10 +121,10 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
       active.delete(value);
     }
   }
-  if (typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+  if (typeof value === 'object' && intrinsicGetPrototypeOf(value) === Object.prototype) {
     if (active.has(value)) throw new Error('cyclic JSON reference');
     if (depth >= MAX_DEPTH) throw new Error('JSON nesting depth exceeds limit');
-    const keys = Reflect.ownKeys(value);
+    const keys = intrinsicOwnKeys(value);
     // Object keys are JSON values too. Reserve one visit per key, and
     // conservatively preflight each corresponding direct child value.
     if (keys.length * 2 > MAX_CANONICAL_NODES - budget.nodes) {
@@ -133,14 +141,14 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
     for (const key of keys) {
       if (typeof key !== 'string') throw new Error('symbol object key is not JSON data');
       assertValidString(key);
-      const encodedKey = JSON.stringify(key);
+      const encodedKey = intrinsicJSONStringify(key);
       charge(Buffer.byteLength(encodedKey, 'utf8') + 1);
       encodedKeys.push([key, encodedKey]);
     }
     const entries = [];
     for (const [key, encodedKey] of encodedKeys) {
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      if (!descriptor || !Object.hasOwn(descriptor, 'value') || !descriptor.enumerable) {
+      const descriptor = intrinsicGetOwnPropertyDescriptor(value, key);
+      if (!descriptor || !intrinsicHasOwn(descriptor, 'value') || !descriptor.enumerable) {
         throw new Error('object accessor or hidden property is not JSON data');
       }
       // Snapshot only validated data descriptors; no subsequent property
