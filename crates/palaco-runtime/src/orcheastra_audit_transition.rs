@@ -166,7 +166,8 @@ pub fn inspect_transition_snapshot_link(
 /// Both registry revisions must be nonzero and never regress across the
 /// transition, even when this guard is called without the composite review.
 /// Malformed signatures, verification flags, and anchors that do not exactly
-/// match their source's last checkpoint are denied.
+/// match their source's last checkpoint are denied. Both complete source
+/// checkpoint chains must also be structurally valid against their anchors.
 /// Matching caller-provided keys are only a consistency check, not proof of
 /// key ownership or authenticity.
 #[must_use]
@@ -187,7 +188,19 @@ pub fn inspect_transition_signer_continuity(
     };
     let previous_key = previous_source.trusted_key;
     let current_key = current_source.trusted_key;
-    if previous_key.revoked
+    // A correct final anchor and stable signer do not make either source's
+    // earlier HOLD, revoked, uncommitted or broken checkpoints acceptable.
+    if previous_source.checkpoints.len() > MAX_CHAIN_CHECKPOINTS
+        || current_source.checkpoints.len() > MAX_CHAIN_CHECKPOINTS
+        || inspect_restart_chain(
+            previous_source.checkpoints,
+            Some(&previous_source.signed.anchor),
+        ) != RestartInspection::ReviewOnly
+        || inspect_restart_chain(
+            current_source.checkpoints,
+            Some(&current_source.signed.anchor),
+        ) != RestartInspection::ReviewOnly
+        || previous_key.revoked
         || current_key.revoked
         || previous_key.key_id.is_empty()
         || previous_key.key_id.len() > MAX_KEY_ID_BYTES
@@ -896,6 +909,10 @@ mod tests {
             RestartInspection::Deny
         );
         assert_eq!(
+            inspect_transition_signer_continuity(&blocked_previous, &current),
+            RestartInspection::Deny
+        );
+        assert_eq!(
             inspect_segment_signer_consistency(&blocked_previous),
             RestartInspection::Deny
         );
@@ -934,6 +951,10 @@ mod tests {
         };
         assert_eq!(
             inspect_transition_snapshot_link(&previous, &revoked_current),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &revoked_current),
             RestartInspection::Deny
         );
         assert_eq!(
