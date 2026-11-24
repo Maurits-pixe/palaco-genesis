@@ -280,3 +280,24 @@ The older verifier is retained for backward compatibility and remains
 review-only. Neither verifier establishes handoff delivery, custody,
 signature validity of original receipts or authorization.
 GO-13 HOLD, authorization DENY.
+
+## Offline competing-delta fork assessment (2026-11-24)
+
+`assess_review_delta_fork` verifies two proposed delta branches
+individually against their own independently authenticated delta
+SHA-256, current manifest SHA-256 and current ledger heads, sharing one
+separately authenticated previous manifest and its pins. Only after
+both branches validate does the assessment compare their appended
+entry sequences. Divergent entries at the same sequence indicate
+a split-view/fork incident and return `fork_detected=True`, state
+`quarantined`, and no authorization. Identical branches or one
+branch that is an exact prefix of the other are reported as
+nonconflicting **pending-review** outcomes; neither is promoted
+to canonical status.
+
+Four regressions cover independently valid divergent histories,
+identical histories, a mismatched right-hand manifest pin, and valid
+prefix extension. External anchors remain caller-supplied and must
+be authenticated independently. A fork assessment does not establish
+physical custody, independent archiving, or permission to reconcile
+a conflict automatically. GO-13 HOLD / authorization DENY.
