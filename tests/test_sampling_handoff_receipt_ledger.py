@@ -377,6 +377,44 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
         self.assertEqual(self.record(head=first["head_hash"],floor=1)["reason"],
                          "handoff-receipt-ledger-integrity-failed")
 
+    def test_export_manifest_matches_pinned_head_and_is_read_only(self):
+        first=self.record()
+        before=self.db.stat().st_size
+        result=mod.export_review_manifest(self.db,first["head_hash"],1)
+        self.assertTrue(result["manifest_exported"])
+        self.assertEqual(result["manifest"]["receipt_count"],1)
+        self.assertEqual(result["manifest"]["head_hash"],first["head_hash"])
+        self.assertEqual(result["manifest"]["entries"][0]["receipt_sha256"],
+                         first["receipt_sha256"])
+        self.assertEqual(len(result["manifest_sha256"]),64)
+        self.assertEqual(self.db.stat().st_size,before)
+        self.assertFalse(result["authorization_granted"])
+        self.assertEqual(result["release_gate"],"HOLD")
+
+    def test_export_manifest_rejects_wrong_pin_or_rollback(self):
+        first=self.record()
+        self.assertEqual(mod.export_review_manifest(
+            self.db,"f"*64,1)["reason"],"handoff-receipt-ledger-head-mismatch")
+        self.assertEqual(mod.export_review_manifest(
+            self.db,first["head_hash"],2)["reason"],"handoff-receipt-ledger-rollback")
+
+    def test_export_manifest_rejects_tampered_receipt(self):
+        first=self.record()
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("UPDATE sampling_handoff_receipts SET "
+                         "receipt_sha256=? WHERE sequence=1",("f"*64,))
+        result=mod.export_review_manifest(self.db,first["head_hash"],1)
+        self.assertFalse(result["manifest_exported"])
+        self.assertEqual(result["reason"],"handoff-receipt-ledger-integrity-failed")
+
+    def test_export_manifest_rejects_untrusted_or_missing_store(self):
+        self.assertEqual(mod.export_review_manifest(
+            self.db,"f"*64,1)["reason"],"missing-handoff-receipt-ledger")
+        self.assertFalse(self.db.exists())
+        self.assertEqual(mod.export_review_manifest(
+            self.db,mod.GENESIS,0)["reason"],
+            "missing-independent-handoff-ledger-pin")
+
     def test_registered_pending_only(self):
         first=self.record()
         self.assertTrue(first["recorded"])
