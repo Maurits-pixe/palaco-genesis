@@ -44,8 +44,31 @@ try {
         if ($null -eq $state -or $state.ProcessId -le 0 -or $state.StartMode -ne "Manual") {
             throw "SCM identity/lifecycle observation invalid"
         }
-        # No ALLOW path is exercised. This tests SCM state, not true hardware
-        # attestation or client token policy under the service account.
+        # Running is not sufficient: verify the worker opened the expected
+        # diagnostic pipe and its service process remains alive. Do not
+        # confuse an absent pipe or a timeout with Windows ACCESS_DENIED.
+        $pidAtStart = [int]$state.ProcessId
+        $pipeSeen = $false
+        $expiry = [DateTime]::UtcNow.AddSeconds(8)
+        do {
+            $namedPipes = @(Get-ChildItem -LiteralPath '\\\\.\\pipe\\' -ErrorAction Stop)
+            $pipeSeen = @($namedPipes | Where-Object {
+                $_.Name -eq "PALACO-BT-NATIVE-DIAGNOSTIC-V1"
+            }).Count -eq 1
+            if (-not $pipeSeen) { Start-Sleep -Milliseconds 250 }
+        } while (-not $pipeSeen -and [DateTime]::UtcNow -lt $expiry)
+        if (-not $pipeSeen) { throw "Service worker did not expose diagnostic pipe" }
+        Start-Sleep -Milliseconds 600
+        $health = Get-CimInstance Win32_Service -Filter "Name='$serviceName'"
+        if ($null -eq $health -or [int]$health.ProcessId -ne $pidAtStart -or
+            $health.State -ne "Running" -or
+            $null -eq (Get-Process -Id $pidAtStart -ErrorAction SilentlyContinue)) {
+            throw "Service process changed or stopped unexpectedly"
+        }
+        # Execute an actual non-System connection while the SCM-owned pipe
+        # exists; the test only accepts Windows ACCESS_DENIED.
+        dotnet run --no-build --configuration Release --project "$project/Palaco.Bluetooth.NativeHost.csproj" -- --ipc-scm-client-denial-test
+        if ($LASTEXITCODE -ne 0) { throw "SCM diagnostic caller was not conclusively denied" }
         Invoke-Sc -arguments @("stop", $serviceName)
         Await-ServiceStatus "Stopped" 15
     }
