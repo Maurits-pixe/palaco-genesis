@@ -42,6 +42,24 @@ pub struct AuditChainExpectation {
     pub final_digest: [u8; 32],
 }
 
+/// Returns the bounded number of links described by a custody expectation.
+///
+/// This is structural range validation only, not authentication of endpoints.
+/// Rejects empty, reversed, zero-based and overlong ranges without allocation.
+#[must_use]
+pub fn audit_expectation_link_count(expected: &AuditChainExpectation) -> Option<usize> {
+    if expected.first_sequence == 0 {
+        return None;
+    }
+    let span = expected.last_sequence.checked_sub(expected.first_sequence)?;
+    let count = span.checked_add(1)?;
+    let count = usize::try_from(count).ok()?;
+    if count > MAX_AUDIT_LINKS {
+        return None;
+    }
+    Some(count)
+}
+
 /// Recomputes the canonical SHA-256 digest of one proposed audit link.
 ///
 /// Inputs are domain-separated, fixed-length and sequence-bound. Returns None
@@ -67,7 +85,9 @@ pub fn audit_link_digest(
 ///
 /// All supplied links must be consecutive, cryptographically hash-consistent,
 /// and joined by their predecessor fields. An attacker controlling both links
-/// and expected endpoints can forge a consistent chain. Success is review-only.
+/// and expected endpoints can forge a consistent chain. The expected sequence
+/// span must exactly equal the supplied link count before any SHA-256 work.
+/// Success is review-only.
 #[must_use]
 pub fn inspect_audit_chain(
     links: &[AuditLink],
@@ -78,8 +98,7 @@ pub fn inspect_audit_chain(
     };
     if links.is_empty()
         || links.len() > MAX_AUDIT_LINKS
-        || expected.first_sequence == 0
-        || expected.first_sequence > expected.last_sequence
+        || audit_expectation_link_count(expected) != Some(links.len())
         || expected.predecessor_digest == [0; 32]
         || expected.final_digest == [0; 32]
     {
@@ -123,7 +142,8 @@ pub fn inspect_audit_chain(
 #[cfg(test)]
 mod tests {
     use super::{
-        audit_link_digest, inspect_audit_chain, AuditChainExpectation, AuditLink, MAX_AUDIT_LINKS,
+        audit_expectation_link_count, audit_link_digest, inspect_audit_chain,
+        AuditChainExpectation, AuditLink, MAX_AUDIT_LINKS,
     };
     use crate::orcheastra_restart::RestartInspection;
 
@@ -207,6 +227,53 @@ mod tests {
             inspect_audit_chain(&links, Some(&expected)),
             RestartInspection::Deny
         );
+    }
+
+    #[test]
+    fn expectation_range_is_bounded_and_must_match_supplied_links() {
+        let (links, expected) = fixture();
+        assert_eq!(audit_expectation_link_count(&expected), Some(2));
+
+        let single = AuditChainExpectation {
+            last_sequence: expected.first_sequence,
+            ..expected
+        };
+        assert_eq!(audit_expectation_link_count(&single), Some(1));
+        assert_eq!(inspect_audit_chain(&links, Some(&single)), RestartInspection::Deny);
+
+        let exactly_max = AuditChainExpectation {
+            first_sequence: 1,
+            last_sequence: u64::try_from(MAX_AUDIT_LINKS).unwrap_or(0),
+            ..expected
+        };
+        assert_eq!(
+            audit_expectation_link_count(&exactly_max),
+            Some(MAX_AUDIT_LINKS)
+        );
+        let over_max = AuditChainExpectation {
+            last_sequence: exactly_max.last_sequence + 1,
+            ..exactly_max
+        };
+        assert_eq!(audit_expectation_link_count(&over_max), None);
+        assert_eq!(inspect_audit_chain(&links, Some(&over_max)), RestartInspection::Deny);
+
+        let zero_start = AuditChainExpectation {
+            first_sequence: 0,
+            ..expected
+        };
+        let reversed = AuditChainExpectation {
+            last_sequence: expected.first_sequence - 1,
+            ..expected
+        };
+        assert_eq!(audit_expectation_link_count(&zero_start), None);
+        assert_eq!(audit_expectation_link_count(&reversed), None);
+
+        let near_u64_max = AuditChainExpectation {
+            first_sequence: u64::MAX - 1,
+            last_sequence: u64::MAX,
+            ..expected
+        };
+        assert_eq!(audit_expectation_link_count(&near_u64_max), Some(2));
     }
 
     #[test]
