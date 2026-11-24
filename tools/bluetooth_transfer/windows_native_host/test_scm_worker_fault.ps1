@@ -104,6 +104,10 @@ try {
     # checkpoint file inside the disposable CI test harness.
     python tools/bluetooth_transfer/witness_continuity_v63.py --ci-evidence $evidence
     if ($LASTEXITCODE -ne 0) { throw "CI witness root/rotation/continuity test failed" }
+    # Independent verifier root is separate from the mutable ledger and
+    # checkpoint. The synthetic joint rollback must be rejected.
+    python tools/bluetooth_transfer/witness_anchor_v64.py --ci-evidence $evidence
+    if ($LASTEXITCODE -ne 0) { throw "CI independent witness checkpoint test failed" }
     Write-Output "PALACO ephemeral Ed25519 CI witness PASS (signed verifier receipt, linked local SQLite entry, duplicate refused)"
     Write-Output "Independent CI incident verification PASS (original validated, replay denied; unsigned)"
     Write-Output "Windows SCM injected worker failure PASS (STOPPED, no restart, fixed HOLD/DENY evidence, SHA-256 verified)"
