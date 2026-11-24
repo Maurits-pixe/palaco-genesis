@@ -184,7 +184,9 @@ pub fn inspect_audit_evidence_signers(evidence: &[RecoveryEvidence<'_>]) -> Rest
 /// Enforces monotonic recovery floors throughout an audit evidence batch.
 ///
 /// The caller-supplied minimum checkpoint and key-registry revisions cannot
-/// decrease between successive evidence bundles. Each floor must be nonzero
+/// decrease between successive evidence bundles. Actual source checkpoint
+/// sequences must strictly increase and actual key registry revisions must not
+/// decrease, even if the floors stay unchanged. Each floor must be nonzero
 /// and cannot exceed the bundle's final checkpoint or key registry revision.
 /// This is a consistency check, not a trusted external anti-rollback store.
 #[must_use]
@@ -194,12 +196,18 @@ pub fn inspect_audit_evidence_floors(evidence: &[RecoveryEvidence<'_>]) -> Resta
     }
     let mut last_checkpoint_floor = 0;
     let mut last_registry_floor = 0;
+    let mut last_checkpoint_sequence = 0;
+    let mut last_registry_sequence = 0;
     for source in evidence {
         let Some(last_checkpoint) = source.checkpoints.last() else {
             return RestartInspection::Deny;
         };
         let floor = source.floor;
-        if floor.checkpoint_sequence == 0
+        if last_checkpoint.sequence == 0
+            || last_checkpoint.sequence <= last_checkpoint_sequence
+            || source.trusted_key.registry_sequence == 0
+            || source.trusted_key.registry_sequence < last_registry_sequence
+            || floor.checkpoint_sequence == 0
             || floor.registry_sequence == 0
             || floor.checkpoint_sequence < last_checkpoint_floor
             || floor.registry_sequence < last_registry_floor
@@ -210,6 +218,8 @@ pub fn inspect_audit_evidence_floors(evidence: &[RecoveryEvidence<'_>]) -> Resta
         }
         last_checkpoint_floor = floor.checkpoint_sequence;
         last_registry_floor = floor.registry_sequence;
+        last_checkpoint_sequence = last_checkpoint.sequence;
+        last_registry_sequence = source.trusted_key.registry_sequence;
     }
     RestartInspection::ReviewOnly
 }
@@ -1422,6 +1432,68 @@ mod tests {
         assert_eq!(
             inspect_audit_evidence_floors(&impossible),
             RestartInspection::Deny
+        );
+        // Equal floors must not hide a repeated source checkpoint or a
+        // rollback of the actual key registry revision.
+        let replayed_sources = [
+            RecoveryEvidence {
+                checkpoints: &checkpoints,
+                payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            },
+            RecoveryEvidence {
+                checkpoints: &checkpoints,
+                payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            },
+        ];
+        assert_eq!(
+            inspect_audit_evidence_floors(&replayed_sources),
+            RestartInspection::Deny
+        );
+        let hidden_registry_rollback = [
+            RecoveryEvidence {
+                checkpoints: &checkpoints,
+                payloads,
+                signed: &signed,
+                trusted_key: &newer_key,
+                floor: &floor,
+            },
+            RecoveryEvidence {
+                checkpoints: &following_checkpoint,
+                payloads: following_payloads,
+                signed: &following_signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            },
+        ];
+        assert_eq!(
+            inspect_audit_evidence_floors(&hidden_registry_rollback),
+            RestartInspection::Deny
+        );
+        let valid_registry_advance = [
+            RecoveryEvidence {
+                checkpoints: &checkpoints,
+                payloads,
+                signed: &signed,
+                trusted_key: &trusted_key,
+                floor: &floor,
+            },
+            RecoveryEvidence {
+                checkpoints: &following_checkpoint,
+                payloads: following_payloads,
+                signed: &following_signed,
+                trusted_key: &newer_key,
+                floor: &floor,
+            },
+        ];
+        assert_eq!(
+            inspect_audit_evidence_floors(&valid_registry_advance),
+            RestartInspection::ReviewOnly
         );
         assert_eq!(inspect_audit_evidence_floors(&[]), RestartInspection::Deny);
         let replay = [
