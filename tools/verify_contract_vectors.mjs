@@ -73,6 +73,9 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
   if (Array.isArray(value)) {
     if (active.has(value)) throw new Error('cyclic JSON reference');
     if (depth >= MAX_DEPTH) throw new Error('JSON nesting depth exceeds limit');
+    if (value.length > MAX_CANONICAL_NODES - budget.nodes) {
+      throw new Error('canonical JSON node budget exceeded');
+    }
     // Array.map skips holes; JSON stringification also loses extra names
     // and symbol properties. Demand only explicit, enumerable data slots.
     const own = Reflect.ownKeys(value).filter((key) => key !== 'length');
@@ -102,6 +105,12 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
     if (active.has(value)) throw new Error('cyclic JSON reference');
     if (depth >= MAX_DEPTH) throw new Error('JSON nesting depth exceeds limit');
     const keys = Reflect.ownKeys(value);
+    // Object keys are JSON values too. Reserve one visit per key, and
+    // conservatively preflight each corresponding direct child value.
+    if (keys.length * 2 > MAX_CANONICAL_NODES - budget.nodes) {
+      throw new Error('canonical JSON node budget exceeded');
+    }
+    budget.nodes += keys.length;
     const entries = [];
     for (const key of keys) {
       if (typeof key !== 'string') throw new Error('symbol object key is not JSON data');
