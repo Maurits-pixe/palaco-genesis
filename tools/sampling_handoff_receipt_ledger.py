@@ -457,3 +457,39 @@ def verify_review_manifest(manifest,expected_manifest_sha256,
                 reason="offline-manifest-matches-independent-pins-not-custody",
                 receipts=manifest["receipt_count"],head_hash=expected_head,
                 manifest_sha256=computed)
+
+
+def verify_manifest_succession(previous_manifest,previous_sha256,
+                              previous_head,current_manifest,current_sha256,
+                              current_head,minimum_previous_receipts):
+    """Compare two independently pinned offline manifests for append-only growth.
+
+    Each manifest must pass its own full offline integrity check first.
+    This proves relative consistency, not trust in either external pin.
+    """
+    def deny(reason):return _out(succession_valid=False,reason=reason)
+    before=verify_review_manifest(
+        previous_manifest,previous_sha256,previous_head,
+        minimum_previous_receipts)
+    if not before["manifest_valid"]:
+        return deny("previous-"+before["reason"])
+    after=verify_review_manifest(
+        current_manifest,current_sha256,current_head,
+        previous_manifest["receipt_count"])
+    if not after["manifest_valid"]:
+        return deny("current-"+after["reason"])
+    count=previous_manifest["receipt_count"]
+    if current_manifest["entries"][:count]!=previous_manifest["entries"]:
+        return deny("review-manifest-history-rewritten")
+    if current_manifest["receipt_count"]==count:
+        return _out(succession_valid=True,state="pending-review",
+                    reason="identical-pinned-review-manifests-no-new-receipts",
+                    previous_receipts=count,current_receipts=count,
+                    head_hash=current_head)
+    if current_manifest["entries"][count]["previous_hash"]!=previous_head:
+        return deny("review-manifest-succession-link-invalid")
+    return _out(succession_valid=True,state="pending-review",
+                reason="offline-manifest-append-only-succession-not-custody",
+                previous_receipts=count,
+                current_receipts=current_manifest["receipt_count"],
+                head_hash=current_head)
