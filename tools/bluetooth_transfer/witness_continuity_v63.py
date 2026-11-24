@@ -9,6 +9,7 @@ HOLD/DENY only. No producer attestation or production authority.
 from __future__ import annotations
 
 import base64
+from contextlib import closing
 import hashlib
 import json
 import sqlite3
@@ -162,7 +163,7 @@ def append_incident(path: Path, root: Ed25519PublicKey,
                     signer: Ed25519PrivateKey, evidence: bytes) -> dict:
     verify_bytes(evidence)
     incident = digest_bytes(evidence)
-    with connect(path) as con:
+    with closing(connect(path)) as con:
         con.execute("BEGIN IMMEDIATE")
         count, previous, active, seen = validate_chain(con, root)
         if public_id(signer.public_key()) != public_id(active) or incident in seen:
@@ -179,7 +180,7 @@ def append_incident(path: Path, root: Ed25519PublicKey,
 
 def append_rotation(path: Path, root: Ed25519PublicKey,
                     signer: Ed25519PrivateKey, successor: Ed25519PublicKey) -> dict:
-    with connect(path) as con:
+    with closing(connect(path)) as con:
         con.execute("BEGIN IMMEDIATE")
         count, previous, active, _ = validate_chain(con, root)
         if public_id(signer.public_key()) != public_id(active):
@@ -206,7 +207,7 @@ def check_checkpoint(path: Path, expected: dict) -> None:
 def snapshot(path: Path, root: Ed25519PublicKey) -> dict:
     if not path.is_file() or path.is_symlink():
         raise EvidenceRejected("ledger missing")
-    with sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True) as con:
+    with closing(sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)) as con:
         count, head, _, _ = validate_chain(con, root)
     return {"sequence": count, "head": head, "root_id": public_id(root)}
 
