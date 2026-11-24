@@ -28,6 +28,9 @@ internal static class WindowsPipeProcessTest
                 stage = "first separate-process inspection";
                 if (!await SendValidWithStartupRetry(limit.Token))
                     return Failed(stage);
+                stage = "separate-client-process inspection";
+                if (!await RunSeparateClientAsync(limit.Token))
+                    return Failed(stage);
                 stage = "disconnect mid-frame";
                 await AbandonPartialFrame(limit.Token);
                 stage = "recovery after interrupted client";
@@ -66,6 +69,55 @@ internal static class WindowsPipeProcessTest
         {
             Console.Error.WriteLine($"Windows separate-process IPC FAIL at {stage}: {ex.GetType().Name}");
             return false;
+        }
+    }
+
+    // The independent client is a separate OS process, but runs under the
+    // same account. It is NOT evidence of cross-account access control.
+    internal static async Task<int> RunChildClientAsync()
+    {
+        if (!OperatingSystem.IsWindows()) return 2;
+        try
+        {
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            return await WindowsPipeIntegrationTest.SendAsync(
+                WindowsPipeIntegrationTest.MakeInspectFrame(), true, deadline.Token)
+                ? 0 : 1;
+        }
+        catch (Exception ex) when (ex is IOException or TimeoutException
+                                       or OperationCanceledException or UnauthorizedAccessException)
+        {
+            return 1;
+        }
+    }
+
+    private static async Task<bool> RunSeparateClientAsync(CancellationToken cancel)
+    {
+        using var client = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = Environment.ProcessPath
+                    ?? throw new InvalidOperationException("Missing executable path"),
+                Arguments = "--ipc-child-client-test",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            },
+        };
+        if (!client.Start())
+            throw new InvalidOperationException("Cannot start IPC test client");
+        try
+        {
+            await client.WaitForExitAsync(cancel);
+            return client.ExitCode == 0;
+        }
+        finally
+        {
+            if (!client.HasExited)
+            {
+                client.Kill(entireProcessTree: true);
+                client.WaitForExit(5000);
+            }
         }
     }
 
