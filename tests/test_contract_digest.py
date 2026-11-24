@@ -369,6 +369,27 @@ class ContractDigestTests(unittest.TestCase):
             child = [child, child]
         self.assertTrue(canonical_bytes(child).startswith(b"["))
 
+    def test_exact_canonical_utf8_byte_boundary(self):
+        limit = 1024 * 1024
+        # Two structural bytes, two quotes, three key bytes, one colon:
+        # {"v":"..."} has an eight-byte envelope.
+        value = {"v": "x" * (limit - 8)}
+        encoded = canonical_bytes(value)
+        self.assertEqual(len(encoded), limit)
+        with self.assertRaisesRegex(ValueError, "byte budget"):
+            canonical_bytes({"v": "x" * (limit - 7)})
+
+    def test_canonical_escape_expansion_counts_output_bytes(self):
+        # Newlines are encoded as backslash+n: output is larger than input.
+        value = {"v": "\n" * (1024 * 1024 // 2)}
+        with self.assertRaisesRegex(ValueError, "byte budget"):
+            canonical_bytes(value)
+
+    def test_canonical_utf8_multibyte_output_byte_budget(self):
+        # Each emoji occupies four UTF-8 bytes, not one character.
+        encoded = canonical_bytes({"v": chr(0x1f680) * 100})
+        self.assertEqual(len(encoded), 408)
+
     def test_file_digest_matches_in_memory_digest(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "candidate.json"
