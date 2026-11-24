@@ -37,10 +37,7 @@ pub fn inspect_audit_continuity(
     let Some(total_links) = previous_links.len().checked_add(current_links.len()) else {
         return RestartInspection::Deny;
     };
-    if previous_links.is_empty()
-        || current_links.is_empty()
-        || total_links > MAX_AUDIT_LINKS
-    {
+    if previous_links.is_empty() || current_links.is_empty() || total_links > MAX_AUDIT_LINKS {
         return RestartInspection::Deny;
     }
     let Some(next_sequence) = previous.last_sequence.checked_add(1) else {
@@ -200,8 +197,7 @@ mod tests {
             let mut predecessor = initial;
             for index in 0..count {
                 let sequence = first_sequence + u64::try_from(index).unwrap_or(0);
-                let digest = audit_link_digest(sequence, &predecessor, &[7; 32])
-                    .unwrap_or([0; 32]);
+                let digest = audit_link_digest(sequence, &predecessor, &[7; 32]).unwrap_or([0; 32]);
                 links.push(AuditLink {
                     sequence,
                     predecessor_digest: predecessor,
