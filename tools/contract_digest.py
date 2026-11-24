@@ -67,13 +67,21 @@ def canonical_bytes(value):
                 stack.extend((child, depth + 1, False) for child in item)
         else:
             raise ValueError("unsupported canonical JSON value type")
-    payload = json.dumps(
-        value, ensure_ascii=False, allow_nan=False,
+    # Stream chunks through the size gate, rather than constructing an
+    # unbounded json.dumps string before enforcing the output limit.
+    encoder = json.JSONEncoder(
+        ensure_ascii=False, allow_nan=False,
         separators=(",", ":"), sort_keys=True,
-    ).encode("utf-8")
-    if len(payload) > MAX_CANONICAL_BYTES:
-        raise ValueError("canonical JSON byte budget exceeded")
-    return payload
+    )
+    chunks = []
+    output_size = 0
+    for fragment in encoder.iterencode(value):
+        encoded = fragment.encode("utf-8")
+        output_size += len(encoded)
+        if output_size > MAX_CANONICAL_BYTES:
+            raise ValueError("canonical JSON byte budget exceeded")
+        chunks.append(encoded)
+    return b"".join(chunks)
 
 
 def digest_contract(value):
