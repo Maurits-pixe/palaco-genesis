@@ -10,7 +10,8 @@ Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices 
   `CurrentUserOnly` option remains as an additional restriction.
 - `Program.cs` uses this factory and Windows `--self-test` checks that the
   restricted pipe can be created. `System.IO.Pipes.AccessControl` is
-  declared in the Windows host project.
+  is used through the .NET Windows-targeted framework API; no separate
+  NuGet package is declared.
 - **Not service-SID authorization**: the process-account SID is potentially
   shared with other processes (especially when running as LocalSystem).
   Access via the account SID does NOT authenticate an IPC peer, verify caller
