@@ -16,7 +16,7 @@ use crate::orcheastra_audit_receipts::inspect_bound_audit_receipts;
 use crate::orcheastra_payload::{
     inspect_restart_chain_payloads, MAX_CHAIN_CHECKPOINTS, MAX_SNAPSHOT_BYTES,
 };
-use crate::orcheastra_restart::RestartInspection;
+use crate::orcheastra_restart::{inspect_restart_chain, RestartInspection};
 use crate::orcheastra_review_receipt::ReviewReceipt;
 use crate::orcheastra_signed_anchor::{Ed25519Verifier, MAX_KEY_ID_BYTES};
 
@@ -274,9 +274,10 @@ pub fn inspect_segment_signer_consistency(segment: &AuditSegmentEvidence<'_>) ->
 
 /// Enforces exact checkpoint lineage between recovery receipts in one segment.
 ///
-/// Separate source revalidation checks the checkpoints inside each receipt.
-/// This gate closes the gap between consecutive receipts: no missing bundles,
-/// replay, sequence skips, or mismatching snapshot predecessor are accepted.
+/// Every source's internal checkpoint chain is also validated against its
+/// final anchor: a direct call rejects HOLD, revocation, uncommitted records,
+/// sequence gaps and broken internal links. The boundary between consecutive
+/// receipts must also be contiguous without replay or missing bundles.
 /// Hash consistency is not a substitute for independent authentication.
 #[must_use]
 pub fn inspect_segment_snapshot_continuity(
@@ -292,7 +293,10 @@ pub fn inspect_segment_snapshot_continuity(
         else {
             return RestartInspection::Deny;
         };
-        if first.sequence == 0 || last.snapshot_digest == [0; 32] {
+        if source.checkpoints.len() > MAX_CHAIN_CHECKPOINTS
+            || inspect_restart_chain(source.checkpoints, Some(&source.signed.anchor))
+                != RestartInspection::ReviewOnly
+        {
             return RestartInspection::Deny;
         }
         if let Some(previous) = prior_sequence {
@@ -1152,6 +1156,100 @@ mod tests {
             inspect_segment_snapshot_continuity(&linked_segment),
             RestartInspection::ReviewOnly
         );
+        // Direct use must validate the complete internal chain of a source,
+        // not only the first and last checkpoint.
+        let internal_checkpoints = [checkpoints_previous[0], checkpoints_current[0]];
+        let internal_payloads: &[&[u8]] = &[b"first", b"second"];
+        let internally_linked_evidence = [RecoveryEvidence {
+            checkpoints: &internal_checkpoints,
+            payloads: internal_payloads,
+            signed: &signed_current,
+            trusted_key: &key,
+            floor: &floor_current,
+        }];
+        let internally_linked = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &internally_linked_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_segment_snapshot_continuity(&internally_linked),
+            RestartInspection::ReviewOnly
+        );
+        let blocked_checkpoints = [
+            RestartCheckpoint {
+                hold: true,
+                ..checkpoints_previous[0]
+            },
+            checkpoints_current[0],
+        ];
+        let blocked_evidence = [RecoveryEvidence {
+            checkpoints: &blocked_checkpoints,
+            payloads: internal_payloads,
+            signed: &signed_current,
+            trusted_key: &key,
+            floor: &floor_current,
+        }];
+        let blocked_segment = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &blocked_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_segment_snapshot_continuity(&blocked_segment),
+            RestartInspection::Deny
+        );
+        let revoked_checkpoints = [
+            RestartCheckpoint {
+                revoked: true,
+                ..checkpoints_previous[0]
+            },
+            checkpoints_current[0],
+        ];
+        let revoked_evidence = [RecoveryEvidence {
+            checkpoints: &revoked_checkpoints,
+            payloads: internal_payloads,
+            signed: &signed_current,
+            trusted_key: &key,
+            floor: &floor_current,
+        }];
+        let revoked_segment = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &revoked_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_segment_snapshot_continuity(&revoked_segment),
+            RestartInspection::Deny
+        );
+        let skipped_checkpoints = [
+            RestartCheckpoint {
+                sequence: 6,
+                ..checkpoints_previous[0]
+            },
+            checkpoints_current[0],
+        ];
+        let skipped_evidence = [RecoveryEvidence {
+            checkpoints: &skipped_checkpoints,
+            payloads: internal_payloads,
+            signed: &signed_current,
+            trusted_key: &key,
+            floor: &floor_current,
+        }];
+        let skipped_segment = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &skipped_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_segment_snapshot_continuity(&skipped_segment),
+            RestartInspection::Deny
+        );
+
         let duplicate_evidence = [
             RecoveryEvidence {
                 checkpoints: &checkpoints_previous,
