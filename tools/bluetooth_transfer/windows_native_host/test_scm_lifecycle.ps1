@@ -51,7 +51,7 @@ try {
         $pipeSeen = $false
         $expiry = [DateTime]::UtcNow.AddSeconds(8)
         do {
-            $namedPipes = @(Get-ChildItem -LiteralPath '\\\\.\\pipe\\' -ErrorAction Stop)
+            $namedPipes = @(Get-ChildItem -LiteralPath '\\.\pipe\' -ErrorAction Stop)
             $pipeSeen = @($namedPipes | Where-Object {
                 $_.Name -eq "PALACO-BT-NATIVE-DIAGNOSTIC-V1"
             }).Count -eq 1
