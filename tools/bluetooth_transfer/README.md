@@ -1,6 +1,33 @@
-# PALACO Bluetooth Offline Transfer — v5.9 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v6.0 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v6.0 Disposable SCM worker fault injection and incident checksum (DRAFT / HOLD)
+
+- `--service-ci-fault` is an intentionally destructive, **test-only**
+  Windows SCM mode. It requires a local temporary `palaco-ci-fault.marker`
+  and the existing SCM service SID startup check. The diagnostic worker
+  throws a synthetic exception after SCM starts; the supervisor emits the
+  fixed `WORKER_FAULTED` incident and requests SCM stop without restart.
+- `WindowsCiIncidentEvidence.cs` records the fixed non-sensitive fields
+  `PALACO-BT-CI-INCIDENT-V1`, `WORKER_FAULTED`, HOLD and DENY,
+  `independent_signature=false`, and a SHA-256 checksum computed over
+  canonical values. The file is created exclusively and flushed to disk.
+  **This checksum is NOT an authenticating signature, independent audit
+  evidence, an attestation, or an authorization proof.**
+- `test_scm_worker_fault.ps1` refuses non-GitHub-hosted runners,
+  creates a temporary **manual-start** LocalSystem SCM service with
+  `sidtype unrestricted` and explicit `failure actions=none`, checks
+  Running -> Stopped after the actual worker exception, verifies that no
+  automatic restart occurs, and verifies all incident fields and checksum.
+  Both service and marker/evidence files are deleted in `finally`.
+- The Windows CI job runs this fault injection only **after** all earlier
+  Windows build, isolation, IPC and normal SCM lifecycle checks.
+- **Limitations:** no external signature, trusted timestamp, independent
+  incident receipt, TPM, hardware rollback defense, Android KeyMint or BLE
+  transfer. This is a hosted CI test, not a production installation.
+- GO-13 HOLD / authorization DENY. PR Draft; no merge, production install,
+  deployment, publication or authority grant.
 
 ## v5.9 Windows worker exit supervision and incident categorization (DRAFT / HOLD)
 
