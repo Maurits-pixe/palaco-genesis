@@ -330,6 +330,28 @@ class ContractDigestTests(unittest.TestCase):
         self.assertEqual(canonical_bytes({"items": [True, None, 0, "HOLD"]}),
                          b'{"items":[true,null,0,"HOLD"]}')
 
+    def test_rejects_non_json_python_collections(self):
+        for candidate in ((1, 2), {1, 2}, frozenset((1, 2))):
+            with self.subTest(candidate_type=type(candidate).__name__):
+                with self.assertRaisesRegex(ValueError, "unsupported canonical JSON"):
+                    canonical_bytes({"value": candidate})
+
+    def test_rejects_nonfinite_and_fractional_python_numbers(self):
+        for candidate in (float("nan"), float("inf"), -float("inf"), 0.5):
+            with self.subTest(candidate=repr(candidate)):
+                with self.assertRaisesRegex(ValueError, "unsupported canonical JSON"):
+                    canonical_bytes({"value": candidate})
+
+    def test_rejects_out_of_range_int_while_allowing_boundaries(self):
+        for value in (MAX_SAFE_INTEGER + 1, -(MAX_SAFE_INTEGER + 1)):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "safe range"):
+                    canonical_bytes({"value": value})
+        self.assertEqual(canonical_bytes({"value": MAX_SAFE_INTEGER}),
+                         ('{"value":' + str(MAX_SAFE_INTEGER) + '}').encode())
+        self.assertEqual(canonical_bytes({"value": -MAX_SAFE_INTEGER}),
+                         ('{"value":-' + str(MAX_SAFE_INTEGER) + '}').encode())
+
     def test_file_digest_matches_in_memory_digest(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "candidate.json"
