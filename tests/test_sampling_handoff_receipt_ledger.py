@@ -607,7 +607,7 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
         result=mod.verify_review_delta(
             previous,sha,head,changed,mod._delta_hash(changed),current_head,1)
         self.assertFalse(result["delta_valid"])
-        self.assertEqual(result["reason"],"review-manifest-chain-invalid")
+        self.assertEqual(result["reason"],"current-review-manifest-chain-invalid")
 
     def test_offline_delta_rejects_mismatched_counts_and_pins(self):
         previous,sha,head,created,current_head=self._delta_fixture()
