@@ -242,3 +242,16 @@ def exercise_ci(evidence: bytes) -> bool:
             if str(ex) == "stale signer accepted":
                 raise
         return first["sequence"] == 1
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--ci-evidence", type=Path, required=True)
+    args = parser.parse_args()
+    try:
+        if not exercise_ci(args.ci_evidence.read_bytes()):
+            raise EvidenceRejected("continuity smoke failed")
+    except (EvidenceRejected, OSError, sqlite3.DatabaseError) as exc:
+        print("PALACO v6.3 WITNESS DENY: " + type(exc).__name__)
+        raise SystemExit(1)
+    print("PALACO v6.3 WITNESS PASS (ephemeral pin, rotation, 3 entries, checkpoint; no external anchor)")
