@@ -199,3 +199,22 @@ fails closed. Manifest integrity proves only agreement with the supplied
 authenticated anchor at the time of the SQLite read transaction.
 Revalidation against independently retained anchors remains necessary;
 export does not confer custody, possession or authority. GO-13 HOLD.
+
+## Independent offline review-manifest verification (2026-11-24)
+
+`verify_review_manifest(manifest, expected_manifest_sha256,
+expected_head, minimum_receipts)` is database-independent and
+network-free. It requires separately authenticated expected manifest
+SHA-256, exact ledger head and minimum receipt count. Strict schema
+checks reject extra fields, incorrect value types and oversized
+records. It recomputes each domain-separated event hash, validates
+contiguous sequence and prior-hash linkage, rejects nonce reuse and
+duplicate recipient-key/package bindings, and checks the canonical
+manifest commitment. Five regressions cover valid offline verification,
+entry manipulation, pin mismatch/rollback, replay and schema drift.
+
+A successful result is **pending-review**, not signature verification
+of the original receipt or independent custody attestation. The
+caller must authenticate the three pins through a separate trust
+process. This verifier does not connect to SQLite, sign anything,
+grant access or change GO-13 HOLD / authorization DENY.
