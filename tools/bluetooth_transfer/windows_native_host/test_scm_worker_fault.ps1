@@ -11,6 +11,9 @@ $exe = Join-Path $bin "Palaco.Bluetooth.NativeHost.exe"
 $marker = Join-Path $bin "palaco-ci-fault.marker"
 $evidence = Join-Path $bin "palaco-ci-incident.json"
 $receipt = Join-Path $bin "palaco-ci-incident-receipt.txt"
+$witnessReceipt = Join-Path $bin "palaco-ci-signed-witness.json"
+$witnessLedger = Join-Path $bin "palaco-ci-witness.sqlite3"
+$witnessPub = Join-Path $bin "palaco-ci-witness.pub"
 $created = $false
 $markerCreated = $false
 
@@ -23,7 +26,8 @@ function Sc([string[]]$Arguments) {
 try {
     if (-not (Test-Path -LiteralPath $exe)) { throw "Missing diagnostic executable" }
     if ((Test-Path -LiteralPath $marker) -or (Test-Path -LiteralPath $evidence) -or
-        (Test-Path -LiteralPath $receipt)) {
+        (Test-Path -LiteralPath $receipt) -or (Test-Path -LiteralPath $witnessReceipt) -or
+        (Test-Path -LiteralPath $witnessLedger) -or (Test-Path -LiteralPath $witnessPub)) {
         throw "Refusing stale CI marker or evidence"
     }
     if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
@@ -86,6 +90,16 @@ try {
     if (-not (Test-Path -LiteralPath $receipt)) {
         throw "Independent receipt missing"
     }
+    # Independent CI witness signs a verifier receipt, not the C# producer.
+    # The generated key and ledger are ephemeral, not externally anchored.
+    $witness = "tools/bluetooth_transfer/witness_scm_ci_incident.py"
+    python $witness attest --evidence $evidence --ledger $witnessLedger --receipt $witnessReceipt --public-key $witnessPub
+    if ($LASTEXITCODE -ne 0) { throw "CI witness receipt creation failed" }
+    python $witness verify --evidence $evidence --ledger $witnessLedger --receipt $witnessReceipt --public-key $witnessPub
+    if ($LASTEXITCODE -ne 0) { throw "CI signed witness receipt validation failed" }
+    python $witness attest --evidence $evidence --ledger $witnessLedger --receipt $witnessReceipt --public-key $witnessPub
+    if ($LASTEXITCODE -eq 0) { throw "CI witness duplicate admission was accepted" }
+    Write-Output "PALACO ephemeral Ed25519 CI witness PASS (signed verifier receipt, linked local SQLite entry, duplicate refused)"
     Write-Output "Independent CI incident verification PASS (original validated, replay denied; unsigned)"
     Write-Output "Windows SCM injected worker failure PASS (STOPPED, no restart, fixed HOLD/DENY evidence, SHA-256 verified)"
 }
@@ -105,5 +119,10 @@ finally {
     }
     if (Test-Path -LiteralPath $receipt) {
         Remove-Item -LiteralPath $receipt -Force -ErrorAction Stop
+    }
+    foreach ($ephemeral in @($witnessReceipt, $witnessLedger, $witnessPub)) {
+        if (Test-Path -LiteralPath $ephemeral) {
+            Remove-Item -LiteralPath $ephemeral -Force -ErrorAction Stop
+        }
     }
 }
