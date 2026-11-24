@@ -722,6 +722,35 @@ assert.deepEqual(numericBytesAfterMutation,
                  Buffer.from('{"items":[0,-1,9007199254740991]}', 'utf8'),
                  'numeric serialization and indexed arrays survive late global mutations');
 
+// Buffer's UTF-8 byte counter and constructor are mutable static methods.
+// A late override must never weaken canonical byte budgets or digest framing.
+const savedBufferMethods = {
+  byteLength: Buffer.byteLength,
+  from: Buffer.from,
+  alloc: Buffer.alloc,
+};
+const expectedBufferBytes = Buffer.from('{"emoji":"🚀","z":[0,1]}', 'utf8');
+const expectedBufferDigest = digest({ z: [0, 1], emoji: '🚀' });
+let bytesAfterBufferMutation;
+let digestAfterBufferMutation;
+try {
+  Buffer.byteLength = () => { throw new Error('mutated Buffer.byteLength executed'); };
+  Buffer.from = () => { throw new Error('mutated Buffer.from executed'); };
+  Buffer.alloc = () => { throw new Error('mutated Buffer.alloc executed'); };
+  bytesAfterBufferMutation = canonicalBytes({ z: [0, 1], emoji: '🚀' });
+  digestAfterBufferMutation = digest({ emoji: '🚀', z: [0, 1] });
+  assert.throws(() => canonicalBytes({ text: 'x'.repeat(MAX_CANONICAL_BYTES) }),
+                /byte budget/, 'UTF-8 output limit remains enforced with mutated Buffer');
+} finally {
+  Buffer.byteLength = savedBufferMethods.byteLength;
+  Buffer.from = savedBufferMethods.from;
+  Buffer.alloc = savedBufferMethods.alloc;
+}
+assert.deepEqual(bytesAfterBufferMutation, expectedBufferBytes,
+                 'canonical bytes remain stable despite late Buffer mutations');
+assert.equal(digestAfterBufferMutation, expectedBufferDigest,
+             'digest framing remains stable despite late Buffer mutations');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
