@@ -98,6 +98,27 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
             self.assertEqual(conn.execute(
                 "SELECT COUNT(*) FROM sampling_handoff_receipts").fetchone()[0],0)
 
+    def test_extraneous_nonce_index_row_denied(self):
+        first=self.record()
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("INSERT INTO sampling_handoff_nonces VALUES(?,?)",
+                         ("f"*64,99999))
+        self.assertEqual(self.inspect(first["head_hash"])["reason"],
+                         "handoff-receipt-ledger-integrity-failed")
+        self.assertEqual(self.record(head=first["head_hash"],floor=1)["reason"],
+                         "handoff-receipt-ledger-integrity-failed")
+
+    def test_oversized_nonce_index_fails_closed(self):
+        first=self.record()
+        with sqlite3.connect(self.db) as conn:
+            conn.executemany(
+                "INSERT INTO sampling_handoff_nonces VALUES(?,?)",
+                ((f"{i:064x}",i+2) for i in range(mod.MAX_RECORDS+1)))
+        self.assertEqual(self.inspect(first["head_hash"])["reason"],
+                         "handoff-receipt-ledger-integrity-failed")
+        self.assertEqual(self.record(head=first["head_hash"],floor=1)["reason"],
+                         "handoff-receipt-ledger-integrity-failed")
+
     def test_registered_pending_only(self):
         first=self.record()
         self.assertTrue(first["recorded"])
