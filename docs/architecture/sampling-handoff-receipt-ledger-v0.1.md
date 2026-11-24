@@ -260,3 +260,23 @@ custody. Neither the delta digest nor the head pins are signed by this
 module. Reviewers must authenticate and durably retain pins through
 a separate trust channel; all positive results remain pending-review,
 GO-13 HOLD and authorization DENY.
+
+## Strict independently pinned delta review (2026-11-24)
+
+`verify_review_delta_with_manifest_pin` adds a mandatory, independently
+authenticated **current full-manifest SHA-256** to the existing offline
+delta verification. First it revalidates the prior manifest, delta digest,
+head pins, reconstructed complete chain, sequence and replay uniqueness.
+It then requires the computed current-manifest digest to equal the
+separately authenticated expected manifest digest. Missing, malformed
+or mismatched current-manifest pins fail closed. Three negative/positive
+test cases cover correct pins, missing/incorrect pins and propagation
+of broken-chain failures.
+
+An independent digest is meaningful only if the caller has obtained and
+authenticated it through a distinct trust channel; deriving the expected
+pin from the received delta would defeat the additional trust boundary.
+The older verifier is retained for backward compatibility and remains
+review-only. Neither verifier establishes handoff delivery, custody,
+signature validity of original receipts or authorization.
+GO-13 HOLD, authorization DENY.
