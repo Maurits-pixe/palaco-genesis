@@ -1,6 +1,25 @@
-# PALACO Bluetooth Offline Transfer — v5.0 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v5.1 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v5.1 Explicit Windows account SID pipe ACL (DRAFT / HOLD)
+
+- `windows_native_host/WindowsPipeSecurity.cs` creates the diagnostic named
+  pipe with an explicitly protected `PipeSecurity` DACL containing an
+  allow rule for the **current process account SID** only. The existing
+  `CurrentUserOnly` option remains as an additional restriction.
+- `Program.cs` uses this factory and Windows `--self-test` checks that the
+  restricted pipe can be created. `System.IO.Pipes.AccessControl` is
+  declared in the Windows host project.
+- **Not service-SID authorization**: the process-account SID is potentially
+  shared with other processes (especially when running as LocalSystem).
+  Access via the account SID does NOT authenticate an IPC peer, verify caller
+  tokens, distinguish a dedicated PALACO Windows Service SID or stop
+  same-user spoofing. Do not treat this DACL as sufficient for production.
+- The host remains a deny-only diagnostic prototype. It has no TPM driver,
+  hardware-backed replay defense, BLE link, installation procedure or
+  production permission. Every successful inspection response remains
+  **HOLD / DENY**.
 
 ## v5.0 Windows SCM service-host prototype (not installed)
 
