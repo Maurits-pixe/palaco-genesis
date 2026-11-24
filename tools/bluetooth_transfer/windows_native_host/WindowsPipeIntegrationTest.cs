@@ -17,17 +17,21 @@ internal static class WindowsPipeIntegrationTest
 
         using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         Task server = Program.RunServerAsync(stop.Token);
+        string stage = "valid inspection";
         try
         {
             bool acceptedButDenied = await SendAsync(
                 MakeInspectFrame(), expectResponse: true, stop.Token);
+            stage = "unsupported operation";
             bool rejectedOperation = await SendAsync(
                 MakeInspectFrame().Replace(
                     "\"inspect\"", "\"execute\"", StringComparison.Ordinal),
                 expectResponse: false, stop.Token);
+            stage = "oversized prefix";
             bool oversizedRejected = await SendAsync(
                 "oversized", expectResponse: false, stop.Token,
                 overrideLength: 1025);
+            stage = "reconnect inspection";
             bool secondAcceptedButDenied = await SendAsync(
                 MakeInspectFrame(), expectResponse: true, stop.Token);
             Console.WriteLine($"IPC scenarios: valid={acceptedButDenied}, invalidOperation={rejectedOperation}, oversized={oversizedRejected}, reconnect={secondAcceptedButDenied}");
@@ -42,7 +46,7 @@ internal static class WindowsPipeIntegrationTest
                                        or OperationCanceledException
                                        or UnauthorizedAccessException)
         {
-            Console.Error.WriteLine($"Windows named-pipe integration FAIL: {ex.GetType().Name}");
+            Console.Error.WriteLine($"Windows named-pipe integration FAIL at {stage}: {ex.GetType().Name}");
             return false;
         }
         finally
