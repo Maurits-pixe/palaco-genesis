@@ -29,6 +29,13 @@ bounded strict JSON reader before encoding.
 - Both Python and Node.js canonicalizers enforce at most **64 levels** of
   array/object nesting, including for in-memory objects; a 65th level fails.
 - Non-NFC Unicode strings are **rejected**, not silently normalized.
+- The Node verifier also pins `Buffer.byteLength`, `Buffer.from` and
+  `Buffer.alloc` at initialization for canonical UTF-8 byte metering, output
+  construction and digest-length framing. Regression checks replace the
+  public Buffer methods after initialization and confirm that both exact
+  canonical bytes and digest results remain unchanged; the existing 1 MiB
+  byte budget must still reject oversized output. This protects against
+  *later* method replacement, not a compromised Node runtime at startup.
 - The independent Node verifier pins string normalization, surrogate and
   Unicode code-point helpers at initialization. Scalar-key ordering is
   performed without `Array.from`; later monkeypatches of mutable
