@@ -649,10 +649,33 @@ def assess_review_delta_fork(previous_manifest,previous_sha256,previous_head,
     right_entries=right_delta["entries"]
     shared=min(len(left_entries),len(right_entries))
     if left_entries[:shared]!=right_entries[:shared]:
+        first=next(i for i in range(shared)
+                   if left_entries[i]!=right_entries[i])
+        # A local commitment to the conflict evidence, not an independent
+        # witness signature or an authorization to resolve the split.
+        evidence={
+            "schema_version":"0.1.0",
+            "previous_manifest_sha256":previous_sha256,
+            "previous_head":previous_head,
+            "first_divergent_sequence":previous_manifest["receipt_count"]+first+1,
+            "left_delta_sha256":left_delta_sha256,
+            "right_delta_sha256":right_delta_sha256,
+            "left_manifest_sha256":left_manifest_sha256,
+            "right_manifest_sha256":right_manifest_sha256,
+            "left_head":left_head,
+            "right_head":right_head,
+            "left_event_hash":left_entries[first]["event_hash"],
+            "right_event_hash":right_entries[first]["event_hash"]
+        }
+        encoded=json.dumps(evidence,sort_keys=True,separators=(",",":"),
+                           ensure_ascii=False,allow_nan=False).encode("utf-8")
+        evidence_sha256=hashlib.sha256(
+            b"PALACO-SAMPLING-HANDOFF-FORK-EVIDENCE-V1\x00"+encoded).hexdigest()
         return _out(assessment_valid=True,fork_detected=True,
                     reason="conflicting-independently-pinned-delta-branches",
                     left_head=left_head,right_head=right_head,
-                    previous_head=previous_head)
+                    previous_head=previous_head,
+                    fork_evidence=evidence,fork_evidence_sha256=evidence_sha256)
     if len(left_entries)==len(right_entries):
         return _out(assessment_valid=True,fork_detected=False,
                     state="pending-review",
