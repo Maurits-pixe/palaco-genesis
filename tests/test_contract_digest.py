@@ -352,6 +352,23 @@ class ContractDigestTests(unittest.TestCase):
         self.assertEqual(canonical_bytes({"value": -MAX_SAFE_INTEGER}),
                          ('{"value":-' + str(MAX_SAFE_INTEGER) + '}').encode())
 
+    def test_rejects_shared_dag_expansion_before_serialization(self):
+        child = [0]
+        for _ in range(18):
+            child = [child, child]
+        with self.assertRaisesRegex(ValueError, "node budget"):
+            canonical_bytes(child)
+
+    def test_rejects_oversized_canonical_utf8_output(self):
+        with self.assertRaisesRegex(ValueError, "byte budget"):
+            canonical_bytes({"value": "x" * (1024 * 1024)})
+
+    def test_accepts_small_shared_dag_under_budget(self):
+        child = [0]
+        for _ in range(8):
+            child = [child, child]
+        self.assertTrue(canonical_bytes(child).startswith(b"["))
+
     def test_file_digest_matches_in_memory_digest(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "candidate.json"
