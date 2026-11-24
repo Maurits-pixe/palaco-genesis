@@ -21,9 +21,15 @@ MAX_NESTING_DEPTH = 64
 
 def canonical_bytes(value):
     """Return sorted, compact UTF-8 JSON bytes for a restricted value set."""
-    stack = [(value, 0)]
+    # Track ancestors, not all visited containers: shared acyclic subtrees
+    # remain valid and are encoded by value wherever they occur.
+    active = set()
+    stack = [(value, 0, False)]
     while stack:
-        item, depth = stack.pop()
+        item, depth, leaving = stack.pop()
+        if leaving:
+            active.remove(id(item))
+            continue
         if item is None or item is True or item is False:
             continue
         if type(item) is int:
@@ -35,17 +41,20 @@ def canonical_bytes(value):
                 raise ValueError("non-NFC Unicode text")
             if any(0xD800 <= ord(ch) <= 0xDFFF for ch in item):
                 raise ValueError("unpaired Unicode surrogate")
-        elif isinstance(item, list):
+        elif isinstance(item, (list, dict)):
+            if id(item) in active:
+                raise ValueError("cyclic JSON reference")
             if depth >= MAX_NESTING_DEPTH:
                 raise ValueError("JSON nesting depth exceeds limit")
-            stack.extend((child, depth + 1) for child in item)
-        elif isinstance(item, dict):
-            if depth >= MAX_NESTING_DEPTH:
-                raise ValueError("JSON nesting depth exceeds limit")
-            if any(not isinstance(key, str) for key in item):
+            if isinstance(item, dict) and any(not isinstance(key, str) for key in item):
                 raise ValueError("object keys must be strings")
-            stack.extend((key, depth + 1) for key in item.keys())
-            stack.extend((child, depth + 1) for child in item.values())
+            active.add(id(item))
+            stack.append((item, depth, True))
+            if isinstance(item, dict):
+                stack.extend((key, depth + 1, False) for key in item.keys())
+                stack.extend((child, depth + 1, False) for child in item.values())
+            else:
+                stack.extend((child, depth + 1, False) for child in item)
         else:
             raise ValueError("unsupported canonical JSON value type")
     return json.dumps(
