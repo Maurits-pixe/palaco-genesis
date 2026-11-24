@@ -1,6 +1,27 @@
-# PALACO Bluetooth Offline Transfer — v4.9 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v5.0 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v5.0 Windows SCM service-host prototype (not installed)
+
+- `windows_native_host/PalacoDiagnosticService.cs` provides a Windows
+  `ServiceBase` lifecycle (`OnStart`, `OnStop`, `OnShutdown`), launched
+  only by explicit `--service` mode. It reuses the existing fixed-HOLD/DENY
+  inspection-only pipe handler, with cancellation on stop.
+- The .NET 8 project now depends on `System.ServiceProcess.ServiceController`.
+  Windows CI builds the service-capable executable and runs only the existing
+  non-hardware `--self-test` checks. No service installation or elevation
+  occurs in CI.
+- **Critical boundary**: an SCM-compatible code path does not establish an
+  installed/running service, a reviewed service SID, hardened pipe ACLs,
+  authenticated IPC callers, TPM key custody, rollback protection or real BLE.
+  `PipeOptions.CurrentUserOnly` currently isolates to the process account;
+  under a service account this is not a user-facing IPC authorization solution.
+  A dedicated Windows service SID, explicit DACLs, token checking, hardened
+  install/upgrade policy, endpoint identity verification and physical tests
+  are required before external clients can be admitted.
+- Never install or start this draft on a production machine. Every successful
+  diagnostic reply remains fixed **GO-13 HOLD / authorization DENY**.
 
 ## v4.9 Windows-only named-pipe diagnostic host (prototype)
 
