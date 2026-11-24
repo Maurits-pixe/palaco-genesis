@@ -44,6 +44,8 @@ jobs:
         run: dotnet build tools/bluetooth_transfer/windows_native_host/Palaco.Bluetooth.NativeHost.csproj --configuration Release --warnaserror
       - name: Run non-hardware diagnostic self-checks
         run: dotnet run --no-build --configuration Release --project tools/bluetooth_transfer/windows_native_host/Palaco.Bluetooth.NativeHost.csproj -- --self-test
+      - name: Verify worker supervision incident and no-restart policy
+        run: dotnet run --no-build --configuration Release --project tools/bluetooth_transfer/windows_native_host/Palaco.Bluetooth.NativeHost.csproj -- --supervisor-self-test
       - name: Run real Windows local pipe integration (deny-only)
         run: dotnet run --no-build --configuration Release --project tools/bluetooth_transfer/windows_native_host/Palaco.Bluetooth.NativeHost.csproj -- --ipc-integration-test
       - name: Run separate-process Windows IPC interrupt and restart regressions
