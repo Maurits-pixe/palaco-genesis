@@ -1,6 +1,30 @@
-# PALACO Bluetooth Offline Transfer — v5.8 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v5.9 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v5.9 Windows worker exit supervision and incident categorization (DRAFT / HOLD)
+
+- `WindowsWorkerSupervisor.cs` observes the diagnostic worker task. When
+  a task completes unexpectedly or faults without a requested shutdown, it
+  raises a fixed incident code (`WORKER_EXIT_UNEXPECTED` or
+  `WORKER_FAULTED`). Deliberate cancellation produces no incident.
+- `PalacoDiagnosticService.OnStart` attaches the monitor to the listener
+  task. On an unexpected exit, the service records only a fixed
+  `PALACO-BT-SERVICE-INCIDENT:<code>:HOLD:DENY` diagnostic line and
+  requests SCM stop. Failure to request stop terminates the process rather
+  than leaving a dead worker advertised as healthy. **No automatic
+  worker restart, service restart, checkpoint issuance or authorization.**
+- `--supervisor-self-test` checks unexpected successful completion, task
+  fault and deliberate cancellation, including single-incident semantics,
+  on the Windows runner. This is a deterministic unit-level proof, **not**
+  an injected crash of a live SCM worker.
+- **Limitations:** the incident line is not an independent, persistent or
+  cryptographically signed incident ledger. SCM stop-on-fault is not yet
+  verified by injecting actual worker faults under an installed service.
+  Tests cannot establish continuous production supervision, TPM custody,
+  hardware-backed rollback resistance or Bluetooth LE transport.
+- GO-13 HOLD / authorization DENY. PR stays Draft; no merge, production
+  installation, deployment or publication.
 
 ## v5.8 SCM runtime health and non-System client isolation (DRAFT / HOLD)
 
