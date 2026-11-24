@@ -86,6 +86,27 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
         with sqlite3.connect(self.db) as conn:
             self.assertEqual(mod._scan(conn)["head_hash"],mod.GENESIS)
 
+    def test_foreign_key_enforced_on_receipt_writer(self):
+        # A trigger injects an orphan link into the nonce index. SQLite
+        # must reject it at INSERT time, not just on a later chain scan.
+        with sqlite3.connect(self.db) as conn:
+            mod._schema(conn)
+            conn.execute("""CREATE TRIGGER inject_orphan AFTER INSERT
+                ON sampling_handoff_nonces BEGIN
+                INSERT INTO sampling_handoff_nonces(nonce_hex,receipt_sequence)
+                VALUES ('ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+                        99999);
+                END""")
+        result=self.record()
+        self.assertFalse(result["recorded"])
+        self.assertEqual(result["reason"],"duplicate-handoff-package-or-nonce")
+        with sqlite3.connect(self.db) as conn:
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM sampling_handoff_receipts").fetchone()[0],0)
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM sampling_handoff_nonces").fetchone()[0],0)
+            self.assertEqual(mod._scan(conn)["head_hash"],mod.GENESIS)
+
     def test_trigger_deleting_inserted_nonce_rolls_back(self):
         with sqlite3.connect(self.db) as conn:
             mod._schema(conn)
