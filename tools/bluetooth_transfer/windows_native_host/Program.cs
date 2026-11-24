@@ -59,12 +59,16 @@ internal static class Program
             try
             {
                 await pipe.WaitForConnectionAsync(cancellation);
-                // Fail closed before reading any untrusted request bytes.
-                if (!WindowsClientIdentityGate.IsExpectedSameAccountClient(pipe))
-                    continue;
                 using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
                 deadline.CancelAfter(TimeSpan.FromSeconds(5));
-                await ReadRequestSafely(pipe, deadline.Token);
+                // Read bounded raw bytes first: Windows named-pipe impersonation
+                // requires client traffic. Never parse or act on data before
+                // verifying the OS impersonation token.
+                byte[] frame = await ReadBoundedFrameAsync(pipe, deadline.Token);
+                if (!WindowsClientIdentityGate.IsExpectedSameAccountClient(pipe))
+                    continue;
+                if (!IsInspectOnlyFrame(frame))
+                    throw new InvalidDataException("unsupported IPC inspection request");
                 // Even valid requests receive the identical fixed DENY response.
                 await pipe.WriteAsync(Deny, deadline.Token);
                 await pipe.FlushAsync(deadline.Token);
@@ -81,7 +85,7 @@ internal static class Program
         }
     }
 
-    private static async Task ReadRequestSafely(Stream stream, CancellationToken cancel)
+    private static async Task<byte[]> ReadBoundedFrameAsync(Stream stream, CancellationToken cancel)
     {
         byte[] header = new byte[4];
         await stream.ReadExactlyAsync(header, cancel);
@@ -91,8 +95,7 @@ internal static class Program
 
         byte[] frame = new byte[length];
         await stream.ReadExactlyAsync(frame, cancel);
-        if (!IsInspectOnlyFrame(frame))
-            throw new InvalidDataException("unsupported IPC inspection request");
+        return frame;
     }
 
     private static bool IsInspectOnlyFrame(byte[] frame)
