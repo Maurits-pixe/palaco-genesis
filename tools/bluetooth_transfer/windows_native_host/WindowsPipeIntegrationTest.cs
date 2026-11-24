@@ -2,6 +2,7 @@
 // Tests only same-account diagnostic path. Not hardware/privileged attestation.
 using System.Buffers.Binary;
 using System.IO.Pipes;
+using System.Security.Principal;
 using System.Text;
 
 namespace Palaco.Bluetooth.NativeHost;
@@ -66,7 +67,8 @@ internal static class WindowsPipeIntegrationTest
         int? overrideLength = null)
     {
         using var pipe = new NamedPipeClientStream(
-            ".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            ".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous,
+            TokenImpersonationLevel.Impersonation);
         await pipe.ConnectAsync(5000, cancel);
         byte[] body = Encoding.ASCII.GetBytes(text);
         byte[] header = new byte[4];
