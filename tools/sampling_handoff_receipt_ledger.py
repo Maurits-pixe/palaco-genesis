@@ -242,3 +242,39 @@ def inspect_entry(db,expected_head,minimum_receipts,sequence):
                 recipient_key_id=key,package_sha256=package,
                 receipt_nonce_hex=nonce,receipt_sha256=receipt_hash,
                 previous_hash=previous,event_hash=event)
+
+
+def verify_entry_evidence(db,package,receipt,trust,expected_head,
+                          minimum_receipts,sequence):
+    """Reverify signed evidence and bind it to a pinned local ledger entry.
+
+    This read-only check does not establish physical delivery or custody.
+    The supplied independent nonce policy must not classify this receipt's
+    already-consumed nonce as a new replay attempt.
+    """
+    def deny(reason):return _out(evidence_valid=False,reason=reason)
+    if not isinstance(trust,dict) or set(trust)!=TRUST_KEYS:
+        return deny("invalid-handoff-ledger-verification-policy")
+    entry=inspect_entry(db,expected_head,minimum_receipts,sequence)
+    if not entry["entry_valid"]:
+        return deny(entry["reason"])
+    try:
+        checked=handoff.verify_receipt(
+            db=trust["source_db"],package=package,receipt=receipt,
+            **{key:value for key,value in trust.items() if key!="source_db"})
+        if not checked["receipt_valid"]:
+            return deny(checked["reason"])
+        evidence=hashlib.sha256(
+            RECEIPT_DOMAIN+handoff.canonical(receipt)).hexdigest()
+    except (TypeError,ValueError,OverflowError,KeyError,OSError,sqlite3.Error):
+        return deny("invalid-handoff-entry-evidence")
+    if (checked["recipient_key_id"]!=entry["recipient_key_id"]
+        or checked["package_sha256"]!=entry["package_sha256"]
+        or checked["receipt_nonce_hex"]!=entry["receipt_nonce_hex"]
+        or trust["expected_recipient"]!=entry["recipient_id"]
+        or evidence!=entry["receipt_sha256"]):
+        return deny("handoff-entry-evidence-mismatch")
+    return _out(evidence_valid=True,state="pending-review",
+                reason="reverified-signed-receipt-matches-pinned-local-entry",
+                sequence=sequence,head_hash=entry["head_hash"],
+                receipt_sha256=evidence)
