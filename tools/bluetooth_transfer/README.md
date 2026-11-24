@@ -17,6 +17,10 @@ Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices 
   actual dedicated client roles, privilege boundaries, service restarts,
   hostile parallel processes, TPM devices, real BLE transport or Android.
   Same-account diagnostics do not imply production caller authorization.
+  Windows token impersonation is attempted **after reading only the bounded
+  raw frame** (maximum 1,024 bytes), and **before JSON interpretation or
+  responses**: the pipe's impersonation context depends on receiving client
+  traffic first. The Windows test client explicitly requests impersonation.
   All execution and publication remain **GO-13 HOLD / DENY**.
 
 ## v5.2 Windows client token and service-SID verification gates
