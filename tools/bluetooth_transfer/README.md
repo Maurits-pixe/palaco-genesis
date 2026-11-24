@@ -1,6 +1,25 @@
-# PALACO Bluetooth Offline Transfer — v5.6 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v5.7 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v5.7 Ephemeral Windows SCM service SID and lifecycle test (DRAFT / HOLD)
+
+- `PalacoDiagnosticService.OnStart` now synchronously refuses SCM startup
+  without the expected service SID **or** a successfully constructed protected
+  diagnostic pipe. This is a startup preflight, not attestation.
+- `windows_native_host/test_scm_lifecycle.ps1` uses a **disposable hosted
+  Windows CI runner** to create the existing deny-only executable as a
+  *manual-start*, LocalSystem SCM service with `sidtype unrestricted`.
+  It checks two start/stop cycles, process identity presence and manual
+  startup mode, then deletes the temporary service in `finally`.
+- The Windows CI job runs the SCM test only after earlier build, ACL,
+  named-pipe and cross-account tests. No production installation, service
+  persistence, automatic startup or merge is authorized.
+- **Important limitation:** SCM status alone cannot prove the internal worker
+  remains healthy or that client-role rules are sufficient; the current
+  protected pipe is account-only (LocalSystem) and no unprivileged user-facing
+  path is enabled. No real TPM, hardware rollback, Android device or BLE test.
+- **GO-13 HOLD / authorization DENY** remain mandatory.
 
 ## v5.6 Real Windows cross-account named-pipe rejection (DRAFT / HOLD)
 
