@@ -230,13 +230,20 @@ pub fn inspect_audit_evidence_floors(evidence: &[RecoveryEvidence<'_>]) -> Resta
 /// checkpoint sequence, signed anchor and key registry. Each source must
 /// contain the matching number of payload records and an internally valid,
 /// committed checkpoint chain bound to the signed anchor. This cheap preflight
-/// does not hash payloads, verify signatures or establish custody.
+/// also enforces the standalone signer and recovery-floor preflights to reject
+/// revoked/mismatched signer metadata, rollback and impossible floors. It does
+/// not hash payloads, verify signatures or establish custody.
 #[must_use]
 pub fn inspect_audit_receipt_source_binding(
     receipts: &[ReviewReceipt],
     evidence: &[RecoveryEvidence<'_>],
 ) -> RestartInspection {
-    if evidence.is_empty() || evidence.len() > MAX_AUDIT_LINKS || evidence.len() != receipts.len() {
+    if evidence.is_empty()
+        || evidence.len() > MAX_AUDIT_LINKS
+        || evidence.len() != receipts.len()
+        || inspect_audit_evidence_signers(evidence) != RestartInspection::ReviewOnly
+        || inspect_audit_evidence_floors(evidence) != RestartInspection::ReviewOnly
+    {
         return RestartInspection::Deny;
     }
     for (receipt, source) in receipts.iter().zip(evidence.iter()) {
@@ -1627,6 +1634,68 @@ mod tests {
             RestartInspection::Deny
         );
 
+        // Receipt metadata must never be accepted in isolation from the
+        // original key registry and claimed recovery anti-rollback floors.
+        let revoked_source_key = TrustedKey {
+            revoked: true,
+            ..trusted_key.clone()
+        };
+        let revoked_source = [RecoveryEvidence {
+            checkpoints: &checkpoints,
+            payloads,
+            signed: &signed,
+            trusted_key: &revoked_source_key,
+            floor: &floor,
+        }];
+        assert_eq!(
+            inspect_audit_receipt_source_binding(&receipts, &revoked_source),
+            RestartInspection::Deny
+        );
+        let inconsistent_signer = SignedAnchor {
+            key_id: "different-key",
+            ..signed.clone()
+        };
+        let mismatched_signer_source = [RecoveryEvidence {
+            checkpoints: &checkpoints,
+            payloads,
+            signed: &inconsistent_signer,
+            trusted_key: &trusted_key,
+            floor: &floor,
+        }];
+        assert_eq!(
+            inspect_audit_receipt_source_binding(&receipts, &mismatched_signer_source),
+            RestartInspection::Deny
+        );
+        let future_floor = RecoveryFloor {
+            checkpoint_sequence: checkpoints[0].sequence + 1,
+            ..floor
+        };
+        let future_floor_source = [RecoveryEvidence {
+            checkpoints: &checkpoints,
+            payloads,
+            signed: &signed,
+            trusted_key: &trusted_key,
+            floor: &future_floor,
+        }];
+        assert_eq!(
+            inspect_audit_receipt_source_binding(&receipts, &future_floor_source),
+            RestartInspection::Deny
+        );
+        let future_registry_floor = RecoveryFloor {
+            registry_sequence: trusted_key.registry_sequence + 1,
+            ..floor
+        };
+        let future_registry_source = [RecoveryEvidence {
+            checkpoints: &checkpoints,
+            payloads,
+            signed: &signed,
+            trusted_key: &trusted_key,
+            floor: &future_registry_floor,
+        }];
+        assert_eq!(
+            inspect_audit_receipt_source_binding(&receipts, &future_registry_source),
+            RestartInspection::Deny
+        );
         let wrong_count_receipt = [ReviewReceipt {
             checkpoint_count: receipts[0].checkpoint_count + 1,
             ..receipts[0]
