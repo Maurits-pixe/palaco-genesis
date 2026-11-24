@@ -413,6 +413,22 @@ for (let i = 0; i < 8; i += 1) smallShared = [smallShared, smallShared];
 assert.ok(canonicalBytes(smallShared).length > 0,
           'small acyclic shared DAG remains supported');
 
+// Byte-budget metering must include every serialized key, colon, comma,
+// bracket and escaped character; exact boundary succeeds and +1 fails.
+const exactByteLimit = { v: 'x'.repeat(MAX_CANONICAL_BYTES - 8) };
+assert.equal(canonicalBytes(exactByteLimit).length, MAX_CANONICAL_BYTES,
+             'exactly 1 MiB of canonical UTF-8 is permitted');
+assert.throws(() => canonicalBytes({ v: 'x'.repeat(MAX_CANONICAL_BYTES - 7) }),
+              /byte budget/, 'one extra encoded byte is denied');
+assert.throws(() => canonicalBytes({ v: '\\n'.repeat(MAX_CANONICAL_BYTES / 2) }),
+              /byte budget/, 'escaped JSON must be charged by encoded bytes');
+let sharedObjectDAG = { value: 0 };
+for (let i = 0; i < 18; i += 1) {
+  sharedObjectDAG = { left: sharedObjectDAG, right: sharedObjectDAG };
+}
+assert.throws(() => canonicalBytes(sharedObjectDAG), /budget/,
+              'shared object DAGs must share node and byte budgets');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
