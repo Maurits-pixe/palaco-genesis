@@ -118,3 +118,18 @@ This local schema check is an integrity gate, not a defense against
 an attacker who controls the database and execution environment.
 Independent authenticated head/count pins remain required; all
 outcomes preserve GO-13 HOLD and authorization DENY.
+
+## Recheck after evidence verification (2026-11-24)
+
+The read-only `verify_entry_evidence` path now repeats the pinned full-ledger
+and nonce-index inspection **after** cryptographic receipt verification.
+The verified entry must be identical to its initial snapshot. A mutated
+event hash, removed nonce, missing record, or changed trusted head between
+the two inspections results in `handoff-entry-changed-during-verification`,
+with all authorization denied. Two negative tests inject exactly these
+mutations while receipt verification is executing.
+
+This narrows a time-of-check/time-of-use window but does **not** provide
+a continuous lock across databases or remote sources: another change may
+occur after the final inspection. The caller must retain authenticated
+external pins and enforce custody decisions independently. GO-13 HOLD.
