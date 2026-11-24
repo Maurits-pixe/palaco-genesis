@@ -164,3 +164,20 @@ both tables must remain empty and the genesis head unchanged. This
 enforces local referential integrity at write time but does not make
 SQLite immutable or replace authenticated external ledger anchors.
 GO-13 HOLD and authorization DENY remain mandatory.
+
+## Full SQLite index and constraint validation (2026-11-24)
+
+Storage validation now uses `PRAGMA integrity_check(1)`, replacing
+`quick_check(1)` in the shared ledger scan. Unlike the faster check,
+the full integrity check also examines UNIQUE constraints and index/table
+consistency. The argument `1` limits diagnostic output to the first
+error; it does not limit the internal integrity work performed.
+`PRAGMA foreign_key_check`, schema validation, nonce-index comparison,
+the SHA-256 chain and independently authenticated head/count pins remain
+mandatory.
+
+New regressions assert use of `integrity_check(1)` and fail-closed
+behavior for a deliberately CHECK-violating row. The stronger SQLite
+check may increase inspection and registration latency; it cannot
+establish external immutability, physical delivery or custody. Every
+positive outcome remains pending-review and GO-13 HOLD.
