@@ -71,6 +71,11 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
     return encoded;
   }
   if (Array.isArray(value)) {
+    // Only a native array with the standard prototype represents a JSON
+    // array. Custom array prototypes can carry executable behavior.
+    if (Object.getPrototypeOf(value) !== Array.prototype) {
+      throw new Error('unsupported array prototype');
+    }
     if (active.has(value)) throw new Error('cyclic JSON reference');
     if (depth >= MAX_DEPTH) throw new Error('JSON nesting depth exceeds limit');
     if (value.length > MAX_CANONICAL_NODES - budget.nodes) {
@@ -354,14 +359,14 @@ Object.defineProperty(inheritedSlotPrototype, '0', {
   configurable: true, enumerable: true, value: 99,
 });
 Object.setPrototypeOf(arrayWithInheritedSlot, inheritedSlotPrototype);
-assert.throws(() => canonicalBytes(arrayWithInheritedSlot), /sparse array/,
-              'inherited index must not fill an absent own array entry');
+assert.throws(() => canonicalBytes(arrayWithInheritedSlot), /unsupported array prototype/,
+              'nonstandard array prototype must be denied before inherited slots are read');
 const arrayWithHostileMap = [0, 1];
 const hostileMapPrototype = Object.create(Array.prototype);
 hostileMapPrototype.map = () => { throw new Error('inherited map must not run'); };
 Object.setPrototypeOf(arrayWithHostileMap, hostileMapPrototype);
-assert.deepEqual(canonicalBytes(arrayWithHostileMap), Buffer.from('[0,1]', 'utf8'),
-                 'array encoding must not invoke inherited map methods');
+assert.throws(() => canonicalBytes(arrayWithHostileMap), /unsupported array prototype/,
+              'custom array prototypes must fail without invoking inherited methods');
 const hiddenIndexArray = [0];
 Object.defineProperty(hiddenIndexArray, '0', {
   value: 0, enumerable: false, configurable: true,
@@ -516,6 +521,24 @@ assert.throws(() => canonicalBytes(firstValidThenSymbol), /symbol object key/,
 assert.deepEqual(canonicalBytes({ z: 1, a: 2 }),
                  Buffer.from('{"a":2,"z":1}', 'utf8'),
                  'valid object order and canonical bytes remain unchanged');
+
+// Align with Python's exact built-in-list rule: custom Array subclasses
+// are not part of the restricted canonical JSON input profile.
+class CustomJSONLikeArray extends Array {
+  [Symbol.iterator]() {
+    throw new Error('custom array iterator must not execute');
+  }
+}
+assert.throws(() => canonicalBytes(new CustomJSONLikeArray(1, 2)),
+              /unsupported array prototype/,
+              'Array subclass must not be treated as a built-in JSON array');
+const customArray = [0, 1];
+Object.setPrototypeOf(customArray, null);
+assert.throws(() => canonicalBytes(customArray), /unsupported array prototype/,
+              'null-prototype arrays are not JSON inputs');
+assert.deepEqual(canonicalBytes([0, { gate: 'HOLD' }]),
+                 Buffer.from('[0,{"gate":"HOLD"}]', 'utf8'),
+                 'standard plain arrays remain canonical');
 
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
