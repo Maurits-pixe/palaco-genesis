@@ -6,8 +6,9 @@ Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices 
 
 - `windows_native_host/WindowsPipeSecurity.cs` creates the diagnostic named
   pipe with an explicitly protected `PipeSecurity` DACL containing an
-  allow rule for the **current process account SID** only. The existing
-  `CurrentUserOnly` option remains as an additional restriction.
+  allow rule for the **current process account SID** only. The former
+  `CurrentUserOnly` flag is replaced, because .NET forbids supplying both
+  an explicit `PipeSecurity` and that flag.
 - `Program.cs` uses this factory and Windows `--self-test` checks that the
   restricted pipe can be created. `System.IO.Pipes.AccessControl` is
   is used through the .NET Windows-targeted framework API; no separate
