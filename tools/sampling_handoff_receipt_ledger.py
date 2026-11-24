@@ -621,3 +621,47 @@ def verify_review_delta_with_manifest_pin(
                 head_hash=expected_current_head,
                 current_manifest_sha256=expected_current_manifest_sha256,
                 delta_sha256=checked["delta_sha256"])
+
+
+def assess_review_delta_fork(previous_manifest,previous_sha256,previous_head,
+                             left_delta,left_delta_sha256,left_head,left_manifest_sha256,
+                             right_delta,right_delta_sha256,right_head,right_manifest_sha256,
+                             minimum_previous_receipts):
+    """Compare two independently pinned deltas from the same trusted history.
+
+    This is a conflict assessment, NEVER a choice of a canonical successor.
+    """
+    def deny(reason):return _out(assessment_valid=False,fork_detected=False,
+                                 reason=reason)
+    left=verify_review_delta_with_manifest_pin(
+        previous_manifest,previous_sha256,previous_head,
+        left_delta,left_delta_sha256,left_head,left_manifest_sha256,
+        minimum_previous_receipts)
+    if not left["delta_valid"]:
+        return deny("left-"+left["reason"])
+    right=verify_review_delta_with_manifest_pin(
+        previous_manifest,previous_sha256,previous_head,
+        right_delta,right_delta_sha256,right_head,right_manifest_sha256,
+        minimum_previous_receipts)
+    if not right["delta_valid"]:
+        return deny("right-"+right["reason"])
+    left_entries=left_delta["entries"]
+    right_entries=right_delta["entries"]
+    shared=min(len(left_entries),len(right_entries))
+    if left_entries[:shared]!=right_entries[:shared]:
+        return _out(assessment_valid=True,fork_detected=True,
+                    reason="conflicting-independently-pinned-delta-branches",
+                    left_head=left_head,right_head=right_head,
+                    previous_head=previous_head)
+    if len(left_entries)==len(right_entries):
+        return _out(assessment_valid=True,fork_detected=False,
+                    state="pending-review",
+                    reason="identical-independently-pinned-delta-branches",
+                    head_hash=left_head)
+    return _out(assessment_valid=True,fork_detected=False,
+                state="pending-review",
+                reason="prefix-compatible-delta-branches-not-custody",
+                shorter_receipts=min(left["current_receipts"],
+                                     right["current_receipts"]),
+                longer_receipts=max(left["current_receipts"],
+                                    right["current_receipts"]))
