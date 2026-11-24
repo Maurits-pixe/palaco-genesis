@@ -68,10 +68,18 @@ internal static class WindowsPipeIntegrationTest
         byte[] header = new byte[4];
         BinaryPrimitives.WriteInt32LittleEndian(
             header, overrideLength ?? body.Length);
-        await pipe.WriteAsync(header, cancel);
-        if (overrideLength is null)
-            await pipe.WriteAsync(body, cancel);
-        await pipe.FlushAsync(cancel);
+        try
+        {
+            await pipe.WriteAsync(header, cancel);
+            if (overrideLength is null)
+                await pipe.WriteAsync(body, cancel);
+            await pipe.FlushAsync(cancel);
+        }
+        catch (IOException) when (!expectResponse)
+        {
+            // Peer intentionally disconnected on malformed frame.
+            return true;
+        }
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancel);
         timeout.CancelAfter(TimeSpan.FromSeconds(5));
 
