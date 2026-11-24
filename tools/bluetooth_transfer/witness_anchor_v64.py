@@ -9,6 +9,7 @@ authority, durable anchor, trusted timestamp or production attestation.
 from __future__ import annotations
 
 import base64
+from contextlib import closing
 import os
 from pathlib import Path
 
@@ -112,7 +113,8 @@ def exercise_ci(evidence: bytes) -> bool:
         # Simulate collusive LOCAL tampering: truncate ledger AND edit the
         # checkpoint to the same old head, but cannot forge the separate
         # independently pinned witness's signature.
-        with sqlite3.connect(ledger) as con:
+        with closing(sqlite3.connect(ledger)) as con:
+            con.execute("BEGIN IMMEDIATE")
             con.execute("DELETE FROM events WHERE seq=3")
             con.execute("DELETE FROM used_incidents WHERE incident_sha256 NOT IN "
                         "(SELECT json_extract(payload, '$.value') FROM events WHERE kind='incident')")
