@@ -1,6 +1,25 @@
-# PALACO Bluetooth Offline Transfer — v5.1 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v5.2 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v5.2 Windows client token and service-SID verification gates
+
+- `windows_native_host/WindowsClientIdentityGate.cs`: the pipe server calls
+  `RunAsClient` to inspect the OS-impersonated client identity and compares its
+  account SID with the process-account SID; missing impersonation or mismatch
+  is rejected **before** request parsing. No JSON claim can substitute for
+  a Windows token. Negative-path SID matching self-checks are included.
+- SCM `OnStart` now refuses startup unless the process token includes the
+  expected `NT SERVICE\\PALACO-BT-Diagnostic-HOLD` service SID. This does not
+  install, configure or prove provisioning of a service SID on any machine.
+- This remains a **same-account diagnostic boundary**, not a dedicated
+  client-role authorization policy or service-endpoint attestation. A
+  same-account process can still meet the SID check; service identity
+  verification at the client end, precise client role authorization, the
+  named-pipe ACL, and actual SCM installation must be independently reviewed.
+- No physical Windows or TPM test is run. The interface is still
+  inspection-only, with all accepted requests answering **HOLD / DENY**.
+  No merge, installation, BLE transfer or deployment is authorized.
 
 ## v5.1 Explicit Windows account SID pipe ACL (DRAFT / HOLD)
 
