@@ -56,6 +56,12 @@ def canonical_bytes(value):
                 raise ValueError("cyclic JSON reference")
             if depth >= MAX_NESTING_DEPTH:
                 raise ValueError("JSON nesting depth exceeds limit")
+            # Every direct child must be visited eventually. Deny a
+            # collection that already exceeds the remaining node budget,
+            # before allocating a potentially enormous traversal stack.
+            direct_children = len(item) * (2 if type(item) is dict else 1)
+            if direct_children > MAX_CANONICAL_NODES - visited:
+                raise ValueError("canonical JSON node budget exceeded")
             if type(item) is dict and any(type(key) is not str for key in item):
                 raise ValueError("object keys must be strings")
             active.add(id(item))
