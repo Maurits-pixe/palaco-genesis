@@ -1,6 +1,30 @@
-# PALACO Bluetooth Offline Transfer — v6.0 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v6.1 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v6.1 Independent CI incident validation and local replay rejection (DRAFT / HOLD)
+
+- `verify_scm_ci_incident.py` independently checks incident evidence
+  produced by the Windows C# SCM fault handler. It requires valid UTF-8,
+  strict JSON with no duplicate, missing or unknown fields, exact
+  `WORKER_FAULTED` / HOLD / DENY semantics, and the expected SHA-256 value.
+- The separate Python verifier creates one exclusive, flushed local receipt
+  file. Re-reading the same incident against that receipt is refused. This
+  is a **local replay gate**, not a persistent or independently witnessed
+  global replay ledger; deleting the receipt resets the gate.
+- `test_verify_scm_ci_incident.py` covers missing evidence, duplicate JSON
+  fields, missing fields, altered authorization, false signature claims,
+  mismatched checksums, malformed UTF-8, oversized data and replay. The
+  Windows SCM fault test checks the original incident using the separate
+  Python implementation, rejects its replay and deletes the temporary
+  receipt, incident and test service on completion.
+- **Security limitation:** SHA-256 without a protected signing key cannot
+  authenticate a producer. `independent_signature=false` remains explicit.
+  This is not independent attestation, a trusted timestamp or a durable
+  incident registry. No release authority, hardware TPM, BLE transfer or
+  production installation is enabled.
+- GO-13 HOLD / authorization DENY. PR remains Draft; no merge, publication,
+  deployment or release.
 
 ## v6.0 Disposable SCM worker fault injection and incident checksum (DRAFT / HOLD)
 
