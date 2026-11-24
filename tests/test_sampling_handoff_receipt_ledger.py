@@ -415,6 +415,70 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
             self.db,mod.GENESIS,0)["reason"],
             "missing-independent-handoff-ledger-pin")
 
+    def test_offline_manifest_verifies_without_database(self):
+        recorded=self.record()
+        exported=mod.export_review_manifest(self.db,recorded["head_hash"],1)
+        self.db.unlink()
+        result=mod.verify_review_manifest(
+            exported["manifest"],exported["manifest_sha256"],
+            recorded["head_hash"],1)
+        self.assertTrue(result["manifest_valid"])
+        self.assertEqual(result["state"],"pending-review")
+        self.assertEqual(result["release_gate"],"HOLD")
+        self.assertFalse(result["authorization_granted"])
+
+    def test_offline_manifest_rejects_tampered_entry(self):
+        recorded=self.record()
+        exported=mod.export_review_manifest(self.db,recorded["head_hash"],1)
+        manifest=copy.deepcopy(exported["manifest"])
+        manifest["entries"][0]["receipt_sha256"]="f"*64
+        result=mod.verify_review_manifest(
+            manifest,exported["manifest_sha256"],recorded["head_hash"],1)
+        self.assertFalse(result["manifest_valid"])
+        self.assertEqual(result["reason"],"review-manifest-chain-invalid")
+
+    def test_offline_manifest_rejects_invalid_independent_pins(self):
+        recorded=self.record()
+        exported=mod.export_review_manifest(self.db,recorded["head_hash"],1)
+        manifest=exported["manifest"]
+        self.assertEqual(mod.verify_review_manifest(
+            manifest,"f"*64,recorded["head_hash"],1)["reason"],
+            "review-manifest-digest-mismatch")
+        self.assertEqual(mod.verify_review_manifest(
+            manifest,exported["manifest_sha256"],"f"*64,1)["reason"],
+            "review-manifest-head-mismatch")
+        self.assertEqual(mod.verify_review_manifest(
+            manifest,exported["manifest_sha256"],recorded["head_hash"],2)["reason"],
+            "review-manifest-rollback")
+        self.assertEqual(mod.verify_review_manifest(
+            manifest,exported["manifest_sha256"],recorded["head_hash"],True)["reason"],
+            "missing-independent-manifest-pins")
+
+    def test_offline_manifest_rejects_duplicate_nonce_and_bad_sequence(self):
+        recorded=self.record()
+        exported=mod.export_review_manifest(self.db,recorded["head_hash"],1)
+        manifest=copy.deepcopy(exported["manifest"])
+        manifest["entries"].append(copy.deepcopy(manifest["entries"][0]))
+        manifest["entries"][1]["sequence"]=2
+        manifest["entries"][1]["previous_hash"]=recorded["head_hash"]
+        manifest["receipt_count"]=2
+        self.assertEqual(mod.verify_review_manifest(
+            manifest,exported["manifest_sha256"],recorded["head_hash"],1)["reason"],
+            "review-manifest-chain-invalid")
+        manifest["entries"][1]["sequence"]=True
+        self.assertEqual(mod.verify_review_manifest(
+            manifest,exported["manifest_sha256"],recorded["head_hash"],1)["reason"],
+            "invalid-review-manifest-entry")
+
+    def test_offline_manifest_rejects_extra_fields(self):
+        recorded=self.record()
+        exported=mod.export_review_manifest(self.db,recorded["head_hash"],1)
+        manifest=copy.deepcopy(exported["manifest"])
+        manifest["authorization_granted"]=True
+        self.assertEqual(mod.verify_review_manifest(
+            manifest,exported["manifest_sha256"],recorded["head_hash"],1)["reason"],
+            "invalid-review-manifest-schema")
+
     def test_registered_pending_only(self):
         first=self.record()
         self.assertTrue(first["recorded"])
