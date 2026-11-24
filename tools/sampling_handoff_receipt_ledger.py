@@ -100,7 +100,9 @@ def _schema_valid(conn):
 
 def _storage_integrity_ok(conn):
     """Check SQLite structure and foreign-key consistency, without writes."""
-    return (conn.execute("PRAGMA quick_check(1)").fetchone()==("ok",)
+    # Unlike quick_check, integrity_check also verifies UNIQUE constraints
+    # and index/table consistency. One returned error is sufficient to deny.
+    return (conn.execute("PRAGMA integrity_check(1)").fetchone()==("ok",)
             and conn.execute("PRAGMA foreign_key_check").fetchone() is None)
 
 
