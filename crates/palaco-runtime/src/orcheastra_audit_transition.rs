@@ -472,6 +472,7 @@ mod tests {
     };
     use crate::orcheastra_audit_custody::{AuditCustodyWitness, CustodyVerdict};
     use crate::orcheastra_audit_evidence::RecoveryEvidence;
+    use crate::orcheastra_audit_receipts::inspect_bound_audit_receipts;
     use crate::orcheastra_payload::digest_snapshot;
     use crate::orcheastra_recovery::RecoveryFloor;
     use crate::orcheastra_restart::{RestartAnchor, RestartCheckpoint, RestartInspection};
