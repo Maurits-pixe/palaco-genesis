@@ -98,17 +98,25 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
     }
     if (active.has(value)) throw new Error('cyclic JSON reference');
     if (depth >= MAX_DEPTH) throw new Error('JSON nesting depth exceeds limit');
-    if (value.length > MAX_CANONICAL_NODES - budget.nodes) {
+    // Read and pin the array's own data descriptor rather than value.length:
+    // a Proxy may trap ordinary property gets, including repeated length reads.
+    const lengthDescriptor = intrinsicGetOwnPropertyDescriptor(value, 'length');
+    if (!lengthDescriptor || !intrinsicHasOwn(lengthDescriptor, 'value') ||
+        !Number.isSafeInteger(lengthDescriptor.value) || lengthDescriptor.value < 0) {
+      throw new Error('invalid array length descriptor');
+    }
+    const length = lengthDescriptor.value;
+    if (length > MAX_CANONICAL_NODES - budget.nodes) {
       throw new Error('canonical JSON node budget exceeded');
     }
-    // Array.map skips holes; JSON stringification also loses extra names
-    // and symbol properties. Demand only explicit, enumerable data slots.
+    // An array must own the non-enumerable length plus exactly its indexed
+    // entries. Individual slots are checked below for sparse/accessor data.
     const ownKeys = intrinsicOwnKeys(value);
-    if (ownKeys.length !== value.length + 1 || !ownKeys.includes('length')) {
+    if (ownKeys.length !== length + 1) {
       throw new Error('sparse array or unsupported array property');
     }
     const entries = [];
-    for (let i = 0; i < value.length; i += 1) {
+    for (let i = 0; i < length; i += 1) {
       const descriptor = intrinsicGetOwnPropertyDescriptor(value, String(i));
       if (!descriptor) throw new Error('sparse array entry is not a JSON value');
       if (!intrinsicHasOwn(descriptor, 'value') || !descriptor.enumerable) {
