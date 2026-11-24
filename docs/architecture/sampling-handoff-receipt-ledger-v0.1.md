@@ -89,3 +89,17 @@ ledger itself already requires that nonce to be present. The caller
 must independently authenticate the trust roots and pins. Validation
 is read-only and is not a certificate of delivery, possession or legal
 independence. All authorization remains DENY and release GO-13 HOLD.
+
+## Atomic rollback on nonce insert failure (2026-11-24)
+
+The two-table receipt registration transaction now explicitly calls
+`rollback()` when the second insert raises `sqlite3.IntegrityError`.
+Without that step, returning normally from a Python SQLite connection
+context manager could commit the first receipt row even though writing
+the nonce index failed. A negative regression test injects an aborting
+nonce-table trigger, rejects the attempted handoff and confirms **both**
+tables remain empty with the genesis head unchanged.
+
+This protects the local atomicity contract for that failure path; it
+does not provide external immutability, a distributed transaction
+protocol, or delivery/custody proof. GO-13 remains HOLD, authorization DENY.
