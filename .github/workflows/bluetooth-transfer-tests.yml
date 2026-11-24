@@ -51,3 +51,6 @@ jobs:
       - name: Verify Windows cross-account ACL denial (ephemeral non-admin account)
         shell: pwsh
         run: ./tools/bluetooth_transfer/windows_native_host/test_cross_account.ps1
+      - name: Exercise ephemeral SCM service SID and lifecycle (deny-only)
+        shell: pwsh
+        run: ./tools/bluetooth_transfer/windows_native_host/test_scm_lifecycle.ps1
