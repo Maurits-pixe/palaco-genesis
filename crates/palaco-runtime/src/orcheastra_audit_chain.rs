@@ -51,7 +51,9 @@ pub fn audit_expectation_link_count(expected: &AuditChainExpectation) -> Option<
     if expected.first_sequence == 0 {
         return None;
     }
-    let span = expected.last_sequence.checked_sub(expected.first_sequence)?;
+    let span = expected
+        .last_sequence
+        .checked_sub(expected.first_sequence)?;
     let count = span.checked_add(1)?;
     let count = usize::try_from(count).ok()?;
     if count > MAX_AUDIT_LINKS {
@@ -239,7 +241,10 @@ mod tests {
             ..expected
         };
         assert_eq!(audit_expectation_link_count(&single), Some(1));
-        assert_eq!(inspect_audit_chain(&links, Some(&single)), RestartInspection::Deny);
+        assert_eq!(
+            inspect_audit_chain(&links, Some(&single)),
+            RestartInspection::Deny
+        );
 
         let exactly_max = AuditChainExpectation {
             first_sequence: 1,
@@ -255,7 +260,10 @@ mod tests {
             ..exactly_max
         };
         assert_eq!(audit_expectation_link_count(&over_max), None);
-        assert_eq!(inspect_audit_chain(&links, Some(&over_max)), RestartInspection::Deny);
+        assert_eq!(
+            inspect_audit_chain(&links, Some(&over_max)),
+            RestartInspection::Deny
+        );
 
         let zero_start = AuditChainExpectation {
             first_sequence: 0,
