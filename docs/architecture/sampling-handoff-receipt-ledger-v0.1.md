@@ -103,3 +103,18 @@ tables remain empty with the genesis head unchanged.
 This protects the local atomicity contract for that failure path; it
 does not provide external immutability, a distributed transaction
 protocol, or delivery/custody proof. GO-13 remains HOLD, authorization DENY.
+
+## SQLite schema-drift guard (2026-11-24)
+
+Before scanning the receipt hash chain or nonce index, the ledger
+compares the two expected SQLite table definitions against the
+definitions retained in `sqlite_master`. It denies unexpected
+columns, missing constraints or altered table definitions. Checks run
+on both registration and read-only inspection. Regression tests cover
+a preexisting receipt table missing its unique key/package constraint,
+and an added column after a valid anchored receipt is recorded.
+
+This local schema check is an integrity gate, not a defense against
+an attacker who controls the database and execution environment.
+Independent authenticated head/count pins remain required; all
+outcomes preserve GO-13 HOLD and authorization DENY.
