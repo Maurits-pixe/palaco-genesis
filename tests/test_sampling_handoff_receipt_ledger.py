@@ -353,6 +353,30 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
                              "handoff-receipt-ledger-integrity-failed")
         self.assertTrue(self.inspect(first["head_hash"])["ledger_valid"])
 
+    def test_storage_integrity_checks_unique_indexes_not_only_quick_check(self):
+        first=self.record()
+        statements=[]
+        with sqlite3.connect(self.db) as conn:
+            conn.set_trace_callback(statements.append)
+            self.assertTrue(mod._storage_integrity_ok(conn))
+        self.assertIn("PRAGMA integrity_check(1)",statements)
+        self.assertIn("PRAGMA foreign_key_check",statements)
+        self.assertNotIn("PRAGMA quick_check(1)",statements)
+        self.assertTrue(self.inspect(first["head_hash"])["ledger_valid"])
+
+    def test_sqlite_check_constraint_violation_denied(self):
+        first=self.record()
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("PRAGMA ignore_check_constraints=ON")
+            conn.execute("UPDATE sampling_handoff_receipts SET sequence=0")
+            conn.execute("PRAGMA ignore_check_constraints=OFF")
+            self.assertNotEqual(conn.execute(
+                "PRAGMA integrity_check(1)").fetchone(),("ok",))
+        self.assertEqual(self.inspect(first["head_hash"])["reason"],
+                         "handoff-receipt-ledger-integrity-failed")
+        self.assertEqual(self.record(head=first["head_hash"],floor=1)["reason"],
+                         "handoff-receipt-ledger-integrity-failed")
+
     def test_registered_pending_only(self):
         first=self.record()
         self.assertTrue(first["recorded"])
