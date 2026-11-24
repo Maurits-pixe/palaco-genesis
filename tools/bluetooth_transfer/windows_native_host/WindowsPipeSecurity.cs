@@ -27,14 +27,15 @@ internal static class WindowsPipeSecurity
         acl.AddAccessRule(new PipeAccessRule(
             sid, PipeAccessRights.ReadWrite, AccessControlType.Allow));
 
-        // CurrentUserOnly is additional same-user narrowing, not proof of
-        // service identity. A LocalSystem caller can share the account SID.
+        // Explicit protected account-SID DACL replaces CurrentUserOnly:
+        // .NET forbids supplying PipeSecurity together with that option.
+        // A LocalSystem caller can still share the account SID.
         return NamedPipeServerStreamAcl.Create(
             "PALACO-BT-NATIVE-DIAGNOSTIC-V1",
             PipeDirection.InOut,
             1,
             PipeTransmissionMode.Byte,
-            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly,
+            PipeOptions.Asynchronous,
             0, 0, acl);
     }
 }
