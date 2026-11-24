@@ -591,3 +591,33 @@ def verify_review_delta(previous_manifest,previous_sha256,previous_head,
                 head_hash=expected_current_head,
                 current_manifest_sha256=current_sha256,
                 delta_sha256=computed)
+
+
+def verify_review_delta_with_manifest_pin(
+        previous_manifest,previous_sha256,previous_head,
+        delta,expected_delta_sha256,expected_current_head,
+        expected_current_manifest_sha256,minimum_previous_receipts):
+    """Strict delta verification with an independent reconstructed-manifest pin.
+
+    The expected current manifest digest must be authenticated separately
+    from the delta. The weaker legacy verifier remains review-only.
+    """
+    def deny(reason):return _out(delta_valid=False,reason=reason)
+    if (not isinstance(expected_current_manifest_sha256,str)
+        or not handoff.HEX.fullmatch(expected_current_manifest_sha256)):
+        return deny("missing-independent-current-manifest-pin")
+    checked=verify_review_delta(
+        previous_manifest,previous_sha256,previous_head,
+        delta,expected_delta_sha256,expected_current_head,
+        minimum_previous_receipts)
+    if not checked["delta_valid"]:
+        return deny(checked["reason"])
+    if checked["current_manifest_sha256"]!=expected_current_manifest_sha256:
+        return deny("current-review-manifest-pin-mismatch")
+    return _out(delta_valid=True,state="pending-review",
+                reason="independently-pinned-offline-delta-not-custody",
+                previous_receipts=checked["previous_receipts"],
+                current_receipts=checked["current_receipts"],
+                head_hash=expected_current_head,
+                current_manifest_sha256=expected_current_manifest_sha256,
+                delta_sha256=checked["delta_sha256"])
