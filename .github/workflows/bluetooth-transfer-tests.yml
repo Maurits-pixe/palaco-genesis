@@ -46,3 +46,5 @@ jobs:
         run: dotnet run --no-build --configuration Release --project tools/bluetooth_transfer/windows_native_host/Palaco.Bluetooth.NativeHost.csproj -- --self-test
       - name: Run real Windows local pipe integration (deny-only)
         run: dotnet run --no-build --configuration Release --project tools/bluetooth_transfer/windows_native_host/Palaco.Bluetooth.NativeHost.csproj -- --ipc-integration-test
+      - name: Run separate-process Windows IPC interrupt and restart regressions
+        run: dotnet run --no-build --configuration Release --project tools/bluetooth_transfer/windows_native_host/Palaco.Bluetooth.NativeHost.csproj -- --ipc-process-test
