@@ -99,6 +99,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "CI signed witness receipt validation failed" }
     python $witness attest --evidence $evidence --ledger $witnessLedger --receipt $witnessReceipt --public-key $witnessPub
     if ($LASTEXITCODE -eq 0) { throw "CI witness duplicate admission was accepted" }
+    # Exercise v6.3 multi-entry continuity with the *actual* SCM incident,
+    # separate ephemeral signing identities and an externally supplied
+    # checkpoint file inside the disposable CI test harness.
+    python tools/bluetooth_transfer/witness_continuity_v63.py --ci-evidence $evidence
+    if ($LASTEXITCODE -ne 0) { throw "CI witness root/rotation/continuity test failed" }
     Write-Output "PALACO ephemeral Ed25519 CI witness PASS (signed verifier receipt, linked local SQLite entry, duplicate refused)"
     Write-Output "Independent CI incident verification PASS (original validated, replay denied; unsigned)"
     Write-Output "Windows SCM injected worker failure PASS (STOPPED, no restart, fixed HOLD/DENY evidence, SHA-256 verified)"
