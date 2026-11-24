@@ -39,26 +39,36 @@ function assertValidString(s) {
   }
 }
 
-function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0 }) {
+function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, bytes: 0 }) {
+  function charge(bytes) {
+    budget.bytes += bytes;
+    if (budget.bytes > MAX_CANONICAL_BYTES) {
+      throw new Error('canonical JSON byte budget exceeded');
+    }
+  }
   budget.nodes += 1;
   if (budget.nodes > MAX_CANONICAL_NODES) {
     throw new Error('canonical JSON node budget exceeded');
   }
-  if (value === null) return 'null';
-  if (value === true) return 'true';
-  if (value === false) return 'false';
+  if (value === null) { charge(4); return 'null'; }
+  if (value === true) { charge(4); return 'true'; }
+  if (value === false) { charge(5); return 'false'; }
   if (typeof value === 'number') {
     if (!Number.isSafeInteger(value)) {
       throw new Error('integer outside interoperable safe range or non-integer');
     }
-    return String(value);
+    const encoded = String(value);
+    charge(Buffer.byteLength(encoded, 'utf8'));
+    return encoded;
   }
   if (typeof value === 'string') {
     assertValidString(value);
     if (Buffer.byteLength(value, 'utf8') > MAX_CANONICAL_BYTES) {
       throw new Error('canonical JSON byte budget exceeded');
     }
-    return JSON.stringify(value);
+    const encoded = JSON.stringify(value);
+    charge(Buffer.byteLength(encoded, 'utf8'));
+    return encoded;
   }
   if (Array.isArray(value)) {
     if (active.has(value)) throw new Error('cyclic JSON reference');
@@ -80,6 +90,7 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0 })
       // must never execute while verifying a canonical JSON digest.
       entries.push(descriptor.value);
     }
+    charge(2 + Math.max(0, entries.length - 1));
     active.add(value);
     try {
       return '[' + entries.map((entry) => encode(entry, depth + 1, active, budget)).join(',') + ']';
@@ -102,11 +113,14 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0 })
       // an in-memory Proxy get trap or observe a changed property.
       entries.push([key, descriptor.value]);
     }
+    charge(2 + Math.max(0, entries.length - 1));
     active.add(value);
     try {
       return '{' + entries.sort(([left], [right]) => compareCodepoints(left, right)).map(([key, entry]) => {
         assertValidString(key);
-        return JSON.stringify(key) + ':' + encode(entry, depth + 1, active);
+        const encodedKey = JSON.stringify(key);
+        charge(Buffer.byteLength(encodedKey, 'utf8') + 1);
+        return encodedKey + ':' + encode(entry, depth + 1, active, budget);
       }).join(',') + '}';
     } finally {
       active.delete(value);
