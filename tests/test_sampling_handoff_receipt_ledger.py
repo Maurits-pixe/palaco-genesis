@@ -229,6 +229,38 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
         self.assertFalse(result["evidence_valid"])
         self.assertEqual(result["reason"],"handoff-entry-evidence-mismatch")
 
+    def test_rejects_preexisting_schema_without_unique_package_binding(self):
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("""CREATE TABLE sampling_handoff_receipts(
+                sequence INTEGER PRIMARY KEY CHECK(sequence>0),
+                recipient_id TEXT NOT NULL,
+                recipient_key_id TEXT NOT NULL,
+                package_sha256 TEXT NOT NULL,
+                nonce_hex TEXT NOT NULL,
+                receipt_sha256 TEXT NOT NULL,
+                previous_hash TEXT NOT NULL,
+                event_hash TEXT NOT NULL)""")
+            conn.execute("""CREATE TABLE sampling_handoff_nonces(
+                nonce_hex TEXT PRIMARY KEY,
+                receipt_sequence INTEGER NOT NULL UNIQUE,
+                FOREIGN KEY(receipt_sequence) REFERENCES sampling_handoff_receipts(sequence))""")
+        result=self.record()
+        self.assertFalse(result["recorded"])
+        self.assertEqual(result["reason"],"handoff-receipt-ledger-integrity-failed")
+        with sqlite3.connect(self.db) as conn:
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM sampling_handoff_receipts").fetchone()[0],0)
+
+    def test_added_receipt_column_invalidates_pinned_inspection(self):
+        first=self.record()
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("ALTER TABLE sampling_handoff_receipts ADD COLUMN injected TEXT")
+        result=self.inspect(first["head_hash"])
+        self.assertFalse(result["ledger_valid"])
+        self.assertEqual(result["reason"],"handoff-receipt-ledger-integrity-failed")
+        self.assertEqual(self.record(head=first["head_hash"],floor=1)["reason"],
+                         "handoff-receipt-ledger-integrity-failed")
+
     def test_registered_pending_only(self):
         first=self.record()
         self.assertTrue(first["recorded"])
