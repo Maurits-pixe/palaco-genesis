@@ -1,6 +1,8 @@
 """Atomic sampling handoff receipt register: replay, rollback, tampering."""
 import copy
 import importlib.util
+import hashlib
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -478,6 +480,80 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
         self.assertEqual(mod.verify_review_manifest(
             manifest,exported["manifest_sha256"],recorded["head_hash"],1)["reason"],
             "invalid-review-manifest-schema")
+
+    def _independently_pinned_manifest(self,manifest):
+        body=json.dumps(manifest,sort_keys=True,separators=(",",":"),
+                        ensure_ascii=False,allow_nan=False).encode("utf-8")
+        return hashlib.sha256(mod.MANIFEST_DOMAIN+body).hexdigest()
+
+    def test_offline_manifest_succession_identical_pins(self):
+        recorded=self.record()
+        exported=mod.export_review_manifest(self.db,recorded["head_hash"],1)
+        result=mod.verify_manifest_succession(
+            exported["manifest"],exported["manifest_sha256"],recorded["head_hash"],
+            exported["manifest"],exported["manifest_sha256"],recorded["head_hash"],1)
+        self.assertTrue(result["succession_valid"])
+        self.assertEqual(result["current_receipts"],1)
+        self.assertEqual(result["release_gate"],"HOLD")
+        self.assertFalse(result["authorization_granted"])
+
+    def test_offline_manifest_succession_accepts_valid_append_only_history(self):
+        recorded=self.record()
+        exported=mod.export_review_manifest(self.db,recorded["head_hash"],1)
+        current=copy.deepcopy(exported["manifest"])
+        prev=current["entries"][0]
+        nonce="e"*64
+        package="f"*64
+        event=mod._digest(2,prev["recipient_id"],prev["recipient_key_id"],
+                          package,nonce,prev["receipt_sha256"],recorded["head_hash"])
+        next_entry=dict(prev,sequence=2,package_sha256=package,
+                        receipt_nonce_hex=nonce,previous_hash=recorded["head_hash"],
+                        event_hash=event)
+        current["entries"].append(next_entry)
+        current["receipt_count"]=2
+        current["head_hash"]=event
+        digest=self._independently_pinned_manifest(current)
+        result=mod.verify_manifest_succession(
+            exported["manifest"],exported["manifest_sha256"],recorded["head_hash"],
+            current,digest,event,1)
+        self.assertTrue(result["succession_valid"])
+        self.assertEqual(result["previous_receipts"],1)
+        self.assertEqual(result["current_receipts"],2)
+        self.assertFalse(result["authorization_granted"])
+
+    def test_offline_manifest_succession_rejects_rewritten_history(self):
+        recorded=self.record()
+        exported=mod.export_review_manifest(self.db,recorded["head_hash"],1)
+        rewritten=copy.deepcopy(exported["manifest"])
+        entry=rewritten["entries"][0]
+        entry["recipient_id"]="different-reviewer"
+        alternate=mod._digest(1,entry["recipient_id"],entry["recipient_key_id"],
+                              entry["package_sha256"],entry["receipt_nonce_hex"],
+                              entry["receipt_sha256"],mod.GENESIS)
+        entry["event_hash"]=alternate
+        rewritten["head_hash"]=alternate
+        result=mod.verify_manifest_succession(
+            exported["manifest"],exported["manifest_sha256"],recorded["head_hash"],
+            rewritten,self._independently_pinned_manifest(rewritten),alternate,1)
+        self.assertFalse(result["succession_valid"])
+        self.assertEqual(result["reason"],"review-manifest-history-rewritten")
+
+    def test_offline_manifest_succession_rejects_rollback_and_bad_pins(self):
+        recorded=self.record()
+        exported=mod.export_review_manifest(self.db,recorded["head_hash"],1)
+        manifest=exported["manifest"]
+        self.assertEqual(mod.verify_manifest_succession(
+            manifest,exported["manifest_sha256"],recorded["head_hash"],
+            manifest,"f"*64,recorded["head_hash"],1)["reason"],
+            "current-review-manifest-digest-mismatch")
+        self.assertEqual(mod.verify_manifest_succession(
+            manifest,"f"*64,recorded["head_hash"],
+            manifest,exported["manifest_sha256"],recorded["head_hash"],1)["reason"],
+            "previous-review-manifest-digest-mismatch")
+        self.assertEqual(mod.verify_manifest_succession(
+            manifest,exported["manifest_sha256"],recorded["head_hash"],
+            manifest,exported["manifest_sha256"],recorded["head_hash"],2)["reason"],
+            "previous-review-manifest-rollback")
 
     def test_registered_pending_only(self):
         first=self.record()
