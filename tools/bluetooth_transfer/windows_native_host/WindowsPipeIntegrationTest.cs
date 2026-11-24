@@ -30,6 +30,7 @@ internal static class WindowsPipeIntegrationTest
                 overrideLength: 1025);
             bool secondAcceptedButDenied = await SendAsync(
                 MakeInspectFrame(), expectResponse: true, stop.Token);
+            Console.WriteLine($"IPC scenarios: valid={acceptedButDenied}, invalidOperation={rejectedOperation}, oversized={oversizedRejected}, reconnect={secondAcceptedButDenied}");
             bool ok = acceptedButDenied && rejectedOperation
                 && oversizedRejected && secondAcceptedButDenied;
             Console.WriteLine(ok
@@ -41,7 +42,7 @@ internal static class WindowsPipeIntegrationTest
                                        or OperationCanceledException
                                        or UnauthorizedAccessException)
         {
-            Console.Error.WriteLine("Windows named-pipe integration FAIL");
+            Console.Error.WriteLine($"Windows named-pipe integration FAIL: {ex.GetType().Name}");
             return false;
         }
         finally
