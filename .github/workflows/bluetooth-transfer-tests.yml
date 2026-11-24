@@ -56,3 +56,6 @@ jobs:
       - name: Exercise ephemeral SCM service SID and lifecycle (deny-only)
         shell: pwsh
         run: ./tools/bluetooth_transfer/windows_native_host/test_scm_lifecycle.ps1
+      - name: Inject temporary SCM worker failure and verify incident evidence (HOLD)
+        shell: pwsh
+        run: ./tools/bluetooth_transfer/windows_native_host/test_scm_worker_fault.ps1
