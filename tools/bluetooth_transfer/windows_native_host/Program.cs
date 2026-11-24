@@ -1,4 +1,4 @@
-// PALACO Bluetooth Windows native host prototype v4.9.
+// PALACO Bluetooth Windows native host prototype v5.0.
 // This is a Windows-only user-session console host, NOT an installed Windows
 // service, privileged endpoint, TPM driver, authenticated service, or BLE stack.
 // Every IPC request is denied. Never use this as a production security boundary.
@@ -6,6 +6,7 @@ using System.Buffers.Binary;
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
+using System.ServiceProcess;
 
 namespace Palaco.Bluetooth.NativeHost;
 
@@ -21,11 +22,18 @@ internal static class Program
         if (args.Length == 1 && args[0] == "--self-test")
             return SelfTest() ? 0 : 1;
 
-        if (args.Length != 1 || args[0] != "--serve" || !OperatingSystem.IsWindows())
+        if (args.Length != 1 || !OperatingSystem.IsWindows())
         {
-            Console.Error.WriteLine("Windows-only diagnostic host. Use --self-test or Windows --serve.");
+            Console.Error.WriteLine("Windows-only diagnostic host. Use --self-test, --serve, or --service.");
             return 2;
         }
+        if (args[0] == "--service")
+        {
+            ServiceBase.Run(new PalacoDiagnosticService());
+            return 0;
+        }
+        if (args[0] != "--serve")
+            return 2;
 
         using var stop = new CancellationTokenSource();
         Console.CancelKeyPress += (_, evt) =>
@@ -35,7 +43,13 @@ internal static class Program
         };
 
         Console.WriteLine("PALACO diagnostic IPC host: HOLD / DENY (no TPM, no authority)");
-        while (!stop.IsCancellationRequested)
+        await RunServerAsync(stop.Token);
+        return 0;
+    }
+
+    internal static async Task RunServerAsync(CancellationToken cancellation)
+    {
+        while (!cancellation.IsCancellationRequested)
         {
             // CurrentUserOnly is restrictive for a user-session prototype, but it
             // does NOT authenticate service identity or support a multi-user service.
@@ -44,15 +58,15 @@ internal static class Program
                 PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
             try
             {
-                await pipe.WaitForConnectionAsync(stop.Token);
-                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
+                await pipe.WaitForConnectionAsync(cancellation);
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
                 deadline.CancelAfter(TimeSpan.FromSeconds(5));
                 await ReadRequestSafely(pipe, deadline.Token);
                 // Even valid requests receive the identical fixed DENY response.
                 await pipe.WriteAsync(Deny, deadline.Token);
                 await pipe.FlushAsync(deadline.Token);
             }
-            catch (OperationCanceledException) when (stop.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
             {
                 break;
             }
@@ -62,7 +76,6 @@ internal static class Program
                 // Transport/timeout errors are fail-closed. No request body is logged.
             }
         }
-        return 0;
     }
 
     private static async Task ReadRequestSafely(Stream stream, CancellationToken cancel)
