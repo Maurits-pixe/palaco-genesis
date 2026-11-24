@@ -159,6 +159,55 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
                          "missing-handoff-receipt-ledger")
         self.assertFalse(self.db.exists())
 
+    def test_reverified_receipt_matches_pinned_entry(self):
+        first=self.record()
+        result=mod.verify_entry_evidence(
+            self.db,self.f.package,self.f.receipt,self.trust,
+            first["head_hash"],1,1)
+        self.assertTrue(result["evidence_valid"])
+        self.assertEqual(result["receipt_sha256"],first["receipt_sha256"])
+        self.assertEqual(result["state"],"pending-review")
+        self.assertFalse(result["authorization_granted"])
+
+    def test_reverified_evidence_rejects_invalid_signature(self):
+        first=self.record()
+        invalid=copy.deepcopy(self.f.receipt)
+        invalid["signature_b64"]="!"
+        result=mod.verify_entry_evidence(
+            self.db,self.f.package,invalid,self.trust,first["head_hash"],1,1)
+        self.assertFalse(result["evidence_valid"])
+        self.assertEqual(result["reason"],"invalid-handoff-signature-format")
+
+    def test_reverified_evidence_rejects_revoked_recipient(self):
+        first=self.record()
+        changed=dict(self.trust,revoked_recipients={self.f.key_id})
+        result=mod.verify_entry_evidence(
+            self.db,self.f.package,self.f.receipt,changed,
+            first["head_hash"],1,1)
+        self.assertFalse(result["evidence_valid"])
+        self.assertEqual(result["reason"],"handoff-recipient-revoked")
+
+    def test_reverified_evidence_requires_pinned_entry(self):
+        first=self.record()
+        result=mod.verify_entry_evidence(
+            self.db,self.f.package,self.f.receipt,self.trust,"f"*64,1,1)
+        self.assertFalse(result["evidence_valid"])
+        self.assertEqual(result["reason"],"handoff-receipt-ledger-head-mismatch")
+        missing=mod.verify_entry_evidence(
+            self.db,self.f.package,self.f.receipt,self.trust,
+            first["head_hash"],1,2)
+        self.assertEqual(missing["reason"],"handoff-receipt-entry-not-found")
+
+    def test_reverified_evidence_rejects_mutated_valid_receipt(self):
+        first=self.record()
+        other_nonce="e"*64
+        alternate=self.f.sign({"receipt_nonce_hex":other_nonce})
+        changed=dict(self.trust,expected_nonce=other_nonce)
+        result=mod.verify_entry_evidence(
+            self.db,self.f.package,alternate,changed,first["head_hash"],1,1)
+        self.assertFalse(result["evidence_valid"])
+        self.assertEqual(result["reason"],"handoff-entry-evidence-mismatch")
+
     def test_registered_pending_only(self):
         first=self.record()
         self.assertTrue(first["recorded"])
