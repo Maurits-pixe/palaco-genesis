@@ -77,8 +77,12 @@ def _scan(conn):
          FROM sampling_handoff_receipts ORDER BY sequence LIMIT ?""",
          (MAX_RECORDS+1,)).fetchall()
     if len(rows)>MAX_RECORDS:return None
+    # Bound both ledger tables: a hostile nonce index must not force an
+    # unbounded allocation even if the receipt chain is small.
     pins=conn.execute("""SELECT nonce_hex,receipt_sequence
-         FROM sampling_handoff_nonces""").fetchall()
+         FROM sampling_handoff_nonces LIMIT ?""",
+         (MAX_RECORDS+1,)).fetchall()
+    if len(pins)>MAX_RECORDS:return None
     preceding=GENESIS
     expected=set()
     recipients=set()
