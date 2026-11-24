@@ -5,6 +5,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[1]
 fixture_spec=importlib.util.spec_from_file_location(
@@ -260,6 +261,49 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
         self.assertEqual(result["reason"],"handoff-receipt-ledger-integrity-failed")
         self.assertEqual(self.record(head=first["head_hash"],floor=1)["reason"],
                          "handoff-receipt-ledger-integrity-failed")
+
+    def test_evidence_verification_rechecks_concurrent_ledger_tampering(self):
+        first=self.record()
+        original=mod.handoff.verify_receipt
+
+        def tamper_after_signature(*args,**kwargs):
+            checked=original(*args,**kwargs)
+            self.assertTrue(checked["receipt_valid"])
+            with sqlite3.connect(self.db) as conn:
+                conn.execute("UPDATE sampling_handoff_receipts "
+                             "SET event_hash=? WHERE sequence=1",("f"*64,))
+            return checked
+
+        with patch.object(mod.handoff,"verify_receipt",
+                          side_effect=tamper_after_signature):
+            result=mod.verify_entry_evidence(
+                self.db,self.f.package,self.f.receipt,self.trust,
+                first["head_hash"],1,1)
+        self.assertFalse(result["evidence_valid"])
+        self.assertEqual(result["reason"],
+                         "handoff-entry-changed-during-verification")
+        self.assertFalse(result["authorization_granted"])
+
+    def test_evidence_verification_rechecks_concurrent_nonce_deletion(self):
+        first=self.record()
+        original=mod.handoff.verify_receipt
+
+        def delete_nonce_after_signature(*args,**kwargs):
+            checked=original(*args,**kwargs)
+            self.assertTrue(checked["receipt_valid"])
+            with sqlite3.connect(self.db) as conn:
+                conn.execute("DELETE FROM sampling_handoff_nonces "
+                             "WHERE receipt_sequence=1")
+            return checked
+
+        with patch.object(mod.handoff,"verify_receipt",
+                          side_effect=delete_nonce_after_signature):
+            result=mod.verify_entry_evidence(
+                self.db,self.f.package,self.f.receipt,self.trust,
+                first["head_hash"],1,1)
+        self.assertFalse(result["evidence_valid"])
+        self.assertEqual(result["reason"],
+                         "handoff-entry-changed-during-verification")
 
     def test_registered_pending_only(self):
         first=self.record()
