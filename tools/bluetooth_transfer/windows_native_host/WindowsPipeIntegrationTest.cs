@@ -62,7 +62,7 @@ internal static class WindowsPipeIntegrationTest
         }
     }
 
-    private static async Task<bool> SendAsync(
+    internal static async Task<bool> SendAsync(
         string text, bool expectResponse, CancellationToken cancel,
         int? overrideLength = null)
     {
@@ -106,7 +106,7 @@ internal static class WindowsPipeIntegrationTest
             "{\"protocol\":\"PALACO-BT-WIN-HOST-V1\",\"decision\":\"HOLD\",\"authorization\":\"DENY\",\"native_security_verified\":false}\n";
     }
 
-    private static string MakeInspectFrame()
+    internal static string MakeInspectFrame()
     {
         return "{\"challenge\":\"" + new string('c', 64) +
                "\",\"device_binding\":\"" + new string('d', 64) +
