@@ -14,8 +14,8 @@ use crate::orcheastra_review_receipt::ReviewReceipt;
 /// Checks audit-link digests against their corresponding review receipts.
 ///
 /// In addition to the existing hash-chain checks, requires a one-to-one receipt
-/// match, strictly increasing recovery checkpoint sequence, nondecreasing key
-/// registry revisions, and bounded nonempty checkpoint counts. All receipts
+/// match, gapless non-overlapping recovery checkpoint intervals, nondecreasing
+/// key registry revisions, and bounded nonempty checkpoint counts. All receipts
 /// remain caller-supplied and unauthenticated by this function.
 #[must_use]
 pub fn inspect_bound_audit_receipts(
@@ -31,13 +31,12 @@ pub fn inspect_bound_audit_receipts(
         return RestartInspection::Deny;
     }
 
-    let mut prior_checkpoint_sequence = 0;
+    let mut prior_checkpoint_sequence = None;
     let mut prior_registry_sequence = 0;
     for (link, receipt) in links.iter().zip(receipts.iter()) {
         if receipt.digest == [0; 32]
             || link.receipt_digest != receipt.digest
             || receipt.checkpoint_sequence == 0
-            || receipt.checkpoint_sequence <= prior_checkpoint_sequence
             || receipt.registry_sequence == 0
             || receipt.registry_sequence < prior_registry_sequence
             || receipt.checkpoint_count == 0
@@ -45,7 +44,21 @@ pub fn inspect_bound_audit_receipts(
         {
             return RestartInspection::Deny;
         }
-        prior_checkpoint_sequence = receipt.checkpoint_sequence;
+        let Some(count) = u64::try_from(receipt.checkpoint_count).ok() else {
+            return RestartInspection::Deny;
+        };
+        // Each receipt spans [end - count + 1, end]. The initial receipt
+        // must have a feasible nonzero start. Subsequent receipts must begin
+        // exactly after the previous receipt's end (no gaps or overlap).
+        let Some(predecessor) = receipt.checkpoint_sequence.checked_sub(count) else {
+            return RestartInspection::Deny;
+        };
+        if let Some(previous) = prior_checkpoint_sequence {
+            if predecessor != previous {
+                return RestartInspection::Deny;
+            }
+        }
+        prior_checkpoint_sequence = Some(receipt.checkpoint_sequence);
         prior_registry_sequence = receipt.registry_sequence;
     }
 
@@ -69,7 +82,7 @@ mod tests {
             },
             ReviewReceipt {
                 digest: [2; 32],
-                checkpoint_sequence: 21,
+                checkpoint_sequence: 22,
                 registry_sequence: 4,
                 checkpoint_count: 2,
             },
@@ -136,6 +149,37 @@ mod tests {
             RestartInspection::Deny
         );
         receipts[1].checkpoint_sequence = 19;
+        assert_eq!(
+            inspect_bound_audit_receipts(&links, &receipts, Some(&expected)),
+            RestartInspection::Deny
+        );
+    }
+
+    #[test]
+    fn overlapping_or_gapped_receipt_intervals_are_denied() {
+        let (links, mut receipts, expected) = fixture();
+        assert_eq!(
+            inspect_bound_audit_receipts(&links, &receipts, Some(&expected)),
+            RestartInspection::ReviewOnly
+        );
+        receipts[1].checkpoint_sequence = 21;
+        assert_eq!(
+            inspect_bound_audit_receipts(&links, &receipts, Some(&expected)),
+            RestartInspection::Deny
+        );
+        receipts[1].checkpoint_sequence = 23;
+        assert_eq!(
+            inspect_bound_audit_receipts(&links, &receipts, Some(&expected)),
+            RestartInspection::Deny
+        );
+        receipts[1].checkpoint_sequence = 22;
+        receipts[1].checkpoint_count = 3;
+        assert_eq!(
+            inspect_bound_audit_receipts(&links, &receipts, Some(&expected)),
+            RestartInspection::Deny
+        );
+        receipts[1].checkpoint_count = 2;
+        receipts[0].checkpoint_count = 21;
         assert_eq!(
             inspect_bound_audit_receipts(&links, &receipts, Some(&expected)),
             RestartInspection::Deny
