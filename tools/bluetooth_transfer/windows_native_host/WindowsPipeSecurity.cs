@@ -27,6 +27,9 @@ internal static class WindowsPipeSecurity
         acl.AddAccessRule(new PipeAccessRule(
             sid, PipeAccessRights.ReadWrite, AccessControlType.Allow));
 
+        if (!WindowsPipeAclAudit.IsSingleAccountRule(acl, sid))
+            throw new UnauthorizedAccessException("Unexpected diagnostic pipe ACL: HOLD");
+
         // Explicit protected account-SID DACL replaces CurrentUserOnly:
         // .NET forbids supplying PipeSecurity together with that option.
         // A LocalSystem caller can still share the account SID.
