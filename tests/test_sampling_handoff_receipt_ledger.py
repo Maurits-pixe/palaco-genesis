@@ -82,8 +82,8 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
             self.assertEqual(conn.execute(
                 "SELECT COUNT(*) FROM sampling_handoff_nonces").fetchone()[0],0)
         # The failed attempt must not change the externally anchored genesis.
-        self.assertEqual(mod._scan(sqlite3.connect(self.db))["head_hash"],
-                         mod.GENESIS)
+        with sqlite3.connect(self.db) as conn:
+            self.assertEqual(mod._scan(conn)["head_hash"],mod.GENESIS)
 
     def test_trigger_deleting_inserted_nonce_rolls_back(self):
         with sqlite3.connect(self.db) as conn:
