@@ -6,7 +6,9 @@
 
 use sha2::{Digest, Sha256};
 
-use crate::orcheastra_audit_chain::{inspect_audit_chain, AuditChainExpectation, AuditLink};
+use crate::orcheastra_audit_chain::{
+    audit_expectation_link_count, inspect_audit_chain, AuditChainExpectation, AuditLink,
+};
 use crate::orcheastra_restart::RestartInspection;
 
 const CUSTODY_DOMAIN: &[u8] = b"PALACO-ORCHEASTRA-AUDIT-CUSTODY-V1\0";
@@ -33,10 +35,10 @@ pub trait AuditCustodyWitness {
 /// SHA-256 fingerprint of the canonical custody expectation.
 ///
 /// The digest is for log correlation and cannot authenticate the expectation.
+/// Only expectations spanning 1 through 256 links may be fingerprinted.
 #[must_use]
 pub fn custody_expectation_digest(expected: &AuditChainExpectation) -> Option<[u8; 32]> {
-    if expected.first_sequence == 0
-        || expected.last_sequence < expected.first_sequence
+    if audit_expectation_link_count(expected).is_none()
         || expected.predecessor_digest == [0; 32]
         || expected.final_digest == [0; 32]
     {
@@ -204,6 +206,35 @@ mod tests {
             inspect_custodied_audit_chain(&links, Some(&changed), Some(&TestWitness(expected))),
             RestartInspection::Deny
         );
+    }
+
+    #[test]
+    fn standalone_custody_digest_rejects_impossible_ranges() {
+        let (_, expected) = fixture();
+        assert!(custody_expectation_digest(&expected).is_some());
+        let too_long = AuditChainExpectation {
+            first_sequence: 1,
+            last_sequence: 257,
+            ..expected
+        };
+        assert_eq!(custody_expectation_digest(&too_long), None);
+        let exactly_max = AuditChainExpectation {
+            last_sequence: 256,
+            ..too_long
+        };
+        assert!(custody_expectation_digest(&exactly_max).is_some());
+        let reversed = AuditChainExpectation {
+            first_sequence: 12,
+            last_sequence: 11,
+            ..expected
+        };
+        assert_eq!(custody_expectation_digest(&reversed), None);
+        let near_overflow = AuditChainExpectation {
+            first_sequence: 1,
+            last_sequence: u64::MAX,
+            ..expected
+        };
+        assert_eq!(custody_expectation_digest(&near_overflow), None);
     }
 
     #[test]
