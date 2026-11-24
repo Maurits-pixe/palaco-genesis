@@ -487,6 +487,36 @@ assert.deepEqual(canonicalBytes({ [String.fromCharCode(10)]: 0 }),
                  Buffer.from('7b225c6e223a307d', 'hex'),
                  'small escaped object key retains pinned canonical bytes');
 
+// A later invalid key must be rejected before ANY earlier property
+// descriptor is read. This requires two-phase key validation.
+const firstValidThenBadUnicode = new Proxy({
+  gate: 'HOLD',
+  ['e' + String.fromCharCode(0x301)]: 1,
+}, {
+  getOwnPropertyDescriptor() {
+    throw new Error('descriptor inspection must not precede key validation');
+  },
+});
+assert.throws(() => canonicalBytes(firstValidThenBadUnicode), /non-NFC/,
+              'all keys are validated before inspecting the first descriptor');
+const firstValidThenTooLarge = new Proxy({
+  gate: 'HOLD',
+  ['x'.repeat(MAX_CANONICAL_BYTES)]: 1,
+}, {
+  getOwnPropertyDescriptor() {
+    throw new Error('descriptor inspection must not precede byte rejection');
+  },
+});
+assert.throws(() => canonicalBytes(firstValidThenTooLarge), /byte budget/,
+              'all key bytes are budgeted before inspecting the first descriptor');
+const firstValidThenSymbol = { gate: 'HOLD' };
+firstValidThenSymbol[Symbol('hidden')] = 1;
+assert.throws(() => canonicalBytes(firstValidThenSymbol), /symbol object key/,
+              'symbol keys remain fail-closed in the complete key pass');
+assert.deepEqual(canonicalBytes({ z: 1, a: 2 }),
+                 Buffer.from('{"a":2,"z":1}', 'utf8'),
+                 'valid object order and canonical bytes remain unchanged');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
