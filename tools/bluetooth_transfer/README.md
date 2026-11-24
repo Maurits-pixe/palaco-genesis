@@ -1,6 +1,33 @@
-# PALACO Bluetooth Offline Transfer — v6.4 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v6.5 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v6.5 CI 2-of-3 witness quorum and conflicting-checkpoint refusal (DRAFT / HOLD)
+
+- `witness_quorum_v65.py` requires a caller-pinned roster of exactly
+  **three distinct Ed25519 public keys**. At least two separately signed,
+  matching ledger checkpoints must be provided. A single witness is never
+  sufficient; duplicate identities, unknown signers, missing files and
+  invalid signatures are rejected.
+- If a **validly signed conflicting checkpoint** is observed from any
+  included witness, verification fails closed **even when two agreeing
+  checkpoints otherwise form a numerical quorum**. The verifier does not
+  silently ignore divergent, malformed or unexpected signed evidence.
+- `test_witness_quorum_v65.py` tests 2-of-3 success, 1-of-3 refusal,
+  duplicate endorser/path, unknown witness, signature tampering, signed
+  split-view, absent files, wrong or incomplete pinned key roster, and a
+  missing ledger. GitHub CI runs this suite on Linux and exercises the
+  quorum against the actual disposable Windows SCM incident.
+- **Limits:** the three witnesses are separate *ephemeral CI key pairs*,
+  not three operationally independent organizations, machines or
+  custodians. Their keys and receipts are under one CI execution's
+  control. Two compromised approved witnesses can still create a false
+  quorum if the trust roots/ledger are also compromised; unseen
+  conflicting receipts cannot be detected. No remote availability,
+  durable custody, trusted timestamps, hardware protection or
+  production-ready Byzantine consensus is claimed.
+- GO-13 HOLD / authorization DENY; PR Draft only; no merge, production
+  installation, deployment or publication.
 
 ## v6.4 Independent CI checkpoint witness verification (DRAFT / HOLD)
 
