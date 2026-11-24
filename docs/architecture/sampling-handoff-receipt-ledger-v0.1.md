@@ -71,3 +71,21 @@ receipt nonce, receipt digest, previous event hash and event hash for
 independent forensic comparison. It does **not** expose source documents,
 validate off-device delivery, grant storage custody or authorize anything.
 All successful lookups remain `pending-review`, `HOLD`, and DENY.
+
+## Signed evidence re-verification (2026-11-24)
+
+`verify_entry_evidence(db, package, receipt, trust, expected_head,
+minimum_receipts, sequence)` first verifies the entire read-only local
+chain, nonce index and separately trusted head/count pin, then performs
+fresh Ed25519 receipt signature, package history, witness eligibility and
+recipient revocation checks through the strict handoff verifier. Only if
+the signed receipt's digest, recipient, key, package digest and nonce
+match the indexed row does it return a positive **pending-review** result.
+
+The externally managed `used_nonces` policy must be supplied as an
+evidence-verification snapshot that does not incorrectly treat the
+receipt currently under examination as a *new* replay attempt; the
+ledger itself already requires that nonce to be present. The caller
+must independently authenticate the trust roots and pins. Validation
+is read-only and is not a certificate of delivery, possession or legal
+independence. All authorization remains DENY and release GO-13 HOLD.
