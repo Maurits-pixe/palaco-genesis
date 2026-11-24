@@ -328,3 +328,55 @@ def verify_entry_evidence(db,package,receipt,trust,expected_head,
                 reason="reverified-signed-receipt-matches-pinned-local-entry",
                 sequence=sequence,head_hash=entry["head_hash"],
                 receipt_sha256=evidence)
+
+
+MANIFEST_DOMAIN=b"PALACO-SAMPLING-HANDOFF-LEDGER-MANIFEST-V1\x00"
+
+
+def export_review_manifest(db,expected_head,minimum_receipts):
+    """Export a bounded read-only receipt index against a trusted ledger pin.
+
+    The manifest is a local review artifact, not a signed independent anchor.
+    """
+    def deny(reason):return _out(manifest_exported=False,reason=reason)
+    if (not isinstance(expected_head,str) or not handoff.HEX.fullmatch(expected_head)
+        or type(minimum_receipts) is not int
+        or not 1<=minimum_receipts<=MAX_RECORDS):
+        return deny("missing-independent-handoff-ledger-pin")
+    try:path=_path(db)
+    except ValueError as exc:return deny(str(exc))
+    if not path.is_file():return deny("missing-handoff-receipt-ledger")
+    try:
+        conn=sqlite3.connect(path.resolve().as_uri()+"?mode=ro",uri=True)
+        try:
+            conn.execute("BEGIN")
+            state=_scan(conn)
+            if state is None:
+                return deny("handoff-receipt-ledger-integrity-failed")
+            if state["receipts"]<minimum_receipts:
+                return deny("handoff-receipt-ledger-rollback")
+            if state["head_hash"]!=expected_head:
+                return deny("handoff-receipt-ledger-head-mismatch")
+            rows=conn.execute("""SELECT sequence,recipient_id,recipient_key_id,
+                package_sha256,nonce_hex,receipt_sha256,previous_hash,event_hash
+                FROM sampling_handoff_receipts ORDER BY sequence LIMIT ?""",
+                (MAX_RECORDS+1,)).fetchall()
+            if len(rows)!=state["receipts"]:
+                return deny("handoff-receipt-ledger-changed-during-export")
+            entries=[dict(zip(("sequence","recipient_id","recipient_key_id",
+                "package_sha256","receipt_nonce_hex","receipt_sha256",
+                "previous_hash","event_hash"),row)) for row in rows]
+            conn.commit()
+        finally:
+            conn.close()
+    except (sqlite3.Error,TypeError,ValueError,OverflowError,OSError):
+        return deny("unreadable-handoff-receipt-ledger")
+    manifest={"schema_version":"0.1.0","receipt_count":state["receipts"],
+              "head_hash":state["head_hash"],"entries":entries}
+    digest=hashlib.sha256(
+        MANIFEST_DOMAIN+json.dumps(manifest,sort_keys=True,
+        separators=(",",":"),ensure_ascii=False,allow_nan=False
+        ).encode("utf-8")).hexdigest()
+    return _out(manifest_exported=True,state="pending-review",
+                reason="local-review-manifest-not-independent-custody",
+                manifest=manifest,manifest_sha256=digest)
