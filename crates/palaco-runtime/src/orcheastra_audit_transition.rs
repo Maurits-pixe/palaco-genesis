@@ -137,8 +137,10 @@ pub fn inspect_transition_snapshot_link(
             previous_source.checkpoints,
             Some(&previous_source.signed.anchor),
         ) != RestartInspection::ReviewOnly
-        || inspect_restart_chain(current_source.checkpoints, Some(&current_source.signed.anchor))
-            != RestartInspection::ReviewOnly
+        || inspect_restart_chain(
+            current_source.checkpoints,
+            Some(&current_source.signed.anchor),
+        ) != RestartInspection::ReviewOnly
     {
         return RestartInspection::Deny;
     }
