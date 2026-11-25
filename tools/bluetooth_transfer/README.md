@@ -1,6 +1,35 @@
-# PALACO Bluetooth Offline Transfer — v6.5 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v6.6 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v6.6 Local witness delivery channels and frozen quorum archive (DRAFT / HOLD)
+
+- `witness_archive_v66.py` simulates three separately named **local
+  delivery directories**, one per pinned Ed25519 witness. A create-once,
+  fsynced JSON manifest binds the ledger sequence, head and root to the
+  three witness IDs, channel states and SHA-256 of every received signed
+  checkpoint. Each supplied signed checkpoint is cryptographically
+  verified against the unchanged chain and pinned public key.
+- A final archive accepts exactly two or three valid matching receipts.
+  One explicit `absent` channel is permitted at 2/3; an unresolved
+  `pending` channel, a missing declared receipt, an unlisted late
+  delivery, conflicting signature, changed manifest or incomplete
+  roster fails closed. The archive is **frozen**: a late receipt requires
+  a new explicitly reviewed archive, never silent mutation.
+- `test_witness_archive_v66.py` tests valid 2/3 and 3/3, one witness,
+  pending/missing/late deliveries, signed split-view, changed receipt,
+  manifest tampering, swapped key roster and prohibited overwrite.
+  GitHub CI executes the simulation on the actual Windows SCM fault
+  record as well as the Linux regression suite.
+- **Crucial limitation:** these are separate *paths on one ephemeral CI
+  machine*, NOT three real network delivery channels or independently
+  operated archival custodians. The manifest is locally immutable by
+  file-creation semantics, NOT externally authenticated, timestamped or
+  rollback-resistant. A privileged local attacker can replace the
+  manifest, data and roots. No external archiving, HSM, BLE or
+  production authority has been established.
+- GO-13 HOLD / authorization DENY; Draft PR; no merge, publication,
+  production installation or deployment.
 
 ## v6.5 CI 2-of-3 witness quorum and conflicting-checkpoint refusal (DRAFT / HOLD)
 
