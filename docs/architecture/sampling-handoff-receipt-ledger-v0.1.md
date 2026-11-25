@@ -360,3 +360,23 @@ hostile scalar and sequence cases and assert that invalid inputs are
 rejected **before** the delta hash function can run. This is not a
 streaming byte limit on serialized untrusted network payloads; upstream
 transport/parsing limits remain necessary. GO-13 HOLD, authorization DENY.
+
+## Bounded untrusted delta JSON decoding (2026-11-25)
+
+The new `verify_review_delta_json` entry point accepts *bytes only*,
+requires a nonempty payload at most 8 MiB, decodes strict UTF-8, rejects
+duplicate object keys at every nesting level, and rejects non-finite
+JSON constants, invalid syntax and excessive nesting before invoking
+the existing pinned offline delta verifier. JSON parsing occurs only
+after the byte-size/type gate. The original programmatic dictionary
+verifier remains supported, but callers accepting externally transmitted
+JSON bytes should use this bounded decoding entry point.
+
+Four new regression methods cover valid byte payloads, byte-size/type
+limits without entering the parser, duplicate keys at the root and
+inside receipt entries, malformed UTF-8 and non-finite constants.
+This check bounds the **received serialized document**, not overall
+process memory, the size of trusted previous manifests, or transport
+buffering upstream. Separate size limits are still needed at the HTTP,
+file and message acquisition layers. No pin issuance, permission,
+delivery or custody is implied. GO-13 HOLD / authorization DENY.
