@@ -353,8 +353,9 @@ pub fn inspect_segment_signer_consistency(segment: &AuditSegmentEvidence<'_>) ->
 ///
 /// Every source's internal checkpoint chain is also validated against its
 /// final anchor: a direct call rejects HOLD, revocation, uncommitted records,
-/// sequence gaps and broken internal links. The boundary between consecutive
-/// receipts must also be contiguous without replay or missing bundles.
+/// sequence gaps and broken internal links. Each receipt must correspond to
+/// its exact source checkpoint count, tip sequence and key registry revision.
+/// The boundary between consecutive receipts must also be contiguous.
 /// Hash consistency is not a substitute for independent authentication.
 #[must_use]
 pub fn inspect_segment_snapshot_continuity(
@@ -365,12 +366,16 @@ pub fn inspect_segment_snapshot_continuity(
     }
     let mut prior_sequence: Option<u64> = None;
     let mut prior_digest = [0; 32];
-    for source in segment.evidence {
+    for (source, receipt) in segment.evidence.iter().zip(segment.receipts.iter()) {
         let (Some(first), Some(last)) = (source.checkpoints.first(), source.checkpoints.last())
         else {
             return RestartInspection::Deny;
         };
         if source.checkpoints.len() > MAX_CHAIN_CHECKPOINTS
+            || source.checkpoints.len() != source.payloads.len()
+            || receipt.checkpoint_count != source.checkpoints.len()
+            || receipt.checkpoint_sequence != last.sequence
+            || receipt.registry_sequence != source.trusted_key.registry_sequence
             || inspect_restart_chain(source.checkpoints, Some(&source.signed.anchor))
                 != RestartInspection::ReviewOnly
         {
@@ -1455,15 +1460,57 @@ mod tests {
             trusted_key: &key,
             floor: &floor_current,
         }];
+        let internal_receipts = [ReviewReceipt {
+            checkpoint_count: 2,
+            ..receipts_current[0]
+        }];
         let internally_linked = AuditSegmentEvidence {
             links: &links_current,
-            receipts: &receipts_current,
+            receipts: &internal_receipts,
             evidence: &internally_linked_evidence,
             expected: &expected_current,
         };
         assert_eq!(
             inspect_segment_snapshot_continuity(&internally_linked),
             RestartInspection::ReviewOnly
+        );
+        let mismatched_internal_receipt = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &receipts_current,
+            evidence: &internally_linked_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_segment_snapshot_continuity(&mismatched_internal_receipt),
+            RestartInspection::Deny
+        );
+        let forged_end_receipt = [ReviewReceipt {
+            checkpoint_sequence: receipts_current[0].checkpoint_sequence + 1,
+            ..receipts_current[0]
+        }];
+        let forged_end_segment = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &forged_end_receipt,
+            evidence: &evidence_current,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_segment_snapshot_continuity(&forged_end_segment),
+            RestartInspection::Deny
+        );
+        let forged_registry_receipt = [ReviewReceipt {
+            registry_sequence: receipts_current[0].registry_sequence + 1,
+            ..receipts_current[0]
+        }];
+        let forged_registry_segment = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &forged_registry_receipt,
+            evidence: &evidence_current,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_segment_snapshot_continuity(&forged_registry_segment),
+            RestartInspection::Deny
         );
         let blocked_checkpoints = [
             RestartCheckpoint {
