@@ -762,6 +762,34 @@ assert.deepEqual(bytesAfterBufferMutation, expectedBufferBytes,
 assert.equal(digestAfterBufferMutation, expectedBufferDigest,
              'digest framing remains stable despite late Buffer mutations');
 
+// Crypto hash methods, digest length framing and BigInt are also
+// public mutable call sites; late changes must not alter SHA-256 results.
+const hashMethodPrototype = Object.getPrototypeOf(createHash('sha256'));
+const savedDigestMethods = {
+  update: hashMethodPrototype.update,
+  digest: hashMethodPrototype.digest,
+  writeBigUInt64BE: Buffer.prototype.writeBigUInt64BE,
+  BigInt: globalThis.BigInt,
+};
+const digestInput = { z: [0, 1], emoji: '🚀' };
+const expectedDigestWithPinnedMethods = digest(digestInput);
+let digestWithAlteredMethods;
+try {
+  const forbidden = () => { throw new Error('mutated digest method executed'); };
+  hashMethodPrototype.update = forbidden;
+  hashMethodPrototype.digest = forbidden;
+  Buffer.prototype.writeBigUInt64BE = forbidden;
+  globalThis.BigInt = forbidden;
+  digestWithAlteredMethods = digest({ emoji: '🚀', z: [0, 1] });
+} finally {
+  hashMethodPrototype.update = savedDigestMethods.update;
+  hashMethodPrototype.digest = savedDigestMethods.digest;
+  Buffer.prototype.writeBigUInt64BE = savedDigestMethods.writeBigUInt64BE;
+  globalThis.BigInt = savedDigestMethods.BigInt;
+}
+assert.equal(digestWithAlteredMethods, expectedDigestWithPinnedMethods,
+             'digest and length frame must survive late hash prototype mutations');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
