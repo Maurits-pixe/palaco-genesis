@@ -863,6 +863,64 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
                 current_head,1)
         self.assertEqual(result["reason"],"invalid-review-delta-entry")
 
+    def test_delta_json_decoding_accepts_bounded_verified_bytes(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        raw=json.dumps(created["delta"],sort_keys=True,
+                       separators=(",",":")).encode("utf-8")
+        self.db.unlink()
+        result=mod.verify_review_delta_json(
+            previous,sha,head,raw,created["delta_sha256"],current_head,1)
+        self.assertTrue(result["delta_valid"])
+        self.assertEqual(result["state"],"pending-review")
+        self.assertEqual(result["release_gate"],"HOLD")
+        self.assertFalse(result["authorization_granted"])
+
+    def test_delta_json_rejects_oversized_or_nonbyte_input_before_parse(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        for raw,reason in (
+            ("{}", "invalid-review-delta-json-type"),
+            (bytearray(b"{}"),"invalid-review-delta-json-type"),
+            (b"","review-delta-json-size-limit"),
+            (b"x"*(mod.MAX_DELTA_JSON_BYTES+1),
+             "review-delta-json-size-limit")):
+            with self.subTest(reason=reason):
+                with patch.object(mod.json,"loads",
+                                  side_effect=AssertionError("parsed forbidden input")):
+                    result=mod.verify_review_delta_json(
+                        previous,sha,head,raw,created["delta_sha256"],
+                        current_head,1)
+                self.assertEqual(result["reason"],reason)
+                self.assertFalse(result["authorization_granted"])
+
+    def test_delta_json_rejects_ambiguous_duplicate_keys(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        raw=json.dumps(created["delta"],sort_keys=True,
+                       separators=(",",":")).encode("utf-8")
+        duplicate_top=raw.replace(b'"schema_version":"0.1.0"',
+                                  b'"schema_version":"0.1.0","schema_version":"0.1.0"',1)
+        self.assertNotEqual(duplicate_top,raw)
+        duplicate_nested=raw.replace(b'"sequence":2',
+                                     b'"sequence":2,"sequence":2',1)
+        self.assertNotEqual(duplicate_nested,raw)
+        for invalid in (duplicate_top,duplicate_nested):
+            result=mod.verify_review_delta_json(
+                previous,sha,head,invalid,created["delta_sha256"],
+                current_head,1)
+            self.assertEqual(result["reason"],
+                             "invalid-or-ambiguous-review-delta-json")
+            self.assertFalse(result["delta_valid"])
+
+    def test_delta_json_rejects_utf8_nonfinite_and_malformed_documents(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        for invalid in (b"\xff",b'{"unexpected":NaN}',b'{"unexpected":Infinity}',
+                        b'{"unterminated":',b"[]]"):
+            with self.subTest(invalid=invalid[:35]):
+                result=mod.verify_review_delta_json(
+                    previous,sha,head,invalid,created["delta_sha256"],
+                    current_head,1)
+                self.assertEqual(result["reason"],
+                                 "invalid-or-ambiguous-review-delta-json")
+
     def test_registered_pending_only(self):
         first=self.record()
         self.assertTrue(first["recorded"])
