@@ -560,13 +560,25 @@ def verify_review_delta(previous_manifest,previous_sha256,previous_head,
         or not count<=delta["current_receipts"]<=MAX_RECORDS
         or not isinstance(delta["entries"],list)
         or len(delta["entries"])!=delta["current_receipts"]-count
+        or type(delta["previous_head"]) is not str
+        or type(delta["current_head"]) is not str
         or delta["previous_head"]!=previous_head
         or delta["current_head"]!=expected_current_head):
         return deny("invalid-review-delta-schema-or-pins")
-    # Bound the entry list and reject nested/unexpected data before hashing.
-    for entry in delta["entries"]:
-        if (not isinstance(entry,dict)
-            or set(entry)!=MANIFEST_ENTRY_FIELDS):
+    # Validate scalar shapes before serializing untrusted delta content.
+    # This also bounds each field's size before constructing its digest.
+    hex_fields=("recipient_key_id","package_sha256","receipt_nonce_hex",
+                "receipt_sha256","previous_hash","event_hash")
+    for sequence,entry in enumerate(delta["entries"],count+1):
+        if (type(entry) is not dict or set(entry)!=MANIFEST_ENTRY_FIELDS):
+            return deny("invalid-review-delta-entry")
+        if (type(entry["sequence"]) is not int
+            or entry["sequence"]!=sequence
+            or type(entry["recipient_id"]) is not str
+            or not handoff.IDENT.fullmatch(entry["recipient_id"])
+            or any(type(entry[field]) is not str
+                   or not handoff.HEX.fullmatch(entry[field])
+                   for field in hex_fields)):
             return deny("invalid-review-delta-entry")
     try:computed=_delta_hash(delta)
     except (TypeError,ValueError,OverflowError,UnicodeError):
