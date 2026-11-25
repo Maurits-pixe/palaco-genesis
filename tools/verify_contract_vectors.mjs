@@ -229,6 +229,42 @@ for (const vector of fixture.vectors) {
   assert.equal(canonicalBytes(vector.value).toString('hex'), vector.canonical_hex, vector.name + ' bytes');
   assert.equal(digest(vector.value), vector.sha256, vector.name + ' digest');
 }
+// Independently reconstruct the complete SHA-256 framed input from the
+// pinned wire contract. These tests intentionally avoid the digest() helper.
+const frameDigest = (domain, lengthBytes, content) =>
+  createHash('sha256').update(domain).update(lengthBytes).update(content).digest('hex');
+const gatePayload = Buffer.from('{"gate":"HOLD"}', 'utf8');
+const exactLengthBE = Buffer.from('000000000000000f', 'hex');
+const wrongLengthLE = Buffer.from('0f00000000000000', 'hex');
+const wrongLengthBE = Buffer.from('000000000000000e', 'hex');
+const actualGateDigest = digest({ gate: 'HOLD' });
+assert.equal(gatePayload.length, 15, 'fixture payload byte count is pinned');
+assert.equal(actualGateDigest, frameDigest(DOMAIN, exactLengthBE, gatePayload),
+             'domain || eight-byte big-endian byte length || payload is exact');
+assert.notEqual(actualGateDigest, frameDigest(DOMAIN, wrongLengthLE, gatePayload),
+                'little-endian length is not accepted as canonical framing');
+assert.notEqual(actualGateDigest, frameDigest(DOMAIN, wrongLengthBE, gatePayload),
+                'incorrect payload byte length alters the digest');
+assert.notEqual(actualGateDigest, frameDigest(Buffer.from('PALACO-CJSON-v0', 'utf8'),
+                                             exactLengthBE, gatePayload),
+                'omitted zero byte in domain separator alters the digest');
+assert.notEqual(actualGateDigest, frameDigest(Buffer.from('OTHER-CJSON-v0\\0', 'utf8'),
+                                             exactLengthBE, gatePayload),
+                'cross-domain framing alters the digest');
+assert.notEqual(actualGateDigest, frameDigest(DOMAIN, exactLengthBE,
+                                             Buffer.from('{"gate":"DENY"}', 'utf8')),
+                'modified payload with same byte count alters the digest');
+const rocketPayload = Buffer.from('{"symbol":"🚀"}', 'utf8');
+const rocketByteLength = Buffer.from('0000000000000011', 'hex');
+assert.equal(rocketPayload.length, 17, 'astral Unicode is four UTF-8 bytes');
+assert.equal(digest({ symbol: '🚀' }),
+             frameDigest(DOMAIN, rocketByteLength, rocketPayload),
+             'multibyte UTF-8 payload uses byte length, never code unit count');
+assert.notEqual(digest({ symbol: '🚀' }),
+                frameDigest(DOMAIN, Buffer.from('000000000000000f', 'hex'),
+                            rocketPayload),
+                'Unicode character-count framing must fail');
+
 const names = fixture.vectors.map((vector) => vector.name);
 assert.equal(new Set(names).size, names.length, 'reference vector names must be unique');
 assert.ok(names.includes('escaped_controls'));
