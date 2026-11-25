@@ -832,6 +832,37 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
         self.assertEqual(result["reason"],"no-conflicting-review-delta-branches")
         self.assertFalse(result["fork_detected"])
 
+    def test_delta_rejects_malformed_scalar_fields_before_hashing(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        for field,value in (("recipient_key_id",["a"*64]),
+                            ("package_sha256","f"*100000),
+                            ("receipt_nonce_hex",None),
+                            ("recipient_id",{"unexpected":"object"}),
+                            ("sequence",True),
+                            ("event_hash","not-hex")):
+            with self.subTest(field=field):
+                delta=copy.deepcopy(created["delta"])
+                delta["entries"][0][field]=value
+                with patch.object(mod,"_delta_hash",
+                                  side_effect=AssertionError("hashed invalid input")):
+                    result=mod.verify_review_delta(
+                        previous,sha,head,delta,created["delta_sha256"],
+                        current_head,1)
+                self.assertFalse(result["delta_valid"])
+                self.assertEqual(result["reason"],"invalid-review-delta-entry")
+                self.assertFalse(result["authorization_granted"])
+
+    def test_delta_rejects_wrong_sequence_before_digesting(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        delta=copy.deepcopy(created["delta"])
+        delta["entries"][0]["sequence"]=3
+        with patch.object(mod,"_delta_hash",
+                          side_effect=AssertionError("hashed invalid sequence")):
+            result=mod.verify_review_delta(
+                previous,sha,head,delta,created["delta_sha256"],
+                current_head,1)
+        self.assertEqual(result["reason"],"invalid-review-delta-entry")
+
     def test_registered_pending_only(self):
         first=self.record()
         self.assertTrue(first["recorded"])
