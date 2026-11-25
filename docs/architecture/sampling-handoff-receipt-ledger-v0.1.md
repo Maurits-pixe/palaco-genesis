@@ -341,3 +341,22 @@ Even a successfully reverified conflict stays `quarantined`,
 `authorization_granted=False`, and `release_gate=HOLD`. This is an
 integrity check against authenticated external pins, **not** an external
 witness signature or independent custody certificate. GO-13 HOLD remains.
+
+## Fail-closed delta scalar validation (2026-11-25)
+
+The offline delta verifier now validates each appended receipt entry
+**before** constructing or hashing any canonical delta JSON. Every
+sequence must be an exact integer equal to its expected contiguous
+position, recipient identifiers must match the existing bounded
+identifier grammar, and every digest/key/nonce field must be a
+properly formatted SHA-256-size hexadecimal string. Nested values,
+booleans in sequence slots, oversized strings and non-contiguous
+sequences are rejected with `invalid-review-delta-entry`.
+
+The change reduces wasted serialization and untrusted-input exposure
+for malformed delta records while preserving domain-separated hashes
+and all independent pin checks. Two regression methods include multiple
+hostile scalar and sequence cases and assert that invalid inputs are
+rejected **before** the delta hash function can run. This is not a
+streaming byte limit on serialized untrusted network payloads; upstream
+transport/parsing limits remain necessary. GO-13 HOLD, authorization DENY.
