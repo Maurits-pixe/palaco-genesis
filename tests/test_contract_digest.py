@@ -94,7 +94,7 @@ class ContractDigestTests(unittest.TestCase):
 
     def test_digest_framing_rejects_wrong_endianness_and_byte_count(self):
         payload = canonical_bytes({"gate": "HOLD"})
-        domain = b"PALACO-CJSON-v0\\x00"
+        domain = b"PALACO-CJSON-v0" + bytes.fromhex("00")
         expected = hashlib.sha256(
             domain + len(payload).to_bytes(8, "big") + payload
         ).hexdigest()
@@ -116,8 +116,8 @@ class ContractDigestTests(unittest.TestCase):
         actual = digest_contract(original)
         mutations = (
             b"PALACO-CJSON-v0" + length + payload,
-            b"OTHER-CJSON-v0\\x00" + length + payload,
-            b"PALACO-CJSON-v0\\x00" + length + canonical_bytes({"gate": "DENY"}),
+            b"OTHER-CJSON-v0" + bytes.fromhex("00") + length + payload,
+            b"PALACO-CJSON-v0" + bytes.fromhex("00") + length + canonical_bytes({"gate": "DENY"}),
         )
         for altered_frame in mutations:
             with self.subTest(frame=altered_frame[:20]):
