@@ -741,3 +741,44 @@ def verify_review_fork_evidence(
                 reason="reverified-conflicting-branches-remain-quarantined",
                 fork_evidence_sha256=computed,
                 first_divergent_sequence=evidence["first_divergent_sequence"])
+
+
+MAX_DELTA_JSON_BYTES=8*1024*1024
+
+
+def _unique_json_object(pairs):
+    """Reject ambiguous duplicate JSON field names at every nesting level."""
+    obj={}
+    for key,value in pairs:
+        if key in obj:
+            raise ValueError("duplicate-review-delta-json-key")
+        obj[key]=value
+    return obj
+
+
+def _reject_json_constant(value):
+    raise ValueError("non-finite-review-delta-json-number")
+
+
+def verify_review_delta_json(previous_manifest,previous_sha256,previous_head,
+                             raw_delta,expected_delta_sha256,
+                             expected_current_head,minimum_previous_receipts):
+    """Bound and strictly decode untrusted JSON bytes before delta checks.
+
+    Caller-supplied external pins remain mandatory; no database access.
+    """
+    def deny(reason):return _out(delta_valid=False,reason=reason)
+    if type(raw_delta) is not bytes:
+        return deny("invalid-review-delta-json-type")
+    if not 1<=len(raw_delta)<=MAX_DELTA_JSON_BYTES:
+        return deny("review-delta-json-size-limit")
+    try:
+        delta=json.loads(raw_delta.decode("utf-8"),
+                         object_pairs_hook=_unique_json_object,
+                         parse_constant=_reject_json_constant)
+    except (UnicodeError,ValueError,TypeError,RecursionError):
+        return deny("invalid-or-ambiguous-review-delta-json")
+    return verify_review_delta(
+        previous_manifest,previous_sha256,previous_head,
+        delta,expected_delta_sha256,expected_current_head,
+        minimum_previous_receipts)
