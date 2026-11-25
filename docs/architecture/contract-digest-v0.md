@@ -129,6 +129,15 @@ The hash input is the literal UTF-8 domain label `PALACO-CJSON-v0` followed
 by a single zero byte, then the canonical byte length as eight unsigned
 big-endian bytes, then the canonical bytes.
 
+Both independent verifiers now pin **negative SHA-256 framing tests**:
+omitting the domain's trailing NUL, substituting another domain, changing
+the eight-byte length, encoding that length little-endian, or changing a
+same-size JSON payload must produce a different digest. A multibyte Unicode
+fixture additionally verifies that the framing length counts **UTF-8 bytes**,
+not Unicode characters. These deterministic regression checks protect the
+project-local wire-format convention; they do not authenticate the origin
+of a payload or establish collision resistance by testing.
+
 ## Independent implementation check
 
 `tools/verify_contract_vectors.mjs` is a standalone Node.js verifier that
