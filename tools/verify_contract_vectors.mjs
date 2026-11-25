@@ -31,6 +31,13 @@ const intrinsicMathMax = Math.max;
 const intrinsicBufferByteLength = Buffer.byteLength;
 const intrinsicBufferFrom = Buffer.from;
 const intrinsicBufferAlloc = Buffer.alloc;
+const intrinsicWriteBigUInt64BE = Buffer.prototype.writeBigUInt64BE;
+const intrinsicBigIntConverter = BigInt;
+// The Node crypto hash prototype also exposes mutable instance methods.
+// Capture their original implementations for review-only digest verification.
+const hashMethodProbe = createHash('sha256');
+const intrinsicHashUpdate = hashMethodProbe.update;
+const intrinsicHashDigest = hashMethodProbe.digest;
 
 // Compare Unicode scalar values directly, without Array.from or mutable
 // string prototype methods consulted after initialization.
@@ -207,8 +214,12 @@ function canonicalBytes(value) {
 function digest(value) {
   const payload = canonicalBytes(value);
   const length = intrinsicBufferAlloc(8);
-  length.writeBigUInt64BE(BigInt(payload.length));
-  return createHash('sha256').update(DOMAIN).update(length).update(payload).digest('hex');
+  intrinsicWriteBigUInt64BE.call(length, intrinsicBigIntConverter(payload.length));
+  const hash = createHash('sha256');
+  intrinsicHashUpdate.call(hash, DOMAIN);
+  intrinsicHashUpdate.call(hash, length);
+  intrinsicHashUpdate.call(hash, payload);
+  return intrinsicHashDigest.call(hash, 'hex');
 }
 
 assert.equal(fixture.profile, 'PALACO-CJSON-v0');
