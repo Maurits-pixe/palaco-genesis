@@ -112,6 +112,10 @@ try {
     # and any signed split-view observation forces DENY.
     python tools/bluetooth_transfer/witness_quorum_v65.py --ci-evidence $evidence
     if ($LASTEXITCODE -ne 0) { throw "CI 2-of-3 witness quorum test failed" }
+    # Separate local channel archives are a simulation only. Verify
+    # manifest integrity and refuse a late third receipt after archiving.
+    python tools/bluetooth_transfer/witness_archive_v66.py --ci-evidence $evidence
+    if ($LASTEXITCODE -ne 0) { throw "CI quorum archive channel verification failed" }
     Write-Output "PALACO ephemeral Ed25519 CI witness PASS (signed verifier receipt, linked local SQLite entry, duplicate refused)"
     Write-Output "Independent CI incident verification PASS (original validated, replay denied; unsigned)"
     Write-Output "Windows SCM injected worker failure PASS (STOPPED, no restart, fixed HOLD/DENY evidence, SHA-256 verified)"
