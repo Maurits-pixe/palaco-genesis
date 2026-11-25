@@ -92,6 +92,37 @@ class ContractDigestTests(unittest.TestCase):
             hashlib.sha256(b"PALACO-CJSON-v0" + bytes.fromhex("00") + payload).hexdigest(),
         )
 
+    def test_digest_framing_rejects_wrong_endianness_and_byte_count(self):
+        payload = canonical_bytes({"gate": "HOLD"})
+        domain = b"PALACO-CJSON-v0\\x00"
+        expected = hashlib.sha256(
+            domain + len(payload).to_bytes(8, "big") + payload
+        ).hexdigest()
+        wrong_endian = hashlib.sha256(
+            domain + len(payload).to_bytes(8, "little") + payload
+        ).hexdigest()
+        wrong_length = hashlib.sha256(
+            domain + (len(payload) - 1).to_bytes(8, "big") + payload
+        ).hexdigest()
+        actual = digest_contract({"gate": "HOLD"})
+        self.assertEqual(actual, expected)
+        self.assertNotEqual(actual, wrong_endian)
+        self.assertNotEqual(actual, wrong_length)
+
+    def test_digest_framing_rejects_domain_and_same_length_tampering(self):
+        original = {"gate": "HOLD"}
+        payload = canonical_bytes(original)
+        length = len(payload).to_bytes(8, "big")
+        actual = digest_contract(original)
+        mutations = (
+            b"PALACO-CJSON-v0" + length + payload,
+            b"OTHER-CJSON-v0\\x00" + length + payload,
+            b"PALACO-CJSON-v0\\x00" + length + canonical_bytes({"gate": "DENY"}),
+        )
+        for altered_frame in mutations:
+            with self.subTest(frame=altered_frame[:20]):
+                self.assertNotEqual(actual, hashlib.sha256(altered_frame).hexdigest())
+
     def test_file_digest_ignores_whitespace_and_member_order(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "candidate.json"
