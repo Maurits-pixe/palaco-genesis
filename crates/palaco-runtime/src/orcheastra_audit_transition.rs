@@ -154,8 +154,9 @@ pub fn inspect_transition_monotonicity(
 ///
 /// This standalone boundary checks both complete source checkpoint chains
 /// against their claimed final anchors before comparing their junction.
-/// It also rejects skipped, replayed or mislinked junction checkpoints.
-/// Hash consistency is not independent source authentication.
+/// Receipts must also match each adjacent source's checkpoint count, tip
+/// sequence and key registry revision. It rejects skipped, replayed or
+/// mislinked junction checkpoints. Hash consistency is not authentication.
 #[must_use]
 pub fn inspect_transition_snapshot_link(
     previous: &AuditSegmentEvidence<'_>,
@@ -172,6 +173,26 @@ pub fn inspect_transition_snapshot_link(
     ) else {
         return RestartInspection::Deny;
     };
+    let (Some(previous_receipt), Some(current_receipt), Some(current_last)) = (
+        previous.receipts.last(),
+        current.receipts.first(),
+        current_source.checkpoints.last(),
+    ) else {
+        return RestartInspection::Deny;
+    };
+    // A correct source junction is not enough when receipts advertise
+    // different checkpoint intervals or key-registry revisions.
+    if previous_source.checkpoints.len() != previous_source.payloads.len()
+        || current_source.checkpoints.len() != current_source.payloads.len()
+        || previous_receipt.checkpoint_count != previous_source.checkpoints.len()
+        || current_receipt.checkpoint_count != current_source.checkpoints.len()
+        || previous_receipt.checkpoint_sequence != previous_checkpoint.sequence
+        || current_receipt.checkpoint_sequence != current_last.sequence
+        || previous_receipt.registry_sequence != previous_source.trusted_key.registry_sequence
+        || current_receipt.registry_sequence != current_source.trusted_key.registry_sequence
+    {
+        return RestartInspection::Deny;
+    }
     // A valid boundary is insufficient when either original source has a
     // blocked, revoked, or disconnected checkpoint inside its own chain.
     if previous_source.checkpoints.len() > MAX_CHAIN_CHECKPOINTS
@@ -1027,6 +1048,51 @@ mod tests {
             inspect_transition_snapshot_link(&previous, &current),
             RestartInspection::ReviewOnly
         );
+        // A structurally linked junction is not reviewable when one of its
+        // adjacent receipts falsifies the underlying source metadata.
+        let wrong_junction_count = [ReviewReceipt {
+            checkpoint_count: 2,
+            ..receipts_current[0]
+        }];
+        let wrong_junction_count_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &wrong_junction_count,
+            evidence: &evidence_current,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_snapshot_link(&previous, &wrong_junction_count_current),
+            RestartInspection::Deny
+        );
+        let wrong_junction_tip = [ReviewReceipt {
+            checkpoint_sequence: 9,
+            ..receipts_current[0]
+        }];
+        let wrong_junction_tip_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &wrong_junction_tip,
+            evidence: &evidence_current,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_snapshot_link(&previous, &wrong_junction_tip_current),
+            RestartInspection::Deny
+        );
+        let wrong_junction_registry = [ReviewReceipt {
+            registry_sequence: 4,
+            ..receipts_current[0]
+        }];
+        let wrong_junction_registry_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &wrong_junction_registry,
+            evidence: &evidence_current,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_snapshot_link(&previous, &wrong_junction_registry_current),
+            RestartInspection::Deny
+        );
+
         assert_eq!(
             inspect_segment_signer_consistency(&previous),
             RestartInspection::ReviewOnly
