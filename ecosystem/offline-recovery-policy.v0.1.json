@@ -1,0 +1,41 @@
+{
+  "schema_version": "0.1.0",
+  "release_gate": "HOLD",
+  "runtime_enabled": false,
+  "description": "Design-time offline evidence recovery policy. Not an active sync service or authorization decision.",
+  "allowed_states": [
+    "untrusted",
+    "pending-review",
+    "quarantined"
+  ],
+  "allowed_transitions": [
+    {
+      "from": "untrusted",
+      "to": "pending-review",
+      "requires": "integrity-check"
+    },
+    {
+      "from": "untrusted",
+      "to": "quarantined",
+      "requires": "integrity-failure"
+    },
+    {
+      "from": "pending-review",
+      "to": "quarantined",
+      "requires": "integrity-failure"
+    }
+  ],
+  "forbidden_offline_actions": [
+    "issue-identity",
+    "grant-role",
+    "authorize-execution",
+    "mark-evidence-verified",
+    "publish",
+    "deploy"
+  ],
+  "reconciliation": "manual-reviewed-server-side",
+  "duplicate_detection": "stable-record-id",
+  "conflict_policy": "quarantine",
+  "missing_provenance": "quarantine",
+  "unsupported_schema": "quarantine"
+}

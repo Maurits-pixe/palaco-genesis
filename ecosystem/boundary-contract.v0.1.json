@@ -1,0 +1,67 @@
+{
+  "schema_version": "0.1.0",
+  "release_gate": "HOLD",
+  "description": "Proposed interface contracts only; not endpoints, issued credentials, or deployed permissions.",
+  "edges": [
+    {
+      "consumer": "palaco-one",
+      "provider": "palaco-database",
+      "purpose": "resolve registered identity reference",
+      "data_class": "identity-reference",
+      "authentication": "required",
+      "authorization": "provider-enforced",
+      "offline_behavior": "deny",
+      "runtime_enabled": false
+    },
+    {
+      "consumer": "era",
+      "provider": "palaco-database",
+      "purpose": "append evidence record with lineage",
+      "data_class": "evidence-metadata",
+      "authentication": "required",
+      "authorization": "provider-enforced",
+      "offline_behavior": "queue-untrusted",
+      "runtime_enabled": false
+    },
+    {
+      "consumer": "citadel",
+      "provider": "palaco-one",
+      "purpose": "validate authenticated principal",
+      "data_class": "session-claims",
+      "authentication": "required",
+      "authorization": "provider-enforced",
+      "offline_behavior": "deny",
+      "runtime_enabled": false
+    },
+    {
+      "consumer": "citadel",
+      "provider": "era",
+      "purpose": "verify referenced evidence",
+      "data_class": "evidence-reference",
+      "authentication": "required",
+      "authorization": "provider-enforced",
+      "offline_behavior": "deny",
+      "runtime_enabled": false
+    },
+    {
+      "consumer": "rio",
+      "provider": "palaco-one",
+      "purpose": "obtain scoped session claim",
+      "data_class": "session-claims",
+      "authentication": "required",
+      "authorization": "provider-enforced",
+      "offline_behavior": "deny",
+      "runtime_enabled": false
+    },
+    {
+      "consumer": "rio",
+      "provider": "era",
+      "purpose": "reference provenance for interactions",
+      "data_class": "evidence-reference",
+      "authentication": "required",
+      "authorization": "provider-enforced",
+      "offline_behavior": "queue-untrusted",
+      "runtime_enabled": false
+    }
+  ]
+}
