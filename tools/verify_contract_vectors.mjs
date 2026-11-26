@@ -878,6 +878,20 @@ try {
 assert.deepEqual(bytesWithReplacedConstructors, expectedContainerBytes,
                  'canonicalization uses captured container identities and WeakSet constructor');
 
+// A grossly oversized raw string/key must fail at the cheap UTF-8 input
+// bound, before potentially expensive NFC normalization. The same malformed
+// Unicode remains a non-NFC error when the value fits within that bound.
+const oversizedDecomposedText = 'e' + String.fromCharCode(0x301) +
+                                'x'.repeat(MAX_CANONICAL_BYTES);
+assert.throws(() => canonicalBytes(oversizedDecomposedText), /byte budget/,
+              'oversized string is refused before NFC normalization');
+assert.throws(() => canonicalBytes({ [oversizedDecomposedText]: 0 }), /byte budget/,
+              'oversized object key is refused before NFC normalization');
+assert.throws(() => canonicalBytes('e' + String.fromCharCode(0x301)), /non-NFC/,
+              'small non-NFC string is still rejected as Unicode invalid');
+assert.throws(() => canonicalBytes({ ['e' + String.fromCharCode(0x301)]: 0 }),
+              /non-NFC/, 'small non-NFC key is still rejected');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
