@@ -760,6 +760,18 @@ def _reject_json_constant(value):
     raise ValueError("non-finite-review-delta-json-number")
 
 
+def _bounded_json_integer(value):
+    """Only bounded decimal integers are permissible in delta metadata."""
+    if len(value)>10:
+        raise ValueError("oversized-review-delta-json-integer")
+    return int(value)
+
+
+def _reject_json_float(value):
+    """This schema has no floating-point fields; reject them in the parser."""
+    raise ValueError("floating-point-review-delta-json-number")
+
+
 def verify_review_delta_json(previous_manifest,previous_sha256,previous_head,
                              raw_delta,expected_delta_sha256,
                              expected_current_head,minimum_previous_receipts):
@@ -775,7 +787,9 @@ def verify_review_delta_json(previous_manifest,previous_sha256,previous_head,
     try:
         delta=json.loads(raw_delta.decode("utf-8"),
                          object_pairs_hook=_unique_json_object,
-                         parse_constant=_reject_json_constant)
+                         parse_constant=_reject_json_constant,
+                         parse_int=_bounded_json_integer,
+                         parse_float=_reject_json_float)
     except (UnicodeError,ValueError,TypeError,RecursionError):
         return deny("invalid-or-ambiguous-review-delta-json")
     return verify_review_delta(
