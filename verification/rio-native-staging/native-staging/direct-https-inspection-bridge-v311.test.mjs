@@ -2,6 +2,7 @@ import {createRioManagedInspectionServiceV309} from '../rio-managed-inspection-s
 import {createRioInspectionHostLifecycleV310} from '../rio-inspection-host-lifecycle-v310.mjs';
 import {createServer,request as httpsRequest} from 'node:https';
 import {execFileSync} from 'node:child_process';
+import {checkServerIdentity} from 'node:tls';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createRioDirectHttpsInspectionBridgeV311} from '../rio-direct-https-inspection-bridge-v311.mjs';
@@ -216,7 +217,10 @@ test('v311 direct HTTPS bridge through actual TLS One SQL and receipt crypto',{t
         'Content-Length':Buffer.byteLength(body),Cookie:'rio-fixture='+fixtureToken,Connection:'close',...options.headers};
       for(const key of Object.keys(headers))if(headers[key]===null)delete headers[key];
       const req=httpsRequest({hostname:'127.0.0.1',port:address.port,path:options.path??PATH,method:'POST',agent:false,
-        ca:cert,rejectUnauthorized:true,minVersion:options.minVersion??'TLSv1.3',maxVersion:options.maxVersion??'TLSv1.3',
+        ca:cert,rejectUnauthorized:true,
+        // Keep TLS endpoint identity fixed while deliberately varying the HTTP Host header.
+        checkServerIdentity:(_name,peer)=>checkServerIdentity('127.0.0.1',peer),
+        minVersion:options.minVersion??'TLSv1.3',maxVersion:options.maxVersion??'TLSv1.3',
         headers:options.rawHeaders??headers},res=>{
           const authorized=res.socket.authorized,protocol=res.socket.getProtocol(),chunks=[];
           res.on('data',x=>chunks.push(x));res.on('error',reject);res.on('end',()=>resolve({status:res.statusCode,
