@@ -889,3 +889,35 @@ def verify_review_anchor_history(manifests,authenticated_anchors,
                 anchors=len(authenticated_anchors),
                 latest_receipts=previous_pin["receipt_count"],
                 head_hash=previous_pin["head_hash"])
+
+
+def verify_review_anchor_history_with_latest_pin(
+        manifests,authenticated_anchors,expected_latest_anchor):
+    """Require the exact independently authenticated terminal anchor.
+
+    An externally supplied minimum count alone cannot identify the latest
+    state. The terminal count, head and manifest commitment must all match
+    a separately retained trusted anchor; this function never issues one.
+    """
+    def deny(reason):return _out(anchor_history_valid=False,reason=reason)
+    if (type(expected_latest_anchor) is not dict
+        or set(expected_latest_anchor)!=REVIEW_ANCHOR_FIELDS
+        or type(expected_latest_anchor["receipt_count"]) is not int
+        or not 1<=expected_latest_anchor["receipt_count"]<=MAX_RECORDS
+        or any(type(expected_latest_anchor[key]) is not str
+               or not handoff.HEX.fullmatch(expected_latest_anchor[key])
+               for key in ("head_hash","manifest_sha256"))):
+        return deny("missing-independent-latest-review-anchor")
+    checked=verify_review_anchor_history(
+        manifests,authenticated_anchors,expected_latest_anchor["head_hash"],
+        expected_latest_anchor["receipt_count"])
+    if not checked["anchor_history_valid"]:
+        return deny(checked["reason"])
+    if authenticated_anchors[-1]!=expected_latest_anchor:
+        return deny("latest-review-anchor-pin-mismatch")
+    return _out(anchor_history_valid=True,state="pending-review",
+                reason="exact-latest-independent-anchor-verified-not-custody",
+                anchors=checked["anchors"],
+                latest_receipts=expected_latest_anchor["receipt_count"],
+                head_hash=expected_latest_anchor["head_hash"],
+                manifest_sha256=expected_latest_anchor["manifest_sha256"])
