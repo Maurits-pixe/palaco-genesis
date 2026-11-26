@@ -2,6 +2,7 @@
 import copy
 import importlib.util
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -23,6 +24,43 @@ class BoundaryContractTests(unittest.TestCase):
     def rejects(self, contract, fragment):
         errors = mod.validate(self.registry, contract)
         self.assertTrue(any(fragment in e for e in errors), errors)
+
+    def assert_strict_json_rejected(self, source, fragment):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "contract.json"
+            path.write_text(source, encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, fragment):
+                mod.load_document(path)
+
+    def test_strict_loader_accepts_canonical_contract(self):
+        self.assertEqual(mod.load_document(mod.CONTRACT), self.contract)
+
+    def test_duplicate_top_level_gate_rejected(self):
+        self.assert_strict_json_rejected(
+            '{"release_gate":"HOLD","release_gate":"GO"}',
+            "duplicate JSON key",
+        )
+
+    def test_duplicate_nested_authorization_rejected(self):
+        self.assert_strict_json_rejected(
+            '{"edges":[{"authorization":"provider-enforced","authorization":"frontend-only"}]}',
+            "duplicate JSON key",
+        )
+
+    def test_duplicate_nested_runtime_flag_rejected(self):
+        self.assert_strict_json_rejected(
+            '{"edges":[{"runtime_enabled":false,"runtime_enabled":true}]}',
+            "duplicate JSON key",
+        )
+
+    def test_nan_rejected(self):
+        self.assert_strict_json_rejected('{"unknown":NaN}', "non-finite JSON number")
+
+    def test_infinity_rejected(self):
+        self.assert_strict_json_rejected('{"unknown":Infinity}', "non-finite JSON number")
+
+    def test_negative_infinity_rejected(self):
+        self.assert_strict_json_rejected('{"unknown":-Infinity}', "non-finite JSON number")
 
     def test_valid_contract(self):
         self.assertEqual(mod.validate(self.registry, self.candidate()), [])

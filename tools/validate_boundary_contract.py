@@ -22,6 +22,18 @@ REQUIRED_EDGES = {
 }
 
 
+try:
+    from tools.strict_contract_json import load_strict_json
+except ModuleNotFoundError:
+    # Support direct execution: python3 tools/validate_*.py
+    from strict_contract_json import load_strict_json
+
+
+def load_document(path):
+    """Preserve the validator's public loader while sharing strict parsing."""
+    return load_strict_json(path)
+
+
 def validate(registry, contract):
     errors = []
     if not isinstance(registry, dict) or not isinstance(contract, dict):
@@ -84,9 +96,9 @@ def validate(registry, contract):
 
 def main():
     try:
-        registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
-        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        registry = load_document(REGISTRY)
+        contract = load_document(CONTRACT)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 2
     errors = validate(registry, contract)

@@ -2,6 +2,7 @@
 import copy
 import importlib.util
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -24,6 +25,31 @@ class IntegrationRegistryTests(unittest.TestCase):
     def assert_rejected(self, candidate, fragment):
         errors = validator.validate(candidate)
         self.assertTrue(any(fragment in error for error in errors), errors)
+
+    def test_strict_loader_accepts_canonical_registry(self):
+        self.assertEqual(validator.load_registry(REGISTRY), self.original)
+
+    def assert_invalid_json(self, source, fragment):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "candidate.json"
+            path.write_text(source, encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, fragment):
+                validator.load_registry(path)
+
+    def test_rejects_duplicate_top_level_key(self):
+        self.assert_invalid_json('{"release_gate":"HOLD","release_gate":"GO"}', "duplicate JSON key")
+
+    def test_rejects_duplicate_nested_key(self):
+        self.assert_invalid_json('{"modules":[{"runtime_enabled":false,"runtime_enabled":true}]}', "duplicate JSON key")
+
+    def test_rejects_nan(self):
+        self.assert_invalid_json('{"version":NaN}', "non-finite JSON number")
+
+    def test_rejects_infinity(self):
+        self.assert_invalid_json('{"version":Infinity}', "non-finite JSON number")
+
+    def test_rejects_negative_infinity(self):
+        self.assert_invalid_json('{"version":-Infinity}', "non-finite JSON number")
 
     def test_canonical_registry(self):
         self.assertEqual(validator.validate(self.changed()), [])

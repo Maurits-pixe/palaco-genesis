@@ -1,0 +1,1001 @@
+#!/usr/bin/env node
+/**
+ * Independent Node.js reference verifier for PALACO-CJSON-v0 fixed vectors.
+ * REVIEW ONLY. Not JCS, signature authentication, or an authority decision.
+ */
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { types as nodeTypes } from 'node:util';
+
+const fixturePath = new URL('../verification/contract-digest-v0-vectors.json', import.meta.url);
+const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
+const DOMAIN = Buffer.from('PALACO-CJSON-v0\0', 'utf8');
+const MAX_DEPTH = 64;
+// Capture the sorter before any test can modify shared Array.prototype.
+const intrinsicArraySort = Array.prototype.sort;
+const intrinsicArrayPush = Array.prototype.push;
+const MAX_CANONICAL_NODES = 100_000;
+const MAX_CANONICAL_BYTES = 1024 * 1024;
+ // Capture review-verifier intrinsics before later mutable globals can change.
+const intrinsicJSONStringify = JSON.stringify;
+const intrinsicOwnKeys = Reflect.ownKeys;
+const intrinsicGetPrototypeOf = Object.getPrototypeOf;
+const intrinsicGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+const intrinsicHasOwn = Object.hasOwn;
+const intrinsicArrayIsArray = Array.isArray;
+const intrinsicIsProxy = nodeTypes.isProxy;
+const intrinsicWeakSetHas = WeakSet.prototype.has;
+const intrinsicWeakSetAdd = WeakSet.prototype.add;
+const intrinsicWeakSetDelete = WeakSet.prototype.delete;
+const intrinsicWeakSetConstructor = WeakSet;
+const intrinsicObjectPrototype = Object.prototype;
+const intrinsicArrayPrototype = Array.prototype;
+const intrinsicNormalize = String.prototype.normalize;
+const intrinsicCharCodeAt = String.prototype.charCodeAt;
+const intrinsicCodePointAt = String.prototype.codePointAt;
+const intrinsicStringConverter = String;
+const intrinsicNumberIsSafeInteger = Number.isSafeInteger;
+const intrinsicMathMax = Math.max;
+const intrinsicBufferByteLength = Buffer.byteLength;
+const intrinsicBufferFrom = Buffer.from;
+const intrinsicBufferAlloc = Buffer.alloc;
+const intrinsicWriteBigUInt64BE = Buffer.prototype.writeBigUInt64BE;
+const intrinsicBigIntConverter = BigInt;
+// The Node crypto hash prototype also exposes mutable instance methods.
+// Capture their original implementations for review-only digest verification.
+const hashMethodProbe = createHash('sha256');
+const intrinsicHashUpdate = hashMethodProbe.update;
+const intrinsicHashDigest = hashMethodProbe.digest;
+
+// Compare Unicode scalar values directly, without Array.from or mutable
+// string prototype methods consulted after initialization.
+function compareCodepoints(a, b) {
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    const left = intrinsicCodePointAt.call(a, i);
+    const right = intrinsicCodePointAt.call(b, j);
+    if (left !== right) return left < right ? -1 : 1;
+    i += left > 0xffff ? 2 : 1;
+    j += right > 0xffff ? 2 : 1;
+  }
+  if (i < a.length) return 1;
+  if (j < b.length) return -1;
+  return 0;
+}
+
+function assertValidString(s) {
+  if (intrinsicNormalize.call(s, 'NFC') !== s) throw new Error('non-NFC Unicode text');
+  for (let i = 0; i < s.length; i += 1) {
+    const code = intrinsicCharCodeAt.call(s, i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = intrinsicCharCodeAt.call(s, i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) {
+        throw new Error('unpaired Unicode surrogate');
+      }
+      i += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      throw new Error('unpaired Unicode surrogate');
+    }
+  }
+}
+
+function encode(value, depth = 0, active = new intrinsicWeakSetConstructor(), budget = { nodes: 0, bytes: 0 }) {
+  function charge(bytes) {
+    budget.bytes += bytes;
+    if (budget.bytes > MAX_CANONICAL_BYTES) {
+      throw new Error('canonical JSON byte budget exceeded');
+    }
+  }
+  budget.nodes += 1;
+  if (budget.nodes > MAX_CANONICAL_NODES) {
+    throw new Error('canonical JSON node budget exceeded');
+  }
+  // A JavaScript Proxy can execute arbitrary traps even during prototype,
+  // own-key or descriptor inspection. Deny it before any such inspection.
+  if (value !== null && typeof value === 'object' && intrinsicIsProxy(value)) {
+    throw new Error('Proxy is not canonical JSON data');
+  }
+  if (value === null) { charge(4); return 'null'; }
+  if (value === true) { charge(4); return 'true'; }
+  if (value === false) { charge(5); return 'false'; }
+  if (typeof value === 'number') {
+    if (!intrinsicNumberIsSafeInteger(value)) {
+      throw new Error('integer outside interoperable safe range or non-integer');
+    }
+    const encoded = intrinsicStringConverter(value);
+    charge(intrinsicBufferByteLength(encoded, 'utf8'));
+    return encoded;
+  }
+  if (typeof value === 'string') {
+    // Deny oversized input before the more expensive Unicode normalization
+    // and surrogate checks. JSON escaping is budgeted separately below.
+    if (intrinsicBufferByteLength(value, 'utf8') > MAX_CANONICAL_BYTES) {
+      throw new Error('canonical JSON byte budget exceeded');
+    }
+    assertValidString(value);
+    const encoded = intrinsicJSONStringify(value);
+    charge(intrinsicBufferByteLength(encoded, 'utf8'));
+    return encoded;
+  }
+  if (intrinsicArrayIsArray(value)) {
+    // Only a native array with the standard prototype represents a JSON
+    // array. Custom array prototypes can carry executable behavior.
+    if (intrinsicGetPrototypeOf(value) !== intrinsicArrayPrototype) {
+      throw new Error('unsupported array prototype');
+    }
+    if (intrinsicWeakSetHas.call(active, value)) throw new Error('cyclic JSON reference');
+    if (depth >= MAX_DEPTH) throw new Error('JSON nesting depth exceeds limit');
+    // Read and pin the array's own data descriptor rather than value.length:
+    // a Proxy may trap ordinary property gets, including repeated length reads.
+    const lengthDescriptor = intrinsicGetOwnPropertyDescriptor(value, 'length');
+    if (!lengthDescriptor || !intrinsicHasOwn(lengthDescriptor, 'value') ||
+        !intrinsicNumberIsSafeInteger(lengthDescriptor.value) || lengthDescriptor.value < 0) {
+      throw new Error('invalid array length descriptor');
+    }
+    const length = lengthDescriptor.value;
+    if (length > MAX_CANONICAL_NODES - budget.nodes) {
+      throw new Error('canonical JSON node budget exceeded');
+    }
+    // An array must own the non-enumerable length plus exactly its indexed
+    // entries. Individual slots are checked below for sparse/accessor data.
+    const ownKeys = intrinsicOwnKeys(value);
+    if (ownKeys.length !== length + 1) {
+      throw new Error('sparse array or unsupported array property');
+    }
+    const entries = [];
+    for (let i = 0; i < length; i += 1) {
+      const descriptor = intrinsicGetOwnPropertyDescriptor(value, intrinsicStringConverter(i));
+      if (!descriptor) throw new Error('sparse array entry is not a JSON value');
+      if (!intrinsicHasOwn(descriptor, 'value') || !descriptor.enumerable) {
+        throw new Error('array accessor or hidden property is not JSON data');
+      }
+      // Read the descriptor, not value[i] or value.map: inherited methods
+      // must never execute while verifying a canonical JSON digest.
+      intrinsicArrayPush.call(entries, descriptor.value);
+    }
+    charge(2 + intrinsicMathMax(0, entries.length - 1));
+    intrinsicWeakSetAdd.call(active, value);
+    try {
+      let result = '[';
+      for (let i = 0; i < entries.length; i += 1) {
+        if (i !== 0) result += ',';
+        result += encode(entries[i], depth + 1, active, budget);
+      }
+      return result + ']';
+    } finally {
+      intrinsicWeakSetDelete.call(active, value);
+    }
+  }
+  if (typeof value === 'object' && intrinsicGetPrototypeOf(value) === intrinsicObjectPrototype) {
+    if (intrinsicWeakSetHas.call(active, value)) throw new Error('cyclic JSON reference');
+    if (depth >= MAX_DEPTH) throw new Error('JSON nesting depth exceeds limit');
+    const keys = intrinsicOwnKeys(value);
+    // Object keys are JSON values too. Reserve one visit per key, and
+    // conservatively preflight each corresponding direct child value.
+    if (keys.length * 2 > MAX_CANONICAL_NODES - budget.nodes) {
+      throw new Error('canonical JSON node budget exceeded');
+    }
+    budget.nodes += keys.length;
+    // A key may itself expand greatly when escaped. Validate and charge
+    // its canonical bytes before collecting or serializing object values.
+    charge(2 + intrinsicMathMax(0, keys.length - 1));
+    // Two passes: validate ALL keys and their byte cost before consulting
+    // ANY data descriptor. A malformed later key must fail before an earlier
+    // descriptor can trigger an untrusted Proxy inspection trap.
+    // Use indexed traversal and indexed tuple reads: Array.prototype's
+    // mutable Symbol.iterator must never drop or reorder JSON members.
+    const encodedKeys = [];
+    for (let keyIndex = 0; keyIndex < keys.length; keyIndex += 1) {
+      const key = keys[keyIndex];
+      if (typeof key !== 'string') throw new Error('symbol object key is not JSON data');
+      // Key escaping adds bytes, never removes them; reject oversized raw
+      // keys before normalization or JSON quote construction.
+      if (intrinsicBufferByteLength(key, 'utf8') > MAX_CANONICAL_BYTES) {
+        throw new Error('canonical JSON byte budget exceeded');
+      }
+      assertValidString(key);
+      const encodedKey = intrinsicJSONStringify(key);
+      charge(intrinsicBufferByteLength(encodedKey, 'utf8') + 1);
+      intrinsicArrayPush.call(encodedKeys, [key, encodedKey]);
+    }
+    const entries = [];
+    for (let encodedIndex = 0; encodedIndex < encodedKeys.length; encodedIndex += 1) {
+      const key = encodedKeys[encodedIndex][0];
+      const encodedKey = encodedKeys[encodedIndex][1];
+      const descriptor = intrinsicGetOwnPropertyDescriptor(value, key);
+      if (!descriptor || !intrinsicHasOwn(descriptor, 'value') || !descriptor.enumerable) {
+        throw new Error('object accessor or hidden property is not JSON data');
+      }
+      // Snapshot only validated data descriptors; no subsequent property
+      // reads are necessary, even if the supplied object is a Proxy.
+      intrinsicArrayPush.call(entries, [key, encodedKey, descriptor.value]);
+    }
+    intrinsicWeakSetAdd.call(active, value);
+    try {
+      intrinsicArraySort.call(entries, (leftEntry, rightEntry) => compareCodepoints(leftEntry[0], rightEntry[0]));
+      let result = '{';
+      for (let i = 0; i < entries.length; i += 1) {
+        if (i !== 0) result += ',';
+        const encodedKey = entries[i][1];
+        const entry = entries[i][2];
+        result += encodedKey + ':' + encode(entry, depth + 1, active, budget);
+      }
+      return result + '}';
+    } finally {
+      intrinsicWeakSetDelete.call(active, value);
+    }
+  }
+  throw new Error('unsupported canonical JSON value type');
+}
+
+function canonicalBytes(value) {
+  const payload = intrinsicBufferFrom(encode(value), 'utf8');
+  if (payload.length > MAX_CANONICAL_BYTES) {
+    throw new Error('canonical JSON byte budget exceeded');
+  }
+  return payload;
+}
+
+function digest(value) {
+  const payload = canonicalBytes(value);
+  const length = intrinsicBufferAlloc(8);
+  intrinsicWriteBigUInt64BE.call(length, intrinsicBigIntConverter(payload.length));
+  const hash = createHash('sha256');
+  intrinsicHashUpdate.call(hash, DOMAIN);
+  intrinsicHashUpdate.call(hash, length);
+  intrinsicHashUpdate.call(hash, payload);
+  return intrinsicHashDigest.call(hash, 'hex');
+}
+
+assert.equal(fixture.profile, 'PALACO-CJSON-v0');
+assert.equal(DOMAIN.toString('hex'), fixture.domain_hex);
+assert.equal(fixture.vectors.length, 9);
+for (const vector of fixture.vectors) {
+  assert.equal(canonicalBytes(vector.value).toString('hex'), vector.canonical_hex, vector.name + ' bytes');
+  assert.equal(digest(vector.value), vector.sha256, vector.name + ' digest');
+}
+// Independently reconstruct the complete SHA-256 framed input from the
+// pinned wire contract. These tests intentionally avoid the digest() helper.
+const frameDigest = (domain, lengthBytes, content) =>
+  createHash('sha256').update(domain).update(lengthBytes).update(content).digest('hex');
+const gatePayload = Buffer.from('{"gate":"HOLD"}', 'utf8');
+const exactLengthBE = Buffer.from('000000000000000f', 'hex');
+const wrongLengthLE = Buffer.from('0f00000000000000', 'hex');
+const wrongLengthBE = Buffer.from('000000000000000e', 'hex');
+const actualGateDigest = digest({ gate: 'HOLD' });
+assert.equal(gatePayload.length, 15, 'fixture payload byte count is pinned');
+assert.equal(actualGateDigest, frameDigest(DOMAIN, exactLengthBE, gatePayload),
+             'domain || eight-byte big-endian byte length || payload is exact');
+assert.notEqual(actualGateDigest, frameDigest(DOMAIN, wrongLengthLE, gatePayload),
+                'little-endian length is not accepted as canonical framing');
+assert.notEqual(actualGateDigest, frameDigest(DOMAIN, wrongLengthBE, gatePayload),
+                'incorrect payload byte length alters the digest');
+assert.notEqual(actualGateDigest, frameDigest(Buffer.from('PALACO-CJSON-v0', 'utf8'),
+                                             exactLengthBE, gatePayload),
+                'omitted zero byte in domain separator alters the digest');
+assert.notEqual(actualGateDigest, frameDigest(Buffer.from('OTHER-CJSON-v0\\0', 'utf8'),
+                                             exactLengthBE, gatePayload),
+                'cross-domain framing alters the digest');
+assert.notEqual(actualGateDigest, frameDigest(DOMAIN, exactLengthBE,
+                                             Buffer.from('{"gate":"DENY"}', 'utf8')),
+                'modified payload with same byte count alters the digest');
+const rocketPayload = Buffer.from('{"symbol":"🚀"}', 'utf8');
+const rocketByteLength = Buffer.from('0000000000000011', 'hex');
+assert.equal(rocketPayload.length, 17, 'astral Unicode is four UTF-8 bytes');
+assert.equal(digest({ symbol: '🚀' }),
+             frameDigest(DOMAIN, rocketByteLength, rocketPayload),
+             'multibyte UTF-8 payload uses byte length, never code unit count');
+assert.notEqual(digest({ symbol: '🚀' }),
+                frameDigest(DOMAIN, Buffer.from('000000000000000f', 'hex'),
+                            rocketPayload),
+                'Unicode character-count framing must fail');
+
+const names = fixture.vectors.map((vector) => vector.name);
+assert.equal(new Set(names).size, names.length, 'reference vector names must be unique');
+assert.ok(names.includes('escaped_controls'));
+assert.ok(names.includes('unicode_key_order'));
+assert.ok(names.includes('line_separators'));
+assert.ok(names.includes('numeric_key_order'));
+assert.throws(() => canonicalBytes({ invalid: Number.MAX_SAFE_INTEGER + 1 }), /safe range/);
+assert.throws(() => canonicalBytes({ invalid: 1.5 }), /non-integer/);
+assert.throws(() => canonicalBytes({ name: 'e\u0301' }), /non-NFC/);
+assert.throws(() => canonicalBytes({ name: '\ud800' }), /surrogate/);
+assert.equal(digest({ b: 2, a: 1 }), digest({ a: 1, b: 2 }));
+let nested = 0;
+for (let i = 0; i < MAX_DEPTH; i += 1) nested = [nested];
+assert.ok(canonicalBytes(nested).length > 0);
+nested = [nested];
+assert.throws(() => canonicalBytes(nested), /nesting depth/);
+
+// Additional independent edge checks. These intentionally do not rely on
+// Python-generated fixture hashes: the expected bytes are constructed here.
+const scalarSorted = { [String.fromCodePoint(0x1f680)]: 2, [String.fromCodePoint(0xe000)]: 1 };
+const sortedExpected = Buffer.concat([
+  Buffer.from('{"', 'utf8'), Buffer.from('ee8080', 'hex'),
+  Buffer.from('":1,"', 'utf8'), Buffer.from('f09f9a80', 'hex'),
+  Buffer.from('":2}', 'utf8'),
+]);
+assert.deepEqual(canonicalBytes(scalarSorted), sortedExpected,
+                 'astral keys must sort after U+E000 by Unicode code point');
+const astralText = { symbol: String.fromCodePoint(0x1f680) };
+assert.deepEqual(canonicalBytes(astralText),
+                 Buffer.from('7b2273796d626f6c223a22f09f9a80227d', 'hex'),
+                 'astral scalar must be UTF-8, not surrogate escape');
+const escapedAstral = JSON.parse('{"symbol":"' + String.fromCharCode(92) +
+                                 'ud83d' + String.fromCharCode(92) + 'ude80"}');
+assert.equal(digest(astralText), digest(escapedAstral),
+             'literal and escaped astral text must digest identically');
+const escapedControls = { control: String.fromCharCode(0, 10, 9) };
+assert.deepEqual(canonicalBytes(escapedControls),
+                 Buffer.from('7b22636f6e74726f6c223a225c75303030305c6e5c74227d', 'hex'),
+                 'NUL, newline and tab must use canonical JSON escapes');
+
+// JavaScript-reserved-looking member names must stay ordinary JSON data.
+// JSON.parse creates an own "__proto__" property; object literal shorthand
+// would have different semantics and is deliberately not used here.
+const specialKeys = JSON.parse(
+  '{"prototype":"HOLD","constructor":7,"__proto__":{"polluted":true}}'
+);
+const specialExpected = Buffer.from(
+  '{"__proto__":{"polluted":true},"constructor":7,"prototype":"HOLD"}', 'utf8'
+);
+assert.ok(Object.hasOwn(specialKeys, '__proto__'));
+assert.ok(Object.hasOwn(specialKeys, 'constructor'));
+assert.equal(Object.getPrototypeOf(specialKeys), Object.prototype);
+assert.equal(({}).polluted, undefined, 'no global prototype pollution');
+assert.deepEqual(canonicalBytes(specialKeys), specialExpected,
+                 'special names remain sorted JSON members');
+assert.equal(digest(specialKeys), createHash('sha256')
+  .update(DOMAIN)
+  .update(Buffer.from('0000000000000042', 'hex'))
+  .update(specialExpected).digest('hex'),
+  'special names must use ordinary domain-framed digest');
+
+// Frame length is the number of canonical UTF-8 bytes, not JavaScript
+// UTF-16 code units or Unicode scalar values (the astral emoji differs).
+const multibyteValue = { symbol: String.fromCodePoint(0x1f680) };
+const multibytePayload = canonicalBytes(multibyteValue);
+assert.equal(multibytePayload.length, 17, 'canonical UTF-8 byte length');
+assert.equal(multibytePayload.toString('utf8').length, 15,
+             'UTF-16 string length must not be used for SHA-256 framing');
+const multibyteFrame = Buffer.from('0000000000000011', 'hex');
+const manuallyFramedDigest = createHash('sha256')
+  .update(DOMAIN).update(multibyteFrame).update(multibytePayload).digest('hex');
+assert.equal(digest(multibyteValue), manuallyFramedDigest,
+             'digest must use eight-byte big-endian UTF-8 byte length');
+const incorrectCodeUnitFrame = Buffer.from('000000000000000f', 'hex');
+assert.notEqual(digest(multibyteValue), createHash('sha256')
+  .update(DOMAIN).update(incorrectCodeUnitFrame).update(multibytePayload).digest('hex'),
+  'UTF-16 code-unit length must not be treated as byte length');
+
+// The canonical digest is value-based: integer -0 and 0 both encode as 0.
+// This is for trusted parsed values only; JSON.parse loses decimal syntax,
+// so Python's strict file reader separately checks decimal/exponent tokens.
+const negativeZero = JSON.parse('{"counter":-0}');
+const positiveZero = JSON.parse('{"counter":0}');
+assert.ok(Object.is(negativeZero.counter, -0),
+          'fixture retains the JavaScript negative-zero value');
+assert.equal(canonicalBytes(negativeZero).toString('utf8'), '{"counter":0}');
+assert.equal(digest(negativeZero), digest(positiveZero),
+             'integer negative zero and zero must have matching digests');
+assert.equal(canonicalBytes({ counter: 0 }).toString('utf8'), '{"counter":0}');
+assert.throws(() => canonicalBytes({ counter: -0.5 }), /non-integer/,
+              'nonintegral negative decimals cannot enter the digest');
+assert.deepEqual(canonicalBytes({ b: -Number.MAX_SAFE_INTEGER, a: -0 }),
+                 Buffer.from('{"a":0,"b":-9007199254740991}', 'utf8'),
+                 'safe negative boundary and zero are encoded deterministically');
+
+// Arrays retain order, and JSON types are never conflated in the digest.
+assert.notEqual(digest({ items: ['HOLD', 'DENY', 0] }),
+                digest({ items: ['DENY', 'HOLD', 0] }),
+                'array reordering changes the canonical digest');
+assert.equal(canonicalBytes({ flag: true }).toString('utf8'), '{"flag":true}');
+assert.equal(canonicalBytes({ flag: 1 }).toString('utf8'), '{"flag":1}');
+assert.notEqual(digest({ flag: true }), digest({ flag: 1 }),
+                'boolean true is not integer one');
+assert.notEqual(digest({ flag: false }), digest({ flag: 0 }),
+                'boolean false is not integer zero');
+assert.notEqual(digest({ value: null }), digest({}),
+                'null-valued member is not an omitted member');
+
+// In-memory JavaScript sparse arrays cannot be represented as canonical
+// JSON values; inherited indexed properties cannot fill a missing own slot.
+const arrayWithHole = new Array(2);
+arrayWithHole[1] = 1;
+assert.throws(() => canonicalBytes(arrayWithHole), /sparse array/,
+              'a missing first array entry must fail closed');
+assert.throws(() => canonicalBytes([0, , 2]), /sparse array/,
+              'an interior hole must fail closed');
+assert.throws(() => canonicalBytes([[,]]), /sparse array/,
+              'a nested array hole must fail closed');
+assert.deepEqual(canonicalBytes([null, 1]), Buffer.from('[null,1]', 'utf8'),
+                 'an explicit null slot is valid JSON');
+assert.deepEqual(canonicalBytes([0, 1, 2]), Buffer.from('[0,1,2]', 'utf8'),
+                 'fully populated arrays remain valid');
+
+// Reject JavaScript-only object shapes rather than silently dropping state
+// or executing getter functions while computing integrity digests.
+const symbolObject = { gate: 'HOLD' };
+symbolObject[Symbol('secret')] = 'GO';
+assert.throws(() => canonicalBytes(symbolObject), /symbol object key/,
+              'symbol-named data must not disappear from the digest');
+const getterObject = {};
+Object.defineProperty(getterObject, 'gate', {
+  enumerable: true, get() { throw new Error('getter must not run'); },
+});
+assert.throws(() => canonicalBytes(getterObject), /object accessor/,
+              'object getters must not run during canonicalization');
+const hiddenObject = {};
+Object.defineProperty(hiddenObject, 'hidden', { value: 1, enumerable: false });
+assert.throws(() => canonicalBytes(hiddenObject), /hidden property/,
+              'hidden named fields must not be silently ignored');
+const extraArray = [0, 1];
+extraArray.description = 'HOLD';
+assert.throws(() => canonicalBytes(extraArray), /unsupported array property/,
+              'extra array properties must not be silently ignored');
+const getterArray = [0];
+Object.defineProperty(getterArray, '0', {
+  enumerable: true, get() { throw new Error('array getter must not run'); },
+});
+assert.throws(() => canonicalBytes(getterArray), /array accessor/,
+              'array getters must not run during canonicalization');
+assert.deepEqual(canonicalBytes({ gate: 'HOLD', count: 1 }),
+                 Buffer.from('{"count":1,"gate":"HOLD"}', 'utf8'),
+                 'ordinary JSON objects remain valid');
+
+// Reject cycles explicitly, but permit ordinary acyclic sharing: a
+// shared child is serialized by value in each position.
+const selfReferentialObject = {};
+selfReferentialObject.self = selfReferentialObject;
+assert.throws(() => canonicalBytes(selfReferentialObject), /cyclic JSON reference/,
+              'direct object cycles fail closed');
+const selfReferentialArray = [];
+selfReferentialArray.push(selfReferentialArray);
+assert.throws(() => canonicalBytes(selfReferentialArray), /cyclic JSON reference/,
+              'array cycles fail closed');
+const objectArrayCycle = { child: [] };
+objectArrayCycle.child.push(objectArrayCycle);
+assert.throws(() => canonicalBytes(objectArrayCycle), /cyclic JSON reference/,
+              'mixed object-array cycles fail closed');
+const sharedChild = { gate: 'HOLD' };
+assert.deepEqual(canonicalBytes([sharedChild, sharedChild]),
+                 Buffer.from('[{"gate":"HOLD"},{"gate":"HOLD"}]', 'utf8'),
+                 'acyclic shared references are encoded by value');
+assert.throws(() => canonicalBytes({ item: undefined }), /unsupported canonical JSON/,
+              'undefined object values cannot silently disappear');
+assert.throws(() => canonicalBytes([undefined]), /unsupported canonical JSON/,
+              'undefined array elements cannot turn into null');
+assert.throws(() => canonicalBytes({ item: 1n }), /unsupported canonical JSON/,
+              'BigInt is not a JSON numeric value');
+
+// Inherited array slots and overridden array methods are not trusted data.
+const arrayWithInheritedSlot = [, 1];
+const inheritedSlotPrototype = Object.create(Array.prototype);
+Object.defineProperty(inheritedSlotPrototype, '0', {
+  configurable: true, enumerable: true, value: 99,
+});
+Object.setPrototypeOf(arrayWithInheritedSlot, inheritedSlotPrototype);
+assert.throws(() => canonicalBytes(arrayWithInheritedSlot), /unsupported array prototype/,
+              'nonstandard array prototype must be denied before inherited slots are read');
+const arrayWithHostileMap = [0, 1];
+const hostileMapPrototype = Object.create(Array.prototype);
+hostileMapPrototype.map = () => { throw new Error('inherited map must not run'); };
+Object.setPrototypeOf(arrayWithHostileMap, hostileMapPrototype);
+assert.throws(() => canonicalBytes(arrayWithHostileMap), /unsupported array prototype/,
+              'custom array prototypes must fail without invoking inherited methods');
+const hiddenIndexArray = [0];
+Object.defineProperty(hiddenIndexArray, '0', {
+  value: 0, enumerable: false, configurable: true,
+});
+assert.throws(() => canonicalBytes(hiddenIndexArray), /hidden property/,
+              'nonenumerable indexed array values must fail closed');
+const symbolArray = [0];
+symbolArray[Symbol('secret')] = 1;
+assert.throws(() => canonicalBytes(symbolArray), /unsupported array property/,
+              'symbol-named array properties must not be silently dropped');
+
+// Even a Proxy with apparently harmless data can execute arbitrary code
+// through its introspection traps. Reject before any trap is invoked.
+let proxyTrapCalls = 0;
+const hostileProxy = new Proxy({ gate: 'HOLD' }, {
+  getPrototypeOf() { proxyTrapCalls += 1; throw new Error('prototype trap executed'); },
+  ownKeys() { proxyTrapCalls += 1; throw new Error('ownKeys trap executed'); },
+  getOwnPropertyDescriptor() { proxyTrapCalls += 1; throw new Error('descriptor trap executed'); },
+  get() { proxyTrapCalls += 1; throw new Error('get trap executed'); },
+});
+assert.throws(() => canonicalBytes(hostileProxy), /Proxy/,
+              'object Proxy must fail before JavaScript inspection traps run');
+assert.throws(() => canonicalBytes({ nested: [hostileProxy] }), /Proxy/,
+              'nested Proxy must be rejected before inspection');
+assert.equal(proxyTrapCalls, 0, 'Proxy rejection did not execute any traps');
+const revokedProxy = Proxy.revocable({ gate: 'HOLD' }, {});
+revokedProxy.revoke();
+assert.throws(() => canonicalBytes(revokedProxy.proxy), /Proxy/,
+              'revoked Proxy must fail closed before prototype inspection');
+
+// Non-JSON JavaScript objects must not be silently converted by
+// JSON.stringify's special-case serialization or dropped as empty objects.
+for (const [name, candidate] of [
+  ['Date', new Date('2026-01-01T00:00:00Z')],
+  ['Map', new Map([['gate', 'HOLD']])],
+  ['Set', new Set([1])],
+  ['RegExp', /HOLD/],
+  ['Uint8Array', new Uint8Array([1, 2])],
+  ['boxed Number', new Number(1)],
+  ['boxed String', new String('HOLD')],
+  ['boxed Boolean', new Boolean(false)],
+]) {
+  assert.throws(() => canonicalBytes(candidate), /unsupported canonical JSON/,
+                name + ' must not be coerced into canonical JSON');
+}
+assert.throws(() => canonicalBytes({ value: Number.NaN }), /safe range/,
+              'NaN must never enter a digest');
+assert.throws(() => canonicalBytes({ value: Number.POSITIVE_INFINITY }), /safe range/,
+              'Infinity must never enter a digest');
+assert.throws(() => canonicalBytes({ value: Number.NEGATIVE_INFINITY }), /safe range/,
+              'negative Infinity must never enter a digest');
+assert.throws(() => canonicalBytes({ value: Number.MAX_SAFE_INTEGER + 1 }), /safe range/,
+              'unsafe integers must never enter a digest');
+assert.deepEqual(canonicalBytes({ value: Number.MAX_SAFE_INTEGER }),
+                 Buffer.from('{"value":9007199254740991}', 'utf8'),
+                 'positive interoperable safe integer remains supported');
+assert.deepEqual(canonicalBytes({ value: -Number.MAX_SAFE_INTEGER }),
+                 Buffer.from('{"value":-9007199254740991}', 'utf8'),
+                 'negative interoperable safe integer remains supported');
+
+// A compact shared DAG must not expand into unbounded serialized output.
+let expansion = [0];
+for (let i = 0; i < 18; i += 1) expansion = [expansion, expansion];
+assert.throws(() => canonicalBytes(expansion), /node budget/,
+              'exponential shared DAG must fail within the traversal budget');
+assert.throws(() => canonicalBytes({ value: 'x'.repeat(MAX_CANONICAL_BYTES) }),
+              /byte budget/,
+              'oversized UTF-8 output must fail closed');
+let smallShared = [0];
+for (let i = 0; i < 8; i += 1) smallShared = [smallShared, smallShared];
+assert.ok(canonicalBytes(smallShared).length > 0,
+          'small acyclic shared DAG remains supported');
+
+// Byte-budget metering must include every serialized key, colon, comma,
+// bracket and escaped character; exact boundary succeeds and +1 fails.
+const exactByteLimit = { v: 'x'.repeat(MAX_CANONICAL_BYTES - 8) };
+assert.equal(canonicalBytes(exactByteLimit).length, MAX_CANONICAL_BYTES,
+             'exactly 1 MiB of canonical UTF-8 is permitted');
+assert.throws(() => canonicalBytes({ v: 'x'.repeat(MAX_CANONICAL_BYTES - 7) }),
+              /byte budget/, 'one extra encoded byte is denied');
+assert.throws(() => canonicalBytes({ v: String.fromCharCode(10).repeat(MAX_CANONICAL_BYTES / 2) }),
+              /byte budget/, 'escaped JSON must be charged by encoded bytes');
+let sharedObjectDAG = { value: 0 };
+for (let i = 0; i < 18; i += 1) {
+  sharedObjectDAG = { left: sharedObjectDAG, right: sharedObjectDAG };
+}
+assert.throws(() => canonicalBytes(sharedObjectDAG), /budget/,
+              'shared object DAGs must share node and byte budgets');
+
+// The full node budget includes object *keys* as well as their values.
+assert.equal(canonicalBytes(Array(99_999).fill(0)).length, 199_999,
+             'exact 100,000 visits including the array root are permitted');
+assert.throws(() => canonicalBytes(Array(100_000).fill(0)), /node budget/,
+              'collection fanout above the visit budget is rejected early');
+const objectAtNodeLimit = Object.fromEntries(
+  Array.from({ length: 49_999 }, (_, i) => [String(i), 0])
+);
+assert.ok(canonicalBytes(objectAtNodeLimit).length > 0,
+          'one root and 49,999 key/value pairs fit the node budget');
+const objectBeyondNodeLimit = Object.fromEntries(
+  Array.from({ length: 50_000 }, (_, i) => [String(i), 0])
+);
+assert.throws(() => canonicalBytes(objectBeyondNodeLimit), /node budget/,
+              'a 50,000-member object requires 100,001 node visits');
+
+// Key validation remains strict for ordinary objects; Proxy objects are
+// denied earlier rather than being inspected to discover an invalid key.
+const hugeKey = 'k'.repeat(MAX_CANONICAL_BYTES);
+assert.throws(() => canonicalBytes({ [hugeKey]: 0 }), /byte budget/,
+              'oversized ordinary object key is denied');
+const newlineKey = String.fromCharCode(10).repeat(MAX_CANONICAL_BYTES / 2);
+assert.throws(() => canonicalBytes({ [newlineKey]: 0 }), /byte budget/,
+              'escaped key growth counts actual serialized bytes');
+const decomposedKey = 'e' + String.fromCharCode(0x301);
+assert.throws(() => canonicalBytes({ [decomposedKey]: 0 }), /non-NFC/,
+              'non-NFC ordinary object keys remain forbidden');
+assert.throws(() => canonicalBytes({ gate: 'HOLD', [decomposedKey]: 1 }),
+              /non-NFC/, 'later malformed key must be denied');
+assert.throws(() => canonicalBytes({ gate: 'HOLD', [hugeKey]: 1 }),
+              /byte budget/, 'later oversized key must be denied');
+assert.deepEqual(canonicalBytes({ [String.fromCharCode(10)]: 0 }),
+                 Buffer.from('7b225c6e223a307d', 'hex'),
+                 'small escaped object key retains pinned canonical bytes');
+const firstValidThenSymbol = { gate: 'HOLD' };
+firstValidThenSymbol[Symbol('hidden')] = 1;
+assert.throws(() => canonicalBytes(firstValidThenSymbol), /symbol object key/,
+              'symbol keys remain fail-closed in the complete key pass');
+assert.deepEqual(canonicalBytes({ z: 1, a: 2 }),
+                 Buffer.from('{"a":2,"z":1}', 'utf8'),
+                 'valid object order and canonical bytes remain unchanged');
+
+// Align with Python's exact built-in-list rule: custom Array subclasses
+// are not part of the restricted canonical JSON input profile.
+class CustomJSONLikeArray extends Array {
+  [Symbol.iterator]() {
+    throw new Error('custom array iterator must not execute');
+  }
+}
+assert.throws(() => canonicalBytes(new CustomJSONLikeArray(1, 2)),
+              /unsupported array prototype/,
+              'Array subclass must not be treated as a built-in JSON array');
+const customArray = [0, 1];
+Object.setPrototypeOf(customArray, null);
+assert.throws(() => canonicalBytes(customArray), /unsupported array prototype/,
+              'null-prototype arrays are not JSON inputs');
+assert.deepEqual(canonicalBytes([0, { gate: 'HOLD' }]),
+                 Buffer.from('[0,{"gate":"HOLD"}]', 'utf8'),
+                 'standard plain arrays remain canonical');
+
+// The reference encoder must not delegate canonical array/object traversal
+// to mutable Array.prototype.map/filter/sort methods.
+const originalMethods = {
+  map: Array.prototype.map,
+  filter: Array.prototype.filter,
+  sort: Array.prototype.sort,
+};
+let encodedWithAlteredMethods;
+try {
+  const forbidden = () => { throw new Error('mutable Array.prototype method invoked'); };
+  Array.prototype.map = forbidden;
+  Array.prototype.filter = forbidden;
+  Array.prototype.sort = forbidden;
+  encodedWithAlteredMethods = canonicalBytes({ z: [2, 1], a: { y: true, x: null } });
+} finally {
+  Array.prototype.map = originalMethods.map;
+  Array.prototype.filter = originalMethods.filter;
+  Array.prototype.sort = originalMethods.sort;
+}
+assert.deepEqual(encodedWithAlteredMethods,
+                 Buffer.from('{"a":{"x":null,"y":true},"z":[2,1]}', 'utf8'),
+                 'canonical bytes unaffected by post-initialization prototype method overrides');
+assert.equal(digest({ z: [2, 1], a: { y: true, x: null } }),
+             digest({ a: { x: null, y: true }, z: [2, 1] }),
+             'deterministic digest remains independent of object insertion order');
+
+// Later global monkeypatches must not redirect the reference encoder's
+// JSON quoting or own-property validation. Restore every builtin reliably.
+const intrinsicMutationTargets = [
+  [JSON, 'stringify'],
+  [Reflect, 'ownKeys'],
+  [Object, 'getPrototypeOf'],
+  [Object, 'getOwnPropertyDescriptor'],
+  [Object, 'hasOwn'],
+  [Array, 'isArray'],
+];
+const originalIntrinsicMethods = intrinsicMutationTargets.map(([owner, name]) =>
+  [owner, name, owner[name]]
+);
+let bytesWithMutatedIntrinsics;
+try {
+  for (const [owner, name] of intrinsicMutationTargets) {
+    owner[name] = () => { throw new Error('mutated intrinsic must never execute'); };
+  }
+  bytesWithMutatedIntrinsics = canonicalBytes({ z: [1, null], a: 'HOLD' });
+} finally {
+  for (const [owner, name, original] of originalIntrinsicMethods) {
+    owner[name] = original;
+  }
+}
+assert.deepEqual(bytesWithMutatedIntrinsics,
+                 Buffer.from('{"a":"HOLD","z":[1,null]}', 'utf8'),
+                 'canonical output unaffected by late global intrinsic mutation');
+assert.equal(digest({ z: [1, null], a: 'HOLD' }),
+             digest({ a: 'HOLD', z: [1, null] }),
+             'deterministic digest continues after restoring global functions');
+
+// Later mutations to Unicode primitives must not relax NFC validation
+// or change scalar-value ordering between BMP and astral object keys.
+const originalUnicodeMethods = [
+  [String.prototype, 'normalize', String.prototype.normalize],
+  [String.prototype, 'charCodeAt', String.prototype.charCodeAt],
+  [String.prototype, 'codePointAt', String.prototype.codePointAt],
+  [Array, 'from', Array.from],
+];
+let unicodeBytesAfterMonkeypatch;
+try {
+  for (const [owner, name] of originalUnicodeMethods) {
+    owner[name] = () => { throw new Error('mutable Unicode helper executed'); };
+  }
+  unicodeBytesAfterMonkeypatch = canonicalBytes({
+    [String.fromCodePoint(0x1f680)]: 2,
+    [String.fromCodePoint(0xe000)]: 1,
+  });
+  assert.throws(() => canonicalBytes({ invalid: 'e' + String.fromCharCode(0x301) }),
+                /non-NFC/, 'NFC validation remains active after prototype mutation');
+  assert.throws(() => canonicalBytes({ invalid: String.fromCharCode(0xd800) }),
+                /surrogate/, 'surrogate checks remain active after prototype mutation');
+} finally {
+  for (const [owner, name, original] of originalUnicodeMethods) {
+    owner[name] = original;
+  }
+}
+assert.deepEqual(unicodeBytesAfterMonkeypatch, sortedExpected,
+                 'Unicode scalar sorting remains deterministic after intrinsic mutation');
+
+// Array Proxy traps can be equally hostile; deny before reading its length.
+let arrayTrapCalls = 0;
+const hostileArrayProxy = new Proxy([0, 1], {
+  get() { arrayTrapCalls += 1; throw new Error('array get trap executed'); },
+  getPrototypeOf() { arrayTrapCalls += 1; throw new Error('array prototype trap executed'); },
+  getOwnPropertyDescriptor() { arrayTrapCalls += 1; throw new Error('array descriptor trap executed'); },
+});
+assert.throws(() => canonicalBytes(hostileArrayProxy), /Proxy/,
+              'array Proxy must be denied before length inspection');
+assert.throws(() => canonicalBytes({ nested: hostileArrayProxy }), /Proxy/,
+              'nested array Proxy must be denied');
+assert.equal(arrayTrapCalls, 0, 'array Proxy rejection did not execute traps');
+const additionalArrayProperty = [0, 1];
+Object.defineProperty(additionalArrayProperty, 'hidden', {
+  value: 'surprise', enumerable: false,
+});
+assert.throws(() => canonicalBytes(additionalArrayProperty),
+              /sparse array or unsupported array property/,
+              'additional own properties on ordinary arrays are still denied');
+assert.deepEqual(canonicalBytes([]), Buffer.from('[]', 'utf8'),
+                 'empty standard arrays remain canonical');
+
+// Late changes to number and length-related global helpers must not
+// let unsafe numbers pass or alter canonical index/number serialization.
+const savedNumericIntrinsics = {
+  String: globalThis.String,
+  safeInteger: Number.isSafeInteger,
+  max: Math.max,
+};
+let numericBytesAfterMutation;
+try {
+  globalThis.String = () => { throw new Error('mutated String converter executed'); };
+  Number.isSafeInteger = () => { throw new Error('mutated safe-integer check executed'); };
+  Math.max = () => { throw new Error('mutated max helper executed'); };
+  numericBytesAfterMutation = canonicalBytes({ items: [0, -1, 9007199254740991] });
+  assert.throws(() => canonicalBytes({ n: Number.MAX_SAFE_INTEGER + 1 }),
+                /safe range/, 'out-of-range number stays rejected');
+  assert.throws(() => canonicalBytes({ n: 0.5 }),
+                /non-integer/, 'fractional number stays rejected');
+} finally {
+  globalThis.String = savedNumericIntrinsics.String;
+  Number.isSafeInteger = savedNumericIntrinsics.safeInteger;
+  Math.max = savedNumericIntrinsics.max;
+}
+assert.deepEqual(numericBytesAfterMutation,
+                 Buffer.from('{"items":[0,-1,9007199254740991]}', 'utf8'),
+                 'numeric serialization and indexed arrays survive late global mutations');
+
+// Buffer's UTF-8 byte counter and constructor are mutable static methods.
+// A late override must never weaken canonical byte budgets or digest framing.
+const savedBufferMethods = {
+  byteLength: Buffer.byteLength,
+  from: Buffer.from,
+  alloc: Buffer.alloc,
+};
+const expectedBufferBytes = Buffer.from('{"emoji":"🚀","z":[0,1]}', 'utf8');
+const expectedBufferDigest = digest({ z: [0, 1], emoji: '🚀' });
+let bytesAfterBufferMutation;
+let digestAfterBufferMutation;
+try {
+  Buffer.byteLength = () => { throw new Error('mutated Buffer.byteLength executed'); };
+  Buffer.from = () => { throw new Error('mutated Buffer.from executed'); };
+  Buffer.alloc = () => { throw new Error('mutated Buffer.alloc executed'); };
+  bytesAfterBufferMutation = canonicalBytes({ z: [0, 1], emoji: '🚀' });
+  digestAfterBufferMutation = digest({ emoji: '🚀', z: [0, 1] });
+  assert.throws(() => canonicalBytes({ text: 'x'.repeat(MAX_CANONICAL_BYTES) }),
+                /byte budget/, 'UTF-8 output limit remains enforced with mutated Buffer');
+} finally {
+  Buffer.byteLength = savedBufferMethods.byteLength;
+  Buffer.from = savedBufferMethods.from;
+  Buffer.alloc = savedBufferMethods.alloc;
+}
+assert.deepEqual(bytesAfterBufferMutation, expectedBufferBytes,
+                 'canonical bytes remain stable despite late Buffer mutations');
+assert.equal(digestAfterBufferMutation, expectedBufferDigest,
+             'digest framing remains stable despite late Buffer mutations');
+
+// Crypto hash methods, digest length framing and BigInt are also
+// public mutable call sites; late changes must not alter SHA-256 results.
+const hashMethodPrototype = Object.getPrototypeOf(createHash('sha256'));
+const savedDigestMethods = {
+  update: hashMethodPrototype.update,
+  digest: hashMethodPrototype.digest,
+  writeBigUInt64BE: Buffer.prototype.writeBigUInt64BE,
+  BigInt: globalThis.BigInt,
+};
+const digestInput = { z: [0, 1], emoji: '🚀' };
+const expectedDigestWithPinnedMethods = digest(digestInput);
+let digestWithAlteredMethods;
+try {
+  const forbidden = () => { throw new Error('mutated digest method executed'); };
+  hashMethodPrototype.update = forbidden;
+  hashMethodPrototype.digest = forbidden;
+  Buffer.prototype.writeBigUInt64BE = forbidden;
+  globalThis.BigInt = forbidden;
+  digestWithAlteredMethods = digest({ emoji: '🚀', z: [0, 1] });
+} finally {
+  hashMethodPrototype.update = savedDigestMethods.update;
+  hashMethodPrototype.digest = savedDigestMethods.digest;
+  Buffer.prototype.writeBigUInt64BE = savedDigestMethods.writeBigUInt64BE;
+  globalThis.BigInt = savedDigestMethods.BigInt;
+}
+assert.equal(digestWithAlteredMethods, expectedDigestWithPinnedMethods,
+             'digest and length frame must survive late hash prototype mutations');
+
+// Cycle detection must retain the original WeakSet semantics even when
+// third-party code replaces publicly mutable WeakSet prototype methods.
+const originalWeakSetMethods = {
+  has: WeakSet.prototype.has,
+  add: WeakSet.prototype.add,
+  delete: WeakSet.prototype.delete,
+};
+const directCycleAfterMutation = [];
+directCycleAfterMutation[0] = directCycleAfterMutation;
+const objectCycleAfterMutation = { gate: 'HOLD' };
+objectCycleAfterMutation.child = objectCycleAfterMutation;
+let weakSetMutationBytes;
+try {
+  const forbidden = () => { throw new Error('mutated WeakSet method executed'); };
+  WeakSet.prototype.has = forbidden;
+  WeakSet.prototype.add = forbidden;
+  WeakSet.prototype.delete = forbidden;
+  weakSetMutationBytes = canonicalBytes({ a: [1, 2], z: { gate: 'HOLD' } });
+  assert.throws(() => canonicalBytes(directCycleAfterMutation), /cyclic JSON reference/,
+                'array cycles still fail when WeakSet prototype methods are mutated');
+  assert.throws(() => canonicalBytes(objectCycleAfterMutation), /cyclic JSON reference/,
+                'object cycles still fail when WeakSet prototype methods are mutated');
+} finally {
+  WeakSet.prototype.has = originalWeakSetMethods.has;
+  WeakSet.prototype.add = originalWeakSetMethods.add;
+  WeakSet.prototype.delete = originalWeakSetMethods.delete;
+}
+assert.deepEqual(weakSetMutationBytes, Buffer.from('{"a":[1,2],"z":{"gate":"HOLD"}}'),
+                 'acyclic encoding remains deterministic after WeakSet method overrides');
+
+// Global constructors are mutable in JavaScript. The accepted container
+// identity and fresh ancestor set must remain stable after initialization.
+const originalContainerGlobals = {
+  Object: globalThis.Object,
+  Array: globalThis.Array,
+  WeakSet: globalThis.WeakSet,
+};
+const expectedContainerBytes = Buffer.from('{"a":[0,1],"z":{"gate":"HOLD"}}');
+let bytesWithReplacedConstructors;
+try {
+  const forbidden = () => { throw new Error('mutated global container constructor executed'); };
+  globalThis.Object = forbidden;
+  globalThis.Array = forbidden;
+  globalThis.WeakSet = forbidden;
+  bytesWithReplacedConstructors = canonicalBytes({ z: { gate: 'HOLD' }, a: [0, 1] });
+  const cyclic = {};
+  cyclic.self = cyclic;
+  assert.throws(() => canonicalBytes(cyclic), /cyclic JSON reference/,
+                'object cycles are rejected with constructor globals replaced');
+  assert.throws(() => canonicalBytes([0, { invalid: undefined }]),
+                /unsupported canonical JSON/,
+                'non-JSON values remain denied after constructor replacement');
+} finally {
+  globalThis.Object = originalContainerGlobals.Object;
+  globalThis.Array = originalContainerGlobals.Array;
+  globalThis.WeakSet = originalContainerGlobals.WeakSet;
+}
+assert.deepEqual(bytesWithReplacedConstructors, expectedContainerBytes,
+                 'canonicalization uses captured container identities and WeakSet constructor');
+
+// A grossly oversized raw string/key must fail at the cheap UTF-8 input
+// bound, before potentially expensive NFC normalization. The same malformed
+// Unicode remains a non-NFC error when the value fits within that bound.
+const oversizedDecomposedText = 'e' + String.fromCharCode(0x301) +
+                                'x'.repeat(MAX_CANONICAL_BYTES);
+assert.throws(() => canonicalBytes(oversizedDecomposedText), /byte budget/,
+              'oversized string is refused before NFC normalization');
+assert.throws(() => canonicalBytes({ [oversizedDecomposedText]: 0 }), /byte budget/,
+              'oversized object key is refused before NFC normalization');
+assert.throws(() => canonicalBytes('e' + String.fromCharCode(0x301)), /non-NFC/,
+              'small non-NFC string is still rejected as Unicode invalid');
+assert.throws(() => canonicalBytes({ ['e' + String.fromCharCode(0x301)]: 0 }),
+              /non-NFC/, 'small non-NFC key is still rejected');
+
+// Descriptor snapshots and validated key snapshots must not rely on the
+// mutable Array.prototype.push method. Silent no-op overrides could
+// otherwise omit JSON members or elements from the canonical digest.
+const originalArrayPush = Array.prototype.push;
+const pushRegressionInput = { z: [1, { gate: 'HOLD' }], a: 2 };
+const expectedPushRegressionBytes = Buffer.from('{"a":2,"z":[1,{"gate":"HOLD"}]}', 'utf8');
+const expectedPushRegressionDigest = digest(pushRegressionInput);
+let bytesWithNoopPush;
+let digestWithNoopPush;
+try {
+  Array.prototype.push = () => 0;
+  bytesWithNoopPush = canonicalBytes(pushRegressionInput);
+  digestWithNoopPush = digest({ a: 2, z: [1, { gate: 'HOLD' }] });
+  assert.throws(() => canonicalBytes({ nested: [undefined] }),
+                /unsupported canonical JSON/,
+                'invalid array values remain rejected despite push replacement');
+  assert.throws(() => canonicalBytes({ nested: [{ bad: undefined }] }),
+                /unsupported canonical JSON/,
+                'invalid object values remain rejected despite push replacement');
+} finally {
+  Array.prototype.push = originalArrayPush;
+}
+assert.deepEqual(bytesWithNoopPush, expectedPushRegressionBytes,
+                 'canonical members and elements are retained despite a no-op push');
+assert.equal(digestWithNoopPush, expectedPushRegressionDigest,
+             'SHA-256 digest remains stable after late push replacement');
+
+// A silent override of Array.prototype[Symbol.iterator] could previously
+// drop object keys and tuple fields during serialization without throwing.
+const originalArrayIterator = Array.prototype[Symbol.iterator];
+const iteratorInput = { z: [{ gate: 'HOLD' }, 7], a: 2, empty: [] };
+const iteratorExpectedBytes = Buffer.from('{"a":2,"empty":[],"z":[{"gate":"HOLD"},7]}', 'utf8');
+const iteratorExpectedDigest = digest(iteratorInput);
+let iteratorMutationBytes;
+let iteratorMutationDigest;
+let iteratorInvalidRejected = false;
+try {
+  Array.prototype[Symbol.iterator] = function* emptyArrayIterator() {};
+  iteratorMutationBytes = canonicalBytes(iteratorInput);
+  iteratorMutationDigest = digest({ empty: [], z: [{ gate: 'HOLD' }, 7], a: 2 });
+  try {
+    canonicalBytes({ gate: 'HOLD', ignored: undefined });
+  } catch (error) {
+    iteratorInvalidRejected = /unsupported canonical JSON/.test(error.message);
+  }
+} finally {
+  Array.prototype[Symbol.iterator] = originalArrayIterator;
+}
+assert.deepEqual(iteratorMutationBytes, iteratorExpectedBytes,
+                 'all keys and tuple fields survive a silent iterable override');
+assert.equal(iteratorMutationDigest, iteratorExpectedDigest,
+             'digest stays stable when array iterators are replaced');
+assert.ok(iteratorInvalidRejected, 'invalid object member cannot disappear with a no-op iterator');
+
+const negativeCorpus = JSON.parse(
+  readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
+);
+assert.equal(negativeCorpus.profile, 'PALACO-CJSON-v0');
+assert.equal(negativeCorpus.cases.length, 10);
+const negativePatterns = {
+  non_integer: /non-integer/,
+  unsafe_integer: /safe range/,
+  non_nfc: /non-NFC/,
+  surrogate: /surrogate/,
+  depth: /nesting depth/,
+};
+for (const testCase of negativeCorpus.cases) {
+  let candidate;
+  if (testCase.kind === 'literal') {
+    candidate = testCase.value;
+  } else if (testCase.kind === 'nested_arrays' || testCase.kind === 'nested_objects') {
+    candidate = 0;
+    for (let i = 0; i < testCase.depth; i += 1) {
+      candidate = testCase.kind === 'nested_arrays' ? [candidate] : { child: candidate };
+    }
+  } else {
+    throw new Error('unknown negative vector kind: ' + testCase.kind);
+  }
+  assert.ok(Object.hasOwn(negativePatterns, testCase.reason), testCase.name);
+  assert.throws(() => canonicalBytes(candidate), negativePatterns[testCase.reason], testCase.name);
+}
+
+const rawVariants = JSON.parse(
+  readFileSync(new URL('../verification/contract-digest-v0-raw-variants.json', import.meta.url), 'utf8')
+);
+assert.equal(rawVariants.profile, fixture.profile);
+assert.equal(rawVariants.cases.length, 6);
+const pinned = new Map(fixture.vectors.map((vector) => [vector.name, vector]));
+for (const variant of rawVariants.cases) {
+  const expected = pinned.get(variant.reference);
+  assert.ok(expected, variant.name + ': expected reference');
+  // Curated version-controlled JSON only. JSON.parse does not reject duplicate keys.
+  const parsed = JSON.parse(variant.raw);
+  assert.deepEqual(parsed, expected.value, variant.name + ': parsed value');
+  assert.equal(canonicalBytes(parsed).toString('hex'), expected.canonical_hex,
+               variant.name + ': canonical bytes');
+  assert.equal(digest(parsed), expected.sha256, variant.name + ': SHA-256');
+}
+
+console.log('PASS: 9 positive, 10 shared negative and 6 raw escape variants PALACO-CJSON-v0 vectors independently verified with Node.js; HOLD');

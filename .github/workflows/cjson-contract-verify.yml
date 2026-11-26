@@ -1,0 +1,78 @@
+name: PALACO CJSON Cross-Language Review (HOLD)
+
+on:
+  pull_request:
+    paths:
+      - 'tools/strict_contract_json.py'
+      - 'tools/contract_digest.py'
+      - 'tools/verify_contract_vectors.mjs'
+      - 'tools/validate_integration_registry.py'
+      - 'tools/validate_boundary_contract.py'
+      - 'tools/validate_offline_recovery.py'
+      - 'tests/test_strict_contract_json.py'
+      - 'tests/test_contract_digest.py'
+      - 'tests/test_contract_digest_vectors.py'
+      - 'tests/test_contract_digest_negative.py'
+      - 'tests/test_contract_digest_raw_variants.py'
+      - 'tests/test_integration_registry.py'
+      - 'tests/test_boundary_contract.py'
+      - 'tests/test_offline_recovery.py'
+      - 'verification/contract-digest-v0-vectors.json'
+      - 'verification/contract-digest-v0-negative.json'
+      - 'verification/contract-digest-v0-raw-variants.json'
+      - '.github/workflows/cjson-contract-verify.yml'
+      - 'docs/architecture/contract-digest-v0.md'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/strict_contract_json.py'
+      - 'tools/contract_digest.py'
+      - 'tools/verify_contract_vectors.mjs'
+      - 'tools/validate_integration_registry.py'
+      - 'tools/validate_boundary_contract.py'
+      - 'tools/validate_offline_recovery.py'
+      - 'tests/test_strict_contract_json.py'
+      - 'tests/test_contract_digest.py'
+      - 'tests/test_contract_digest_vectors.py'
+      - 'tests/test_contract_digest_negative.py'
+      - 'tests/test_contract_digest_raw_variants.py'
+      - 'tests/test_integration_registry.py'
+      - 'tests/test_boundary_contract.py'
+      - 'tests/test_offline_recovery.py'
+      - 'verification/contract-digest-v0-vectors.json'
+      - 'verification/contract-digest-v0-negative.json'
+      - 'verification/contract-digest-v0-raw-variants.json'
+      - '.github/workflows/cjson-contract-verify.yml'
+      - 'docs/architecture/contract-digest-v0.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cross-language-review:
+    name: Verify CJSON review contracts (HOLD)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify shared strict JSON and canonical digest tests
+        run: |
+          python3 -m unittest discover -s tests -p 'test_strict_contract_json.py' -v
+          python3 -m unittest discover -s tests -p 'test_contract_digest*.py' -v
+          python3 -m unittest discover -s tests -p 'test_integration_registry.py' -v
+          python3 -m unittest discover -s tests -p 'test_boundary_contract.py' -v
+          python3 -m unittest discover -s tests -p 'test_offline_recovery.py' -v
+      - name: Setup independent Node.js verifier
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify pinned bytes, hashes and invalid cases independently
+        run: node tools/verify_contract_vectors.mjs

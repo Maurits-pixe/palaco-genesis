@@ -2,6 +2,7 @@
 import copy
 import importlib.util
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -24,6 +25,41 @@ class OfflineRecoveryPolicyTests(unittest.TestCase):
     def rejects(self, data, fragment):
         errors = validator.validate(data)
         self.assertTrue(any(fragment in error for error in errors), errors)
+
+    def assert_rejects_raw_json(self, raw, fragment):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "policy.json"
+            path.write_text(raw, encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, fragment):
+                validator.load_policy(path)
+
+    def test_strict_loader_accepts_canonical_policy(self):
+        self.assertEqual(validator.load_policy(validator.POLICY), self.policy)
+
+    def test_rejects_duplicate_release_gate(self):
+        self.assert_rejects_raw_json(
+            '{"release_gate":"HOLD","release_gate":"GO"}', "duplicate JSON key"
+        )
+
+    def test_rejects_duplicate_runtime_flag(self):
+        self.assert_rejects_raw_json(
+            '{"runtime_enabled":false,"runtime_enabled":true}', "duplicate JSON key"
+        )
+
+    def test_rejects_duplicate_nested_transition_requirement(self):
+        self.assert_rejects_raw_json(
+            '{"allowed_transitions":[{"requires":"integrity-check","requires":"auto"}]}',
+            "duplicate JSON key",
+        )
+
+    def test_rejects_nan(self):
+        self.assert_rejects_raw_json('{"value":NaN}', "non-finite JSON number")
+
+    def test_rejects_infinity(self):
+        self.assert_rejects_raw_json('{"value":Infinity}', "non-finite JSON number")
+
+    def test_rejects_negative_infinity(self):
+        self.assert_rejects_raw_json('{"value":-Infinity}', "non-finite JSON number")
 
     def test_valid_policy(self):
         self.assertEqual(validator.validate(self.candidate()), [])

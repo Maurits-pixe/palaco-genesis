@@ -1,0 +1,36 @@
+{
+  "profile": "PALACO-CJSON-v0",
+  "scope": "curated valid raw JSON variants; not adversarial parser parity",
+  "cases": [
+    {
+      "name": "escaped_nfc_and_astral",
+      "reference": "unicode_nfc",
+      "raw": "{\"name\":\"Citad\\u00e9l\",\"symbol\":\"\\ud83d\\ude80\"}"
+    },
+    {
+      "name": "literal_nfc_and_astral_reordered",
+      "reference": "unicode_nfc",
+      "raw": "{\"symbol\":\"🚀\",\"name\":\"Citadél\"}"
+    },
+    {
+      "name": "escaped_numeric_key_names",
+      "reference": "numeric_key_order",
+      "raw": "{\"\\u0032\":\"two\",\"\\u0030\":\"zero\",\"\\u0031\\u0030\":\"ten\",\"x\":\"letter\"}"
+    },
+    {
+      "name": "numeric_keys_reordered",
+      "reference": "numeric_key_order",
+      "raw": "{\"x\":\"letter\",\"2\":\"two\",\"10\":\"ten\",\"0\":\"zero\"}"
+    },
+    {
+      "name": "escaped_line_separators_and_slash",
+      "reference": "line_separators",
+      "raw": "{\"line\":\"a\\u2028b\\u2029c\",\"escaped\":\"\\\\u2028\",\"slash\":\"a\\/b\"}"
+    },
+    {
+      "name": "alternate_control_escape_forms",
+      "reference": "escaped_controls",
+      "raw": "{\"control\":\"\\u0008\\u000c\\u000a\\u000d\\u0009\\u0000\\u001f\",\"quote\":\"\\u0022\\u005c/\",\"backslash\":\"\\u005c\"}"
+    }
+  ]
+}

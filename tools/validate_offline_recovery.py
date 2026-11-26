@@ -18,6 +18,18 @@ FORBIDDEN = {
 }
 
 
+try:
+    from tools.strict_contract_json import load_strict_json
+except ModuleNotFoundError:
+    # Support direct execution: python3 tools/validate_*.py
+    from strict_contract_json import load_strict_json
+
+
+def load_policy(path):
+    """Preserve the validator's public loader while sharing strict parsing."""
+    return load_strict_json(path)
+
+
 def validate(data):
     errors = []
     if not isinstance(data, dict):
@@ -64,8 +76,8 @@ def validate(data):
 
 def main():
     try:
-        data = json.loads(POLICY.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        data = load_policy(POLICY)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 2
     errors = validate(data)

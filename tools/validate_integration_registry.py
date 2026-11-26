@@ -13,6 +13,18 @@ DEFAULT = Path(__file__).resolve().parents[1] / "ecosystem" / "integration-regis
 ID = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 
 
+try:
+    from tools.strict_contract_json import load_strict_json
+except ModuleNotFoundError:
+    # Support direct execution: python3 tools/validate_*.py
+    from strict_contract_json import load_strict_json
+
+
+def load_registry(path):
+    """Preserve the validator's public loader while sharing strict parsing."""
+    return load_strict_json(path)
+
+
 def validate(data):
     errors = []
     if not isinstance(data, dict):
@@ -82,8 +94,8 @@ def validate(data):
 def main():
     path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        data = load_registry(path)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
         print(f"FAIL: cannot read registry: {exc}", file=sys.stderr)
         return 2
     errors = validate(data)
