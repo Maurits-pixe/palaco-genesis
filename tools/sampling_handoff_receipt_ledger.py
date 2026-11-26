@@ -949,3 +949,65 @@ def verify_review_anchor_advance(
                 current_receipts=proposed_anchor["receipt_count"],
                 head_hash=proposed_anchor["head_hash"],
                 manifest_sha256=proposed_anchor["manifest_sha256"])
+
+
+ANCHOR_ADVANCE_DOMAIN=b"PALACO-SAMPLING-HANDOFF-ANCHOR-ADVANCE-V1\x00"
+
+
+def build_review_anchor_advance_evidence(
+        previous_manifest,previous_anchor,
+        proposed_manifest,proposed_anchor,expected_new_anchor):
+    """Derive deterministic, review-only evidence of a strictly verified advance.
+
+    This SHA-256 commitment is not a signature, a trusted timestamp or
+    permission to replace any independently retained checkpoint.
+    """
+    def deny(reason):return _out(advance_evidence_valid=False,reason=reason)
+    checked=verify_review_anchor_advance(
+        previous_manifest,previous_anchor,
+        proposed_manifest,proposed_anchor,expected_new_anchor)
+    if not checked["anchor_advance_valid"]:
+        return deny(checked["reason"])
+    old_count=previous_anchor["receipt_count"]
+    first=proposed_manifest["entries"][old_count]
+    evidence={
+        "schema_version":"0.1.0",
+        "previous_anchor":dict(previous_anchor),
+        "current_anchor":dict(proposed_anchor),
+        "added_receipts":proposed_anchor["receipt_count"]-old_count,
+        "first_new_sequence":old_count+1,
+        "first_new_event_hash":first["event_hash"],
+        "last_event_hash":proposed_manifest["entries"][-1]["event_hash"]
+    }
+    encoded=json.dumps(evidence,sort_keys=True,separators=(",",":"),
+                       ensure_ascii=False,allow_nan=False).encode("utf-8")
+    commitment=hashlib.sha256(ANCHOR_ADVANCE_DOMAIN+encoded).hexdigest()
+    return _out(advance_evidence_valid=True,state="pending-review",
+                reason="deterministic-anchor-advance-evidence-not-custody",
+                advance_evidence=evidence,advance_evidence_sha256=commitment)
+
+
+def verify_review_anchor_advance_evidence(
+        previous_manifest,previous_anchor,
+        proposed_manifest,proposed_anchor,expected_new_anchor,
+        evidence,expected_evidence_sha256):
+    """Recompute an advance record against separately authenticated evidence."""
+    def deny(reason):return _out(advance_evidence_valid=False,reason=reason)
+    if (type(expected_evidence_sha256) is not str
+        or not handoff.HEX.fullmatch(expected_evidence_sha256)):
+        return deny("missing-independent-anchor-advance-evidence-pin")
+    calculated=build_review_anchor_advance_evidence(
+        previous_manifest,previous_anchor,
+        proposed_manifest,proposed_anchor,expected_new_anchor)
+    if not calculated["advance_evidence_valid"]:
+        return deny(calculated["reason"])
+    if (type(evidence) is not dict
+        or evidence!=calculated["advance_evidence"]):
+        return deny("anchor-advance-evidence-mismatch")
+    if calculated["advance_evidence_sha256"]!=expected_evidence_sha256:
+        return deny("anchor-advance-evidence-pin-mismatch")
+    return _out(advance_evidence_valid=True,state="pending-review",
+                reason="reverified-anchor-advance-evidence-not-custody",
+                advance_evidence_sha256=expected_evidence_sha256,
+                added_receipts=evidence["added_receipts"],
+                head_hash=proposed_anchor["head_hash"])
