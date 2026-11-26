@@ -380,3 +380,21 @@ process memory, the size of trusted previous manifests, or transport
 buffering upstream. Separate size limits are still needed at the HTTP,
 file and message acquisition layers. No pin issuance, permission,
 delivery or custody is implied. GO-13 HOLD / authorization DENY.
+
+## Strict numeric JSON-token boundary (2026-11-26)
+
+The byte-bounded `verify_review_delta_json` entry point now installs
+explicit JSON numeric parsing callbacks. Integer tokens longer than ten
+decimal characters are rejected **before** conversion into Python
+integers. Floating-point and exponent-form numeric tokens are always
+rejected because the review-delta schema defines only integer sequence
+and count fields. Existing strict UTF-8, duplicate-key, non-finite
+constant, 8 MiB size, shape and independent-pin checks remain in force.
+
+Three regression methods cover decimal/exponent notation, oversized
+integer tokens, and bounded-but-out-of-schema integer values. The
+ten-character integer-token cap prevents disproportionately expensive
+integer parsing; the existing structural validator continues to enforce
+the much tighter permitted count and sequence ranges. JSON acquisition
+layers must still impose their own byte limits. No authorization,
+custody, merge or release authority follows; GO-13 HOLD remains.
