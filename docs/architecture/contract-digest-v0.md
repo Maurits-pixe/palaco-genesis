@@ -47,6 +47,14 @@ bounded strict JSON reader before encoding.
   initialization and verifies unchanged canonical bytes, cycle rejection
   and non-JSON value denial. This does not protect against modification
   of the underlying prototype objects themselves or a compromised startup.
+- Node object-key validation, descriptor snapshot collection, sorting and
+  output traversal now use index-based array access (including internal
+  key/value tuple fields), rather than invoking mutable
+  `Array.prototype[Symbol.iterator]`. Regression tests replace the iterator
+  with a silent empty generator, confirming that JSON members cannot
+  disappear, invalid values remain rejected, and canonical bytes/digests
+  are unchanged. This covers post-initialization iterator replacement,
+  not mutation of the actual JavaScript runtime before startup.
 - The Node verifier captures `Array.prototype.push` at initialization for
   collecting array descriptors, validated object keys and object-value
   snapshots. A later `push` override must not silently omit elements or
