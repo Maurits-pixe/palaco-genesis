@@ -481,3 +481,28 @@ trusted-pin source and no automatic selection or promotion of a
 candidate. Passing this check establishes consistency only, not
 receipt signature authenticity, custody or authority. Every positive
 outcome remains pending-review; GO-13 HOLD / authorization DENY.
+
+## Independently reverified anchor advancement audit evidence (2026-11-26)
+
+`build_review_anchor_advance_evidence` first requires an independently
+pinned, strictly growing and append-only transition between the old and
+proposed manifest. It then derives a deterministic, domain-separated
+SHA-256 audit commitment over the exact old and new anchor triples,
+added receipt count, first new sequence and event hash, and final event
+hash. This record contains only review metadata; it never creates,
+replaces or signs trusted anchors.
+
+`verify_review_anchor_advance_evidence` independently re-runs the
+transition validation, reconstructs the complete audit evidence, and
+compares its contents and digest to an independently authenticated
+expected evidence SHA-256. Missing external pins, changed evidence,
+stale transitions and invalid trusted anchors fail closed. Three
+regression methods cover valid offline reconstruction and hash
+recalculation, tampered evidence/pins, and non-advancing or incorrectly
+anchored transitions.
+
+The SHA-256 record is not a trusted timestamp, witness signature,
+proof of physical delivery, custody certificate or promotion approval.
+Independent retention and authentication of its expected digest are
+required. Every positive outcome is pending-review and preserves
+GO-13 HOLD / authorization DENY.
