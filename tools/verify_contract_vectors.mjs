@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { types as nodeTypes } from 'node:util';
 
 const fixturePath = new URL('../verification/contract-digest-v0-vectors.json', import.meta.url);
 const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
@@ -22,6 +23,7 @@ const intrinsicGetPrototypeOf = Object.getPrototypeOf;
 const intrinsicGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
 const intrinsicHasOwn = Object.hasOwn;
 const intrinsicArrayIsArray = Array.isArray;
+const intrinsicIsProxy = nodeTypes.isProxy;
 const intrinsicNormalize = String.prototype.normalize;
 const intrinsicCharCodeAt = String.prototype.charCodeAt;
 const intrinsicCodePointAt = String.prototype.codePointAt;
@@ -82,6 +84,11 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
   budget.nodes += 1;
   if (budget.nodes > MAX_CANONICAL_NODES) {
     throw new Error('canonical JSON node budget exceeded');
+  }
+  // A JavaScript Proxy can execute arbitrary traps even during prototype,
+  // own-key or descriptor inspection. Deny it before any such inspection.
+  if (value !== null && typeof value === 'object' && intrinsicIsProxy(value)) {
+    throw new Error('Proxy is not canonical JSON data');
   }
   if (value === null) { charge(4); return 'null'; }
   if (value === true) { charge(4); return 'true'; }
