@@ -113,7 +113,7 @@ class SuccessionTests(unittest.TestCase):
 
     def test_root_swap(self):
         with self.assertRaises(EvidenceRejected):
-            sign_successor(self.prior, {"sequence": 1, "head": "b" * 64,
+            sign_successor(self.prior, {"sequence": 2, "head": "b" * 64,
                            "root_id": "f" * 64}, self.signer)
 
     def test_missing_external_record(self):
