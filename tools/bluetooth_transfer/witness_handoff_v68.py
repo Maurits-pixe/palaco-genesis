@@ -120,7 +120,7 @@ def exercise_ci(evidence: bytes, sha: str, run: str) -> bool:
         # Build and verify an ACTUAL v6.6 frozen archive before handoff.
         # The transferred bundle still excludes the local source ledger.
         from witness_archive_v66 import build_archive, verify_archive, channel_path
-        from witness_anchor_v64 import sign_checkpoint
+        from witness_anchor_v64 import sign_checkpoint, write_once
         from witness_continuity_v63 import append_incident, snapshot
         ledger = Path(temporary) / "ledger.sqlite3"
         producer = Ed25519PrivateKey.generate()
