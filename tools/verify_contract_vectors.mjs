@@ -27,6 +27,9 @@ const intrinsicIsProxy = nodeTypes.isProxy;
 const intrinsicWeakSetHas = WeakSet.prototype.has;
 const intrinsicWeakSetAdd = WeakSet.prototype.add;
 const intrinsicWeakSetDelete = WeakSet.prototype.delete;
+const intrinsicWeakSetConstructor = WeakSet;
+const intrinsicObjectPrototype = Object.prototype;
+const intrinsicArrayPrototype = Array.prototype;
 const intrinsicNormalize = String.prototype.normalize;
 const intrinsicCharCodeAt = String.prototype.charCodeAt;
 const intrinsicCodePointAt = String.prototype.codePointAt;
@@ -77,7 +80,7 @@ function assertValidString(s) {
   }
 }
 
-function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, bytes: 0 }) {
+function encode(value, depth = 0, active = new intrinsicWeakSetConstructor(), budget = { nodes: 0, bytes: 0 }) {
   function charge(bytes) {
     budget.bytes += bytes;
     if (budget.bytes > MAX_CANONICAL_BYTES) {
@@ -116,7 +119,7 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
   if (intrinsicArrayIsArray(value)) {
     // Only a native array with the standard prototype represents a JSON
     // array. Custom array prototypes can carry executable behavior.
-    if (intrinsicGetPrototypeOf(value) !== Array.prototype) {
+    if (intrinsicGetPrototypeOf(value) !== intrinsicArrayPrototype) {
       throw new Error('unsupported array prototype');
     }
     if (intrinsicWeakSetHas.call(active, value)) throw new Error('cyclic JSON reference');
@@ -162,7 +165,7 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
       intrinsicWeakSetDelete.call(active, value);
     }
   }
-  if (typeof value === 'object' && intrinsicGetPrototypeOf(value) === Object.prototype) {
+  if (typeof value === 'object' && intrinsicGetPrototypeOf(value) === intrinsicObjectPrototype) {
     if (intrinsicWeakSetHas.call(active, value)) throw new Error('cyclic JSON reference');
     if (depth >= MAX_DEPTH) throw new Error('JSON nesting depth exceeds limit');
     const keys = intrinsicOwnKeys(value);
