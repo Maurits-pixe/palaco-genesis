@@ -822,3 +822,70 @@ def verify_review_delta_json_with_manifest_pin(
         previous_manifest,previous_sha256,previous_head,
         delta,expected_delta_sha256,expected_current_head,
         expected_current_manifest_sha256,minimum_previous_receipts)
+
+
+MAX_REVIEW_ANCHORS=64
+REVIEW_ANCHOR_FIELDS={"receipt_count","head_hash","manifest_sha256"}
+
+
+def verify_review_anchor_history(manifests,authenticated_anchors,
+                                 expected_latest_head,minimum_latest_receipts):
+    """Check a bounded sequence of fully anchored append-only snapshots.
+
+    Every entry in authenticated_anchors MUST be obtained from an
+    independent trusted channel, not computed from received manifests.
+    This verifier neither stores anchors nor grants release authority.
+    """
+    def deny(reason):return _out(anchor_history_valid=False,reason=reason)
+    if (type(expected_latest_head) is not str
+        or not handoff.HEX.fullmatch(expected_latest_head)
+        or type(minimum_latest_receipts) is not int
+        or not 1<=minimum_latest_receipts<=MAX_RECORDS):
+        return deny("missing-independent-anchor-history-pin")
+    if (type(manifests) is not list
+        or type(authenticated_anchors) is not list
+        or not 1<=len(manifests)<=MAX_REVIEW_ANCHORS
+        or len(manifests)!=len(authenticated_anchors)):
+        return deny("invalid-review-anchor-history")
+    previous_manifest=None
+    previous_pin=None
+    for manifest,pin in zip(manifests,authenticated_anchors):
+        if (type(pin) is not dict or set(pin)!=REVIEW_ANCHOR_FIELDS
+            or type(pin["receipt_count"]) is not int
+            or not 1<=pin["receipt_count"]<=MAX_RECORDS
+            or any(type(pin[name]) is not str
+                   or not handoff.HEX.fullmatch(pin[name])
+                   for name in ("head_hash","manifest_sha256"))):
+            return deny("invalid-independent-review-anchor")
+        check=verify_review_manifest(
+            manifest,pin["manifest_sha256"],pin["head_hash"],
+            pin["receipt_count"])
+        if not check["manifest_valid"]:
+            return deny("anchor-"+check["reason"])
+        if manifest["receipt_count"]!=pin["receipt_count"]:
+            return deny("review-anchor-count-mismatch")
+        if previous_manifest is not None:
+            if pin["receipt_count"]<previous_pin["receipt_count"]:
+                return deny("review-anchor-history-rollback")
+            if pin["receipt_count"]==previous_pin["receipt_count"]:
+                if pin!=previous_pin:
+                    return deny("review-anchor-history-equivocation")
+            else:
+                continuation=verify_manifest_succession(
+                    previous_manifest,previous_pin["manifest_sha256"],
+                    previous_pin["head_hash"],manifest,
+                    pin["manifest_sha256"],pin["head_hash"],
+                    previous_pin["receipt_count"])
+                if not continuation["succession_valid"]:
+                    return deny("anchor-"+continuation["reason"])
+        previous_manifest=manifest
+        previous_pin=pin
+    if previous_pin["receipt_count"]<minimum_latest_receipts:
+        return deny("review-anchor-history-rollback")
+    if previous_pin["head_hash"]!=expected_latest_head:
+        return deny("review-anchor-latest-head-mismatch")
+    return _out(anchor_history_valid=True,state="pending-review",
+                reason="authenticated-anchor-history-consistent-not-custody",
+                anchors=len(authenticated_anchors),
+                latest_receipts=previous_pin["receipt_count"],
+                head_hash=previous_pin["head_hash"])
