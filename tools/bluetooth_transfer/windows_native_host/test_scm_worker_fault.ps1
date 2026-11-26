@@ -116,6 +116,10 @@ try {
     # manifest integrity and refuse a late third receipt after archiving.
     python tools/bluetooth_transfer/witness_archive_v66.py --ci-evidence $evidence
     if ($LASTEXITCODE -ne 0) { throw "CI quorum archive channel verification failed" }
+    # Sign a *verifier's* custody receipt with the Actions checkout SHA and
+    # run ID. It is not an independently verified GitHub provenance attestation.
+    python tools/bluetooth_transfer/witness_custody_v67.py --ci-evidence $evidence
+    if ($LASTEXITCODE -ne 0) { throw "CI signed custody provenance test failed" }
     Write-Output "PALACO ephemeral Ed25519 CI witness PASS (signed verifier receipt, linked local SQLite entry, duplicate refused)"
     Write-Output "Independent CI incident verification PASS (original validated, replay denied; unsigned)"
     Write-Output "Windows SCM injected worker failure PASS (STOPPED, no restart, fixed HOLD/DENY evidence, SHA-256 verified)"
