@@ -152,8 +152,9 @@ pub fn inspect_transition_monotonicity(
 
 /// Requires an exact snapshot hash-chain junction between two audit segments.
 ///
-/// This standalone boundary checks both complete source checkpoint chains
-/// against their claimed final anchors before comparing their junction.
+/// This standalone boundary validates the complete bounded checkpoint
+/// succession inside both segments, including receipt/source metadata, before
+/// examining the adjacent source chains and comparing their junction.
 /// Receipts must also match each adjacent source's checkpoint count, tip
 /// sequence and key registry revision. It rejects skipped, replayed or
 /// mislinked junction checkpoints. Hash consistency is not authentication.
@@ -162,6 +163,13 @@ pub fn inspect_transition_snapshot_link(
     previous: &AuditSegmentEvidence<'_>,
     current: &AuditSegmentEvidence<'_>,
 ) -> RestartInspection {
+    // Checking only the adjoining source bundles can conceal invalid earlier
+    // bundles within either segment. Validate the entire bounded succession.
+    if inspect_segment_snapshot_continuity(previous) != RestartInspection::ReviewOnly
+        || inspect_segment_snapshot_continuity(current) != RestartInspection::ReviewOnly
+    {
+        return RestartInspection::Deny;
+    }
     let (Some(previous_source), Some(current_source)) =
         (previous.evidence.last(), current.evidence.first())
     else {
@@ -1048,6 +1056,74 @@ mod tests {
             inspect_transition_snapshot_link(&previous, &current),
             RestartInspection::ReviewOnly
         );
+        // An edge-only check would accept this junction even though an
+        // earlier source bundle in the previous segment is blocked.
+        let earlier_blocked_checkpoint = [RestartCheckpoint {
+            sequence: 6,
+            predecessor_digest: [5; 32],
+            snapshot_digest: [6; 32],
+            committed: true,
+            hold: true,
+            revoked: false,
+        }];
+        let earlier_blocked_signed = SignedAnchor {
+            anchor: RestartAnchor {
+                sequence: 6,
+                predecessor_digest: [5; 32],
+                snapshot_digest: [6; 32],
+                externally_verified: true,
+            },
+            ..signed_previous.clone()
+        };
+        let earlier_blocked_evidence = [
+            RecoveryEvidence {
+                checkpoints: &earlier_blocked_checkpoint,
+                payloads: &[b"older"],
+                signed: &earlier_blocked_signed,
+                trusted_key: &key,
+                floor: &floor_previous,
+            },
+            RecoveryEvidence {
+                checkpoints: &checkpoints_previous,
+                payloads: payloads_previous,
+                signed: &signed_previous,
+                trusted_key: &key,
+                floor: &floor_previous,
+            },
+        ];
+        let earlier_blocked_receipts = [receipts_previous[0], receipts_previous[0]];
+        let earlier_blocked_segment = AuditSegmentEvidence {
+            links: &links_previous,
+            receipts: &earlier_blocked_receipts,
+            evidence: &earlier_blocked_evidence,
+            expected: &expected_previous,
+        };
+        assert_eq!(
+            inspect_transition_snapshot_link(&earlier_blocked_segment, &current),
+            RestartInspection::Deny
+        );
+        // Standalone junction review must reject oversized original payloads
+        // before any chain traversal, including on an otherwise valid edge.
+        let oversized_junction_payload = vec![0u8; super::MAX_SNAPSHOT_BYTES + 1];
+        let oversized_junction_payloads: &[&[u8]] = &[oversized_junction_payload.as_slice()];
+        let oversized_junction_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_previous,
+            payloads: oversized_junction_payloads,
+            signed: &signed_previous,
+            trusted_key: &key,
+            floor: &floor_previous,
+        }];
+        let oversized_junction_previous = AuditSegmentEvidence {
+            links: &links_previous,
+            receipts: &receipts_previous,
+            evidence: &oversized_junction_evidence,
+            expected: &expected_previous,
+        };
+        assert_eq!(
+            inspect_transition_snapshot_link(&oversized_junction_previous, &current),
+            RestartInspection::Deny
+        );
+
         // A structurally linked junction is not reviewable when one of its
         // adjacent receipts falsifies the underlying source metadata.
         let wrong_junction_count = [ReviewReceipt {
