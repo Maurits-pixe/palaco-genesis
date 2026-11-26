@@ -335,6 +335,9 @@ pub fn inspect_transition_signer_continuity(
 
 /// Denies unannounced signer changes anywhere inside a review segment.
 ///
+/// The complete audit source budget is verified before source signer and
+/// checkpoint traversal, including payload sizes and aggregate source counts.
+///
 /// Each receipt must have exactly one source evidence bundle. Every bundle
 /// must use the same key identity and validity window as the first, and each
 /// signed anchor must be bound to that key. Registry revisions may advance,
@@ -346,7 +349,9 @@ pub fn inspect_segment_signer_consistency(segment: &AuditSegmentEvidence<'_>) ->
     let Some(first) = segment.evidence.first() else {
         return RestartInspection::Deny;
     };
-    if segment.evidence.len() != segment.receipts.len() {
+    if segment.evidence.len() != segment.receipts.len()
+        || inspect_audit_evidence_budget(segment.evidence) != RestartInspection::ReviewOnly
+    {
         return RestartInspection::Deny;
     }
     let baseline = first.trusted_key;
@@ -1653,6 +1658,10 @@ mod tests {
             inspect_segment_snapshot_continuity(&oversized_source),
             RestartInspection::Deny
         );
+        assert_eq!(
+            inspect_segment_signer_consistency(&oversized_source),
+            RestartInspection::Deny
+        );
         let excessive_evidence: Vec<RecoveryEvidence<'_>> = (0..=MAX_AUDIT_LINKS)
             .map(|_| RecoveryEvidence {
                 checkpoints: &checkpoints_previous,
@@ -1671,6 +1680,10 @@ mod tests {
         };
         assert_eq!(
             inspect_segment_snapshot_continuity(&excessive_segment),
+            RestartInspection::Deny
+        );
+        assert_eq!(
+            inspect_segment_signer_consistency(&excessive_segment),
             RestartInspection::Deny
         );
 
