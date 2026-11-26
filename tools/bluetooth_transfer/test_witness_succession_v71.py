@@ -1,6 +1,13 @@
 """v7.1 tests: externally pinned checkpoint successor and negative paths."""
 import json
 import unittest
+from pathlib import Path
+
+from witness_continuity_v63 import append_incident, snapshot, public_id
+from witness_archive_v66 import build_archive, channel_path
+from witness_anchor_v64 import sign_checkpoint as sign_witness, write_once
+from witness_custody_v67 import sign as sign_custody
+from witness_history_v69 import prepare as prepare_history
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -17,9 +24,34 @@ class SuccessionTests(unittest.TestCase):
     def setUp(self):
         HistoricalHandoffTests.setUp(self)
         self.signer = Ed25519PrivateKey.generate()
-        old = {"sequence": self.checkpoint["sequence"] - 1,
-               "head": "0" * 64, "root_id": self.checkpoint["root_id"]}
+        old = self.checkpoint.copy()
         self.prior = sign_checkpoint(old, self.signer)
+
+        # Build a REAL two-event successor ledger and signed witness manifest.
+        # Distinct whitespace encoding represents a separate valid incident.
+        second = json.dumps(json.loads(self.incident), indent=2).encode("utf-8")
+        append_incident(self.source, self.root, self.root_private, second)
+        self.checkpoint = snapshot(self.source, self.root)
+        witness_private = [Ed25519PrivateKey.generate() for _ in range(3)]
+        ordered = sorted((public_id(k.public_key()), k) for k in witness_private)
+        self.witnesses = {ident: key.public_key() for ident, key in ordered}
+        channels = self.base / "channels-v71"
+        for i, (_, key) in enumerate(ordered[:2]):
+            target = channel_path(channels, i)
+            target.parent.mkdir(parents=True)
+            write_once(target, sign_witness(self.checkpoint, key))
+        manifest = self.base / "manifest-v71.json"
+        build_archive(self.source, self.root, self.witnesses, channels,
+                      manifest, ("received", "received", "absent"))
+        m = manifest.read_bytes()
+        custody_private = [Ed25519PrivateKey.generate() for _ in range(3)]
+        self.custodians = {public_id(k.public_key()): k.public_key()
+                          for k in custody_private}
+        receipts = (sign_custody(m, SHA, RUN, custody_private[0]),
+                    sign_custody(m, SHA, RUN, custody_private[1]))
+        self.bundle = self.base / "bundle-v71"
+        prepare_history(self.bundle, self.source, channels, second, m, receipts,
+                        SHA, RUN, self.root, self.witnesses)
         self.successor = sign_successor(self.prior, self.checkpoint, self.signer)
         self.prior_path = self.base / "trusted-prior.json"
         self.next_path = self.base / "trusted-successor.json"
@@ -76,7 +108,7 @@ class SuccessionTests(unittest.TestCase):
 
     def test_nonadvancing_sequence(self):
         with self.assertRaises(EvidenceRejected):
-            sign_successor(self.prior, {"sequence": 0, "head": "b" * 64,
+            sign_successor(self.prior, {"sequence": 1, "head": "b" * 64,
                            "root_id": self.checkpoint["root_id"]}, self.signer)
 
     def test_root_swap(self):
@@ -97,7 +129,7 @@ class SuccessionTests(unittest.TestCase):
 
     def test_receiver_denies_wrong_current_head(self):
         self.next_path.write_bytes(sign_successor(
-            self.prior, {"sequence": 1, "head": "f" * 64,
+            self.prior, {"sequence": 2, "head": "f" * 64,
                          "root_id": self.checkpoint["root_id"]}, self.signer))
         with self.assertRaises(EvidenceRejected):
             self.receive(digest(self.next_path.read_bytes()))
