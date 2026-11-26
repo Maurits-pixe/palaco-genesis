@@ -772,18 +772,12 @@ def _reject_json_float(value):
     raise ValueError("floating-point-review-delta-json-number")
 
 
-def verify_review_delta_json(previous_manifest,previous_sha256,previous_head,
-                             raw_delta,expected_delta_sha256,
-                             expected_current_head,minimum_previous_receipts):
-    """Bound and strictly decode untrusted JSON bytes before delta checks.
-
-    Caller-supplied external pins remain mandatory; no database access.
-    """
-    def deny(reason):return _out(delta_valid=False,reason=reason)
+def _decode_review_delta_json(raw_delta):
+    """Shared bounded decoder for the basic and strict offline review routes."""
     if type(raw_delta) is not bytes:
-        return deny("invalid-review-delta-json-type")
+        return None,"invalid-review-delta-json-type"
     if not 1<=len(raw_delta)<=MAX_DELTA_JSON_BYTES:
-        return deny("review-delta-json-size-limit")
+        return None,"review-delta-json-size-limit"
     try:
         delta=json.loads(raw_delta.decode("utf-8"),
                          object_pairs_hook=_unique_json_object,
@@ -791,8 +785,40 @@ def verify_review_delta_json(previous_manifest,previous_sha256,previous_head,
                          parse_int=_bounded_json_integer,
                          parse_float=_reject_json_float)
     except (UnicodeError,ValueError,TypeError,RecursionError):
-        return deny("invalid-or-ambiguous-review-delta-json")
+        return None,"invalid-or-ambiguous-review-delta-json"
+    return delta,None
+
+
+def verify_review_delta_json(previous_manifest,previous_sha256,previous_head,
+                             raw_delta,expected_delta_sha256,
+                             expected_current_head,minimum_previous_receipts):
+    """Bound and strictly decode untrusted JSON bytes before delta checks."""
+    delta,reason=_decode_review_delta_json(raw_delta)
+    if reason is not None:
+        return _out(delta_valid=False,reason=reason)
     return verify_review_delta(
         previous_manifest,previous_sha256,previous_head,
         delta,expected_delta_sha256,expected_current_head,
         minimum_previous_receipts)
+
+
+def verify_review_delta_json_with_manifest_pin(
+        previous_manifest,previous_sha256,previous_head,
+        raw_delta,expected_delta_sha256,expected_current_head,
+        expected_current_manifest_sha256,minimum_previous_receipts):
+    """Strict bounded JSON intake with an external full-manifest pin.
+
+    The manifest pin MUST be independently authenticated; never derive it
+    from this received delta. A positive result is review-only.
+    """
+    def deny(reason):return _out(delta_valid=False,reason=reason)
+    if (type(expected_current_manifest_sha256) is not str
+        or not handoff.HEX.fullmatch(expected_current_manifest_sha256)):
+        return deny("missing-independent-current-manifest-pin")
+    delta,reason=_decode_review_delta_json(raw_delta)
+    if reason is not None:
+        return deny(reason)
+    return verify_review_delta_with_manifest_pin(
+        previous_manifest,previous_sha256,previous_head,
+        delta,expected_delta_sha256,expected_current_head,
+        expected_current_manifest_sha256,minimum_previous_receipts)
