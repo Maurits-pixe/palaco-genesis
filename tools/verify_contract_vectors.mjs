@@ -14,6 +14,7 @@ const DOMAIN = Buffer.from('PALACO-CJSON-v0\0', 'utf8');
 const MAX_DEPTH = 64;
 // Capture the sorter before any test can modify shared Array.prototype.
 const intrinsicArraySort = Array.prototype.sort;
+const intrinsicArrayPush = Array.prototype.push;
 const MAX_CANONICAL_NODES = 100_000;
 const MAX_CANONICAL_BYTES = 1024 * 1024;
  // Capture review-verifier intrinsics before later mutable globals can change.
@@ -152,7 +153,7 @@ function encode(value, depth = 0, active = new intrinsicWeakSetConstructor(), bu
       }
       // Read the descriptor, not value[i] or value.map: inherited methods
       // must never execute while verifying a canonical JSON digest.
-      entries.push(descriptor.value);
+      intrinsicArrayPush.call(entries, descriptor.value);
     }
     charge(2 + intrinsicMathMax(0, entries.length - 1));
     intrinsicWeakSetAdd.call(active, value);
@@ -194,7 +195,7 @@ function encode(value, depth = 0, active = new intrinsicWeakSetConstructor(), bu
       assertValidString(key);
       const encodedKey = intrinsicJSONStringify(key);
       charge(intrinsicBufferByteLength(encodedKey, 'utf8') + 1);
-      encodedKeys.push([key, encodedKey]);
+      intrinsicArrayPush.call(encodedKeys, [key, encodedKey]);
     }
     const entries = [];
     for (const [key, encodedKey] of encodedKeys) {
@@ -204,7 +205,7 @@ function encode(value, depth = 0, active = new intrinsicWeakSetConstructor(), bu
       }
       // Snapshot only validated data descriptors; no subsequent property
       // reads are necessary, even if the supplied object is a Proxy.
-      entries.push([key, encodedKey, descriptor.value]);
+      intrinsicArrayPush.call(entries, [key, encodedKey, descriptor.value]);
     }
     intrinsicWeakSetAdd.call(active, value);
     try {
