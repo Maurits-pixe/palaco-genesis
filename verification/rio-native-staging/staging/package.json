@@ -1,0 +1,13 @@
+{
+  "name": "palaco-rio-isolated-staging-v276",
+  "version": "0.0.0-draft",
+  "private": true,
+  "type": "module",
+  "description": "Disposable in-memory PostgreSQL fixture; no remote database connections",
+  "scripts": {
+    "test": "node --test isolated-postgres-v276.test.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.16"
+  }
+}

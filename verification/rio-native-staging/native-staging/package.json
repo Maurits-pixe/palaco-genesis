@@ -1,0 +1,14 @@
+{
+  "name": "palaco-rio-native-staging-v279",
+  "version": "0.0.0-draft",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node standalone-schema-v279.mjs",
+    "test:parallel": "node --test native-postgres-v279.test.mjs"
+  },
+  "devDependencies": {
+    "@embedded-postgres/linux-x64": "17.11.0-beta.19",
+    "pg": "8.23.1"
+  }
+}
