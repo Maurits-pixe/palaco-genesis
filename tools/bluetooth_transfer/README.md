@@ -1,4 +1,13 @@
-# PALACO Bluetooth Offline Transfer — v7.0 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v7.1 DRAFT / HOLD
+
+## v7.1 Signed checkpoint succession with independently pinned latest digest
+
+- `witness_succession_v71.py` binds a new Ed25519-signed checkpoint to the SHA-256 of a separately signed predecessor, enforces increasing chain sequence, stable genesis root, changed head, and exact HOLD/DENY. The receiver checks the **independently retained latest successor SHA-256** before replaying the complete historical v6.9 archive.
+- A maliciously replayed older *valid signed* successor fails if its hash differs from the external latest digest. Neither the trusted signer nor the external high-water digest may be obtained solely from the transferred bundle.
+- `test_witness_succession_v71.py` exercises genuine two-entry signed SQLite history, witness quorum and custody verification, along with negative substitutions and rollback cases.
+- **Trust limitations:** this is a single-transition verification envelope (generation 1), NOT a persistent multi-generation register, trusted timestamp, independent storage service, automated durable write, or distributed anti-equivocation guarantee. Authentic, atomic publication of the latest digest remains outside this module; no claim of rollback protection applies if the external digest itself is rolled back.
+- GO-13 HOLD / authorization DENY; no merge, public release, installation or deployment.
+
 
 ## v7.0 Signed independent receiver checkpoint (verification-only)
 
