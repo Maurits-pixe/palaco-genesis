@@ -415,3 +415,27 @@ offline payload, absent/incorrect manifest pins, duplicate keys or an
 oversized request before hashing, and an invalid delta hash. No signing,
 custody attestation, automatic branch selection, authorization or
 deployment is performed; GO-13 remains HOLD / DENY.
+
+## Independently pinned manifest anchor history (2026-11-26)
+
+`verify_review_anchor_history(manifests, authenticated_anchors,
+expected_latest_head, minimum_latest_receipts)` verifies a sequence of
+one to 64 offline receipt manifests. Every position requires an
+**independently authenticated** pin containing its exact receipt
+count, ledger head and full manifest SHA-256. The verifier validates
+each complete manifest against its pin, enforces nondecreasing counts,
+requires an append-only continuation for growth, and rejects
+conflicting manifests for the same count. Finally, it checks the
+caller-authenticated latest head and minimum receipt floor. Replayed
+identical checkpoints may be included without granting authority.
+
+Five regressions cover successful growth, a rollback to a prior
+checkpoint, a corrupted independent manifest pin, same-count
+split-view equivocation, and invalid or excessive anchor lists.
+
+This module **does not create, authenticate, distribute, persist or sign
+the external pins**. They must be separately retained and verified,
+with protection against source compromise and rollback. Receiving a
+self-consistent list of attacker-supplied pins cannot establish trust.
+A positive result stays pending-review; no custody, signing,
+merge, deployment, recovery or release is authorized. GO-13 HOLD.
