@@ -32,6 +32,12 @@ bounded strict JSON reader before encoding.
 - Both Python and Node.js canonicalizers enforce at most **64 levels** of
   array/object nesting, including for in-memory objects; a 65th level fails.
 - Non-NFC Unicode strings are **rejected**, not silently normalized.
+- The Node verifier captures `WeakSet.prototype.has`, `add` and
+  `delete` at startup for its ancestor-cycle guard. A late override of
+  publicly mutable WeakSet methods cannot disable cycle detection or
+  change an acyclic digest. Regression tests replace all three methods
+  with throwing functions and assert both array/object cycles still fail.
+  This does not protect against a compromised runtime before startup.
 - The independent Node verifier also pins `Buffer.prototype.writeBigUInt64BE`,
   the `BigInt` converter, and the `update`/`digest` instance methods of
   Node's SHA-256 Hash implementation. Digest framing therefore uses captured
