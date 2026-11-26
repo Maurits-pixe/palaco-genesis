@@ -476,20 +476,24 @@ symbolArray[Symbol('secret')] = 1;
 assert.throws(() => canonicalBytes(symbolArray), /unsupported array property/,
               'symbol-named array properties must not be silently dropped');
 
-// Object serialization must not issue a second property read after
-// validating the descriptor: Proxy get traps may execute arbitrary code.
-const proxyData = new Proxy({ gate: 'HOLD', count: 1 }, {
-  get() { throw new Error('object get trap must not execute'); },
+// Even a Proxy with apparently harmless data can execute arbitrary code
+// through its introspection traps. Reject before any trap is invoked.
+let proxyTrapCalls = 0;
+const hostileProxy = new Proxy({ gate: 'HOLD' }, {
+  getPrototypeOf() { proxyTrapCalls += 1; throw new Error('prototype trap executed'); },
+  ownKeys() { proxyTrapCalls += 1; throw new Error('ownKeys trap executed'); },
+  getOwnPropertyDescriptor() { proxyTrapCalls += 1; throw new Error('descriptor trap executed'); },
+  get() { proxyTrapCalls += 1; throw new Error('get trap executed'); },
 });
-assert.deepEqual(canonicalBytes(proxyData),
-                 Buffer.from('{"count":1,"gate":"HOLD"}', 'utf8'),
-                 'own data descriptors are sufficient to encode a JSON object');
-const proxyNested = new Proxy({ child: [0, { gate: 'HOLD' }] }, {
-  get() { throw new Error('nested object get trap must not execute'); },
-});
-assert.deepEqual(canonicalBytes(proxyNested),
-                 Buffer.from('{"child":[0,{"gate":"HOLD"}]}', 'utf8'),
-                 'nested data encoding does not read top-level properties twice');
+assert.throws(() => canonicalBytes(hostileProxy), /Proxy/,
+              'object Proxy must fail before JavaScript inspection traps run');
+assert.throws(() => canonicalBytes({ nested: [hostileProxy] }), /Proxy/,
+              'nested Proxy must be rejected before inspection');
+assert.equal(proxyTrapCalls, 0, 'Proxy rejection did not execute any traps');
+const revokedProxy = Proxy.revocable({ gate: 'HOLD' }, {});
+revokedProxy.revoke();
+assert.throws(() => canonicalBytes(revokedProxy.proxy), /Proxy/,
+              'revoked Proxy must fail closed before prototype inspection');
 
 // Non-JSON JavaScript objects must not be silently converted by
 // JSON.stringify's special-case serialization or dropped as empty objects.
@@ -566,52 +570,24 @@ const objectBeyondNodeLimit = Object.fromEntries(
 assert.throws(() => canonicalBytes(objectBeyondNodeLimit), /node budget/,
               'a 50,000-member object requires 100,001 node visits');
 
-// Validate canonical key bytes before inspecting property descriptors.
+// Key validation remains strict for ordinary objects; Proxy objects are
+// denied earlier rather than being inspected to discover an invalid key.
 const hugeKey = 'k'.repeat(MAX_CANONICAL_BYTES);
-const deferredDescriptor = new Proxy({ [hugeKey]: 0 }, {
-  getOwnPropertyDescriptor() {
-    throw new Error('descriptor must not be consulted after key budget denial');
-  },
-});
-assert.throws(() => canonicalBytes(deferredDescriptor), /byte budget/,
-              'oversized key is denied before descriptor collection');
+assert.throws(() => canonicalBytes({ [hugeKey]: 0 }), /byte budget/,
+              'oversized ordinary object key is denied');
 const newlineKey = String.fromCharCode(10).repeat(MAX_CANONICAL_BYTES / 2);
 assert.throws(() => canonicalBytes({ [newlineKey]: 0 }), /byte budget/,
               'escaped key growth counts actual serialized bytes');
 const decomposedKey = 'e' + String.fromCharCode(0x301);
-const invalidUnicodeKey = new Proxy({ [decomposedKey]: 0 }, {
-  getOwnPropertyDescriptor() {
-    throw new Error('descriptor must not be consulted for invalid key');
-  },
-});
-assert.throws(() => canonicalBytes(invalidUnicodeKey), /non-NFC/,
-              'non-NFC object keys are rejected before descriptor reads');
+assert.throws(() => canonicalBytes({ [decomposedKey]: 0 }), /non-NFC/,
+              'non-NFC ordinary object keys remain forbidden');
+assert.throws(() => canonicalBytes({ gate: 'HOLD', [decomposedKey]: 1 }),
+              /non-NFC/, 'later malformed key must be denied');
+assert.throws(() => canonicalBytes({ gate: 'HOLD', [hugeKey]: 1 }),
+              /byte budget/, 'later oversized key must be denied');
 assert.deepEqual(canonicalBytes({ [String.fromCharCode(10)]: 0 }),
                  Buffer.from('7b225c6e223a307d', 'hex'),
                  'small escaped object key retains pinned canonical bytes');
-
-// A later invalid key must be rejected before ANY earlier property
-// descriptor is read. This requires two-phase key validation.
-const firstValidThenBadUnicode = new Proxy({
-  gate: 'HOLD',
-  ['e' + String.fromCharCode(0x301)]: 1,
-}, {
-  getOwnPropertyDescriptor() {
-    throw new Error('descriptor inspection must not precede key validation');
-  },
-});
-assert.throws(() => canonicalBytes(firstValidThenBadUnicode), /non-NFC/,
-              'all keys are validated before inspecting the first descriptor');
-const firstValidThenTooLarge = new Proxy({
-  gate: 'HOLD',
-  ['x'.repeat(MAX_CANONICAL_BYTES)]: 1,
-}, {
-  getOwnPropertyDescriptor() {
-    throw new Error('descriptor inspection must not precede byte rejection');
-  },
-});
-assert.throws(() => canonicalBytes(firstValidThenTooLarge), /byte budget/,
-              'all key bytes are budgeted before inspecting the first descriptor');
 const firstValidThenSymbol = { gate: 'HOLD' };
 firstValidThenSymbol[Symbol('hidden')] = 1;
 assert.throws(() => canonicalBytes(firstValidThenSymbol), /symbol object key/,
@@ -724,31 +700,27 @@ try {
 assert.deepEqual(unicodeBytesAfterMonkeypatch, sortedExpected,
                  'Unicode scalar sorting remains deterministic after intrinsic mutation');
 
-// Accessing Proxy array.length through ordinary value.length may execute
-// untrusted code. Canonicalization must use the own data descriptor instead.
-const arrayWithHostileLengthGet = new Proxy([0, 1], {
-  get(target, property) {
-    throw new Error('ordinary array property read forbidden: ' + String(property));
-  },
+// Array Proxy traps can be equally hostile; deny before reading its length.
+let arrayTrapCalls = 0;
+const hostileArrayProxy = new Proxy([0, 1], {
+  get() { arrayTrapCalls += 1; throw new Error('array get trap executed'); },
+  getPrototypeOf() { arrayTrapCalls += 1; throw new Error('array prototype trap executed'); },
+  getOwnPropertyDescriptor() { arrayTrapCalls += 1; throw new Error('array descriptor trap executed'); },
 });
-assert.deepEqual(canonicalBytes(arrayWithHostileLengthGet),
-                 Buffer.from('[0,1]', 'utf8'),
-                 'array serialization must not read Proxy length through get trap');
-assert.deepEqual(canonicalBytes({ nested: arrayWithHostileLengthGet }),
-                 Buffer.from('{"nested":[0,1]}', 'utf8'),
-                 'nested Proxy array must not invoke ordinary property reads');
-const extraArrayPropertyProxy = new Proxy([0, 1], {
-  get(target, property) {
-    throw new Error('array property get trap must not execute');
-  },
-});
-Object.defineProperty(extraArrayPropertyProxy, 'hidden', {
+assert.throws(() => canonicalBytes(hostileArrayProxy), /Proxy/,
+              'array Proxy must be denied before length inspection');
+assert.throws(() => canonicalBytes({ nested: hostileArrayProxy }), /Proxy/,
+              'nested array Proxy must be denied');
+assert.equal(arrayTrapCalls, 0, 'array Proxy rejection did not execute traps');
+const additionalArrayProperty = [0, 1];
+Object.defineProperty(additionalArrayProperty, 'hidden', {
   value: 'surprise', enumerable: false,
 });
-assert.throws(() => canonicalBytes(extraArrayPropertyProxy), /sparse array or unsupported array property/,
-              'additional own array properties are denied from own-key snapshots');
+assert.throws(() => canonicalBytes(additionalArrayProperty),
+              /sparse array or unsupported array property/,
+              'additional own properties on ordinary arrays are still denied');
 assert.deepEqual(canonicalBytes([]), Buffer.from('[]', 'utf8'),
-                 'empty standard arrays remain valid under descriptor-length capture');
+                 'empty standard arrays remain canonical');
 
 // Late changes to number and length-related global helpers must not
 // let unsafe numbers pass or alter canonical index/number serialization.
