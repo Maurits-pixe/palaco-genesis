@@ -893,6 +893,33 @@ assert.throws(() => canonicalBytes('e' + String.fromCharCode(0x301)), /non-NFC/,
 assert.throws(() => canonicalBytes({ ['e' + String.fromCharCode(0x301)]: 0 }),
               /non-NFC/, 'small non-NFC key is still rejected');
 
+// Descriptor snapshots and validated key snapshots must not rely on the
+// mutable Array.prototype.push method. Silent no-op overrides could
+// otherwise omit JSON members or elements from the canonical digest.
+const originalArrayPush = Array.prototype.push;
+const pushRegressionInput = { z: [1, { gate: 'HOLD' }], a: 2 };
+const expectedPushRegressionBytes = Buffer.from('{"a":2,"z":[1,{"gate":"HOLD"}]}', 'utf8');
+const expectedPushRegressionDigest = digest(pushRegressionInput);
+let bytesWithNoopPush;
+let digestWithNoopPush;
+try {
+  Array.prototype.push = () => 0;
+  bytesWithNoopPush = canonicalBytes(pushRegressionInput);
+  digestWithNoopPush = digest({ a: 2, z: [1, { gate: 'HOLD' }] });
+  assert.throws(() => canonicalBytes({ nested: [undefined] }),
+                /unsupported canonical JSON/,
+                'invalid array values remain rejected despite push replacement');
+  assert.throws(() => canonicalBytes({ nested: [{ bad: undefined }] }),
+                /unsupported canonical JSON/,
+                'invalid object values remain rejected despite push replacement');
+} finally {
+  Array.prototype.push = originalArrayPush;
+}
+assert.deepEqual(bytesWithNoopPush, expectedPushRegressionBytes,
+                 'canonical members and elements are retained despite a no-op push');
+assert.equal(digestWithNoopPush, expectedPushRegressionDigest,
+             'SHA-256 digest remains stable after late push replacement');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
