@@ -355,13 +355,17 @@ pub fn inspect_segment_signer_consistency(segment: &AuditSegmentEvidence<'_>) ->
 /// final anchor: a direct call rejects HOLD, revocation, uncommitted records,
 /// sequence gaps and broken internal links. Each receipt must correspond to
 /// its exact source checkpoint count, tip sequence and key registry revision.
-/// The boundary between consecutive receipts must also be contiguous.
+/// The full audit-evidence byte and checkpoint budget is checked before chain
+/// traversal. The boundary between consecutive receipts must be contiguous.
 /// Hash consistency is not a substitute for independent authentication.
 #[must_use]
 pub fn inspect_segment_snapshot_continuity(
     segment: &AuditSegmentEvidence<'_>,
 ) -> RestartInspection {
-    if segment.evidence.is_empty() || segment.evidence.len() != segment.receipts.len() {
+    if segment.evidence.is_empty()
+        || segment.evidence.len() != segment.receipts.len()
+        || inspect_audit_evidence_budget(segment.evidence) != RestartInspection::ReviewOnly
+    {
         return RestartInspection::Deny;
     }
     let mut prior_sequence: Option<u64> = None;
@@ -1422,6 +1426,48 @@ mod tests {
             inspect_segment_snapshot_continuity(&previous),
             RestartInspection::ReviewOnly
         );
+        // Direct snapshot-continuity review must enforce audit resource
+        // limits before walking checkpoint chains, even with matching counts.
+        let oversized_payload = vec![0u8; MAX_SNAPSHOT_BYTES + 1];
+        let oversized_source_payloads: &[&[u8]] = &[oversized_payload.as_slice()];
+        let oversized_source_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_previous,
+            payloads: oversized_source_payloads,
+            signed: &signed_previous,
+            trusted_key: &key,
+            floor: &floor_previous,
+        }];
+        let oversized_source = AuditSegmentEvidence {
+            links: &links_previous,
+            receipts: &receipts_previous,
+            evidence: &oversized_source_evidence,
+            expected: &expected_previous,
+        };
+        assert_eq!(
+            inspect_segment_snapshot_continuity(&oversized_source),
+            RestartInspection::Deny
+        );
+        let excessive_evidence: Vec<RecoveryEvidence<'_>> = (0..=MAX_AUDIT_LINKS)
+            .map(|_| RecoveryEvidence {
+                checkpoints: &checkpoints_previous,
+                payloads: payloads_previous,
+                signed: &signed_previous,
+                trusted_key: &key,
+                floor: &floor_previous,
+            })
+            .collect();
+        let excessive_receipts = vec![receipts_previous[0]; MAX_AUDIT_LINKS + 1];
+        let excessive_segment = AuditSegmentEvidence {
+            links: &links_previous,
+            receipts: &excessive_receipts,
+            evidence: &excessive_evidence,
+            expected: &expected_previous,
+        };
+        assert_eq!(
+            inspect_segment_snapshot_continuity(&excessive_segment),
+            RestartInspection::Deny
+        );
+
         let linked_evidence = [
             RecoveryEvidence {
                 checkpoints: &checkpoints_previous,
