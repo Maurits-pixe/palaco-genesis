@@ -1,4 +1,13 @@
-# PALACO Bluetooth Offline Transfer — v7.1 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v7.2 DRAFT / HOLD
+
+## v7.2 Atomic local checkpoint register and conditional succession
+
+- `witness_register_v72.py` creates a **create-once SQLite reference register** using an independently pinned Ed25519 signer and initial checkpoint digest. `BEGIN IMMEDIATE`, a singleton high-water row, a one-step immutable transition record and a conditional update prevent locally competing checkpoint successors from both committing.
+- Replayed, forked or stale v7.1 successors are denied. A receiver must supply the independently retained latest digest when reading the register, otherwise a whole-file rollback cannot be detected. The register checks the transition digest, record count, policy invariants and exact current head.
+- `test_witness_register_v72.py` covers atomic advance, replay, competing successors, unknown signer, stale external anchors, removed or corrupted transitions, symlinks, unsigned successors, and simulated whole-file database rollback.
+- **Limitations:** the register supports **one** transition from a signed v7.0 checkpoint to a v7.1 successor. SQLite local atomicity is not independent external custody or a durable multi-generation transparency ledger. Authentic atomic publication of the newest externally held digest is NOT implemented. A compromised actor capable of restoring BOTH the register and the independent digest can defeat anti-rollback.
+- DRAFT / GO-13 HOLD / authorization DENY; no merge, publication, installation or deployment.
+
 
 ## v7.1 Signed checkpoint succession with independently pinned latest digest
 
