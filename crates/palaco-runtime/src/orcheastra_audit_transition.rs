@@ -45,6 +45,14 @@ pub fn inspect_transition_monotonicity(
     previous: &AuditSegmentEvidence<'_>,
     current: &AuditSegmentEvidence<'_>,
 ) -> RestartInspection {
+    // Standalone callers must not bypass full source-history checks by
+    // presenting a valid-looking last/first source at the segment junction.
+    // Preflight both bounded segments before inspecting adjoining counters.
+    if inspect_segment_snapshot_continuity(previous) != RestartInspection::ReviewOnly
+        || inspect_segment_snapshot_continuity(current) != RestartInspection::ReviewOnly
+    {
+        return RestartInspection::Deny;
+    }
     let (
         Some(previous_receipt),
         Some(current_receipt),
@@ -636,7 +644,7 @@ mod tests {
     use crate::orcheastra_audit_custody::{AuditCustodyWitness, CustodyVerdict};
     use crate::orcheastra_audit_evidence::RecoveryEvidence;
     use crate::orcheastra_audit_receipts::inspect_bound_audit_receipts;
-    use crate::orcheastra_payload::digest_snapshot;
+    use crate::orcheastra_payload::{digest_snapshot, MAX_SNAPSHOT_BYTES};
     use crate::orcheastra_recovery::RecoveryFloor;
     use crate::orcheastra_restart::{RestartAnchor, RestartCheckpoint, RestartInspection};
     use crate::orcheastra_review_receipt::{review_receipt, ReviewReceipt};
@@ -856,6 +864,27 @@ mod tests {
         assert_eq!(
             inspect_transition_monotonicity(&previous, &current),
             RestartInspection::ReviewOnly
+        );
+        // A direct monotonicity call must apply the complete source budget,
+        // even when the adjoining checkpoint counters are otherwise valid.
+        let oversized = vec![0u8; MAX_SNAPSHOT_BYTES + 1];
+        let oversized_payloads: &[&[u8]] = &[oversized.as_slice()];
+        let oversized_evidence = [RecoveryEvidence {
+            checkpoints: &checkpoints_previous,
+            payloads: oversized_payloads,
+            signed: &signed_previous,
+            trusted_key: &key,
+            floor: &floor_previous,
+        }];
+        let oversized_previous = AuditSegmentEvidence {
+            links: &links_previous,
+            receipts: &receipts_previous,
+            evidence: &oversized_evidence,
+            expected: &expected_previous,
+        };
+        assert_eq!(
+            inspect_transition_monotonicity(&oversized_previous, &current),
+            RestartInspection::Deny
         );
         // Receipt counters and endpoints must match the source checkpoints,
         // not merely form a plausible interval with the adjacent receipt.
