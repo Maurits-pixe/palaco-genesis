@@ -2,6 +2,35 @@
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
 
+## v6.8 Portable evidence handoff and read-only GitHub workflow comparison (DRAFT / HOLD)
+
+- `witness_handoff_v68.py` creates a create-once evidence bundle with
+  fixed filenames: actual verified v6.6 manifest, original incident JSON,
+  and two signed verifier custody receipts. A strict index records exact
+  file lengths and SHA-256 digests plus the observed checkout SHA and run ID.
+  The receiver rejects missing or extra files, symlinks, tampering, wrong
+  run/commit claims, swapped receipt identities, and insufficient signatures
+  against a **caller-pinned 2-of-3 Ed25519 custody roster**.
+- `github_run_provenance_v68.py` independently reads the Actions run via
+  **read-only GitHub REST API over HTTPS**, comparing repository, run ID,
+  attempt, event and the run head SHA against the reported checkout SHA
+  or PR event head SHA. The workflow grants only `actions: read` and
+  `contents: read`; token is never printed. Absent API access or mismatched
+  metadata fails the Windows CI job. Local fixture regressions cover
+  mismatched run, attempt, repository, event, head commit, etc.
+- The disposable Windows SCM-fault test feeds real C# incident bytes into
+  the portable bundle smoke; Linux CI runs both new regression modules.
+- **Limits:** GitHub's HTTPS API response is external metadata evidence,
+  **not a signed, independently authenticated provenance attestation**.
+  The checkout SHA on pull-request workflows can refer to a synthetic
+  merge commit while the API run head SHA refers to the PR head. This
+  standalone handoff does not carry the source SQLite ledger or channel
+  receipt collection, so it does **not** separately re-verify their
+  historical continuity. Custody signers remain ephemeral and local
+  to CI; no remote archive handoff, hardware attestation or actual BLE.
+- GO-13 HOLD / authorization DENY; Draft PR; no merge, public release,
+  production installation or deployment.
+
 ## v6.8 Portable evidence handoff and receipt binding (DRAFT / HOLD)
 
 - `witness_handoff_v68.py` packages four exact, fixed-name evidence files:
