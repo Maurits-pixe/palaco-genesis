@@ -968,6 +968,69 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
         self.assertEqual(result["reason"],"invalid-review-delta-schema-or-pins")
         self.assertFalse(result["authorization_granted"])
 
+    def test_strict_delta_json_accepts_independently_pinned_bytes(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        delta=created["delta"]
+        current={"schema_version":"0.1.0",
+                 "receipt_count":delta["current_receipts"],
+                 "head_hash":current_head,
+                 "entries":previous["entries"]+delta["entries"]}
+        independent_pin=self._independently_pinned_manifest(current)
+        raw=json.dumps(delta,sort_keys=True,
+                       separators=(",",":")).encode("utf-8")
+        self.db.unlink()
+        result=mod.verify_review_delta_json_with_manifest_pin(
+            previous,sha,head,raw,created["delta_sha256"],
+            current_head,independent_pin,1)
+        self.assertTrue(result["delta_valid"])
+        self.assertEqual(result["current_manifest_sha256"],independent_pin)
+        self.assertEqual(result["state"],"pending-review")
+        self.assertEqual(result["release_gate"],"HOLD")
+        self.assertFalse(result["authorization_granted"])
+
+    def test_strict_delta_json_denies_wrong_and_missing_independent_pin(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        raw=json.dumps(created["delta"],sort_keys=True,
+                       separators=(",",":")).encode("utf-8")
+        for pin,reason in ((None,"missing-independent-current-manifest-pin"),
+                           (True,"missing-independent-current-manifest-pin"),
+                           ("f"*64,"current-review-manifest-pin-mismatch")):
+            with self.subTest(pin=pin):
+                result=mod.verify_review_delta_json_with_manifest_pin(
+                    previous,sha,head,raw,created["delta_sha256"],
+                    current_head,pin,1)
+                self.assertFalse(result["delta_valid"])
+                self.assertEqual(result["reason"],reason)
+                self.assertFalse(result["authorization_granted"])
+
+    def test_strict_delta_json_denies_duplicate_key_and_oversize_before_hash(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        raw=json.dumps(created["delta"],sort_keys=True,
+                       separators=(",",":")).encode("utf-8")
+        malformed=raw.replace(b'"sequence":2',b'"sequence":2,"sequence":2',1)
+        self.assertNotEqual(malformed,raw)
+        result=mod.verify_review_delta_json_with_manifest_pin(
+            previous,sha,head,malformed,created["delta_sha256"],
+            current_head,"a"*64,1)
+        self.assertFalse(result["delta_valid"])
+        self.assertEqual(result["reason"],"invalid-or-ambiguous-review-delta-json")
+        with patch.object(mod.json,"loads",
+                          side_effect=AssertionError("parsed oversized payload")):
+            result=mod.verify_review_delta_json_with_manifest_pin(
+                previous,sha,head,b"x"*(mod.MAX_DELTA_JSON_BYTES+1),
+                created["delta_sha256"],current_head,"a"*64,1)
+        self.assertEqual(result["reason"],"review-delta-json-size-limit")
+
+    def test_strict_delta_json_denies_wrong_delta_hash_without_authority(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        raw=json.dumps(created["delta"],sort_keys=True,
+                       separators=(",",":")).encode("utf-8")
+        result=mod.verify_review_delta_json_with_manifest_pin(
+            previous,sha,head,raw,"f"*64,current_head,"a"*64,1)
+        self.assertFalse(result["delta_valid"])
+        self.assertEqual(result["reason"],"review-delta-digest-mismatch")
+        self.assertEqual(result["release_gate"],"HOLD")
+
     def test_registered_pending_only(self):
         first=self.record()
         self.assertTrue(first["recorded"])
