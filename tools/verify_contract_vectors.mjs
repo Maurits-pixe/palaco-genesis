@@ -184,8 +184,11 @@ function encode(value, depth = 0, active = new intrinsicWeakSetConstructor(), bu
     // Two passes: validate ALL keys and their byte cost before consulting
     // ANY data descriptor. A malformed later key must fail before an earlier
     // descriptor can trigger an untrusted Proxy inspection trap.
+    // Use indexed traversal and indexed tuple reads: Array.prototype's
+    // mutable Symbol.iterator must never drop or reorder JSON members.
     const encodedKeys = [];
-    for (const key of keys) {
+    for (let keyIndex = 0; keyIndex < keys.length; keyIndex += 1) {
+      const key = keys[keyIndex];
       if (typeof key !== 'string') throw new Error('symbol object key is not JSON data');
       // Key escaping adds bytes, never removes them; reject oversized raw
       // keys before normalization or JSON quote construction.
@@ -198,7 +201,9 @@ function encode(value, depth = 0, active = new intrinsicWeakSetConstructor(), bu
       intrinsicArrayPush.call(encodedKeys, [key, encodedKey]);
     }
     const entries = [];
-    for (const [key, encodedKey] of encodedKeys) {
+    for (let encodedIndex = 0; encodedIndex < encodedKeys.length; encodedIndex += 1) {
+      const key = encodedKeys[encodedIndex][0];
+      const encodedKey = encodedKeys[encodedIndex][1];
       const descriptor = intrinsicGetOwnPropertyDescriptor(value, key);
       if (!descriptor || !intrinsicHasOwn(descriptor, 'value') || !descriptor.enumerable) {
         throw new Error('object accessor or hidden property is not JSON data');
@@ -209,11 +214,12 @@ function encode(value, depth = 0, active = new intrinsicWeakSetConstructor(), bu
     }
     intrinsicWeakSetAdd.call(active, value);
     try {
-      intrinsicArraySort.call(entries, ([left], [right]) => compareCodepoints(left, right));
+      intrinsicArraySort.call(entries, (leftEntry, rightEntry) => compareCodepoints(leftEntry[0], rightEntry[0]));
       let result = '{';
       for (let i = 0; i < entries.length; i += 1) {
         if (i !== 0) result += ',';
-        const [, encodedKey, entry] = entries[i];
+        const encodedKey = entries[i][1];
+        const entry = entries[i][2];
         result += encodedKey + ':' + encode(entry, depth + 1, active, budget);
       }
       return result + '}';
