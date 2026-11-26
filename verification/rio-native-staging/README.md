@@ -14,7 +14,7 @@ npm ci --prefix native-staging --ignore-scripts --no-audit --no-fund
 npm run test:ci
 ```
 
-`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer/lifecycle/handover/key-and-registry/cancellation/reporting/controller/history/service/draining checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v309.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
+`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer/lifecycle/handover/key-and-registry/cancellation/reporting/controller/history/service/draining checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v310.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
 
 ## Source continuity and status
 
@@ -562,4 +562,43 @@ This barrier covers the assembled service's tracked work. It does not stop a hos
 
 Twelve focused tests cover crypto success, frozen/structural state, idle terminal close, late result withholding, provider timeout/abort, asynchronous stream cancellation, multiple admitted jobs, provider failure, invalid service configuration, post-close provider/management refusal and pending replacement assessment. Six native scenarios exercise the managed constructor through real SQL/Ed25519, same-port replacement, a returned HTTP deadline while a One connection release callback is deliberately held, refusal of new provider work, release followed by completion, and a held SQL registry assessment with withheld replacement. The release/registry barriers control callback scheduling; SQL and crypto are not simulated or intercepted. Fixture authentication is synthetic and tables cover selected One column contracts, not original One functions.
 
-`test:ci` uses `run-ci-v309.mjs`, requires six managed-service records and all preserved suites, and writes `evidence/CI-RESULT-v309.json`. AI review through three lenses applied by one assistant: TRIAS keeps terminal admission separate from authority or revocation; ORACLE requires actual connection/provider settlement after a returned timeout and retains the separate cancellation barrier; MENTOR provides one idempotent close promise with observable pending counts and explicit host ownership of listener/pool disposal. These are not independent approvals. Original receipt-domain limits, software-key isolation limits and unverified production authentication/TLS remain. Acceptance HOLD; authorization NONE; productionReady false.
+The preserved `run-ci-v309.mjs` requires six managed-service records and earlier suites, and writes `evidence/CI-RESULT-v309.json`. AI review through three lenses applied by one assistant: TRIAS keeps terminal admission separate from authority or revocation; ORACLE requires actual connection/provider settlement after a returned timeout and retains the separate cancellation barrier; MENTOR provides one idempotent close promise with observable pending counts and explicit host ownership of listener/pool disposal. These are not independent approvals. Original receipt-domain limits, software-key isolation limits and unverified production authentication/TLS remain. Acceptance HOLD; authorization NONE; productionReady false.
+
+## Host admission, actual service drain and registered resource release (v310)
+
+`createRioInspectionHostLifecycleV310` connects an already constructed v309 service to explicit trusted host callbacks. It returns separate frozen inspection and lifecycle-control ports. It forwards the original Fetch Request and Response without cloning or consuming the body, preserving the signal and existing server-side request binding. It does not implement IncomingMessage conversion, URL/proxy trust, TLS or authentication.
+
+```js
+const host = createRioInspectionHostLifecycleV310({
+  service: await createRioManagedInspectionServiceV309(trustedConfiguration),
+  stopHttpAdmission: () => new Promise((resolve, reject) => {
+    server.close(error => error ? reject(error) : resolve());
+  }),
+  releaseHostResources: async () => { await hostOwnedPool.end(); },
+});
+const response = await host.inspection.handle(request);
+const completion = host.control.close();
+const status = await completion; // Check CLOSED versus HELD.
+```
+
+Configuration is exactly service, stopHttpAdmission and releaseHostResources, with own enumerable data fields and no getters. The service and its two ports must have the existing v309 shapes and HOLD/NONE boundaries. Construction snapshots callbacks without invoking providers or host effects. Port validation is a contract check for trusted dependencies, not code-provenance verification or OS isolation. The host retains the original managed service reference for signer administration.
+
+Close synchronously blocks new logical inspection requests, invokes transport shutdown first and requests service drain immediately without awaiting transport completion. This concurrent start avoids making service drain wait for HTTP connections that themselves need service completion. Resource release starts only when both stages complete and the service result confirms CLOSED with zero inspection, cancellation, signing and replacement work. Repeated or reentrant close returns one stable completion promise. The inspection port exposes no lifecycle or signing methods.
+
+| State | Meaning |
+| --- | --- |
+| RUNNING | Same Fetch Request reaches the existing service |
+| STOPPING | New host admission is blocked; transport and service completion are pending |
+| RELEASING_RESOURCES | Both prior barriers completed; registered release callback is pending |
+| CLOSED | All three stages completed successfully |
+| HELD | A callback failed or service result was invalid; overall completion is not confirmed |
+
+Status reports httpAdmissionStop, serviceDrain and hostResourceRelease as NOT_STARTED, PENDING, COMPLETED or NOT_CONFIRMED. Status and issue arrays are frozen. Transport stop failure still permits the independently started service drain to settle but skips resource release. Failed, malformed or still-busy service results also skip release. Disposal failure may follow actual partial effects; NOT_CONFIRMED does not mean no change. Responses disclose only fixed issue codes, not exception diagnostics. No automatic retry or reopening follows uncertainty. A nonreturning callback leaves the relevant stage pending; no deadline invents completion.
+
+Callbacks must reflect completion of the host's actual registered work and must not await the same outer completion promise. Callback fulfillment is a trusted host observation, not independent network verification or cryptographic evidence. Unregistered resources, independently started work, proxy admission, upgraded connections and transport-to-Fetch security remain host responsibilities. The adapter does not create a listener, force query/crypto/socket cancellation, revoke sessions/keys or issue authority.
+
+Twelve focused tests cover static/accessor refusal, frozen ports, unchanged request/signal/body/Response, concurrent ordered shutdown, callback reentry, both pending barriers, stop failure, malformed/busy service result, pending/failed disposal, captured configuration and actual v309 key-checked service drain. Six native scenarios use actual PostgreSQL and Ed25519 plus a temporary loopback-only HTTP listener: full inspection; HTTP 504 while a real One release callback holds its connection; listener stop and new connection refusal; resource release after actual drain; failed stop skipping disposal; and actual partial disposal followed by rejection without retry. Callback barriers control scheduling; SQL and crypto are not intercepted.
+
+The fixture wire is plain loopback HTTP, with a fixed logical HTTPS Fetch Request and a synthetic trusted session binding. It is not a production IncomingMessage bridge, real One login or TLS test. Production authentication, original One functions, remote TLS, key custody and later gateway compatibility remain unverified. The Node 24 server.close contract is described by the [official HTTP API](https://nodejs.org/download/release/v24.22.3/docs/api/http.html#serverclosecallback). Forced socket cleanup is restricted to fixture failure cleanup.
+
+`test:ci` uses `run-ci-v310.mjs`, requires six new host records alongside all preserved suites and writes `evidence/CI-RESULT-v310.json`. AI review through three lenses by one assistant: TRIAS separates lifecycle from authority and host trust; ORACLE requires real listener/database observations and preserves uncertainty after partial disposal; MENTOR provides one observable close operation with explicit failure stages and no automatic retry. These are not independent approvals. Acceptance HOLD; authorization NONE; productionReady false. A production transport/authentication adapter remains a separate engineering and acceptance step.
