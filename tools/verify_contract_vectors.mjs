@@ -24,6 +24,9 @@ const intrinsicGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
 const intrinsicHasOwn = Object.hasOwn;
 const intrinsicArrayIsArray = Array.isArray;
 const intrinsicIsProxy = nodeTypes.isProxy;
+const intrinsicWeakSetHas = WeakSet.prototype.has;
+const intrinsicWeakSetAdd = WeakSet.prototype.add;
+const intrinsicWeakSetDelete = WeakSet.prototype.delete;
 const intrinsicNormalize = String.prototype.normalize;
 const intrinsicCharCodeAt = String.prototype.charCodeAt;
 const intrinsicCodePointAt = String.prototype.codePointAt;
@@ -116,7 +119,7 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
     if (intrinsicGetPrototypeOf(value) !== Array.prototype) {
       throw new Error('unsupported array prototype');
     }
-    if (active.has(value)) throw new Error('cyclic JSON reference');
+    if (intrinsicWeakSetHas.call(active, value)) throw new Error('cyclic JSON reference');
     if (depth >= MAX_DEPTH) throw new Error('JSON nesting depth exceeds limit');
     // Read and pin the array's own data descriptor rather than value.length:
     // a Proxy may trap ordinary property gets, including repeated length reads.
@@ -147,7 +150,7 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
       entries.push(descriptor.value);
     }
     charge(2 + intrinsicMathMax(0, entries.length - 1));
-    active.add(value);
+    intrinsicWeakSetAdd.call(active, value);
     try {
       let result = '[';
       for (let i = 0; i < entries.length; i += 1) {
@@ -156,11 +159,11 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
       }
       return result + ']';
     } finally {
-      active.delete(value);
+      intrinsicWeakSetDelete.call(active, value);
     }
   }
   if (typeof value === 'object' && intrinsicGetPrototypeOf(value) === Object.prototype) {
-    if (active.has(value)) throw new Error('cyclic JSON reference');
+    if (intrinsicWeakSetHas.call(active, value)) throw new Error('cyclic JSON reference');
     if (depth >= MAX_DEPTH) throw new Error('JSON nesting depth exceeds limit');
     const keys = intrinsicOwnKeys(value);
     // Object keys are JSON values too. Reserve one visit per key, and
@@ -193,7 +196,7 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
       // reads are necessary, even if the supplied object is a Proxy.
       entries.push([key, encodedKey, descriptor.value]);
     }
-    active.add(value);
+    intrinsicWeakSetAdd.call(active, value);
     try {
       intrinsicArraySort.call(entries, ([left], [right]) => compareCodepoints(left, right));
       let result = '{';
@@ -204,7 +207,7 @@ function encode(value, depth = 0, active = new WeakSet(), budget = { nodes: 0, b
       }
       return result + '}';
     } finally {
-      active.delete(value);
+      intrinsicWeakSetDelete.call(active, value);
     }
   }
   throw new Error('unsupported canonical JSON value type');
