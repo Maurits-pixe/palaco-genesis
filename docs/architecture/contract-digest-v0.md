@@ -47,6 +47,13 @@ bounded strict JSON reader before encoding.
   initialization and verifies unchanged canonical bytes, cycle rejection
   and non-JSON value denial. This does not protect against modification
   of the underlying prototype objects themselves or a compromised startup.
+- The Node verifier captures `Array.prototype.push` at initialization for
+  collecting array descriptors, validated object keys and object-value
+  snapshots. A later `push` override must not silently omit elements or
+  members from canonical encoding. Regression tests replace `push` with
+  a no-op, confirm pinned bytes and digests, and retain fail-closed
+  rejection of invalid nested JSON values. This protects only against
+  post-initialization replacement of the public method.
 - The Node verifier captures `WeakSet.prototype.has`, `add` and
   `delete` at startup for its ancestor-cycle guard. A late override of
   publicly mutable WeakSet methods cannot disable cycle detection or
