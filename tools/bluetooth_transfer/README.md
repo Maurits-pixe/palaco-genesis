@@ -1,4 +1,17 @@
-# PALACO Bluetooth Offline Transfer — v6.8 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v6.9 DRAFT / HOLD
+
+Scope: local, transport-independent evidence verification for Citadel/MUNDO. No BLE hardware or production authority.
+
+## v6.9 Transfer of historical chain and externally pinned rollback check
+
+- `witness_history_v69.py` extends the v6.8 four-artifact handoff with a consistent SQLite backup of the signed history and both received witness channels. An exact SHA-256 history index binds the file contents, sequence, head, root identity and HOLD/DENY.
+- The receiving verifier replays **all** signed incidents and key rotations from the SQLite ledger using a **separately supplied Ed25519 root**, compares the real ledger head against the transferred v6.6 archived manifest, checks **both** witness-channel signatures against an externally pinned 3-key roster, and verifies the v6.8 2-of-3 custody quorum.
+- A **separately retained, exact** trusted checkpoint must match the received chain head. A missing or older checkpoint, truncated ledger, wrong root, altered witness, missing file or extra bundle component fails closed. Exact equality means a legitimate newer archive requires a separately established checkpoint advance; this is a conservative verification-only design, not a monotonic checkpoint update protocol.
+- `test_witness_history_v69.py` adds positive and negative tests to the Linux Bluetooth CI suite.
+- Current format supports exactly two received witness channels with a third explicitly absent; other quorum layouts are rejected, not silently ignored.
+- **Limitations:** no real independent off-device key custody, no globally trusted time, no signed GitHub attestation, no atomic durable remote anti-rollback register, no real BLE transport. External trust inputs are caller responsibilities; this code does not elevate any HOLD/DENY outcome.
+- **GO-13 HOLD / authorization DENY. Draft only. No merge, publication, installation or deployment.**
+
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
 
