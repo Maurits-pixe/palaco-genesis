@@ -926,6 +926,33 @@ assert.deepEqual(bytesWithNoopPush, expectedPushRegressionBytes,
 assert.equal(digestWithNoopPush, expectedPushRegressionDigest,
              'SHA-256 digest remains stable after late push replacement');
 
+// A silent override of Array.prototype[Symbol.iterator] could previously
+// drop object keys and tuple fields during serialization without throwing.
+const originalArrayIterator = Array.prototype[Symbol.iterator];
+const iteratorInput = { z: [{ gate: 'HOLD' }, 7], a: 2, empty: [] };
+const iteratorExpectedBytes = Buffer.from('{"a":2,"empty":[],"z":[{"gate":"HOLD"},7]}', 'utf8');
+const iteratorExpectedDigest = digest(iteratorInput);
+let iteratorMutationBytes;
+let iteratorMutationDigest;
+let iteratorInvalidRejected = false;
+try {
+  Array.prototype[Symbol.iterator] = function* emptyArrayIterator() {};
+  iteratorMutationBytes = canonicalBytes(iteratorInput);
+  iteratorMutationDigest = digest({ empty: [], z: [{ gate: 'HOLD' }, 7], a: 2 });
+  try {
+    canonicalBytes({ gate: 'HOLD', ignored: undefined });
+  } catch (error) {
+    iteratorInvalidRejected = /unsupported canonical JSON/.test(error.message);
+  }
+} finally {
+  Array.prototype[Symbol.iterator] = originalArrayIterator;
+}
+assert.deepEqual(iteratorMutationBytes, iteratorExpectedBytes,
+                 'all keys and tuple fields survive a silent iterable override');
+assert.equal(iteratorMutationDigest, iteratorExpectedDigest,
+             'digest stays stable when array iterators are replaced');
+assert.ok(iteratorInvalidRejected, 'invalid object member cannot disappear with a no-op iterator');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
