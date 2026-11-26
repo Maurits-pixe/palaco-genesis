@@ -32,6 +32,14 @@ bounded strict JSON reader before encoding.
 - Both Python and Node.js canonicalizers enforce at most **64 levels** of
   array/object nesting, including for in-memory objects; a 65th level fails.
 - Non-NFC Unicode strings are **rejected**, not silently normalized.
+- For Node's in-memory strings and object keys, the raw UTF-8 input is
+  checked against the 1 MiB budget **before** NFC normalization or JSON
+  quoting. Encoded JSON bytes (including escape expansion, delimiters and
+  member separators) remain separately budgeted. Oversized malformed Unicode
+  must fail with a byte-budget error, while smaller malformed Unicode is still
+  rejected by the NFC/surrogate checks. This early bound reduces unnecessary
+  work; it does not imply constant-time processing or a sandbox.
+
 - Node captures the permitted plain-object and ordinary-array prototype
   identities and the `WeakSet` constructor at initialization, rather than
   resolving mutable global `Object`, `Array` and `WeakSet` names during
