@@ -1,4 +1,13 @@
-# PALACO Bluetooth Offline Transfer — v6.9 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v7.0 DRAFT / HOLD
+
+## v7.0 Signed independent receiver checkpoint (verification-only)
+
+- `witness_checkpoint_v70.py` verifies an Ed25519 signature from a separately pinned checkpoint authority, then uses the verified `sequence/head/root_id` as the exact anti-rollback reference for the complete v6.9 SQLite historical handoff.
+- The checkpoint file must reside **outside** the received bundle; missing files, bad signatures, substituted signing keys, duplicate JSON keys, mismatched historical heads and unsigned/mutated checkpoints DENY.
+- `test_witness_checkpoint_v70.py` tests signed round-trips and nine valid/adversarial paths through the receiver.
+- Checkpoint creation is test/reference tooling only. The receiver cannot sign a new trusted checkpoint or automatically advance its high-watermark; signer ownership and durable retention MUST be established independently. This is not a trusted timestamp, globally fresh checkpoint, real BLE link, or GitHub cryptographic attestation.
+- GO-13 HOLD / authorization DENY; no merge, release, production installation or deployment.
+
 
 Scope: local, transport-independent evidence verification for Citadel/MUNDO. No BLE hardware or production authority.
 
