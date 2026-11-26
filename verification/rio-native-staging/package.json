@@ -1,12 +1,12 @@
 {
-  "name": "palaco-rio-inspection-host-lifecycle-v310",
+  "name": "palaco-rio-direct-https-bridge-v311",
   "version": "0.0.0-draft",
   "private": true,
   "scripts": {
     "test": "node --test tests/*.test.mjs staging/isolated-postgres-v276.test.mjs staging/outcome-atomicity-v279.test.mjs",
     "test:native": "npm --prefix native-staging test",
     "test:parallel": "node --test native-staging/native-postgres-v281.test.mjs",
-    "test:ci": "node scripts/run-ci-v310.mjs",
+    "test:ci": "node scripts/run-ci-v311.mjs",
     "test:one-native": "node --test native-staging/one-session-reader-v295.test.mjs",
     "test:one-signed-native": "node --test native-staging/one-signed-source-v296.test.mjs",
     "test:signed-one-entry-native": "node --test native-staging/signed-one-composition-v297.test.mjs",
@@ -22,6 +22,7 @@
     "test:history-bound-handover-native": "node --test native-staging/history-bound-handover-v307.test.mjs",
     "test:inspection-service-native": "node --test native-staging/inspection-service-v308.test.mjs",
     "test:managed-inspection-service-native": "node --test native-staging/managed-inspection-service-v309.test.mjs",
-    "test:inspection-host-lifecycle-native": "node --test native-staging/inspection-host-lifecycle-v310.test.mjs"
+    "test:inspection-host-lifecycle-native": "node --test native-staging/inspection-host-lifecycle-v310.test.mjs",
+    "test:direct-https-bridge-native": "node --test native-staging/direct-https-inspection-bridge-v311.test.mjs"
   }
 }

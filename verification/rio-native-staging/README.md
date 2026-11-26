@@ -14,7 +14,7 @@ npm ci --prefix native-staging --ignore-scripts --no-audit --no-fund
 npm run test:ci
 ```
 
-`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer/lifecycle/handover/key-and-registry/cancellation/reporting/controller/history/service/draining checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v310.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
+`test:ci` executes regression/PGlite tests, native standalone assertions, the native multi-connection suite and the One source/composition/statement-issuer/software-signer/lifecycle/handover/key-and-registry/cancellation/reporting/controller/history/service/draining checks described below. Any failed phase, incomplete scenario count or missing evidence fails the process. `evidence/CI-RESULT-v311.json` binds results to the PR source head, source-file hashes and transcript hashes. CI uploads only synthetic result files and test transcripts; no database directory, passwords or private keys are uploaded. The fixture's permissive single-tenant RLS policies are unsuitable for production.
 
 ## Source continuity and status
 
@@ -601,4 +601,49 @@ Twelve focused tests cover static/accessor refusal, frozen ports, unchanged requ
 
 The fixture wire is plain loopback HTTP, with a fixed logical HTTPS Fetch Request and a synthetic trusted session binding. It is not a production IncomingMessage bridge, real One login or TLS test. Production authentication, original One functions, remote TLS, key custody and later gateway compatibility remain unverified. The Node 24 server.close contract is described by the [official HTTP API](https://nodejs.org/download/release/v24.22.3/docs/api/http.html#serverclosecallback). Forced socket cleanup is restricted to fixture failure cleanup.
 
-`test:ci` uses `run-ci-v310.mjs`, requires six new host records alongside all preserved suites and writes `evidence/CI-RESULT-v310.json`. AI review through three lenses by one assistant: TRIAS separates lifecycle from authority and host trust; ORACLE requires real listener/database observations and preserves uncertainty after partial disposal; MENTOR provides one observable close operation with explicit failure stages and no automatic retry. These are not independent approvals. Acceptance HOLD; authorization NONE; productionReady false. A production transport/authentication adapter remains a separate engineering and acceptance step.
+The preserved `run-ci-v310.mjs` requires six host records alongside earlier suites and writes `evidence/CI-RESULT-v310.json`. AI review through three lenses by one assistant: TRIAS separates lifecycle from authority and host trust; ORACLE requires real listener/database observations and preserves uncertainty after partial disposal; MENTOR provides one observable close operation with explicit failure stages and no automatic retry. These are not independent approvals. Acceptance HOLD; authorization NONE; productionReady false. A production transport/authentication adapter remains a separate engineering and acceptance step.
+
+## Direct HTTPS request context and bounded transport (v311)
+
+`createRioDirectHttpsInspectionBridgeV311` connects native Node IncomingMessage/ServerResponse objects to the existing Fetch inspection port. It accepts direct TLS 1.3 and HTTP/1 only, one configured HTTPS origin, its exact Host/port and the exact receipt-inspection target. Absolute/protocol-relative targets, queries, encoded aliases, duplicate headers and Forwarded/X-Forwarded-* headers are refused. There is no proxy trust fallback or plaintext origin synthesis. Source and route authentication remain explicit host services.
+
+Configuration is exactly allowedOrigin, inspection and maxConcurrentRequests (1–16), with own enumerable data fields. The inspection port retains its existing exact handle/path/purpose/HOLD/NONE shape. Construction snapshots configuration and calls no provider. Returned transport, context and control ports are frozen and should be distributed deliberately: the HTTP listener receives handleIncoming; only trusted authentication code receives readRequestContext.
+
+```js
+// Configure the actual HTTPS server and known public origin before listening.
+let bridge;
+const service = await createRioManagedInspectionServiceV309({
+  ...trustedConfiguration,
+  readAuthenticatedOneSession: request =>
+    hostSessionVerifier(request, bridge.context.readRequestContext(request)),
+});
+const host = createRioInspectionHostLifecycleV310({
+  service,
+  stopHttpAdmission: () => Promise.all([
+    new Promise((resolve, reject) => server.close(e => e ? reject(e) : resolve())),
+    bridge.control.close(),
+  ]),
+  releaseHostResources: async () => { await hostOwnedPool.end(); },
+});
+bridge = createRioDirectHttpsInspectionBridgeV311({
+  allowedOrigin: trustedConfiguration.allowedOrigin,
+  inspection: host.inspection,
+  maxConcurrentRequests: 2,
+});
+// server.on('request', bridge.transport.handleIncoming); then listen.
+// hostSessionVerifier must verify actual current server-side session state.
+```
+
+Each admitted native request becomes one Fetch Request with a streaming body and abort signal. A private WeakMap binds that exact object to a frozen transport snapshot containing origin, method, target, TLS protocol and copied raw header values. Context states sessionAuthentication NOT_PROVIDED: transport/cookie metadata is not an authenticated session or authority. A fabricated/cloned Fetch Request has no binding. Header snapshots can contain credentials, remain inside the trusted process and must not be logged or exposed. Status contains counts/capacity only. Context is not deleted merely because HTTP returned: original route jobs may still need their bound context after timeout/disconnect; weak retention ends when the Request is no longer reachable.
+
+The bridge refuses mismatched native request/response pairs, unsupported TLS, method/origin/media/declared-length violations and consumed bodies before invoking the Fetch port. Raw headers are limited to 64 unique fields and 16 KiB of name/value bytes. The Node-to-Web stream uses byte-based backpressure; existing route byte limits/deadlines remain. Responses are bounded to 16 KiB and known inspection statuses, must retain HOLD/NONE/productionReady false, and are sent with fixed no-store/same-origin headers and Connection close. Unsafe response headers such as cookies/CORS are not copied. The trusted Fetch port still owns report minimization and inspection policy.
+
+Native request completion is not treated as a disconnect. Incomplete incoming close or unfinished outgoing close propagates abort. Response finish/close and any awaited response-reader cancellation are included in the admitted transport operation. Transport close blocks further admission immediately and resolves after its admitted operations settle. This is distinct from actual source/SQL job completion: a returned HTTP timeout can release its transport operation while the v309 service still retains its provider job. Host v310 close coordinates listener/transport completion, service drain and registered resource release. Admission-refused responses are outside the admitted transport counter and remain covered by the host listener close barrier. A response already delivered is not retracted, and finish does not prove peer receipt.
+
+The bridge creates no listener/certificate/session and performs no forced provider termination. The host must configure strict HTTP parsing, TLS handshake policy, header/body/socket timeouts, header size limits and listener/upgraded-connection handling; reverse proxies and HTTP/2 are unsupported. Native socket/request objects and in-process host code are trusted dependencies. Context snapshots provide no OS isolation, credential storage or code-provenance proof.
+
+Twelve focused tests use native stream objects with synthetic socket traits for configuration, request pairing, TLS/Host/target guards, duplicate/proxy headers, body guards, immutable context, captured ports, capacity, terminal close, disconnect propagation and pending response cancellation. Six new native scenarios use actual TLS 1.3 with a temporary OpenSSL certificate explicitly trusted by the client and actual PostgreSQL/Ed25519: complete inspection; absent context/session plus unsafe transport/TLS 1.2 refusal; real peer disconnect; HTTP timeout retaining connection/context; composed shutdown; and unchanged authority/minimized terminal status. The session source uses a runtime-generated token matched against synthetic server state, not a real One IdP. Certificate/private key stay in a temporary directory outside source/evidence and are removed.
+
+Local TLS verification is limited to this client/server certificate and loopback environment. Public certificate deployment, remote TLS, real One login, original One functions and production key custody remain unverified. Existing signed-source, receipt-domain and software-key isolation limits remain. The implementation uses the official [Node stream bridge](https://nodejs.org/api/stream.html#streamreadabletowebstreamreadable-options), [HTTP lifecycle](https://nodejs.org/api/http.html) and [HTTPS server](https://nodejs.org/api/https.html) APIs.
+
+`test:ci` uses `run-ci-v311.mjs`, requires six direct-HTTPS records alongside every earlier suite and writes `evidence/CI-RESULT-v311.json`. AI review through three lenses by one assistant: TRIAS separates transport context from session authority; ORACLE requires actual certificate-checked TLS, SQL and disconnect evidence; MENTOR keeps transport closure separate from provider drain and gives authentication code one immutable request-bound context. These are not independent approvals. DRAFT; acceptance HOLD; authorization NONE; productionReady false. Real host session verification/enrollment remains a separate integration and acceptance step.
