@@ -2297,6 +2297,22 @@ mod tests {
         };
         assert_eq!(
             inspect_transition_signer_continuity(&previous, &newer_registry_segment),
+            RestartInspection::Deny
+        );
+        // Advancing the registry remains reviewable only when the adjacent
+        // receipt explicitly reflects the same source registry revision.
+        let newer_registry_receipt = [ReviewReceipt {
+            registry_sequence: newer_registry_key.registry_sequence,
+            ..receipts_current[0]
+        }];
+        let aligned_newer_registry = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &newer_registry_receipt,
+            evidence: &newer_registry_evidence,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &aligned_newer_registry),
             RestartInspection::ReviewOnly
         );
         assert_eq!(
