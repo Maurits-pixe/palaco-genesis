@@ -20,12 +20,15 @@ bounded strict JSON reader before encoding.
   `str` keys/values), while Node.js accepts plain objects with
   `Object.prototype` and arrays with the standard `Array.prototype`.
   Custom JavaScript Array subclasses and altered array prototypes fail closed.
-  The Node verifier snapshots array `length` through its own data
-  descriptor rather than ordinary property reads, preventing a Proxy
-  `get` trap from firing merely to obtain array size. Element values also
-  come from validated own data descriptors. This is an interoperability and
-  review-time validation rule, not a claim that arbitrary JavaScript Proxy
-  input is sandboxed.
+  **All JavaScript Proxy instances are rejected**, including nested proxies,
+  array proxies and revoked proxies, using Node's `util.types.isProxy`
+  before any value prototype, key or property descriptor inspection.
+  Regression tests assert that hostile `get`, `getPrototypeOf`, `ownKeys`
+  and `getOwnPropertyDescriptor` traps are never invoked.
+  Ordinary accepted arrays still snapshot `length` through their own data
+  descriptor rather than an ordinary property read. This is a restricted
+  in-memory verification profile, not a sandbox for arbitrary JavaScript
+  execution or protection against changes before verifier initialization.
 - Both Python and Node.js canonicalizers enforce at most **64 levels** of
   array/object nesting, including for in-memory objects; a 65th level fails.
 - Non-NFC Unicode strings are **rejected**, not silently normalized.
