@@ -1,6 +1,31 @@
-# PALACO Bluetooth Offline Transfer — v6.7 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v6.8 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v6.8 Portable evidence handoff and receipt binding (DRAFT / HOLD)
+
+- `witness_handoff_v68.py` packages four exact, fixed-name evidence files:
+  original incident JSON, frozen archive manifest, and two distinct Ed25519
+  custody receipts. A create-once `index.json` binds the length and SHA-256
+  of **every byte** and the observed checkout SHA/run ID to HOLD/DENY.
+  Unrecognized or missing files, symlinks and replaced contents are rejected.
+- A separate receiving verifier checks strict index JSON, full file list,
+  lengths, digests, original C# incident shape and signatures from **two
+  distinct members of a caller-pinned three-custodian public-key roster**.
+  The actual disposable Windows SCM fault proof is used in its CI smoke
+  alongside the Linux regression suite.
+- `test_witness_handoff_v68.py` covers wrong commit/run, missing incident or
+  receipt, substituted/duplicate custody, unexpected files, modified digest,
+  changed length, altered manifest, invalid roster and duplicate JSON fields.
+- **Unproven:** this self-contained handoff does *not* prove that GitHub
+  independently attested checkout/run values; those fields are still
+  observed CI claims. The v6.8 standalone handoff does not carry the SQLite
+  ledger or witness channel files and therefore **does not independently
+  revalidate multi-entry ledger continuity**. Custodian keys are ephemeral
+  test keys rather than externally governed identities. No signed C#
+  producer incident, HSM, remote archival custody or real BLE transport.
+- GO-13 HOLD / authorization DENY; Draft PR; no merge, production install,
+  deployment or publication.
 
 ## v6.7 CI quorum archive custody receipts and provenance binding (DRAFT / HOLD)
 
