@@ -1428,7 +1428,7 @@ mod tests {
         );
         // Direct snapshot-continuity review must enforce audit resource
         // limits before walking checkpoint chains, even with matching counts.
-        let oversized_payload = vec![0u8; MAX_SNAPSHOT_BYTES + 1];
+        let oversized_payload = vec![0u8; super::MAX_SNAPSHOT_BYTES + 1];
         let oversized_source_payloads: &[&[u8]] = &[oversized_payload.as_slice()];
         let oversized_source_evidence = [RecoveryEvidence {
             checkpoints: &checkpoints_previous,
