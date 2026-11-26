@@ -1,4 +1,14 @@
-# PALACO Bluetooth Offline Transfer — v7.2 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v7.3 DRAFT / HOLD
+
+## v7.3 Signed checkpoint history over multiple generations
+
+- `witness_multigeneration_v73.py` adds a new (non-migrating) **multi-generation** local SQLite reference register. The create-once genesis checkpoint is independently Ed25519-signed and checked against a caller-pinned genesis SHA-256.
+- Each successor cryptographically signs its explicit generation number, predecessor's exact serialized SHA-256, increasing chain sequence, unchanged root identity, new head, signer ID and immutable HOLD/DENY. `inspect` **replays every historical signature and link** from genesis, requires contiguous generations, and compares the final hash to a separately trusted **latest high-watermark** supplied by the caller.
+- `advance` runs full replay and conditional append under a single `BEGIN IMMEDIATE` transaction. A competing writer, stale external high-watermark, duplicate generation, missing intermediate event, mutated historical signature, or changed predecessor link fails closed.
+- `test_witness_multigeneration_v73.py` exercises three genuine signed generations and negative regressions for missing middle generation, historical tampering, restored SQLite file, root/key substitution, non-advancing sequence and replay.
+- **No automatic external high-watermark publication occurs.** After a successful local append the returned latest digest must be independently committed before any new read can be accepted. A crash between those actions can leave a legitimate but unanchored local head, which the verifier deliberately DENIES. A hostile rollback of both the local DB and external high-watermark remains undetectable by this module; durable anti-equivocation, independent key custody and true BLE hardware are not implemented.
+- **GO-13 HOLD / authorization DENY. Draft only; no merge, public release, installation or deployment.**
+
 
 ## v7.2 Atomic local checkpoint register and conditional succession
 
