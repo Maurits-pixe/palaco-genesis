@@ -209,8 +209,9 @@ pub fn inspect_transition_snapshot_link(
 /// Both registry revisions must be nonzero and never regress across the
 /// transition, even when this guard is called without the composite review.
 /// Malformed signatures, verification flags, and anchors that do not exactly
-/// match their source's last checkpoint are denied. Both complete source
-/// checkpoint chains must also be structurally valid against their anchors.
+/// match their source's last checkpoint are denied. Adjacent receipts must
+/// match the checkpoint counts, tip sequences and registry revisions of their
+/// original sources. Both checkpoint chains must be structurally valid.
 /// Matching caller-provided keys are only a consistency check, not proof of
 /// key ownership or authenticity.
 #[must_use]
@@ -229,8 +230,26 @@ pub fn inspect_transition_signer_continuity(
     ) else {
         return RestartInspection::Deny;
     };
+    let (Some(previous_receipt), Some(current_receipt)) =
+        (previous.receipts.last(), current.receipts.first())
+    else {
+        return RestartInspection::Deny;
+    };
     let previous_key = previous_source.trusted_key;
     let current_key = current_source.trusted_key;
+    // Receipt metadata must describe these exact signed source bundles,
+    // rather than merely accompany two compatible key identities.
+    if previous_source.checkpoints.len() != previous_source.payloads.len()
+        || current_source.checkpoints.len() != current_source.payloads.len()
+        || previous_receipt.checkpoint_count != previous_source.checkpoints.len()
+        || current_receipt.checkpoint_count != current_source.checkpoints.len()
+        || previous_receipt.checkpoint_sequence != previous_last.sequence
+        || current_receipt.checkpoint_sequence != current_last.sequence
+        || previous_receipt.registry_sequence != previous_key.registry_sequence
+        || current_receipt.registry_sequence != current_key.registry_sequence
+    {
+        return RestartInspection::Deny;
+    }
     // A correct final anchor and stable signer do not make either source's
     // earlier HOLD, revoked, uncommitted or broken checkpoints acceptable.
     if previous_source.checkpoints.len() > MAX_CHAIN_CHECKPOINTS
@@ -1187,6 +1206,51 @@ mod tests {
             inspect_transition_signer_continuity(&previous, &current),
             RestartInspection::ReviewOnly
         );
+        // A stable signer is not sufficient if the receipt metadata does
+        // not match the underlying source's checkpoint and key revision.
+        let forged_signer_receipt = [ReviewReceipt {
+            registry_sequence: receipts_current[0].registry_sequence + 1,
+            ..receipts_current[0]
+        }];
+        let forged_signer_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &forged_signer_receipt,
+            evidence: &evidence_current,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &forged_signer_current),
+            RestartInspection::Deny
+        );
+        let forged_signer_count = [ReviewReceipt {
+            checkpoint_count: 2,
+            ..receipts_current[0]
+        }];
+        let forged_count_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &forged_signer_count,
+            evidence: &evidence_current,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &forged_count_current),
+            RestartInspection::Deny
+        );
+        let forged_signer_end = [ReviewReceipt {
+            checkpoint_sequence: receipts_current[0].checkpoint_sequence + 1,
+            ..receipts_current[0]
+        }];
+        let forged_end_current = AuditSegmentEvidence {
+            links: &links_current,
+            receipts: &forged_signer_end,
+            evidence: &evidence_current,
+            expected: &expected_current,
+        };
+        assert_eq!(
+            inspect_transition_signer_continuity(&previous, &forged_end_current),
+            RestartInspection::Deny
+        );
+
         let different_key_id = TrustedKey {
             key_id: "different-key",
             public_key: key.public_key,
