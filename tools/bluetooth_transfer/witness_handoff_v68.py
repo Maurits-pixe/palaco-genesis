@@ -117,10 +117,32 @@ def exercise_ci(evidence: bytes, sha: str, run: str) -> bool:
     from witness_continuity_v63 import public_id
     with tempfile.TemporaryDirectory() as temporary:
         target = Path(temporary) / "handoff"
-        # CI synthetic manifest; real SCM evidence is used for the incident.
-        manifest = serialize({"protocol": "PALACO-BT-CI-ARCHIVE-HANDOFF-V1",
-                              "decision": "HOLD", "authorization": "DENY",
-                              "incident_sha256": digest(evidence)})
+        # Build and verify an ACTUAL v6.6 frozen archive before handoff.
+        # The transferred bundle still excludes the local source ledger.
+        from witness_archive_v66 import build_archive, verify_archive, channel_path
+        from witness_anchor_v64 import sign_checkpoint
+        from witness_continuity_v63 import append_incident, snapshot
+        ledger = Path(temporary) / "ledger.sqlite3"
+        producer = Ed25519PrivateKey.generate()
+        append_incident(ledger, producer.public_key(), producer, evidence)
+        state = snapshot(ledger, producer.public_key())
+        witness_signers = [Ed25519PrivateKey.generate() for _ in range(3)]
+        ordered = sorted((public_id(key.public_key()), key)
+                         for key in witness_signers)
+        pinned_witnesses = {identity: key.public_key()
+                            for identity, key in ordered}
+        channels = Path(temporary) / "channels"
+        archived_manifest = Path(temporary) / "frozen-manifest.json"
+        for i, (_, key) in enumerate(ordered[:2]):
+            checkpoint_path = channel_path(channels, i)
+            checkpoint_path.parent.mkdir(parents=True)
+            write_once(checkpoint_path, sign_checkpoint(state, key))
+        build_archive(ledger, producer.public_key(), pinned_witnesses,
+                      channels, archived_manifest,
+                      ("received", "received", "absent"))
+        verify_archive(ledger, producer.public_key(), pinned_witnesses,
+                       channels, archived_manifest)
+        manifest = archived_manifest.read_bytes()
         keys = [Ed25519PrivateKey.generate() for _ in range(3)]
         trusted = {public_id(k.public_key()): k.public_key() for k in keys}
         signed = (sign(manifest, sha, run, keys[0]),
