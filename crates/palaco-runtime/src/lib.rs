@@ -3,6 +3,39 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+/// Read-only ORCHEASTRA restart guard. Never grants execution authority.
+pub mod orcheastra_restart;
+
+/// Bounded SHA-256 snapshot integrity checks for read-only ORCHEASTRA review.
+pub mod orcheastra_payload;
+
+/// Fail-closed external-signature verification boundary for recovery anchors.
+pub mod orcheastra_signed_anchor;
+
+/// Composed read-only signed recovery and custody-floor inspection.
+pub mod orcheastra_recovery;
+
+/// Deterministic, non-authorizing recovery review fingerprints.
+pub mod orcheastra_review_receipt;
+
+/// Bounded audit-link chain integrity inspection without execution authority.
+pub mod orcheastra_audit_chain;
+
+/// Read-only binding of audit-chain links to recovery review receipt metadata.
+pub mod orcheastra_audit_receipts;
+
+/// End-to-end read-only audit-link verification against original recovery evidence.
+pub mod orcheastra_audit_evidence;
+
+/// Independent custody-witness policy boundary for audit endpoints.
+pub mod orcheastra_audit_custody;
+
+/// Fail-closed witnessed continuity between successive audit segments.
+pub mod orcheastra_audit_continuity;
+
+/// Complete source revalidation across witnessed consecutive audit segments.
+pub mod orcheastra_audit_transition;
+
 use palaco_citadel::{BoundaryDisposition, ExecutionBoundary};
 use palaco_foundation::{
     errors::RevalidationError,
