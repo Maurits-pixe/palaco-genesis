@@ -921,6 +921,53 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
                 self.assertEqual(result["reason"],
                                  "invalid-or-ambiguous-review-delta-json")
 
+    def test_delta_json_rejects_numeric_exponent_and_floating_values(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        raw=json.dumps(created["delta"],sort_keys=True,
+                       separators=(",",":")).encode("utf-8")
+        for token in (b"2.0",b"2e0",b"2E+0"):
+            with self.subTest(token=token):
+                bad=raw.replace(b'"current_receipts":2',
+                                b'"current_receipts":'+token,1)
+                self.assertNotEqual(bad,raw)
+                result=mod.verify_review_delta_json(
+                    previous,sha,head,bad,created["delta_sha256"],
+                    current_head,1)
+                self.assertFalse(result["delta_valid"])
+                self.assertEqual(result["reason"],
+                                 "invalid-or-ambiguous-review-delta-json")
+                self.assertFalse(result["authorization_granted"])
+
+    def test_delta_json_rejects_oversized_integer_before_object_validation(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        raw=json.dumps(created["delta"],sort_keys=True,
+                       separators=(",",":")).encode("utf-8")
+        for integer in (b"9"*11,b"9"*1000):
+            with self.subTest(digits=len(integer)):
+                bad=raw.replace(b'"current_receipts":2',
+                                b'"current_receipts":'+integer,1)
+                self.assertNotEqual(bad,raw)
+                with patch.object(mod,"verify_review_delta",
+                                  side_effect=AssertionError("unvalidated numeric token")):
+                    result=mod.verify_review_delta_json(
+                        previous,sha,head,bad,created["delta_sha256"],
+                        current_head,1)
+                self.assertFalse(result["delta_valid"])
+                self.assertEqual(result["reason"],
+                                 "invalid-or-ambiguous-review-delta-json")
+
+    def test_delta_json_accepts_max_bounded_integer_token_but_denies_schema(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        raw=json.dumps(created["delta"],sort_keys=True,
+                       separators=(",",":")).encode("utf-8")
+        bad=raw.replace(b'"current_receipts":2',
+                        b'"current_receipts":9999999999',1)
+        self.assertNotEqual(bad,raw)
+        result=mod.verify_review_delta_json(
+            previous,sha,head,bad,created["delta_sha256"],current_head,1)
+        self.assertEqual(result["reason"],"invalid-review-delta-schema-or-pins")
+        self.assertFalse(result["authorization_granted"])
+
     def test_registered_pending_only(self):
         first=self.record()
         self.assertTrue(first["recorded"])
