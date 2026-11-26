@@ -120,6 +120,10 @@ try {
     # run ID. It is not an independently verified GitHub provenance attestation.
     python tools/bluetooth_transfer/witness_custody_v67.py --ci-evidence $evidence
     if ($LASTEXITCODE -ne 0) { throw "CI signed custody provenance test failed" }
+    # Validate a portable, exact-file handoff with the actual C#-generated
+    # incident and CI-supplied checkout/run claims (not remote attestations).
+    python tools/bluetooth_transfer/witness_handoff_v68.py --ci-evidence $evidence
+    if ($LASTEXITCODE -ne 0) { throw "CI portable incident handoff verification failed" }
     Write-Output "PALACO ephemeral Ed25519 CI witness PASS (signed verifier receipt, linked local SQLite entry, duplicate refused)"
     Write-Output "Independent CI incident verification PASS (original validated, replay denied; unsigned)"
     Write-Output "Windows SCM injected worker failure PASS (STOPPED, no restart, fixed HOLD/DENY evidence, SHA-256 verified)"
