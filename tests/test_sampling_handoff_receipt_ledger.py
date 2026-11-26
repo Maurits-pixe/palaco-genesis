@@ -1109,6 +1109,46 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
             manifests,altered,head,1)["reason"],
             "invalid-independent-review-anchor")
 
+    def test_exact_terminal_anchor_accepts_independent_pin(self):
+        manifests,pins,head=self._anchor_history_fixture()
+        expected=copy.deepcopy(pins[-1])
+        self.db.unlink()
+        result=mod.verify_review_anchor_history_with_latest_pin(
+            manifests,pins,expected)
+        self.assertTrue(result["anchor_history_valid"])
+        self.assertEqual(result["manifest_sha256"],expected["manifest_sha256"])
+        self.assertEqual(result["latest_receipts"],2)
+        self.assertEqual(result["release_gate"],"HOLD")
+        self.assertFalse(result["authorization_granted"])
+
+    def test_exact_terminal_anchor_rejects_replayed_older_checkpoint(self):
+        manifests,pins,head=self._anchor_history_fixture()
+        result=mod.verify_review_anchor_history_with_latest_pin(
+            manifests[:1],pins[:1],pins[-1])
+        self.assertFalse(result["anchor_history_valid"])
+        self.assertEqual(result["reason"],"review-anchor-history-rollback")
+        self.assertFalse(result["authorization_granted"])
+
+    def test_exact_terminal_anchor_rejects_wrong_manifest_digest(self):
+        manifests,pins,head=self._anchor_history_fixture()
+        expected=dict(pins[-1],manifest_sha256="f"*64)
+        result=mod.verify_review_anchor_history_with_latest_pin(
+            manifests,pins,expected)
+        self.assertFalse(result["anchor_history_valid"])
+        self.assertEqual(result["reason"],"latest-review-anchor-pin-mismatch")
+
+    def test_exact_terminal_anchor_rejects_missing_or_malformed_pin(self):
+        manifests,pins,head=self._anchor_history_fixture()
+        for invalid in (None,True,{},dict(pins[-1],receipt_count=True),
+                        dict(pins[-1],manifest_sha256="bad"),
+                        dict(pins[-1],authorization_granted=True)):
+            with self.subTest(invalid=invalid):
+                result=mod.verify_review_anchor_history_with_latest_pin(
+                    manifests,pins,invalid)
+                self.assertFalse(result["anchor_history_valid"])
+                self.assertEqual(result["reason"],
+                                 "missing-independent-latest-review-anchor")
+
     def test_registered_pending_only(self):
         first=self.record()
         self.assertTrue(first["recorded"])
