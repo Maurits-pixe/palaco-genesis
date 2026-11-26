@@ -808,6 +808,36 @@ try {
 assert.equal(digestWithAlteredMethods, expectedDigestWithPinnedMethods,
              'digest and length frame must survive late hash prototype mutations');
 
+// Cycle detection must retain the original WeakSet semantics even when
+// third-party code replaces publicly mutable WeakSet prototype methods.
+const originalWeakSetMethods = {
+  has: WeakSet.prototype.has,
+  add: WeakSet.prototype.add,
+  delete: WeakSet.prototype.delete,
+};
+const directCycleAfterMutation = [];
+directCycleAfterMutation[0] = directCycleAfterMutation;
+const objectCycleAfterMutation = { gate: 'HOLD' };
+objectCycleAfterMutation.child = objectCycleAfterMutation;
+let weakSetMutationBytes;
+try {
+  const forbidden = () => { throw new Error('mutated WeakSet method executed'); };
+  WeakSet.prototype.has = forbidden;
+  WeakSet.prototype.add = forbidden;
+  WeakSet.prototype.delete = forbidden;
+  weakSetMutationBytes = canonicalBytes({ a: [1, 2], z: { gate: 'HOLD' } });
+  assert.throws(() => canonicalBytes(directCycleAfterMutation), /cyclic JSON reference/,
+                'array cycles still fail when WeakSet prototype methods are mutated');
+  assert.throws(() => canonicalBytes(objectCycleAfterMutation), /cyclic JSON reference/,
+                'object cycles still fail when WeakSet prototype methods are mutated');
+} finally {
+  WeakSet.prototype.has = originalWeakSetMethods.has;
+  WeakSet.prototype.add = originalWeakSetMethods.add;
+  WeakSet.prototype.delete = originalWeakSetMethods.delete;
+}
+assert.deepEqual(weakSetMutationBytes, Buffer.from('{"a":[1,2],"z":{"gate":"HOLD"}}'),
+                 'acyclic encoding remains deterministic after WeakSet method overrides');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
