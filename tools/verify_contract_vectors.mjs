@@ -108,10 +108,12 @@ function encode(value, depth = 0, active = new intrinsicWeakSetConstructor(), bu
     return encoded;
   }
   if (typeof value === 'string') {
-    assertValidString(value);
+    // Deny oversized input before the more expensive Unicode normalization
+    // and surrogate checks. JSON escaping is budgeted separately below.
     if (intrinsicBufferByteLength(value, 'utf8') > MAX_CANONICAL_BYTES) {
       throw new Error('canonical JSON byte budget exceeded');
     }
+    assertValidString(value);
     const encoded = intrinsicJSONStringify(value);
     charge(intrinsicBufferByteLength(encoded, 'utf8'));
     return encoded;
@@ -184,6 +186,11 @@ function encode(value, depth = 0, active = new intrinsicWeakSetConstructor(), bu
     const encodedKeys = [];
     for (const key of keys) {
       if (typeof key !== 'string') throw new Error('symbol object key is not JSON data');
+      // Key escaping adds bytes, never removes them; reject oversized raw
+      // keys before normalization or JSON quote construction.
+      if (intrinsicBufferByteLength(key, 'utf8') > MAX_CANONICAL_BYTES) {
+        throw new Error('canonical JSON byte budget exceeded');
+      }
       assertValidString(key);
       const encodedKey = intrinsicJSONStringify(key);
       charge(intrinsicBufferByteLength(encodedKey, 'utf8') + 1);
