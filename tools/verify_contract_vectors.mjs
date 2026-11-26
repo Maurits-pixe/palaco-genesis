@@ -841,6 +841,36 @@ try {
 assert.deepEqual(weakSetMutationBytes, Buffer.from('{"a":[1,2],"z":{"gate":"HOLD"}}'),
                  'acyclic encoding remains deterministic after WeakSet method overrides');
 
+// Global constructors are mutable in JavaScript. The accepted container
+// identity and fresh ancestor set must remain stable after initialization.
+const originalContainerGlobals = {
+  Object: globalThis.Object,
+  Array: globalThis.Array,
+  WeakSet: globalThis.WeakSet,
+};
+const expectedContainerBytes = Buffer.from('{"a":[0,1],"z":{"gate":"HOLD"}}');
+let bytesWithReplacedConstructors;
+try {
+  const forbidden = () => { throw new Error('mutated global container constructor executed'); };
+  globalThis.Object = forbidden;
+  globalThis.Array = forbidden;
+  globalThis.WeakSet = forbidden;
+  bytesWithReplacedConstructors = canonicalBytes({ z: { gate: 'HOLD' }, a: [0, 1] });
+  const cyclic = {};
+  cyclic.self = cyclic;
+  assert.throws(() => canonicalBytes(cyclic), /cyclic JSON reference/,
+                'object cycles are rejected with constructor globals replaced');
+  assert.throws(() => canonicalBytes([0, { invalid: undefined }]),
+                /unsupported canonical JSON/,
+                'non-JSON values remain denied after constructor replacement');
+} finally {
+  globalThis.Object = originalContainerGlobals.Object;
+  globalThis.Array = originalContainerGlobals.Array;
+  globalThis.WeakSet = originalContainerGlobals.WeakSet;
+}
+assert.deepEqual(bytesWithReplacedConstructors, expectedContainerBytes,
+                 'canonicalization uses captured container identities and WeakSet constructor');
+
 const negativeCorpus = JSON.parse(
   readFileSync(new URL('../verification/contract-digest-v0-negative.json', import.meta.url), 'utf8')
 );
