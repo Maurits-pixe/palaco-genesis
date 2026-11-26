@@ -32,6 +32,13 @@ bounded strict JSON reader before encoding.
 - Both Python and Node.js canonicalizers enforce at most **64 levels** of
   array/object nesting, including for in-memory objects; a 65th level fails.
 - Non-NFC Unicode strings are **rejected**, not silently normalized.
+- Node captures the permitted plain-object and ordinary-array prototype
+  identities and the `WeakSet` constructor at initialization, rather than
+  resolving mutable global `Object`, `Array` and `WeakSet` names during
+  encoding. The regression test replaces these global constructors after
+  initialization and verifies unchanged canonical bytes, cycle rejection
+  and non-JSON value denial. This does not protect against modification
+  of the underlying prototype objects themselves or a compromised startup.
 - The Node verifier captures `WeakSet.prototype.has`, `add` and
   `delete` at startup for its ancestor-cycle guard. A late override of
   publicly mutable WeakSet methods cannot disable cycle detection or
