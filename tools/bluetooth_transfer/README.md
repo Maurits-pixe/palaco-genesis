@@ -1,6 +1,28 @@
-# PALACO Bluetooth Offline Transfer — v6.6 DRAFT / HOLD
+# PALACO Bluetooth Offline Transfer — v6.7 DRAFT / HOLD
 
 Scope: exchange **Citadel** and **MUNDO** export bytes directly between devices without a cloud dependency. This directory contains an executable **transport-independent framing reference**, not a Bluetooth driver or a functioning paired-device app.
+
+## v6.7 CI quorum archive custody receipts and provenance binding (DRAFT / HOLD)
+
+- `witness_custody_v67.py` signs the **exact SHA-256 bytes of the frozen
+  v6.6 archive manifest** together with the checkout SHA from
+  `GITHUB_SHA`, workflow run ID from `GITHUB_RUN_ID`, custody identity
+  and fixed HOLD/DENY. The verifier requires two distinct signatures from
+  a caller-supplied roster of three pinned Ed25519 public keys.
+- `test_witness_custody_v67.py` rejects incomplete quorum, missing or
+  swapped receipts, duplicate signers, changed manifest bytes, substituted
+  checkout SHA or run ID, unpinned keys and invalid authorization claims.
+  The hosted Windows SCM-fault CI also exercises the binding with its
+  actual runtime environment variables and test incident evidence.
+- **Trust boundary:** the checkout SHA and run ID are observed environment
+  values, **not independently fetched or cryptographically attested
+  GitHub workflow provenance**. On a PR workflow the checkout SHA may be
+  a synthetic merge commit, not the source-branch head. The custodian
+  keys remain separate *ephemeral keypairs in one CI runner*, not
+  independently operated archival services or off-machine storage.
+  These are signed verifier custody acknowledgements, not C# producer
+  signatures, independent run receipts or a release authorization.
+- GO-13 HOLD / authorization DENY. No merge, installation or deployment.
 
 ## v6.6 Local witness delivery channels and frozen quorum archive (DRAFT / HOLD)
 
