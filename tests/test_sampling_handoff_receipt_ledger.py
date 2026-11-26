@@ -1209,6 +1209,65 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
         self.assertFalse(result["anchor_advance_valid"])
         self.assertEqual(result["reason"],"anchor-review-manifest-history-rewritten")
 
+    def test_anchor_advance_evidence_reverifies_offline_without_database(self):
+        manifests,pins,head=self._anchor_history_fixture()
+        self.db.unlink()
+        produced=mod.build_review_anchor_advance_evidence(
+            manifests[0],pins[0],manifests[1],pins[1],pins[1])
+        self.assertTrue(produced["advance_evidence_valid"])
+        evidence=produced["advance_evidence"]
+        self.assertEqual(evidence["added_receipts"],1)
+        self.assertEqual(evidence["first_new_sequence"],2)
+        self.assertEqual(evidence["previous_anchor"],pins[0])
+        self.assertEqual(evidence["current_anchor"],pins[1])
+        encoded=json.dumps(evidence,sort_keys=True,separators=(",",":"),
+                           ensure_ascii=False,allow_nan=False).encode("utf-8")
+        self.assertEqual(
+            hashlib.sha256(mod.ANCHOR_ADVANCE_DOMAIN+encoded).hexdigest(),
+            produced["advance_evidence_sha256"])
+        checked=mod.verify_review_anchor_advance_evidence(
+            manifests[0],pins[0],manifests[1],pins[1],pins[1],
+            evidence,produced["advance_evidence_sha256"])
+        self.assertTrue(checked["advance_evidence_valid"])
+        self.assertEqual(checked["state"],"pending-review")
+        self.assertEqual(checked["release_gate"],"HOLD")
+        self.assertFalse(checked["authorization_granted"])
+
+    def test_anchor_advance_evidence_rejects_tampered_record_and_pin(self):
+        manifests,pins,head=self._anchor_history_fixture()
+        produced=mod.build_review_anchor_advance_evidence(
+            manifests[0],pins[0],manifests[1],pins[1],pins[1])
+        altered=copy.deepcopy(produced["advance_evidence"])
+        altered["added_receipts"]=2
+        checked=mod.verify_review_anchor_advance_evidence(
+            manifests[0],pins[0],manifests[1],pins[1],pins[1],
+            altered,produced["advance_evidence_sha256"])
+        self.assertFalse(checked["advance_evidence_valid"])
+        self.assertEqual(checked["reason"],"anchor-advance-evidence-mismatch")
+        checked=mod.verify_review_anchor_advance_evidence(
+            manifests[0],pins[0],manifests[1],pins[1],pins[1],
+            produced["advance_evidence"],"f"*64)
+        self.assertEqual(checked["reason"],"anchor-advance-evidence-pin-mismatch")
+        checked=mod.verify_review_anchor_advance_evidence(
+            manifests[0],pins[0],manifests[1],pins[1],pins[1],
+            produced["advance_evidence"],None)
+        self.assertEqual(
+            checked["reason"],"missing-independent-anchor-advance-evidence-pin")
+
+    def test_anchor_advance_evidence_refuses_stale_or_rewritten_history(self):
+        manifests,pins,head=self._anchor_history_fixture()
+        same=mod.build_review_anchor_advance_evidence(
+            manifests[0],pins[0],manifests[0],pins[0],pins[0])
+        self.assertFalse(same["advance_evidence_valid"])
+        self.assertEqual(
+            same["reason"],"review-anchor-advance-requires-new-receipts")
+        bad=dict(pins[1],manifest_sha256="f"*64)
+        checked=mod.verify_review_anchor_advance_evidence(
+            manifests[0],pins[0],manifests[1],pins[1],bad,{}, "a"*64)
+        self.assertFalse(checked["advance_evidence_valid"])
+        self.assertEqual(checked["reason"],"latest-review-anchor-pin-mismatch")
+        self.assertFalse(checked["authorization_granted"])
+
     def test_registered_pending_only(self):
         first=self.record()
         self.assertTrue(first["recorded"])
