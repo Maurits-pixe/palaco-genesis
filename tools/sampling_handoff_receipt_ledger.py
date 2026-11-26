@@ -921,3 +921,31 @@ def verify_review_anchor_history_with_latest_pin(
                 latest_receipts=expected_latest_anchor["receipt_count"],
                 head_hash=expected_latest_anchor["head_hash"],
                 manifest_sha256=expected_latest_anchor["manifest_sha256"])
+
+
+def verify_review_anchor_advance(
+        previous_manifest,previous_anchor,
+        proposed_manifest,proposed_anchor,expected_new_anchor):
+    """Verify an actual advance from a pinned checkpoint, never a replay.
+
+    The expected new anchor is a separate, caller-authenticated trust
+    input; deriving it from the candidate defeats anti-rollback.
+    """
+    def deny(reason):return _out(anchor_advance_valid=False,reason=reason)
+    prior=verify_review_anchor_history_with_latest_pin(
+        [previous_manifest],[previous_anchor],previous_anchor)
+    if not prior["anchor_history_valid"]:
+        return deny("previous-"+prior["reason"])
+    checked=verify_review_anchor_history_with_latest_pin(
+        [previous_manifest,proposed_manifest],
+        [previous_anchor,proposed_anchor],expected_new_anchor)
+    if not checked["anchor_history_valid"]:
+        return deny(checked["reason"])
+    if proposed_anchor["receipt_count"]<=previous_anchor["receipt_count"]:
+        return deny("review-anchor-advance-requires-new-receipts")
+    return _out(anchor_advance_valid=True,state="pending-review",
+                reason="verified-strict-anchor-advance-not-custody",
+                previous_receipts=previous_anchor["receipt_count"],
+                current_receipts=proposed_anchor["receipt_count"],
+                head_hash=proposed_anchor["head_hash"],
+                manifest_sha256=proposed_anchor["manifest_sha256"])
