@@ -1031,6 +1031,84 @@ class SamplingHandoffReceiptLedgerTests(unittest.TestCase):
         self.assertEqual(result["reason"],"review-delta-digest-mismatch")
         self.assertEqual(result["release_gate"],"HOLD")
 
+    def _anchor_history_fixture(self):
+        previous,sha,head,created,current_head=self._delta_fixture()
+        delta=created["delta"]
+        current={"schema_version":"0.1.0",
+                 "receipt_count":delta["current_receipts"],
+                 "head_hash":current_head,
+                 "entries":previous["entries"]+delta["entries"]}
+        current_sha=self._independently_pinned_manifest(current)
+        pins=[{"receipt_count":1,"head_hash":head,"manifest_sha256":sha},
+              {"receipt_count":2,"head_hash":current_head,
+               "manifest_sha256":current_sha}]
+        return [previous,current],pins,current_head
+
+    def test_review_anchor_history_valid_offline_growth(self):
+        manifests,pins,head=self._anchor_history_fixture()
+        self.db.unlink()
+        result=mod.verify_review_anchor_history(manifests,pins,head,2)
+        self.assertTrue(result["anchor_history_valid"])
+        self.assertEqual(result["anchors"],2)
+        self.assertEqual(result["latest_receipts"],2)
+        self.assertEqual(result["release_gate"],"HOLD")
+        self.assertFalse(result["authorization_granted"])
+
+    def test_review_anchor_history_rejects_rewound_final_checkpoint(self):
+        manifests,pins,head=self._anchor_history_fixture()
+        result=mod.verify_review_anchor_history(
+            [manifests[1],manifests[0]],[pins[1],pins[0]],head,2)
+        self.assertFalse(result["anchor_history_valid"])
+        self.assertEqual(result["reason"],"review-anchor-history-rollback")
+        result=mod.verify_review_anchor_history(
+            [manifests[0]],[pins[0]],head,2)
+        self.assertEqual(result["reason"],"review-anchor-history-rollback")
+
+    def test_review_anchor_history_rejects_rewritten_authenticated_pin(self):
+        manifests,pins,head=self._anchor_history_fixture()
+        altered=copy.deepcopy(pins)
+        altered[1]["manifest_sha256"]="f"*64
+        result=mod.verify_review_anchor_history(manifests,altered,head,2)
+        self.assertFalse(result["anchor_history_valid"])
+        self.assertEqual(result["reason"],"anchor-review-manifest-digest-mismatch")
+        self.assertFalse(result["authorization_granted"])
+
+    def test_review_anchor_history_rejects_duplicate_count_split_view(self):
+        manifests,pins,head=self._anchor_history_fixture()
+        altered=copy.deepcopy(manifests[0])
+        entry=altered["entries"][0]
+        entry["recipient_id"]="other-reviewer"
+        alternate=mod._digest(1,entry["recipient_id"],entry["recipient_key_id"],
+                              entry["package_sha256"],entry["receipt_nonce_hex"],
+                              entry["receipt_sha256"],mod.GENESIS)
+        entry["event_hash"]=alternate
+        altered["head_hash"]=alternate
+        alternate_pin={"receipt_count":1,"head_hash":alternate,
+                       "manifest_sha256":self._independently_pinned_manifest(altered)}
+        result=mod.verify_review_anchor_history(
+            [manifests[0],altered],[pins[0],alternate_pin],alternate,1)
+        self.assertFalse(result["anchor_history_valid"])
+        self.assertEqual(result["reason"],"review-anchor-history-equivocation")
+
+    def test_review_anchor_history_bounds_and_strict_pin_types(self):
+        manifests,pins,head=self._anchor_history_fixture()
+        self.assertEqual(mod.verify_review_anchor_history(
+            manifests,pins,head,True)["reason"],
+            "missing-independent-anchor-history-pin")
+        self.assertEqual(mod.verify_review_anchor_history(
+            manifests,pins+[pins[-1]],head,1)["reason"],
+            "invalid-review-anchor-history")
+        many=[manifests[0]]*(mod.MAX_REVIEW_ANCHORS+1)
+        many_pins=[pins[0]]*len(many)
+        self.assertEqual(mod.verify_review_anchor_history(
+            many,many_pins,head,1)["reason"],
+            "invalid-review-anchor-history")
+        altered=copy.deepcopy(pins)
+        altered[0]["receipt_count"]=True
+        self.assertEqual(mod.verify_review_anchor_history(
+            manifests,altered,head,1)["reason"],
+            "invalid-independent-review-anchor")
+
     def test_registered_pending_only(self):
         first=self.record()
         self.assertTrue(first["recorded"])
