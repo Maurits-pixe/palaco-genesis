@@ -458,3 +458,26 @@ controls the external trust channel. Independent anti-rollback storage,
 authenticated distribution, and human governance remain separate.
 The function never creates or updates a trusted pin. Positive outcomes
 remain pending-review with GO-13 HOLD / authorization DENY.
+
+## Explicit independently pinned checkpoint advancement (2026-11-26)
+
+`verify_review_anchor_advance(previous_manifest, previous_anchor,
+proposed_manifest, proposed_anchor, expected_new_anchor)` verifies a
+proposed replacement for an independently pinned historical checkpoint.
+The prior checkpoint must first validate on its own. The proposed
+checkpoint must then pass the exact-terminal-pin and append-only
+history checks with a separately authenticated expected new anchor.
+A successful *advance* additionally requires **strictly more receipt
+records**; repeating an identical valid checkpoint is not progress.
+
+Five regressions cover a valid offline append-only advance, rejection
+of a replayed identical anchor, rollback to a shorter history, a wrong
+independently authenticated new manifest digest, and a fully rehashed
+but rewritten historical prefix.
+
+The caller, not this module, must independently authenticate and
+durably retain the old and new pins. There is no mutation of the
+trusted-pin source and no automatic selection or promotion of a
+candidate. Passing this check establishes consistency only, not
+receipt signature authenticity, custody or authority. Every positive
+outcome remains pending-review; GO-13 HOLD / authorization DENY.
