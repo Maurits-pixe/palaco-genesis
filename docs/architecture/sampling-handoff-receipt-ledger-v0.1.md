@@ -439,3 +439,22 @@ with protection against source compromise and rollback. Receiving a
 self-consistent list of attacker-supplied pins cannot establish trust.
 A positive result stays pending-review; no custody, signing,
 merge, deployment, recovery or release is authorized. GO-13 HOLD.
+
+## Exact terminal independent anchor enforcement (2026-11-26)
+
+`verify_review_anchor_history_with_latest_pin` strengthens the bounded
+multi-checkpoint verifier by requiring a **separately authenticated exact
+terminal anchor**. The expected terminal receipt count, ledger head and
+full-manifest SHA-256 must all match the last validated checkpoint.
+A pinned higher count rejects an older replayed history; a conflicting
+manifest commitment is rejected even when the previous verifier can
+validate the history against its own provided anchor list. Missing,
+malformed or authority-bearing extra fields in the expected pin fail
+closed. Four regressions cover successful offline review, older-checkpoint
+replay, a mismatched full-manifest digest, and malformed terminal pins.
+
+Neither function can decide which anchor is latest if an attacker
+controls the external trust channel. Independent anti-rollback storage,
+authenticated distribution, and human governance remain separate.
+The function never creates or updates a trusted pin. Positive outcomes
+remain pending-review with GO-13 HOLD / authorization DENY.
