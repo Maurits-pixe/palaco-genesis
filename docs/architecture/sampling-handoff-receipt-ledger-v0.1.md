@@ -398,3 +398,20 @@ integer parsing; the existing structural validator continues to enforce
 the much tighter permitted count and sequence ranges. JSON acquisition
 layers must still impose their own byte limits. No authorization,
 custody, merge or release authority follows; GO-13 HOLD remains.
+
+## Strict JSON delta verification with separate manifest anchor (2026-11-26)
+
+The new `verify_review_delta_json_with_manifest_pin` entry point
+applies the exact same bytes-only, 8 MiB size, UTF-8, duplicate-key and
+numeric-token restrictions as the basic JSON intake route. After bounded
+decoding it calls the strict offline delta verifier and **requires** an
+independently authenticated expected full current-manifest SHA-256.
+A missing or mismatched manifest anchor fails closed. The strict route
+must not derive its expected manifest pin from the received delta.
+
+Both JSON entry points now reuse one shared decoder to prevent security
+policy divergence. Four new regression tests cover a valid pinned
+offline payload, absent/incorrect manifest pins, duplicate keys or an
+oversized request before hashing, and an invalid delta hash. No signing,
+custody attestation, automatic branch selection, authorization or
+deployment is performed; GO-13 remains HOLD / DENY.
